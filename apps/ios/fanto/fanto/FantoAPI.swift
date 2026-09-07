@@ -71,8 +71,8 @@ enum AppConfiguration {
 }
 
 struct FantoAPIClient {
-    func records(cursor: String? = nil) async throws -> CursorPage<RecordDTO> {
-        try await request(path: "api/records", cursor: cursor)
+    func records(cursor: String? = nil, topicID: String? = nil) async throws -> CursorPage<RecordDTO> {
+        try await request(path: "api/records", cursor: cursor, topicID: topicID)
     }
 
     func record(id: String) async throws -> RecordDTO {
@@ -87,7 +87,7 @@ struct FantoAPIClient {
         try await request(path: "api/topics/\(id)")
     }
 
-    private func request<Value: Decodable>(path: String, cursor: String? = nil) async throws -> Value {
+    private func request<Value: Decodable>(path: String, cursor: String? = nil, topicID: String? = nil) async throws -> Value {
         guard let baseURL = AppConfiguration.baseURL else {
             throw FantoAPIError.invalidBaseURL
         }
@@ -96,6 +96,7 @@ struct FantoAPIClient {
         var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
         var items = [URLQueryItem(name: "limit", value: "20")]
         if let cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }
+        if let topicID { items.append(URLQueryItem(name: "topicId", value: topicID)) }
         components?.queryItems = items
         guard let url = components?.url else { throw FantoAPIError.invalidBaseURL }
 
@@ -122,10 +123,17 @@ enum DisplayDate {
 
     private static let standardISO8601 = ISO8601DateFormatter()
 
+    private static let displayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter
+    }()
+
     static func text(_ value: String) -> String {
         guard let date = fractionalISO8601.date(from: value) ?? standardISO8601.date(from: value) else {
             return value
         }
-        return date.formatted(.dateTime.month(.abbreviated).day().hour().minute())
+        return displayFormatter.string(from: date)
     }
 }

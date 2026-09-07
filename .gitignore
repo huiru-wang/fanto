@@ -15,4 +15,3 @@ workspaces/
 .swc/
 test-results/
 playwright-report/
-plan/

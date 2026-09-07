@@ -114,8 +114,11 @@ html, body { background: #e9ebe8; -webkit-font-smoothing: antialiased; }
 .record-row { border-top: 0; border-bottom: 1px solid var(--line); padding: 19px 0; }
 .row-meta { font-size: 11px; gap: 7px 10px; }
 .record-content { margin-top: 0; line-height: 1.65; }
-.status { padding: 2px 7px; border-radius: 4px; background: #f3ede2; }
-.status-organized { color: var(--accent); }
+.status { padding: 2px 7px; border: 1px solid transparent; border-radius: 4px; background: #f3f3f1; color: #747872; }
+.status-pending, .status-updated { color: #8a5a0d; background: #fff4df; border-color: #f0d7a5; }
+.status-organized { color: #26734d; background: #eaf7ef; border-color: #c5e7d1; }
+.status-processing { color: #525bb0; background: #eef0ff; border-color: #d5d9f4; }
+.status-skipped { color: #727770; background: #f1f2ef; border-color: #dde0d9; }
 .topic-links button { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px; color: var(--accent); background: var(--accent-soft); border-radius: 6px; font-size: 11px; text-align: left; max-width: 100%; overflow-wrap: anywhere; }
 .topic-links svg { margin-top: 2px; }
 .topic-row { padding: 20px 0; }

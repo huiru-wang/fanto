@@ -90,3 +90,33 @@ final class TopicDetailModel: ObservableObject {
         catch { errorMessage = error.localizedDescription }
     }
 }
+
+@MainActor
+final class TopicRecordsModel: ObservableObject {
+    @Published private(set) var records: [RecordDTO] = []
+    @Published private(set) var isLoading = false
+    @Published private(set) var hasMore = false
+    @Published var errorMessage: String?
+    private var cursor: String?
+
+    func load(topicID: String, reset: Bool = false) async {
+        guard !isLoading else { return }
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        do {
+            let page = try await FantoAPIClient().records(cursor: reset ? nil : cursor, topicID: topicID)
+            records = reset ? page.data : unique(records + page.data)
+            cursor = page.nextCursor
+            hasMore = page.hasMore
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func unique(_ values: [RecordDTO]) -> [RecordDTO] {
+        var ids = Set<String>()
+        return values.filter { ids.insert($0.id).inserted }
+    }
+}

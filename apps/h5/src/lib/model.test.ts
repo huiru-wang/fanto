@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { afterSave, organization, uniqueItems } from './model';
+import { afterSave, formatTime, organization, uniqueItems } from './model';
 
 test('organization accepts legacy null and rejects malformed extensions', () => {
   assert.equal(organization(null), null);
@@ -15,4 +15,7 @@ test('saving preserves text entered during a request', () => {
 test('pages deduplicate IDs and ignore absent pages', () => {
   assert.deepEqual(uniqueItems(undefined), []);
   assert.deepEqual(uniqueItems([{ data: [{ id: 'a' }] }, { data: [{ id: 'a' }, { id: 'b' }] }]), [{ id: 'a' }, { id: 'b' }]);
+});
+test('timestamps use the shared yyyy-MM-dd HH:mm:ss format', () => {
+  assert.equal(formatTime('2026-09-05T17:01:11.667+08:00'), '2026-09-05 17:01:11');
 });

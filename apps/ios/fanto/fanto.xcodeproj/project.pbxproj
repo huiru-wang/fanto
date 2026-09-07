@@ -10,8 +10,21 @@
 		E72DE353304DF05E004B1C10 /* fanto.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fanto.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E72DE363304DF060004B1C10 /* Exceptions for "fanto" folder in "fanto" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = E72DE352304DF05E004B1C10 /* fanto */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		E72DE355304DF05E004B1C10 /* fanto */ = {
+			exceptions = (
+				E72DE363304DF060004B1C10 /* Exceptions for "fanto" folder in "fanto" target */,
+			);
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = fanto;
 			sourceTree = "<group>";
@@ -255,11 +268,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = HZZVT9H9D8;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_FANTO_API_BASE_URL = "http://robin-bmp.local:3000";
-				INFOPLIST_KEY_FANTO_USER_ID = "default-user";
-				INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking = YES;
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Fanto 会连接同一局域网中的本地开发服务以读取记录和回声。";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = fanto/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -291,9 +301,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = HZZVT9H9D8;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_FANTO_API_BASE_URL = "";
-				INFOPLIST_KEY_FANTO_USER_ID = "default-user";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = fanto/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
