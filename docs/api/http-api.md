@@ -1,265 +1,174 @@
-# HTTP 接口与 curl 示例
+# HTTP API：Server 多模态 Record V1
 
-按当前后端实际注册路由整理，共 14 个业务/健康检查接口。启动方式：在项目根目录运行 `pnpm dev`；代码更新后需重启。真实 Topic 对话前后端均暂缓；已存在的流式路由仅记录现状，不代表对话能力已完成。
+> 目标接口契约。客户端形态不在本文范围；当前只支持文字、图片、音频。
+> 不提供视频、Topic、Suggestion、Artifact 或 Agent HTTP 接口。旧 contemplate/digest 写接口返回 `410/FEATURE_DISABLED`。
 
-## 调用约定
+## 通用约定
 
-先设置示例变量，后续示例在同一终端执行：
+开发期以 `x-user-id` 标识用户；它不是正式认证。除 `GET /health` 与直接 OSS 上传外，响应外壳固定为：
 
-```bash
-FANTO_API='http://127.0.0.1:3000'
-FANTO_USER_ID='default-user'
-TOPIC_ID='替换为查询得到的Topic ID'
-TASK_ID='替换为整理任务ID'
+```json
+{ "result": {}, "success": true, "errorCode": null, "errorMsg": null }
 ```
 
-`--noproxy '*'` 避免本地请求被代理转发；`--fail-with-body` 在 HTTP 错误时仍显示响应体。示例中的 JSON 均直接作为请求体发送，不是文件上传。分页取值和流式请求示例用到 jq。
-
-大部分 JSON 接口返回 `{ "result": ..., "success": true, "errorCode": null, "errorMsg": null }`，失败时检查 HTTP 状态及 success/errorMsg。健康检查与 SSE 不使用这一外壳。当前没有完整认证机制，x-user-id 是开发阶段的用户标识，不能视为身份认证。
+`objectKey`、永久 OSS URL、AccessKey、Secret 永不返回；附件读取仅返回短时 `readUrl`。常见错误：400 `INVALID_INPUT`，403 `FORBIDDEN`，404 `NOT_FOUND`，409 `RECORD_PROCESSING` / `GENERATION_CONFLICT`，413 `PAYLOAD_TOO_LARGE`，415 `UNSUPPORTED_MEDIA_TYPE`，422 `UPLOAD_VERIFICATION_FAILED`，429 `RATE_LIMITED`。
 
 ## 接口目录
 
-| 方法 | 路径 | 功能 |
-|---|---|---|
-| GET | /health | 健康检查 |
-| POST | /api/records | 单条录入 |
-| POST | /api/records/batch | 批量录入 |
-| PATCH | /api/records/:id | 修改记录原文并等待重新整理 |
-| GET | /api/records | 全部或 Topic 关联记录，支持游标 |
-| GET | /api/records/:id | 单条原文、摘要及当前关联话题 |
-| GET | /api/topics | Topic 列表 |
-| GET | /api/topics/:topicId | Topic 详情 |
-| GET | /api/messages | Topic 对话历史 |
-| POST | /api/agent/stream | Topic 内流式对话 |
-| POST | /api/contemplate | 触发整理 |
-| GET | /api/contemplate/tasks | 最近任务列表 |
-| GET | /api/contemplate/:id | 任务详情 |
-| POST | /api/digest | 整理兼容入口 |
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| GET | `/health` | 服务健康检查 |
+| POST | `/api/uploads/intents` | 申请一个图片或音频上传凭证 |
+| POST | `/api/uploads/intents/:intentId/complete` | 校验 OSS 对象，获取 asset ref |
+| DELETE | `/api/uploads/intents/:intentId` | 取消未消费 intent |
+| POST | `/api/records` | 创建 Record |
+| GET | `/api/records` | 游标查询 Record 摘要 |
+| GET | `/api/records/:id` | 查询完整 Record 与短时附件 URL |
+| PATCH | `/api/records/:id` | 替换文字/附件并启动新 generation |
+| POST | `/api/records/:id/retry-processing` | 重试失败媒体处理 |
 
-## GET /health
+## 健康检查
 
-```bash
-curl --noproxy '*' --fail-with-body -sS "$FANTO_API/health"
-```
+### `GET /health`
 
-返回 `{ "status": "ok", "timestamp": "..." }`，不调用模型或向量服务。
+返回 `{ "status": "ok", "timestamp": "..." }`；不检查 OSS 或模型。
 
-## POST /api/records
+## 上传
 
-content 为必填非空字符串，source 可选，默认 home（首页录入）。x-user-id 可选，默认 default-user。
+### `POST /api/uploads/intents`
 
-```bash
-curl --noproxy '*' --fail-with-body -sS "$FANTO_API/api/records" \
-  -H "x-user-id: $FANTO_USER_ID" -H 'Content-Type: application/json' \
-  --data-raw '{"content":"修改复杂接口前，先列出验收样例。","source":"home"}'
-```
-
-result 是创建的 Record，包含 id、userId、source、content、status、createdAt、updatedAt；初始状态 pending。原始记录先持久化，向量化异步执行，HTTP 成功不表示向量化已完成。
-
-## POST /api/records/batch
-
-records 为 1–100 项列表，每项包含 content 和可选 source。批量 content 去除首尾空白后不能为空。整批校验并原子写入，向量化异步顺序执行；重复提交会新增记录。
-
-```bash
-curl --noproxy '*' --fail-with-body -sS "$FANTO_API/api/records/batch" \
-  -H "x-user-id: $FANTO_USER_ID" -H 'Content-Type: application/json' \
-  --data-raw '{"records":[
-    {"content":"修改前明确验收标准。","source":"home"},
-    {"content":"整理后的观点应能回到原始记录。"}
-  ]}'
-```
-
-result 为 `{ "data": [Record], "count": 2 }`，顺序与请求一致。空批次、超过 100 项、非法 JSON 或无效项返回 400/INVALID_INPUT，不写入记录。
-
-## GET /api/records
-
-| 可选参数 | 说明 |
-|---|---|
-| topicId | 仅返回该 Topic 关联的记录，限定当前用户；省略则查询用户全部记录 |
-| limit | 每页 1–100 条整数，默认 20 |
-| cursor | 原样使用上一页 result.nextCursor；第一页省略 |
-
-按 createdAt 倒序、相同时间按 id 倒序；按关联查询不会因重复关联返回重复记录。不存在或不属于当前用户的 Topic 返回空列表。没有状态过滤，全部记录查询可包含 skipped 等状态。
-
-每项追加 topics:[{id,title,status}]，无关联为 []。返回真实关联（含 archived 状态），过滤其他用户的话题，当前页一次批量读取。POST/PATCH 仍返回原有 Record，不含 topics；前端保存后可重新请求读接口。
-
-查询全部记录：
-
-```bash
-curl --noproxy '*' --fail-with-body -sS --get "$FANTO_API/api/records" \
-  -H "x-user-id: $FANTO_USER_ID" --data-urlencode 'limit=20'
-```
-
-查询 Topic 关联记录第一页：
-
-```bash
-RECORD_PAGE=$(curl --noproxy '*' --fail-with-body -sS --get "$FANTO_API/api/records" \
-  -H "x-user-id: $FANTO_USER_ID" \
-  --data-urlencode "topicId=$TOPIC_ID" --data-urlencode 'limit=2')
-printf '%s\n' "$RECORD_PAGE" | jq
-```
-
-下一页保持相同用户和 topicId，URL 编码游标：
-
-```bash
-RECORD_CURSOR=$(printf '%s' "$RECORD_PAGE" | jq -r '.result.nextCursor // empty')
-if [ -n "$RECORD_CURSOR" ]; then
-  curl --noproxy '*' --fail-with-body -sS --get "$FANTO_API/api/records" \
-    -H "x-user-id: $FANTO_USER_ID" --data-urlencode "topicId=$TOPIC_ID" \
-    --data-urlencode 'limit=2' --data-urlencode "cursor=$RECORD_CURSOR"
-fi
-```
-
-result 包含 data、nextCursor、hasMore、pageSize、total。nextCursor 为不透明复合游标，能处理批量创建的同时间记录；结束时为 null，hasMore=false。total 当前固定为 0，是尚未实现的计数占位，不能用来判断总量。非法参数/游标返回 400/INVALID_INPUT。
-
-旧时间字符串游标仍可接受，但只按时间截断，不能保证同时间记录不遗漏；新调用统一使用返回的 nextCursor。
-
-## GET /api/records/:id
-
-```bash
-RECORD_ID='替换为记录ID'
-curl --noproxy '*' --fail-with-body -sS "$FANTO_API/api/records/$RECORD_ID" \
-  -H "x-user-id: $FANTO_USER_ID"
-```
-
-result 为完整 Record 加 topics，与列表项一致，包含 content、extData 和当前关联。不存在或其他用户记录返回 404/NOT_FOUND。不从整理任务或历史摘要反推归属。
-
-## PATCH /api/records/:id
-
-仅接受 content，不允许直接修改 status、extData 或其他字段。content 去首尾空白后必须非空。记录不存在或不属于当前用户返回 404；processing 状态返回 409/RECORD_PROCESSING；非法请求返回 400/INVALID_INPUT。
-
-```bash
-RECORD_ID='替换为记录ID'
-curl --noproxy '*' --fail-with-body -sS -X PATCH "$FANTO_API/api/records/$RECORD_ID" \
-  -H "x-user-id: $FANTO_USER_ID" -H 'Content-Type: application/json' \
-  --data-raw '{"content":"修正：worktree 用来隔离变更，不能改善模型的指令遵循。"}'
-```
-
-成功 result 为更新后的 Record。内容变化时 status=updated、updatedAt 更新、createdAt 保持不变，向量化异步进行。提交相同内容是无变化操作，不改状态或时间、不重新向量化。旧关联及旧 extData.organization 暂时保留，待重新整理成功后更新。
-
-## 整理摘要 extData
-
-数据库使用 ext_data（可空 JSON 文本），Record 和 Topic 查询响应使用 extData（解析后的对象或 null）。仅保存最近一次成功整理摘要，没有事件表、反馈字段或反馈接口。创建和迁移后的历史行默认 null，不伪造过去的整理解释。
-
-Record 示例：
+请求一个附件上传意图。服务端校验类型、大小、SHA-256，并生成 recordId/blockId/object key；客户端不能指定 object key。
 
 ```json
 {
-  "extData": {
-    "organization": {
-      "taskId": "...",
-      "organizedAt": "2026-09-05T17:00:00.000+08:00",
-      "action": "merge_record",
-      "reason": "补充接口修改前的验收方法。"
-    }
-  }
+  "type": "image",
+  "filename": "river.jpg",
+  "mimeType": "image/jpeg",
+  "bytes": 1834021,
+  "sha256": "8eb9f22f7c48f8d0e4bb85237e3a2b4a0e74e6da2b7270fc6b65b3906ce8c32c"
 }
 ```
 
-action 为 merge_record、create_topic 或 skip_record。当前归属以 RecordTopic 为准，不从摘要复制另一套关系。updated/processing 时摘要仍表示上一次成功结果。
+限制：图片 JPEG/PNG/WebP，单图 ≤10MB；音频 MP4/MP3/WAV，单段 ≤60 秒；单 Record 最多 3 图、1 音频。视频一律 `415`。
 
-Topic 的 extData.organization 为 `{ "taskId": "...", "organizedAt": "...", "summary": "修正了约束遗漏的归因。", "recordIds": ["..."] }`。recordIds 是本批处理后仍关联到该 Topic 的 Record ID，并非该 Topic 的全部历史记录；移出或归档导致该列表可以为空，具体执行可查 taskId。summary 描述本次变化，不是 Topic 的整体 summary。
+响应：
 
-所有改写成功后，事务统一更新双方 organization、Record 最终状态和 Task 完成状态，保留 extData 其他键。失败不覆盖成功摘要。修改记录重新整理时替换旧关联，原、新 Topic 均用当前有效记录重写；无剩余记录的 Topic 清空正文并归档。执行阶段发生故障会尽量恢复原记录关联，但不提供整个 Topic 内容的事务回滚。
-
-## GET /api/topics
-
-可选 limit（1–100 整数，默认 20）和 cursor，按 updatedAt、id 倒序。使用返回的不透明复合游标，仍兼容旧时间字符串。非法参数返回 400/INVALID_INPUT。
-
-```bash
-TOPIC_PAGE=$(curl --noproxy '*' --fail-with-body -sS --get "$FANTO_API/api/topics" \
-  -H "x-user-id: $FANTO_USER_ID" --data-urlencode 'limit=20')
-printf '%s\n' "$TOPIC_PAGE" | jq
+```json
+{
+  "result": {
+    "intentId": "b7f90456-a2cf-4147-a166-89c2d1fcf58e",
+    "recordId": "r_456",
+    "blockId": "b5e3fc33-81c6-4c92-bad8-d69409ba43f1",
+    "expiresAt": "2026-09-08T16:30:00.000+08:00",
+    "upload": { "method": "POST", "url": "https://fanto.oss-rg-china-mainland.aliyuncs.com/", "fields": { "key": "...", "policy": "...", "signature": "..." } }
+  }, "success": true, "errorCode": null, "errorMsg": null
+}
 ```
 
-```bash
-TOPIC_CURSOR=$(printf '%s' "$TOPIC_PAGE" | jq -r '.result.nextCursor // empty')
-if [ -n "$TOPIC_CURSOR" ]; then
-  curl --noproxy '*' --fail-with-body -sS --get "$FANTO_API/api/topics" \
-    -H "x-user-id: $FANTO_USER_ID" --data-urlencode 'limit=20' \
-    --data-urlencode "cursor=$TOPIC_CURSOR"
-fi
+### `POST /api/uploads/intents/:intentId/complete`
+
+服务端使用 OSS HEAD 校验对象路径、存在性、大小、MIME 与 checksum。
+
+```json
+{ "etag": "可选OSS ETag" }
 ```
 
-result 为 data、nextCursor、hasMore、total、pageSize。total 固定为 0，不代表总数；多取一条计算 hasMore，末页 nextCursor=null。仅返回 active Topic。新游标解决同时间翻页遗漏，但分页期间话题更新仍会改变排序，不提供冻结快照。
+成功返回一次性 asset ref：
 
-## GET /api/topics/:topicId
-
-```bash
-curl --noproxy '*' --fail-with-body -sS "$FANTO_API/api/topics/$TOPIC_ID" \
-  -H "x-user-id: $FANTO_USER_ID"
+```json
+{ "result": { "uploadIntentId": "b7f90456-a2cf-4147-a166-89c2d1fcf58e", "blockId": "b5e3fc33-81c6-4c92-bad8-d69409ba43f1", "type": "image" }, "success": true, "errorCode": null, "errorMsg": null }
 ```
 
-result 是 Topic，包括 id、sessionId、title、summary、content、tags、status、extData 等；不存在或不属于当前用户返回 404/NOT_FOUND。允许读取自己的 archived 话题。响应不含 relatedRecords，关联记录使用 GET /api/records?topicId=...。
+未上传或校验失败为 422；complete 成功不等于 asset 已写入 Record。
 
-## GET /api/messages
+### `DELETE /api/uploads/intents/:intentId`
 
-topicId 必填，按消息 timestamp 升序返回全部历史，目前无游标。
+仅能取消自己的未消费 intent，随后异步清理对象。已消费为 409，不存在为 404。成功返回 `{ "result": { "cancelled": true }, ... }`。
 
-```bash
-curl --noproxy '*' --fail-with-body -sS --get "$FANTO_API/api/messages" \
-  -H "x-user-id: $FANTO_USER_ID" --data-urlencode "topicId=$TOPIC_ID"
+## Record
+
+### `POST /api/records`
+
+客户端提交文本和已 complete 的 asset refs，服务端构造 `RecordContentV1`。不接受客户端提交的 status、semantic、task、understanding 或 objectKey。
+
+```json
+{
+  "source": "api",
+  "text": "傍晚在江边散步。",
+  "assets": [
+    { "uploadIntentId": "b7f90456-a2cf-4147-a166-89c2d1fcf58e", "blockId": "b5e3fc33-81c6-4c92-bad8-d69409ba43f1", "type": "image" },
+    { "uploadIntentId": "a84ed67b-33f9-4da5-a1cd-8c2f14d10e70", "blockId": "7dd76c9d-1f75-4924-bca4-f4f5d8c25b09", "type": "audio" }
+  ]
+}
 ```
 
-result 是原始事件 Message 数组；缺少 topicId 返回 400/MISSING_PARAM，Topic 不存在或不属于当前用户返回 404。查询限定当前用户及 Topic 当前 sessionId，按 timestamp、id 升序。role 为事件类型，payload 为事件 JSON 字符串，不是已渲染的聊天消息；真实对话能力暂缓。
+text 与 assets 不可都为空。图片或音频存在时，初始 status 为 `pending`；纯文本直接为 `processed`。服务端在一个事务中消费 refs、写 content、创建 processing jobs。
 
-## POST /api/agent/stream
+详情响应结构：
 
-JSON 中 sessionId、topicId、userId、message 均必填。使用 Topic 详情返回的 sessionId，不能使用整理任务 ID。此接口使用请求体 userId，不能仅靠 x-user-id。
-
-```bash
-TOPIC_SESSION_ID=$(curl --noproxy '*' --fail-with-body -sS \
-  "$FANTO_API/api/topics/$TOPIC_ID" | jq -r '.result.sessionId')
-AGENT_BODY=$(jq -n --arg sessionId "$TOPIC_SESSION_ID" --arg topicId "$TOPIC_ID" \
-  --arg userId "$FANTO_USER_ID" --arg message '帮我梳理这个话题中尚未解决的问题。' \
-  '{sessionId:$sessionId,topicId:$topicId,userId:$userId,message:$message}')
-curl --noproxy '*' --fail-with-body -sS -N "$FANTO_API/api/agent/stream" \
-  -H 'Content-Type: application/json' -H 'Accept: text/event-stream' \
-  --data-raw "$AGENT_BODY"
+```json
+{
+  "result": {
+    "id": "r_456", "userId": "u_123", "source": "api", "status": "processing",
+    "content": { "version": 1, "text": "...", "blocks": [], "semantic": {}, "processing": {} },
+    "media": [{ "blockId": "...", "type": "image", "readUrl": "https://...", "expiresAt": "..." }],
+    "createdAt": "...", "updatedAt": "..."
+  }, "success": true, "errorCode": null, "errorMsg": null
+}
 ```
 
-返回 SSE，event 为 Agent 事件类型，data 为事件 JSON；正常结束为 `event: done`、`data: [DONE]`。流内失败为 `event: error`，须检查事件，不能只判断 HTTP 状态。缺参数在流开始前返回 400/MISSING_PARAM。
+完整 content schema 见 [Server 重构方案](../../plan/2026-09-08-record-multimodal-server/design.md)。
 
-## POST /api/contemplate
+### `GET /api/records`
 
-同步等待整理完成；处理当前用户 pending、updated、skipped 记录，一次最多 30 条。JSON 的 userId 优先于请求头，默认 default-user。
+参数：`limit`（1–100，默认 20）、`cursor`（上页不透明复合游标）、`status`（可选 `pending|processing|processed|processing_failed`）。按 `createdAt DESC, id DESC` 返回。列表只含摘要：
 
-```bash
-curl --noproxy '*' --fail-with-body -sS "$FANTO_API/api/contemplate" \
-  -H "x-user-id: $FANTO_USER_ID" -H 'Content-Type: application/json' \
-  --data-raw '{}'
+```json
+{ "result": { "data": [{ "id": "r_456", "textPreview": "傍晚在江边…", "mediaCounts": { "image": 1, "audio": 1 }, "status": "processed", "createdAt": "...", "updatedAt": "..." }], "nextCursor": null, "hasMore": false, "pageSize": 20 }, "success": true, "errorCode": null, "errorMsg": null }
 ```
 
-返回 result.taskId、pendingCount（本批领取数量）、topicCount、summary、eventCount。当前 topicCount 是候选 Topic 数量，不是最终总数；最终效果应查询 Topics 和任务详情。没有待处理记录时 taskId=null。失败返回 500/CONTEMPLATE_FAILED。
+### `GET /api/records/:id`
 
-## GET /api/contemplate/tasks
+返回完整 content 与每个附件短时 `readUrl`。需验证归属；非本人和不存在均返回 404，URL 不可持久化。
 
-可选 limit，默认 20，按任务 updatedAt 倒序，无游标。当前仓库查询按用户返回任务，不额外过滤任务类型。
+### `PATCH /api/records/:id`
 
-```bash
-curl --noproxy '*' --fail-with-body -sS --get "$FANTO_API/api/contemplate/tasks" \
-  -H "x-user-id: $FANTO_USER_ID" --data-urlencode 'limit=20'
+全量替换 text 与附件集合。保留旧附件用 `{ "blockId": "...", "keep": true }`，新增附件用 asset ref。processing 状态返回 409，避免模型和编辑竞争。
+
+```json
+{
+  "text": "更新后的文字。",
+  "assets": [
+    { "blockId": "b5e3fc33-81c6-4c92-bad8-d69409ba43f1", "keep": true },
+    { "uploadIntentId": "d0bb3b2d-4427-4b4e-b898-9578615cbd03", "blockId": "ec6855b5-a06e-4136-8846-773a99ccd01f", "type": "audio" }
+  ]
+}
 ```
 
-result 为 Task 数组，包含 id、type、status、input、result、error、createdAt、updatedAt。
+服务端创建新 generation，清空受影响 semantic/understanding，状态经过 `updated → pending`。旧 job 的 generation/inputHash 不匹配时必须丢弃结果。
 
-## GET /api/contemplate/:id
+### `POST /api/records/:id/retry-processing`
 
-```bash
-curl --noproxy '*' --fail-with-body -sS "$FANTO_API/api/contemplate/$TASK_ID" \
-  -H "x-user-id: $FANTO_USER_ID"
+只能重试 `processing_failed` Record 的失败任务。可指定 block：
+
+```json
+{ "blockIds": ["7dd76c9d-1f75-4924-bca4-f4f5d8c25b09"] }
 ```
 
-不存在或用户不匹配返回 404/NOT_FOUND。成功时 result 是 Task；result.result 中可检查 workflowVersion、planningAttempts、plan、validation、execution、rewrites、skipped。planningAttempts 保存每次规划完整输出和诊断。
+省略 blockIds 则重试所有失败任务。非失败、未知或不属于当前 Record 的 block 返回 400。成功后状态为 `pending`。
 
-## POST /api/digest
+## 处理可见性
 
-兼容入口，运行与 /api/contemplate 相同的工作流，选择其中一个触发即可。
+`GET /api/records/:id` 中 `content.processing` 与 `blocks[].processing.tasks` 是处理进度的唯一 API 真相：
 
-```bash
-curl --noproxy '*' --fail-with-body -sS "$FANTO_API/api/digest" \
-  -H "x-user-id: $FANTO_USER_ID" -H 'Content-Type: application/json' \
-  --data-raw '{}'
-```
+- `pending`：已创建 job，尚未领取；
+- `processing`：worker 已领取；
+- `succeeded`：对应 `understanding` 已写入；
+- `failed`：包含 errorCode，可调用 retry；
+- 顶层 `processed`：全部 required task 成功；`processing_failed`：至少一项失败且不再运行。
 
-请求、成功响应与 /api/contemplate 相同，失败错误码为 DIGEST_FAILED。
+音频任务在 server worker 内部以 SSE 调用 `qwen3-asr-flash`。该流不会透传给 API 调用方，也不会把中间转写写入 Record；只有收到模型 `finish_reason=stop` 及 `data: [DONE]`、并得到非空转写后，才原子写入 audio understanding 与语义结果。
+
+## 停用接口
+
+`POST /api/contemplate`、`GET /api/contemplate/*`、`POST /api/digest` 均返回 `410/FEATURE_DISABLED`。本期没有 `/api/topics`、`/api/messages`、`/api/agent/stream`、视频或 Artifact/Suggestion API。
