@@ -20,72 +20,44 @@ export interface RecordsTable {
   user_id: string;
   source: string;
   content: string;
+  version: number;
   status: string;
   created_at: string;
   updated_at: string;
 }
 
-// ─── topics ─────────────────────────────────────────────────────
-
-export interface TopicsTable {
-  ext_data: Generated<string | null>;
+export interface UploadIntentsTable {
   id: string;
   user_id: string;
-  session_id: string;
-  title: string;
-  summary: string;
-  content: string;
-  tags: string;
-  pending_actions: string;
+  object_key: string;
+  mime_type: string;
+  bytes: number;
   status: string;
+  media_type: string;
+  media_id: string | null;
+  ext_data: string | null;
+  expires_at: string;
   created_at: string;
   updated_at: string;
 }
 
-// ─── record_topics ──────────────────────────────────────────────
-
-export interface RecordTopicsTable {
-  record_id: string;
-  topic_id: string;
-  relation: string;
-  created_at: string;
-}
-
-// ─── messages ───────────────────────────────────────────────────
-
-export interface MessagesTable {
-  id: Generated<number>;
-  user_id: string;
-  topic_id: string;
-  session_id: string;
-  role: string;
-  payload: string;
-  timestamp: number;
-}
-
-// ─── tasks ──────────────────────────────────────────────────────
-
-export interface TasksTable {
+export interface MediaAssetsTable {
   id: string;
   user_id: string;
-  type: string;
-  status: string;
-  input: string | null;
-  result: string | null;
-  error: string | null;
+  object_key: string;
+  media_type: string;
+  mime_type: string;
+  bytes: number;
+  ext_data: string | null;
   created_at: string;
   updated_at: string;
 }
-
-// ─── DB ─────────────────────────────────────────────────────────
 
 export interface DB {
   users: UsersTable;
   records: RecordsTable;
-  topics: TopicsTable;
-  record_topics: RecordTopicsTable;
-  messages: MessagesTable;
-  tasks: TasksTable;
+  upload_intents: UploadIntentsTable;
+  media_assets: MediaAssetsTable;
 }
 
 export type User = Selectable<UsersTable>;
@@ -94,16 +66,3 @@ export type NewUser = Insertable<UsersTable>;
 export type Record = Selectable<RecordsTable>;
 export type NewRecord = Insertable<RecordsTable>;
 export type RecordUpdate = Updateable<RecordsTable>;
-
-export type Topic = Selectable<TopicsTable>;
-export type NewTopic = Insertable<TopicsTable>;
-export type TopicUpdate = Updateable<TopicsTable>;
-
-export type RecordTopic = Selectable<RecordTopicsTable>;
-export type NewRecordTopic = Insertable<RecordTopicsTable>;
-
-export type Message = Selectable<MessagesTable>;
-export type NewMessage = Insertable<MessagesTable>;
-
-export type Task = Selectable<TasksTable>;
-export type NewTask = Insertable<TasksTable>;

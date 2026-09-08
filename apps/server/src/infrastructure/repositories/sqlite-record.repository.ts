@@ -1,135 +1,21 @@
-/** SQLite Record 仓库实现 */
-import type { Kysely } from "kysely";
-import type { DB } from "../../infrastructure/schema.js";
-import type { RecordRepository, CreateRecordInput } from "../../modules/record/record.repository.js";
-import type { Record, RecordStatus } from "../../modules/record/record.js";
+import { sql, type Kysely } from "kysely";
 import { randomUUID } from "node:crypto";
+import type { DB } from "../schema.js";
+import type { RecordRepository } from "../../modules/record/record.repository.js";
+import type { Record } from "../../modules/record/record.js";
+import type { RecordContent } from "@fanto/shared";
+import type { SaveRecordContent } from "../../domain/record-content.js";
 import { nowIso } from "../time.js";
 import { decodeRecordCursor } from "../../modules/record/record-cursor.js";
+const ext = (value: string | null) => value ? JSON.parse(value) as { [key: string]: unknown } : {};
 
 export class SqliteRecordRepository implements RecordRepository {
   constructor(private db: Kysely<DB>) {}
-
-  async findTopicLinks(userId: string, recordIds: string[]) {
-    if (recordIds.length === 0) return [];
-    return this.db.selectFrom("record_topics")
-      .innerJoin("records", "records.id", "record_topics.record_id")
-      .innerJoin("topics", "topics.id", "record_topics.topic_id")
-      .select(["record_topics.record_id as recordId", "topics.id", "topics.title", "topics.status"])
-      .where("records.user_id", "=", userId).where("topics.user_id", "=", userId)
-      .where("record_topics.record_id", "in", recordIds).distinct().orderBy("topics.id", "asc").execute();
-  }
-
-  async updateContent(id: string, userId: string, content: string): Promise<{ record: Record; changed: boolean } | "not_found" | "processing"> {
-    return this.db.transaction().execute(async (trx) => {
-      const row = await trx.selectFrom("records").selectAll().where("id", "=", id).where("user_id", "=", userId).executeTakeFirst();
-      if (!row) return "not_found";
-      if (row.status === "processing") return "processing";
-      if (row.content === content) return { record: this.toEntity(row), changed: false };
-      const updated = await trx.updateTable("records").set({ content, status: "updated", updated_at: nowIso() })
-        .where("id", "=", id).where("user_id", "=", userId).where("status", "!=", "processing")
-        .returningAll().executeTakeFirst();
-      return updated ? { record: this.toEntity(updated), changed: true } : "processing";
-    });
-  }
-
-  async create(input: CreateRecordInput): Promise<Record> {
-    const now = nowIso();
-    const id = randomUUID();
-    const row = {
-      id,
-      user_id: input.userId,
-      source: input.source ?? "home",
-      content: input.content,
-      status: "pending",
-      created_at: now,
-      updated_at: now,
-    };
-    await this.db.insertInto("records").values(row).execute();
-    return this.toEntity(row);
-  }
-
-  async findById(id: string): Promise<Record | null> {
-    const row = await this.db.selectFrom("records").selectAll().where("id", "=", id).executeTakeFirst();
-    return row ? this.toEntity(row) : null;
-  }
-
-  async createMany(inputs: CreateRecordInput[]): Promise<Record[]> {
-    if (inputs.length === 0) return [];
-    const now = nowIso();
-    const rows = inputs.map((input) => ({
-      id: randomUUID(),
-      user_id: input.userId,
-      source: input.source ?? "home",
-      content: input.content,
-      status: "pending",
-      created_at: now,
-      updated_at: now,
-    }));
-    // A single INSERT makes the batch atomic.
-    await this.db.insertInto("records").values(rows).execute();
-    return rows.map((row) => this.toEntity(row));
-  }
-
-  async findByUserId(userId: string, opts: { cursor?: string; topicId?: string; limit: number }): Promise<Record[]> {
-    let query = this.db.selectFrom("records").selectAll("records").where("records.user_id", "=", userId);
-    if (opts.topicId) {
-      query = query.where((eb) => eb.exists(
-        eb.selectFrom("record_topics")
-          .innerJoin("topics", "topics.id", "record_topics.topic_id")
-          .select("record_topics.record_id")
-          .whereRef("record_topics.record_id", "=", "records.id")
-          .where("record_topics.topic_id", "=", opts.topicId!)
-          .where("topics.user_id", "=", userId),
-      ));
-    }
-    if (opts.cursor) {
-      const cursor = decodeRecordCursor(opts.cursor);
-      query = query.where((eb) => cursor.id
-        ? eb.or([eb("records.created_at", "<", cursor.createdAt), eb.and([
-          eb("records.created_at", "=", cursor.createdAt), eb("records.id", "<", cursor.id),
-        ])])
-        : eb("records.created_at", "<", cursor.createdAt));
-    }
-    const rows = await query.orderBy("records.created_at", "desc").orderBy("records.id", "desc").limit(opts.limit).execute();
-    return rows.map((r) => this.toEntity(r));
-  }
-
-  async findProcessableByUserId(userId: string, opts: { statuses: RecordStatus[]; limit: number }): Promise<Record[]> {
-    const rows = await this.db
-      .selectFrom("records")
-      .selectAll()
-      .where("user_id", "=", userId)
-      .where("status", "in", opts.statuses)
-      .orderBy("created_at", "asc")
-      .limit(opts.limit)
-      .execute();
-    return rows.map((r) => this.toEntity(r));
-  }
-
-  async updateStatus(id: string, status: RecordStatus): Promise<void> {
-    await this.db.updateTable("records").set({ status, updated_at: nowIso() }).where("id", "=", id).execute();
-  }
-
-  async updateManyStatus(ids: string[], status: RecordStatus): Promise<void> {
-    if (ids.length === 0) return;
-    await this.db
-      .updateTable("records")
-      .set({ status, updated_at: nowIso() })
-      .where("id", "in", ids)
-      .execute();
-  }
-
-  private toEntity(row: any): Record {
-    return {
-      extData: row.ext_data ? JSON.parse(row.ext_data) : null,
-      id: row.id,
-      userId: row.user_id,
-      source: row.source,
-      content: row.content,
-      status: row.status,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
-  }
+  async create(input: { userId: string; source?: string; value: SaveRecordContent }): Promise<Record | "audio_pending" | "invalid_media"> { return this.db.transaction().execute(async trx => { const blocks = await this.blocks(trx, input.userId, input.value); if (typeof blocks === "string") return blocks; const now = nowIso(); const row = { id: randomUUID(), user_id: input.userId, source: input.source ?? "home", content: JSON.stringify({ text: input.value.text, blocks }), version: 1, status: "active", created_at: now, updated_at: now }; await trx.insertInto("records").values(row).execute(); await this.link(trx, input.userId, input.value.media.map(m => m.mediaId), row.id); return this.toEntity(row); }); }
+  async findById(id: string) { const row = await this.db.selectFrom("records").selectAll().where("id", "=", id).executeTakeFirst(); return row ? this.toEntity(row) : null; }
+  async findByUserId(userId: string, opts: { cursor?: string; limit: number }) { let query = this.db.selectFrom("records").selectAll().where("user_id", "=", userId); if (opts.cursor) { const c = decodeRecordCursor(opts.cursor); const createdAt = c.createdAt; const id = c.id; if (createdAt && id) query = query.where(eb => eb.or([eb("created_at", "<", createdAt), eb.and([eb("created_at", "=", createdAt), eb("id", "<", id)])])); } return (await query.orderBy("created_at", "desc").orderBy("id", "desc").limit(opts.limit).execute()).map(row => this.toEntity(row)); }
+  async updateContent(id: string, userId: string, input: { value: SaveRecordContent; expectedVersion: number }): Promise<Record | "not_found" | "conflict" | "audio_pending" | "invalid_media"> { return this.db.transaction().execute(async trx => { const old = await trx.selectFrom("records").selectAll().where("id", "=", id).where("user_id", "=", userId).executeTakeFirst(); if (!old) return "not_found"; if (old.version !== input.expectedVersion) return "conflict"; const blocks = await this.blocks(trx, userId, input.value, id); if (typeof blocks === "string") return blocks; const oldIds = (JSON.parse(old.content) as RecordContent).blocks.map(b => b.mediaId); const newIds = input.value.media.map(m => m.mediaId); const now = nowIso(); const row = await trx.updateTable("records").set({ content: JSON.stringify({ text: input.value.text, blocks }), version: sql<number>`version + 1`, updated_at: now }).where("id", "=", id).returningAll().executeTakeFirstOrThrow(); await this.link(trx, userId, newIds, id); for (const mediaId of oldIds.filter(mediaId => !newIds.includes(mediaId))) { const media = await trx.selectFrom("media_assets").selectAll().where("id", "=", mediaId).where("user_id", "=", userId).executeTakeFirst(); if (media) await trx.updateTable("media_assets").set({ ext_data: JSON.stringify({ ...ext(media.ext_data), recordId: null }), updated_at: now }).where("id", "=", mediaId).execute(); } return this.toEntity(row); }); }
+  private async blocks(trx: Kysely<DB>, userId: string, value: SaveRecordContent, currentRecordId?: string): Promise<RecordContent["blocks"] | "audio_pending" | "invalid_media"> { const ids = value.media.map(m => m.mediaId); const assets = ids.length ? await trx.selectFrom("media_assets").selectAll().where("user_id", "=", userId).where("id", "in", ids).execute() : []; if (assets.length !== ids.length || assets.some(a => { const recordId = ext(a.ext_data).recordId; return recordId && recordId !== currentRecordId; })) return "invalid_media"; const byId = new Map(assets.map(a => [a.id, a])); const blocks: RecordContent["blocks"] = []; for (const item of value.media) { const a = byId.get(item.mediaId)!; if (a.media_type === "image") blocks.push({ mediaId: item.mediaId }); else { const audio = ext(a.ext_data).audio as { transcript?: string; language?: string | null; emotion?: string | null } | null; if (!audio?.transcript) return "audio_pending"; blocks.push({ mediaId: item.mediaId, transcript: item.transcript ?? audio.transcript, language: audio.language ?? null, emotion: audio.emotion ?? null }); } } return blocks; }
+  private async link(trx: Kysely<DB>, userId: string, ids: string[], recordId: string) { for (const id of ids) { const media = await trx.selectFrom("media_assets").selectAll().where("id", "=", id).where("user_id", "=", userId).executeTakeFirstOrThrow(); await trx.updateTable("media_assets").set({ ext_data: JSON.stringify({ ...ext(media.ext_data), recordId }), updated_at: nowIso() }).where("id", "=", id).execute(); } }
+  private toEntity(row: any): Record { return { extData: null, id: row.id, userId: row.user_id, source: row.source, content: JSON.parse(row.content), version: row.version, status: "active", createdAt: row.created_at, updatedAt: row.updated_at }; }
 }

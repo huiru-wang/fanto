@@ -1,12 +1,14 @@
-/** Record 实体 */
-export type RecordStatus = "pending" | "processing" | "organized" | "skipped" | "updated";
+import type { RecordContent } from "@fanto/shared";
+
+export type RecordStatus = "active";
 
 export interface Record {
   extData: { [key: string]: unknown } | null;
   id: string;
   userId: string;
   source: string;
-  content: string;
+  content: RecordContent;
+  version: number;
   status: RecordStatus;
   createdAt: string;
   updatedAt: string;
