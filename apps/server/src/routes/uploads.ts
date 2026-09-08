@@ -1,21 +1,48 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import { transcribeAudio } from "../infrastructure/ai.js";
+import { streamAudioTranscription } from "../application/media/transcribe-audio.js";
 import type { OssStorage } from "../infrastructure/oss-storage.js";
 import type { SqliteMediaRepository } from "../infrastructure/repositories/sqlite-media.repository.js";
 
-const input = z.object({ fileName: z.string().min(1).max(200), mediaType: z.enum(["image", "audio"]), mimeType: z.string(), bytes: z.number().int().positive().max(50_000_000) }).strict();
+const createInput = z.object({ fileName: z.string().min(1).max(200), mediaType: z.enum(["image", "audio"]), mimeType: z.string(), bytes: z.number().int().positive().max(50_000_000) }).strict();
 const capture = z.object({ width: z.number().int().positive().optional(), height: z.number().int().positive().optional(), durationMs: z.number().int().positive().optional() }).strict().optional();
 const mimes = { image: ["image/jpeg", "image/png", "image/webp"], audio: ["audio/mp4", "audio/mpeg", "audio/wav"] } as const;
-const user = (request: Request) => request.headers.get("x-user-id") ?? "default-user";
+const userId = (request: Request) => request.headers.get("x-user-id") ?? "default-user";
 
-export function createUploadRoutes(media: SqliteMediaRepository, oss: OssStorage, ai: { apiKey: string; baseUrl: string }): Hono {
-  const app = new Hono(); const running = new Map<string, AbortController>();
-  app.post("/intents", async c => { const value = input.safeParse(await c.req.json().catch(() => null)); if (!value.success || !mimes[value.data!.mediaType].includes(value.data!.mimeType as never)) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: "Unsupported media" }, 400); const userId = user(c.req.raw); const file = value.data.fileName.replace(/[^a-zA-Z0-9._-]/g, "_"); const intent = await media.createIntent({ userId, objectKey: `users/${userId}/uploads/${crypto.randomUUID()}/${file}`, mediaType: value.data.mediaType, mimeType: value.data.mimeType, bytes: value.data.bytes, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() }); return c.json({ result: { intentId: intent.id, uploadUrl: oss.putUrl(intent.object_key), expiresAt: intent.expires_at }, success: true, errorCode: null, errorMsg: null }, 201); });
-  app.get("/intents/:id", async c => { const intent = await media.getIntent(c.req.param("id"), user(c.req.raw)); if (!intent) return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Upload intent not found" }, 404); return c.json({ result: { intentId: intent.id, status: intent.status, mediaId: intent.media_id, expiresAt: intent.expires_at }, success: true, errorCode: null, errorMsg: null }); });
-  app.post("/intents/:id/complete", async c => { const userId = user(c.req.raw); const value = z.object({ capture }).strict().safeParse(await c.req.json().catch(() => ({}))); if (!value.success) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: "Invalid capture" }, 400); const intent = await media.getIntent(c.req.param("id"), userId); if (!intent) return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Upload intent not found" }, 404); try { const head: any = await oss.head(intent.object_key); const size = Number(head.res?.headers?.["content-length"] ?? head.res?.headers?.["Content-Length"]); const mime = head.res?.headers?.["content-type"] ?? head.res?.headers?.["Content-Type"]; if (size !== intent.bytes || mime !== intent.mime_type) return c.json({ success: false, errorCode: "UPLOAD_MISMATCH", errorMsg: "Uploaded object does not match intent" }, 409); const result = await media.completeIntent(intent.id, userId, { width: value.data.capture?.width ?? null, height: value.data.capture?.height ?? null, durationMs: value.data.capture?.durationMs ?? null }); if (!result) return c.json({ success: false, errorCode: "UPLOAD_INCOMPLETE", errorMsg: "Upload cannot be completed" }, 409); return c.json({ result, success: true, errorCode: null, errorMsg: null }); } catch { return c.json({ success: false, errorCode: "UPLOAD_INCOMPLETE", errorMsg: "Object was not uploaded" }, 409); } });
-  app.post("/intents/:id/transcription", async c => { const userId = user(c.req.raw); const intent = await media.getIntent(c.req.param("id"), userId); if (!intent || !intent.media_id || intent.media_type !== "audio") return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Audio upload not found" }, 404); const asset = await media.findMedia(intent.media_id, userId); if (!asset) return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Audio upload not found" }, 404); if (running.has(intent.id)) return c.json({ success: false, errorCode: "TRANSCRIPTION_ACTIVE", errorMsg: "Transcription already active" }, 409); return streamSSE(c, async stream => { const controller = new AbortController(); running.set(intent.id, controller); try { const result = await transcribeAudio(oss.readUrl(asset.objectKey), ai.apiKey, ai.baseUrl); if (controller.signal.aborted) return; await stream.writeSSE({ event: "delta", data: JSON.stringify({ text: result.transcript }) }); await media.writeAudio(asset.id, userId, result); await stream.writeSSE({ event: "completed", data: JSON.stringify(result) }); } catch (error) { if (!controller.signal.aborted) await stream.writeSSE({ event: "failed", data: JSON.stringify({ message: error instanceof Error ? error.message : "Transcription failed" }) }); } finally { running.delete(intent.id); } }); });
-  app.delete("/intents/:id", async c => { running.get(c.req.param("id"))?.abort(); const deleted = await media.deleteIntent(c.req.param("id"), user(c.req.raw)); if (!deleted) return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Upload intent not found" }, 404); try { await oss.remove(deleted.objectKey); } catch (error) { console.error("[uploads] object cleanup failed", error); } return c.body(null, 204); });
+export function createUploadRoutes(media: SqliteMediaRepository, oss: OssStorage, ai: { apiKey: string; baseUrl: string }) {
+  const app = new Hono(); const active = new Set<string>();
+  app.post("/intents", async c => {
+    const input = createInput.safeParse(await c.req.json().catch(() => null));
+    if (!input.success || !mimes[input.data!.mediaType].includes(input.data!.mimeType as never)) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: "Unsupported media" }, 400);
+    const currentUser = userId(c.req.raw); const fileName = input.data.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const intent = await media.createIntent({ userId: currentUser, objectKey: `users/${currentUser}/uploads/${crypto.randomUUID()}/${fileName}`, mediaType: input.data.mediaType, mimeType: input.data.mimeType, bytes: input.data.bytes, expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() });
+    return c.json({ success: true, result: { intentId: intent.id, uploadUrl: oss.putUrl(intent.object_key), expiresAt: intent.expires_at }, errorCode: null, errorMsg: null }, 201);
+  });
+  app.post("/intents/:id/complete", async c => {
+    const currentUser = userId(c.req.raw); const input = z.object({ capture }).strict().safeParse(await c.req.json().catch(() => ({})));
+    if (!input.success) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: "Invalid capture" }, 400);
+    const intent = await media.getIntent(c.req.param("id"), currentUser);
+    if (!intent) return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Upload intent not found" }, 404);
+    try {
+      const head: any = await oss.head(intent.object_key); const bytes = Number(head.res?.headers?.["content-length"] ?? head.res?.headers?.["Content-Length"]); const mimeType = head.res?.headers?.["content-type"] ?? head.res?.headers?.["Content-Type"];
+      if (bytes !== intent.bytes || mimeType !== intent.mime_type) return c.json({ success: false, errorCode: "UPLOAD_MISMATCH", errorMsg: "Uploaded object does not match intent" }, 409);
+      const result = await media.completeIntent(intent.id, currentUser, { width: input.data.capture?.width ?? null, height: input.data.capture?.height ?? null, durationMs: input.data.capture?.durationMs ?? null });
+      if (!result) return c.json({ success: false, errorCode: "UPLOAD_INCOMPLETE", errorMsg: "Upload cannot be completed" }, 409);
+      return c.json({ success: true, result, errorCode: null, errorMsg: null });
+    } catch { return c.json({ success: false, errorCode: "UPLOAD_INCOMPLETE", errorMsg: "Object was not uploaded" }, 409); }
+  });
+  app.post("/intents/:id/transcription", async c => {
+    const currentUser = userId(c.req.raw); const intent = await media.getIntent(c.req.param("id"), currentUser);
+    if (!intent?.media_id || intent.media_type !== "audio") return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Audio upload not found" }, 404);
+    if (active.has(intent.id)) return c.json({ success: false, errorCode: "TRANSCRIPTION_ACTIVE", errorMsg: "Transcription already active" }, 409);
+    return streamSSE(c, async stream => {
+      active.add(intent.id);
+      try {
+        const result = await streamAudioTranscription({ mediaId: intent.media_id!, userId: currentUser, media, oss, apiKey: ai.apiKey, baseUrl: ai.baseUrl, onDelta: text => stream.writeSSE({ event: "delta", data: JSON.stringify({ text }) }) });
+        await stream.writeSSE({ event: "completed", data: JSON.stringify({ transcript: result.transcript || null }) });
+      } catch (error) { await stream.writeSSE({ event: "failed", data: JSON.stringify({ message: error instanceof Error ? error.message : "Transcription failed" }) }); } finally { active.delete(intent.id); }
+    });
+  });
   return app;
 }

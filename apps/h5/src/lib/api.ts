@@ -41,5 +41,5 @@ export function useList<T extends RecordReadDto | TopicDto>(kind: 'records' | 't
 }
 export function useRecord(id: string) { return useQuery({ queryKey: ['records', 'detail', id], queryFn: () => request<RecordReadDto>(`/records/${encodeURIComponent(id)}`), enabled: !!id }); }
 export function useTopic(id: string) { return useQuery({ queryKey: ['topics', 'detail', id], queryFn: () => request<TopicDto>(`/topics/${encodeURIComponent(id)}`), enabled: !!id }); }
-export const createRecord = (content: string) => request<RecordDto>('/records', 'POST', { content, source: 'home' });
-export const updateRecord = (id: string, content: string) => request<RecordDto>(`/records/${encodeURIComponent(id)}`, 'PATCH', { content });
+export const createRecord = (text: string) => request<RecordDto>('/records', 'POST', { text, media: [], source: 'home' });
+export const updateRecord = (id: string, text: string, record: RecordReadDto) => request<RecordDto>(`/records/${encodeURIComponent(id)}`, 'PATCH', { text, media: record.content.blocks.map(block => ({ mediaId: block.mediaId, ...('transcript' in block && block.transcript ? { transcript: block.transcript } : {}) })), expectedVersion: record.version });

@@ -1,13 +1,20 @@
 import { serve } from "@hono/node-server";
-import { loadEnv, loadConfig } from "./env.js";
+import { loadConfig, loadEnv } from "./env.js";
 import { createDatabase, runMigrations } from "./infrastructure/database.js";
-import { createApp } from "./server.js";
+import { QwenImageUnderstanding } from "./infrastructure/ai/image-understanding.js";
+import { LocalMediaQueue } from "./infrastructure/local-media-queue.js";
+import { OssStorage } from "./infrastructure/oss-storage.js";
+import { SqliteMediaRepository } from "./infrastructure/repositories/sqlite-media.repository.js";
 import { SqliteRecordRepository } from "./infrastructure/repositories/sqlite-record.repository.js";
 import { nowIso } from "./infrastructure/time.js";
-import { SqliteMediaRepository } from "./infrastructure/repositories/sqlite-media.repository.js";
-import { OssStorage } from "./infrastructure/oss-storage.js";
+import { registerImageUnderstandingListener } from "./listeners/image-understanding.listener.js";
+import { createApp } from "./server.js";
+
 loadEnv(); const config = loadConfig(); const db = createDatabase(config.sqlitePath); await runMigrations(db);
 if (!(await db.selectFrom("users").select("id").where("id", "=", "default-user").executeTakeFirst())) await db.insertInto("users").values({ id: "default-user", wx_openid: "default", created_at: nowIso() }).execute();
 const oss = new OssStorage({ region: process.env.OSS_REGION ?? "oss-cn-hangzhou", bucket: process.env.OSS_BUCKET ?? "", accessKeyId: process.env.OSS_ACCESS_KEY_ID ?? "", accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET ?? "" });
-const server = serve({ fetch: createApp(new SqliteRecordRepository(db), new SqliteMediaRepository(db), oss, { apiKey: process.env.DASHSCOPE_API_KEY ?? "", baseUrl: process.env.DASHSCOPE_BASE_URL ?? "https://dashscope.aliyuncs.com/compatible-mode/v1" }).fetch, port: config.port, hostname: config.host });
-console.log(`[main] Server listening on http://${config.host}:${config.port}`); const shutdown = async () => { server.close(); await db.destroy(); process.exit(0); }; process.on("SIGINT", shutdown); process.on("SIGTERM", shutdown);
+const records = new SqliteRecordRepository(db); const media = new SqliteMediaRepository(db); const queue = new LocalMediaQueue(); const ai = { apiKey: process.env.DASHSCOPE_API_KEY ?? "", baseUrl: process.env.DASHSCOPE_BASE_URL ?? "https://ws-2gkw6cbbhgg7bqz5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1" };
+registerImageUnderstandingListener(queue, records, media, oss, new QwenImageUnderstanding(ai.apiKey, ai.baseUrl));
+const server = serve({ fetch: createApp(records, media, queue, oss, ai).fetch, port: config.port, hostname: config.host });
+console.log(`[main] Server listening on http://${config.host}:${config.port}`);
+const shutdown = async () => { server.close(); await db.destroy(); process.exit(0); }; process.on("SIGINT", shutdown); process.on("SIGTERM", shutdown);
