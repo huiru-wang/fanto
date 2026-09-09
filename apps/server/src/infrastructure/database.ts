@@ -9,6 +9,7 @@ import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { DB } from "./schema.js";
+import { logError, logInfo, logWarn } from "./logger.js";
 
 export function createDatabase(sqlitePath: string): Kysely<DB> {
   const db = new Database(sqlitePath);
@@ -19,10 +20,10 @@ export function createDatabase(sqlitePath: string): Kysely<DB> {
   try {
     sqliteVec.load(db);
     const version = db.prepare("select vec_version() as version").get() as { version: string };
-    console.log(`[database] sqlite-vec loaded: ${version.version}`);
+    logInfo("database", "sqlite-vec loaded", { version: version.version });
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown error";
-    console.warn(`[database] sqlite-vec unavailable: ${message}`);
+    logWarn("database", "sqlite-vec unavailable", { message });
   }
 
   return new Kysely<DB>({
@@ -55,9 +56,9 @@ export async function runMigrations(kyselyDb: Kysely<DB>) {
   if (results) {
     for (const r of results) {
       if (r.status === "Success") {
-        console.log(`  ✓ migration ${r.migrationName}`);
+        logInfo("database", "Migration completed", { migration: r.migrationName });
       } else if (r.status === "Error") {
-        console.error(`  ✗ migration ${r.migrationName} failed`);
+        logError("database", "Migration failed", { migration: r.migrationName });
       }
     }
   }

@@ -1,38 +1,48 @@
 # Record 与媒体 HTTP API
 
-所有 `/api/*` 接口通过 Cookie/Session 鉴权；本地开发可传 `x-user-id`。JSON 响应为 `{success,result?,errorCode,errorMsg}`。客户端不可提交 OSS object key、图片描述、MIME 或字节数复核值。
+所有 `/api/*` 接口需要 `x-user-id`，值为 1–128 位字母、数字、`_` 或 `-`，首字符为字母或数字。响应统一为 `{success,result?,errorCode,errorMsg}`。OSS object key 不对客户端暴露。
 
-## 上传
+数据库中每张表的 `id` 都是内部自增主键，绝不作为业务标识或接口参数。业务标识分别为 `users.user_id`、`records.record_id`、`media_assets.media_id`。
 
-### `POST /api/uploads/intents`
+## 媒体上传
 
-Headers：`Content-Type: application/json`、认证头。请求体：
+### `POST /api/uploads`
+
+Headers：`Content-Type: application/json`、`x-user-id`。请求体：
 
 ```json
 {"fileName":"photo.png","mediaType":"image","mimeType":"image/png","bytes":2184278}
 ```
 
-响应 `201`：`{"success":true,"result":{"intentId":"uuid","uploadUrl":"https://…","expiresAt":"ISO-8601"},"errorCode":null,"errorMsg":null}`。图片 MIME 为 JPEG/PNG/WebP，音频 MIME 为 MP4/MP3/WAV；错误返回 `400 INVALID_INPUT`。
-
-浏览器使用 `uploadUrl` 直接对 OSS 执行 PUT，并使用文件的 `Content-Type`。该 URL 是短期私有签名地址，不是应用 API。
-
-### `POST /api/uploads/intents/:id/complete`
-
-Headers：`Content-Type: application/json`、认证头。请求体可为空，或 `{"capture":{"width":1536,"height":1024}}`。
-
-服务端通过 HEAD 复核对象 MIME 与字节数。成功 `200`：
+响应 `201`：
 
 ```json
-{"success":true,"result":{"mediaId":"uuid","mediaType":"image","mimeType":"image/png","bytes":2184278},"errorCode":null,"errorMsg":null}
+{"success":true,"result":{"mediaId":"uuid","uploadUrl":"https://…","expiresAt":"2026-09-09T00:00:00.000Z"},"errorCode":null,"errorMsg":null}
 ```
 
-不存在返回 `404 NOT_FOUND`；未上传或不匹配返回 `409 UPLOAD_INCOMPLETE` 或 `409 UPLOAD_MISMATCH`。
+服务端直接创建一条 `media_assets(status=uploading)`。客户端以响应中的 `uploadUrl` PUT 到 OSS，且必须带与请求一致的 `Content-Type`。支持图片 JPEG/PNG/WebP，音频 MP4/MP3/WAV。
 
-### `POST /api/uploads/intents/:id/transcription`
+### `POST /api/uploads/:mediaId/complete`
 
-Headers：`Accept: text/event-stream`、认证头。请求体：无。仅完成上传的音频可调用。
+Headers：`Content-Type: application/json`、`x-user-id`。请求体可为空，也可提供采集信息：
 
-响应 `200 text/event-stream`：
+```json
+{"capture":{"width":1536,"height":1024}}
+```
+
+服务端通过 OSS HEAD 校验字节数和 MIME，成功后将媒体置为 `ready`。响应 `200`：
+
+```json
+{"success":true,"result":{"mediaId":"uuid","mediaType":"image","mimeType":"image/png","bytes":2184278,"status":"ready"},"errorCode":null,"errorMsg":null}
+```
+
+不存在返回 `404 NOT_FOUND`；对象未上传返回 `409 UPLOAD_INCOMPLETE`；MIME 或字节数不一致返回 `409 UPLOAD_MISMATCH`。
+
+### `POST /api/uploads/:mediaId/transcription`
+
+Headers：`Accept: text/event-stream`、`x-user-id`。请求体：无。仅限 `ready` 的音频媒体。
+
+响应为 SSE：
 
 ```text
 event: delta
@@ -42,40 +52,38 @@ event: completed
 data: {"transcript":"今天天气很好"}
 ```
 
-失败发送 `failed` 事件；同一音频已有活动请求返回 `409 TRANSCRIPTION_ACTIVE`。转写只用于编辑页只读预览，不写入数据库；没有文本的音频也可以保存。
+转写只用于编辑页只读预览，不写入媒体或 Record。同一媒体已有活动请求返回 `409 TRANSCRIPTION_ACTIVE`。
 
 ## Record
 
 ### `POST /api/records`
 
-Headers：`Content-Type: application/json`、认证头。请求体：
+Headers：`Content-Type: application/json`、`x-user-id`。请求体：
 
 ```json
-{"text":"傍晚散步","media":[{"mediaId":"image-uuid"},{"mediaId":"audio-uuid","transcript":"风有点大"}],"source":"home"}
+{"text":"傍晚散步","media":[{"mediaId":"image-uuid"},{"mediaId":"audio-uuid"}],"source":"home"}
 ```
 
-文字可为空，但文字与媒体不可同时为空。音频 `transcript` 是预览文本的可选快照，用户界面不提供编辑能力。成功 `201` 返回完整 `RecordDto`；媒体非法返回 `400 INVALID_MEDIA`。保存成功后，所有尚无 description 的图片会进入进程内 queue，图片理解失败不改变此响应。
+`text` 可以为空，但文本或音频至少存在一个；图片只能作为可选附件，因此纯图片返回 `400 INVALID_CONTENT`。`media` 仅传 `mediaId`，服务端验证该资产归属当前用户、已 `ready` 且未被其他 Record 使用，并从资产的 `media_type` 生成 Record block：`{type:"image",mediaId}` 或 `{type:"audio",mediaId}`。非法媒体返回 `400 INVALID_MEDIA`。
+
+成功 `201` 返回完整 Record DTO。保存后，所有 `type:"image"` 且无 description 的 block 会进入进程内图片 queue；图片理解失败只记录日志，不影响保存结果，也不重试。
 
 ### `PATCH /api/records/:id`
 
-Headers：`Content-Type: application/json`、认证头。请求体与创建相同，额外要求 `expectedVersion`：
+Headers：`Content-Type: application/json`、`x-user-id`。请求体与创建相同，且必须带 `expectedVersion`：
 
 ```json
-{"expectedVersion":1,"text":"更新文字","media":[{"mediaId":"image-uuid"}]}
+{"expectedVersion":1,"text":"更新文字","media":[{"mediaId":"audio-uuid"}]}
 ```
 
-成功 `200` 返回更新 DTO。版本不匹配返回 `409 VERSION_CONFLICT`，`result` 是当前 Record；不存在返回 `404 NOT_FOUND`。
+成功 `200` 返回 Record DTO；版本冲突返回 `409 VERSION_CONFLICT` 并携带当前 Record；不存在返回 `404 NOT_FOUND`。
 
-### `GET /api/records?cursor=&limit=20` 与 `GET /api/records/:id`
+### `GET /api/records?cursor=&limit=20`、`GET /api/records/:id`
 
-Headers：认证头。请求体：无。列表按 `created_at,id` 复合游标倒序分页，返回 `{data,hasMore,nextCursor,pageSize}`；详情返回完整 `RecordDto`。无效 cursor 返回 `400 INVALID_CURSOR`，无权限或不存在统一 `404 NOT_FOUND`。
-
-DTO 的媒体数组按 block 原顺序 hydrate：图片是 `{id,type:"image",url,description}`；音频是 `{id,type:"audio",url,durationMs,transcriptPreview}`。图片 description 会在保存后由 queue listener 异步补全；若 task 因 Record 版本变化或图片移除而失效，则不会回写。
+Headers：`x-user-id`。无请求体。列表按 `created_at,record_id` 复合游标倒序返回 `{data,hasMore,nextCursor,pageSize}`；详情返回完整 Record DTO。图片媒体 DTO 为 `{mediaId,type:"image",url,description}`；音频为 `{mediaId,type:"audio",url,durationMs}`。
 
 ## 媒体读取
 
-### `GET /api/media/:id`
+### `GET /api/media/:mediaId`
 
-Headers：认证头；音频可带 `Range: bytes=0-`。请求体：无。
-
-鉴权成功后响应 `302` 到短期私有 OSS URL；无权或不存在统一返回 `404 NOT_FOUND`。接口不返回 object key。
+Headers：`x-user-id`；音频可带 `Range: bytes=0-`。无请求体。成功响应 `302` 到短期私有 OSS URL；无权限或不存在统一返回 `404 NOT_FOUND`。

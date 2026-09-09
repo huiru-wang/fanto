@@ -28,7 +28,7 @@ export function loadEnv(path = ".env") {
       if (eq === -1) continue;
       const key = trimmed.slice(0, eq).trim();
       const val = trimmed.slice(eq + 1).trim();
-      if (!process.env[key]) process.env[key] = val;
+      process.env[key] = val;
     }
   } catch {
     /* .env 不存在则跳过 */

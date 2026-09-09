@@ -7,7 +7,8 @@ import type { Generated, Insertable, Selectable, Updateable } from "kysely";
 // ─── users ──────────────────────────────────────────────────────
 
 export interface UsersTable {
-  id: string;
+  id: Generated<number>;
+  user_id: string;
   wx_openid: string;
   created_at: string;
 }
@@ -16,7 +17,8 @@ export interface UsersTable {
 
 export interface RecordsTable {
   ext_data: Generated<string | null>;
-  id: string;
+  id: Generated<number>;
+  record_id: string;
   user_id: string;
   source: string;
   content: string;
@@ -26,29 +28,26 @@ export interface RecordsTable {
   updated_at: string;
 }
 
-export interface UploadIntentsTable {
-  id: string;
+export interface MediaAssetsTable {
+  id: Generated<number>;
+  media_id: string;
   user_id: string;
   object_key: string;
+  media_type: string;
   mime_type: string;
   bytes: number;
   status: string;
-  media_type: string;
-  media_id: string | null;
   ext_data: string | null;
-  expires_at: string;
   created_at: string;
   updated_at: string;
 }
 
-export interface MediaAssetsTable {
-  id: string;
+export interface MessagesTable {
+  id: Generated<number>;
   user_id: string;
-  object_key: string;
-  media_type: string;
-  mime_type: string;
-  bytes: number;
-  ext_data: string | null;
+  session_id: string;
+  role: string;
+  payload: string;
   created_at: string;
   updated_at: string;
 }
@@ -56,8 +55,8 @@ export interface MediaAssetsTable {
 export interface DB {
   users: UsersTable;
   records: RecordsTable;
-  upload_intents: UploadIntentsTable;
   media_assets: MediaAssetsTable;
+  messages: MessagesTable;
 }
 
 export type User = Selectable<UsersTable>;

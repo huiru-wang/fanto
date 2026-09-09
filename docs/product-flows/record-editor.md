@@ -1,37 +1,34 @@
 # Record 编辑页流程
 
-编辑页支持纯文本、图文、纯音频、图音。选择文件后立即使用 Blob URL 本地预览；前端取得短期 PUT URL 后直接上传私有 OSS，complete 成功才得到 `mediaId`。
+Record 的正文是文本和音频至少其一；图片仅为可选附件。允许文本、音频、文本+音频，以及上述任意组合附带图片；不允许纯图片。转写是音频预览，不可编辑且不保存。
 
 ```mermaid
 sequenceDiagram
   actor U as 用户
   participant C as 编辑页
   participant API as 服务端
+  participant M as media_assets
   participant OSS as 私有 OSS
   participant Q as 图片 queue
   participant L as 图片 listener
-  participant V as Qwen3-VL-Flash
 
-  U->>C: 选择图片或结束录音
-  C->>C: Blob 本地预览
-  C->>API: 创建 intent、取得 PUT URL
-  C->>OSS: 直传文件
-  C->>API: complete
-  API-->>C: mediaId
-  opt 音频
-    C->>API: transcription SSE
-    API-->>C: 只读 delta / completed 文本预览
+  U->>C: 选择图片或录音
+  C->>API: POST /api/uploads
+  API->>M: 创建 mediaId, uploading
+  API-->>C: mediaId + PUT URL
+  C->>OSS: 直传，使用相同 Content-Type
+  C->>API: POST /api/uploads/:mediaId/complete
+  API->>OSS: HEAD 校验
+  API->>M: status=ready
+  opt 音频预览
+    C->>API: POST /api/uploads/:mediaId/transcription
+    API-->>C: SSE delta / completed
   end
-  U->>C: 保存
-  C->>API: text + 有序 mediaId + 可选 transcript
-  API-->>C: Record
-  API->>Q: 图片 task
-  Q->>L: image_understanding task
-  L->>V: 短期私有图片 URL + 客观描述提示词
-  V-->>L: description
-  L->>API: 按 recordId + mediaId + version 条件回写
+  C->>API: 保存 text + 有序 mediaId
+  API->>M: 校验 owner、ready、media_type
+  API-->>C: Record，带明确 type block
+  API->>Q: 只发布图片 task
+  Q->>L: image_understanding
 ```
 
-音频转写不写入媒体资产；没有文本仍可保存。保存后的图片描述可能稍后才在详情或列表中出现。图片 listener 只描述画面直接可见的主体、场景、动作和文字，不推断身份、关系、情绪或背景。
-
-Record 每次用户保存会递增版本。若图片任务执行期间用户修改或移除了该图片，旧 task 因版本或媒体不匹配而直接丢弃，绝不覆盖新内容。queue 为进程内队列：保存成功不受图片模型失败影响；进程重启前尚未消费的图片 task 不会自动恢复。编辑态取消和未保存媒体清理不在当前模块范围。
+同一 `mediaId` 贯穿创建上传、确认上传与音频转写。保存时服务端不接受客户端声称的媒体类型，而是从 `media_assets.media_type` 写入 block。图片理解失败仅写入 `logs/service.log`，不改变 Record，不重试或补偿。
