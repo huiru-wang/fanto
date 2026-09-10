@@ -52,7 +52,7 @@ event: completed
 data: {"transcript":"今天天气很好"}
 ```
 
-转写只用于编辑页只读预览，不写入媒体或 Record。同一媒体已有活动请求返回 `409 TRANSCRIPTION_ACTIVE`。
+转写结果写入该音频 media 的 `extData.asr`，不写入 Record 的 `text`。同一媒体已有活动请求返回 `409 TRANSCRIPTION_ACTIVE`；已成功转写的媒体直接返回已保存结果。
 
 ## Record
 
@@ -64,7 +64,7 @@ Headers：`Content-Type: application/json`、`x-user-id`。请求体：
 {"text":"傍晚散步","media":[{"mediaId":"image-uuid"},{"mediaId":"audio-uuid"}],"source":"home"}
 ```
 
-`text` 可以为空，但文本或音频至少存在一个；图片只能作为可选附件，因此纯图片返回 `400 INVALID_CONTENT`。`media` 仅传 `mediaId`，服务端验证该资产归属当前用户、已 `ready` 且未被其他 Record 使用，并从资产的 `media_type` 生成 Record block：`{type:"image",mediaId}` 或 `{type:"audio",mediaId}`。非法媒体返回 `400 INVALID_MEDIA`。
+`text` 可以为空，但文本或音频至少存在一个；图片只能作为可选附件，因此纯图片返回 `400 INVALID_CONTENT`。`text` 仅保存用户输入，不包含 ASR 转写；音频的 ASR 文本属于对应 media 资产的独立数据。`media` 仅传 `mediaId`，服务端验证该资产归属当前用户、已 `ready` 且未被其他 Record 使用，并从资产的 `media_type` 生成 Record block：`{type:"image",mediaId}` 或 `{type:"audio",mediaId}`。非法媒体返回 `400 INVALID_MEDIA`。
 
 成功 `201` 返回完整 Record DTO。保存后，所有 `type:"image"` 且无 description 的 block 会进入进程内图片 queue；图片理解失败只记录日志，不影响保存结果，也不重试。
 
@@ -80,7 +80,7 @@ Headers：`Content-Type: application/json`、`x-user-id`。请求体与创建相
 
 ### `GET /api/records?cursor=&limit=20`、`GET /api/records/:id`
 
-Headers：`x-user-id`。无请求体。列表按 `created_at,record_id` 复合游标倒序返回 `{data,hasMore,nextCursor,pageSize}`；详情返回完整 Record DTO。图片媒体 DTO 为 `{mediaId,type:"image",url,description}`；音频为 `{mediaId,type:"audio",url,durationMs}`。
+Headers：`x-user-id`。无请求体。列表按 `created_at,record_id` 复合游标倒序返回 `{data,hasMore,nextCursor,pageSize}`；详情返回完整 Record DTO。图片媒体 DTO 为 `{mediaId,type:"image",url,description}`；音频为 `{mediaId,type:"audio",url,durationMs,asr}`，其中 `asr` 为独立的 `{status,transcript}` 或 `null`。
 
 ## 媒体读取
 

@@ -4,6 +4,7 @@ import type { DB } from "../schema.js";
 import { nowIso } from "../time.js";
 
 export type MediaAsset = { mediaId: string; userId: string; objectKey: string; mediaType: "image" | "audio"; mimeType: string; bytes: number; status: "uploading" | "ready"; extData: Record<string, unknown>; createdAt: string; updatedAt: string };
+export type AudioAsr = { status: "running" | "succeeded" | "failed"; transcript?: string; model?: string; completedAt?: string; errorCode?: string };
 const json = (value: string | null): Record<string, unknown> => value ? JSON.parse(value) : {};
 const asset = (row: any): MediaAsset => ({ mediaId: row.media_id, userId: row.user_id, objectKey: row.object_key, mediaType: row.media_type, mimeType: row.mime_type, bytes: row.bytes, status: row.status, extData: json(row.ext_data), createdAt: row.created_at, updatedAt: row.updated_at });
 
@@ -30,4 +31,10 @@ export class SqliteMediaRepository {
 
   async findMedia(id: string, userId: string) { const row = await this.db.selectFrom("media_assets").selectAll().where("media_id", "=", id).where("user_id", "=", userId).executeTakeFirst(); return row ? asset(row) : null; }
   async findMediaByIds(ids: string[], userId: string) { if (!ids.length) return []; return (await this.db.selectFrom("media_assets").selectAll().where("user_id", "=", userId).where("media_id", "in", ids).execute()).map(asset); }
+  async updateAsr(id: string, userId: string, asr: AudioAsr) {
+    const row = await this.db.selectFrom("media_assets").selectAll().where("media_id", "=", id).where("user_id", "=", userId).where("media_type", "=", "audio").executeTakeFirst();
+    if (!row) return null;
+    const updated = await this.db.updateTable("media_assets").set({ ext_data: JSON.stringify({ ...json(row.ext_data), asr }), updated_at: nowIso() }).where("media_id", "=", id).where("user_id", "=", userId).returningAll().executeTakeFirst();
+    return updated ? asset(updated) : null;
+  }
 }

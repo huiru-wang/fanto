@@ -1,11 +1,10 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import type { SessionManager } from "./agent/session.js";
-import type { AppConfig } from "./env.js";
+import type { AgentHarnessManager } from "./agent/harness-manager.js";
 import type { LocalMediaQueue } from "./infrastructure/local-media-queue.js";
+import type { LocalVectorQueue } from "./infrastructure/local-vector-queue.js";
 import type { OssStorage } from "./infrastructure/oss-storage.js";
 import type { SqliteMediaRepository } from "./infrastructure/repositories/sqlite-media.repository.js";
-import type { MessageRepository } from "./modules/message/message.repository.js";
 import { nowIso } from "./infrastructure/time.js";
 import type { RecordRepository } from "./modules/record/record.repository.js";
 import { createRecordRoutes } from "./routes/records.js";
@@ -26,7 +25,7 @@ const jsonBody = async (response: Response) => {
   try { return redact(JSON.parse(await response.clone().text())); } catch { return null; }
 };
 
-export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: LocalMediaQueue, oss: OssStorage, ai: { apiKey: string; baseUrl: string }, config?: AppConfig, sessions?: SessionManager, messages?: MessageRepository) {
+export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: LocalMediaQueue, oss: OssStorage, ai: { apiKey: string; asrBaseUrl: string; vlBaseUrl: string }, sessions?: AgentHarnessManager, vectors?: LocalVectorQueue) {
   const app = new Hono();
   app.use("*", cors());
   app.use("/api/*", async (c, next) => {
@@ -41,8 +40,8 @@ export function createApp(records: RecordRepository, media: SqliteMediaRepositor
   });
   app.get("/health", c => c.json({ status: "ok", timestamp: nowIso() }));
   app.route("/api/uploads", createUploadRoutes(media, oss, ai));
-  app.route("/api/records", createRecordRoutes(records, media, queue));
-  if (config && sessions && messages) app.route("/api/agent", createAgentRoutes(sessions, config, messages));
+  app.route("/api/records", createRecordRoutes(records, media, queue, vectors));
+  if (sessions) app.route("/api/agent", createAgentRoutes(sessions));
   app.get("/api/media/:id", async c => { const asset = await media.findMedia(c.req.param("id"), c.req.header("x-user-id")!.trim()); return asset?.status === "ready" ? c.redirect(oss.readUrl(asset.objectKey), 302) : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404); });
   return app;
 }

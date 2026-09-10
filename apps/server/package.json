@@ -13,6 +13,7 @@
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.84.2",
     "@earendil-works/pi-ai": "^0.84.2",
+    "@earendil-works/pi-session-backend-sqlite-node": "0.84.4",
     "@fanto/shared": "workspace:*",
     "@hono/node-server": "^2.1.1",
     "ali-oss": "^6.23.0",

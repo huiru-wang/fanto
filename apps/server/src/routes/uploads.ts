@@ -10,7 +10,7 @@ const createInput = z.object({ fileName: z.string().min(1).max(200), mediaType: 
 const capture = z.object({ width: z.number().int().positive().optional(), height: z.number().int().positive().optional(), durationMs: z.number().int().positive().optional() }).strict().optional();
 const mimes = { image: ["image/jpeg", "image/png", "image/webp"], audio: ["audio/mp4", "audio/mpeg", "audio/wav"] } as const;
 
-export function createUploadRoutes(media: SqliteMediaRepository, oss: OssStorage, ai: { apiKey: string; baseUrl: string }) {
+export function createUploadRoutes(media: SqliteMediaRepository, oss: OssStorage, ai: { apiKey: string; asrBaseUrl: string }) {
   const app = new Hono(); const active = new Set<string>();
   app.post("/", async c => {
     const input = createInput.safeParse(await c.req.json().catch(() => null));
@@ -35,13 +35,17 @@ export function createUploadRoutes(media: SqliteMediaRepository, oss: OssStorage
   app.post("/:id/transcription", async c => {
     const userId = requireUserId(c.req.raw); const current = await media.findMedia(c.req.param("id"), userId);
     if (!current || current.status !== "ready" || current.mediaType !== "audio") return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Audio media not found" }, 404);
+    const saved = current.extData.asr as { status?: string; transcript?: string } | undefined;
+    if (saved?.status === "succeeded") return streamSSE(c, async stream => { await stream.writeSSE({ event: "completed", data: JSON.stringify({ transcript: saved.transcript ?? null }) }); });
     if (active.has(current.mediaId)) return c.json({ success: false, errorCode: "TRANSCRIPTION_ACTIVE", errorMsg: "Transcription already active" }, 409);
     return streamSSE(c, async stream => {
       active.add(current.mediaId);
       try {
-        const result = await streamAudioTranscription({ mediaId: current.mediaId, userId, media, oss, apiKey: ai.apiKey, baseUrl: ai.baseUrl, onDelta: text => stream.writeSSE({ event: "delta", data: JSON.stringify({ text }) }) });
+        await media.updateAsr(current.mediaId, userId, { status: "running", model: "qwen3-asr-flash" });
+        const result = await streamAudioTranscription({ mediaId: current.mediaId, userId, media, oss, apiKey: ai.apiKey, baseUrl: ai.asrBaseUrl, onDelta: text => stream.writeSSE({ event: "delta", data: JSON.stringify({ text }) }) });
+        await media.updateAsr(current.mediaId, userId, { status: "succeeded", transcript: result.transcript, model: "qwen3-asr-flash", completedAt: new Date().toISOString() });
         await stream.writeSSE({ event: "completed", data: JSON.stringify({ transcript: result.transcript || null }) });
-      } catch (error) { await stream.writeSSE({ event: "failed", data: JSON.stringify({ message: error instanceof Error ? error.message : "Transcription failed" }) }); } finally { active.delete(current.mediaId); }
+      } catch (error) { await media.updateAsr(current.mediaId, userId, { status: "failed", errorCode: "TRANSCRIPTION_FAILED" }); await stream.writeSSE({ event: "failed", data: JSON.stringify({ message: error instanceof Error ? error.message : "Transcription failed" }) }); } finally { active.delete(current.mediaId); }
     });
   });
   return app;

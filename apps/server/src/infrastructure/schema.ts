@@ -52,11 +52,25 @@ export interface MessagesTable {
   updated_at: string;
 }
 
+export interface VectorItemsTable {
+  id: Generated<number>;
+  user_id: string;
+  type: string;
+  outer_id: string;
+  content: string;
+  content_hash: string;
+  status: string;
+  error_code: string | null;
+  indexed_at: string | null;
+  created_at: string;
+}
+
 export interface DB {
   users: UsersTable;
   records: RecordsTable;
   media_assets: MediaAssetsTable;
   messages: MessagesTable;
+  vector_items: VectorItemsTable;
 }
 
 export type User = Selectable<UsersTable>;

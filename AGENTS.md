@@ -23,6 +23,13 @@
 - GET /api/records 可按 topicId 过滤，按 createdAt、id 倒序。nextCursor 是复合游标，避免批量记录共享时间戳导致漏页；不要改回仅时间的游标。
 - 按 Topic 查记录仍需校验 Record 和 Topic 的用户归属，使用 EXISTS 避免重复关联放大结果集。
 
+## Agent 会话与工具
+
+- Agent 使用 Pi `AgentHarness + SessionStorage`；`sessionId` 是持久 Session、Harness 缓存和工作区的唯一隔离边界，`userId` 只用于接口授权与会话 metadata 归属校验。
+- 原始消息读取基于 Pi Session entry，不以旧 `messages` 表中的运行时事件作为真相源；对外 DTO 必须脱敏密钥、令牌、密码和 Authorization 字段。
+- bash 工具必须在 sessionId 对应工作区执行，采用最小环境、超时和危险命令限制。生产环境如需更强隔离，应使用容器或微虚拟机，不能放宽宿主机 bash 权限。
+- Record Memory 仅在 Record 创建/更新后异步生成；向量项固定 `type=record`、`outerId=recordId`，内容仅含用户文本和保存时已就绪的音频 ASR 文本。图片不向量化，失败仅记录日志且不重试。
+
 ## 整理摘要与修改
 
 - records/topics.ext_data 存 JSON，实体/API 为 extData；organization 命名空间保存最近一次成功摘要。更新时只替换该命名空间，不覆盖其他扩展键。不增加反馈字段、接口或 Record tag。
