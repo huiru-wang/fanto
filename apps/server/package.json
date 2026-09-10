@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test $(find src -name '*.test.ts' -print)",
     "db:migrate": "tsx src/infrastructure/migrate.ts",
-    "vector:rebuild": "tsx ../../scripts/rebuild-vector-index.ts"
+    "vector:rebuild": "tsx ../../scripts/rebuild-vector-index.ts",
+    "experiment:pi-proactive": "tsx src/experiments/pi-proactive/run.ts",
+    "test:pi-proactive": "tsx --test src/experiments/pi-proactive/*.test.ts"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.84.2",
