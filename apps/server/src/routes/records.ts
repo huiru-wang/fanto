@@ -1,135 +1,31 @@
-/** Record 路由 */
 import { Hono } from "hono";
 import { z } from "zod";
-import type { RecordRepository } from "../modules/record/record.repository.js";
-import type { VectorStore } from "../infrastructure/vector-store.js";
-import { logInfo, logWarn } from "../infrastructure/logger.js";
+import { parseSaveRecord } from "../domain/record-content.js";
+import type { LocalMediaQueue } from "../infrastructure/local-media-queue.js";
+import type { LocalVectorQueue } from "../infrastructure/local-vector-queue.js";
+import type { SqliteMediaRepository } from "../infrastructure/repositories/sqlite-media.repository.js";
 import { decodeRecordCursor, encodeRecordCursor } from "../modules/record/record-cursor.js";
+import type { RecordRepository } from "../modules/record/record.repository.js";
+import { requireUserId } from "../interfaces/request-user.js";
 
-const CreateRecordSchema = z.object({
-  content: z.string().min(1),
-  source: z.string().optional(),
-});
+const media = z.array(z.unknown());
+const createInput = z.object({ text: z.string(), media, source: z.string().max(100).optional() }).strict();
+const updateInput = z.object({ text: z.string(), media, expectedVersion: z.number().int().positive() }).strict();
+const saveValue = (body: { text: string; media: unknown[] }) => parseSaveRecord({ text: body.text, media: body.media });
 
-const CreateRecordBatchSchema = z.object({
-  records: z.array(CreateRecordSchema.extend({ content: z.string().trim().min(1) })).min(1).max(100),
-});
+async function view(record: any, media: SqliteMediaRepository) {
+  const assets = await media.findMediaByIds(record.content.blocks.map((block: any) => block.mediaId), record.userId); const byId = new Map(assets.map(asset => [asset.mediaId, asset]));
+  const { taskId: _taskId, ...safeRecord } = record;
+  return { ...safeRecord, media: record.content.blocks.flatMap((block: any) => { const asset = byId.get(block.mediaId); if (!asset) return []; const capture = asset.extData.capture as { durationMs?: number | null } | undefined; const asr = asset.extData.asr as { status?: string; transcript?: string } | undefined; return [block.type === "image" ? { mediaId: asset.mediaId, type: "image", url: `/api/media/${asset.mediaId}`, description: block.description ?? null } : { mediaId: asset.mediaId, type: "audio", url: `/api/media/${asset.mediaId}`, durationMs: capture?.durationMs ?? null, asr: asr ? { status: asr.status ?? "failed", transcript: asr.transcript ?? null } : null }]; }) };
+}
+function publishImages(queue: LocalMediaQueue, record: any) { for (const block of record.content.blocks) if (block.type === "image" && !block.description) queue.publish("image_understanding", { recordId: record.id, userId: record.userId, mediaId: block.mediaId, version: record.version }); }
+function error(c: any, value: string, current?: unknown) { if (value === "not_found") return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Record not found" }, 404); if (value === "conflict") return c.json({ success: false, result: current ?? null, errorCode: "VERSION_CONFLICT", errorMsg: "Record was changed by another edit" }, 409); if (value === "invalid_content") return c.json({ success: false, errorCode: "INVALID_CONTENT", errorMsg: "Record requires text or audio" }, 400); return c.json({ success: false, errorCode: "INVALID_MEDIA", errorMsg: "Media is missing, not ready, belongs to another user, or already linked" }, 400); }
 
-export function createRecordRoutes(recordRepo: RecordRepository, vectorStore?: VectorStore): Hono {
+export function createRecordRoutes(records: RecordRepository, media: SqliteMediaRepository, queue: LocalMediaQueue, vectors?: LocalVectorQueue) {
   const app = new Hono();
-
-  app.patch("/:id", async (c) => {
-    const parsed = z.object({ content: z.string().trim().min(1) }).strict().safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: parsed.error.message }, 400);
-    const userId = c.req.header("x-user-id") ?? "default-user";
-    const result = await recordRepo.updateContent(c.req.param("id"), userId, parsed.data.content);
-    if (result === "not_found") return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Record not found" }, 404);
-    if (result === "processing") return c.json({ success: false, errorCode: "RECORD_PROCESSING", errorMsg: "Record is being organized" }, 409);
-    if (result.changed) {
-      logInfo("records", "record updated", { recordId: result.record.id, userId, status: result.record.status });
-      if (vectorStore) void vectorStore.upsertRecord(result.record).catch((err) => {
-        logWarn("records", "upsert record vector failed", { recordId: result.record.id, userId, error: err instanceof Error ? err.message : "Unknown error" });
-      });
-    }
-    return c.json({ result: result.record, success: true, errorCode: null, errorMsg: null });
-  });
-
-  app.post("/batch", async (c) => {
-    const body = await c.req.json().catch(() => null);
-    const parsed = CreateRecordBatchSchema.safeParse(body);
-    if (!parsed.success) {
-      return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: parsed.error.message }, 400);
-    }
-    const userId = c.req.header("x-user-id") ?? "default-user";
-    const records = await recordRepo.createMany(parsed.data.records.map((record) => ({ ...record, userId })));
-    logInfo("records", "record batch created", { userId, recordCount: records.length, recordIds: records.map((record) => record.id) });
-
-    if (vectorStore) {
-      // Keep embedding requests sequential without delaying the HTTP response.
-      void (async () => {
-        let failedCount = 0;
-        for (const record of records) {
-          try {
-            await vectorStore.upsertRecord(record);
-          } catch (err) {
-            failedCount++;
-            logWarn("records", "upsert record vector failed", {
-              recordId: record.id, userId, error: err instanceof Error ? err.message : "Unknown error",
-            });
-          }
-        }
-        logInfo("records", "record batch vectorization completed", { userId, recordCount: records.length, failedCount });
-      })();
-    }
-    return c.json({ result: { data: records, count: records.length }, success: true, errorCode: null, errorMsg: null });
-  });
-
-  // POST /api/records — 创建 Record
-  app.post("/", async (c) => {
-    const body = await c.req.json();
-    const parsed = CreateRecordSchema.safeParse(body);
-    if (!parsed.success) return c.json({ success: false, errorMsg: parsed.error.message }, 400);
-
-    // TODO: 从认证中间件获取 userId
-    const userId = c.req.header("x-user-id") ?? "default-user";
-
-    const record = await recordRepo.create({ userId, ...parsed.data });
-    logInfo("records", "record created", { recordId: record.id, userId, contentLength: record.content.length });
-    if (vectorStore) {
-      void vectorStore.upsertRecord(record).catch((err) => {
-        const message = err instanceof Error ? err.message : "Unknown error";
-        logWarn("records", "upsert record vector failed", { recordId: record.id, userId, error: message });
-      });
-    }
-    return c.json({ result: record, success: true, errorCode: null, errorMsg: null });
-  });
-
-  // GET /api/records — 分页查询
-  app.get("/", async (c) => {
-    const userId = c.req.header("x-user-id") ?? "default-user";
-    const parsed = z.object({
-      cursor: z.string().min(1).optional(),
-      topicId: z.string().trim().min(1).optional(),
-      limit: z.coerce.number().int().min(1).max(100).default(20),
-    }).safeParse(c.req.query());
-    if (!parsed.success) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: parsed.error.message }, 400);
-    const { cursor, topicId, limit } = parsed.data;
-    try { if (cursor) decodeRecordCursor(cursor); }
-    catch { return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: "Invalid record cursor" }, 400); }
-
-    const rows = await recordRepo.findByUserId(userId, { cursor, topicId, limit: limit + 1 });
-    const hasMore = rows.length > limit;
-    const records = rows.slice(0, limit);
-    const links = await recordRepo.findTopicLinks(userId, records.map((record) => record.id));
-    const topicsByRecord = new Map<string, Array<{ id: string; title: string; status: string }>>();
-    for (const { recordId, ...topic } of links) {
-      const topics = topicsByRecord.get(recordId) ?? [];
-      topics.push(topic);
-      topicsByRecord.set(recordId, topics);
-    }
-    const lastRecord = records[records.length - 1];
-
-    return c.json({
-      result: {
-        data: records.map((record) => ({ ...record, topics: topicsByRecord.get(record.id) ?? [] })),
-        nextCursor: hasMore && lastRecord ? encodeRecordCursor(lastRecord) : null,
-        hasMore,
-        total: 0, // TODO: count query
-        pageSize: limit,
-      },
-      success: true,
-      errorCode: null,
-      errorMsg: null,
-    });
-  });
-
-  app.get("/:id", async (c) => {
-    const userId = c.req.header("x-user-id") ?? "default-user";
-    const record = await recordRepo.findById(c.req.param("id"));
-    if (!record || record.userId !== userId) return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Record not found" }, 404);
-    const topics = (await recordRepo.findTopicLinks(userId, [record.id])).map(({ recordId, ...topic }) => topic);
-    return c.json({ result: { ...record, topics }, success: true, errorCode: null, errorMsg: null });
-  });
-
+  app.post("/", async c => { const body = createInput.safeParse(await c.req.json().catch(() => null)); if (!body.success) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: body.error.message }, 400); try { const record = await records.create({ userId: requireUserId(c.req.raw), source: body.data.source, value: saveValue(body.data) }); if (typeof record === "string") return error(c, record); publishImages(queue, record); vectors?.publish({ userId: record.userId, recordId: record.id, operation: "upsert" }); return c.json({ success: true, result: await view(record, media), errorCode: null, errorMsg: null }, 201); } catch (cause) { return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: cause instanceof Error ? cause.message : "Invalid record" }, 400); } });
+  app.patch("/:id", async c => { const body = updateInput.safeParse(await c.req.json().catch(() => null)); if (!body.success) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: body.error.message }, 400); const currentUser = requireUserId(c.req.raw); try { const record = await records.updateContent(c.req.param("id"), currentUser, { value: saveValue(body.data), expectedVersion: body.data.expectedVersion }); if (record === "conflict") { const current = await records.findById(c.req.param("id")); return error(c, record, current?.userId === currentUser ? await view(current, media) : null); } if (typeof record === "string") return error(c, record); publishImages(queue, record); vectors?.publish({ userId: record.userId, recordId: record.id, operation: "replace" }); return c.json({ success: true, result: await view(record, media), errorCode: null, errorMsg: null }); } catch (cause) { return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: cause instanceof Error ? cause.message : "Invalid record" }, 400); } });
+  app.get("/", async c => { const cursor = c.req.query("cursor"); try { if (cursor) decodeRecordCursor(cursor); } catch { return c.json({ success: false, errorCode: "INVALID_CURSOR", errorMsg: "Invalid record cursor" }, 400); } const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20), 1), 100); const rows = await records.findByUserId(requireUserId(c.req.raw), { cursor, limit: limit + 1 }); const data = await Promise.all(rows.slice(0, limit).map(record => view(record, media))); return c.json({ success: true, result: { data, hasMore: rows.length > limit, nextCursor: rows.length > limit && data.at(-1) ? encodeRecordCursor(data.at(-1)) : null, pageSize: limit }, errorCode: null, errorMsg: null }); });
+  app.get("/:id", async c => { const record = await records.findById(c.req.param("id")); if (!record || record.userId !== requireUserId(c.req.raw)) return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Record not found" }, 404); return c.json({ success: true, result: await view(record, media), errorCode: null, errorMsg: null }); });
   return app;
 }

@@ -7,7 +7,8 @@ import type { Generated, Insertable, Selectable, Updateable } from "kysely";
 // ─── users ──────────────────────────────────────────────────────
 
 export interface UsersTable {
-  id: string;
+  id: Generated<number>;
+  user_id: string;
   wx_openid: string;
   created_at: string;
 }
@@ -16,76 +17,106 @@ export interface UsersTable {
 
 export interface RecordsTable {
   ext_data: Generated<string | null>;
-  id: string;
+  id: Generated<number>;
+  record_id: string;
   user_id: string;
   source: string;
   content: string;
+  version: number;
   status: string;
+  task_id: string | null;
   created_at: string;
   updated_at: string;
 }
 
-// ─── topics ─────────────────────────────────────────────────────
-
-export interface TopicsTable {
-  ext_data: Generated<string | null>;
-  id: string;
+export interface CreationsTable {
+  id: Generated<number>;
+  creation_id: string;
   user_id: string;
-  session_id: string;
   title: string;
+  kind_id: string;
+  session_id: string;
   summary: string;
   content: string;
-  tags: string;
-  pending_actions: string;
-  status: string;
+  status: "active" | "resting" | "archived";
+  version: number;
   created_at: string;
   updated_at: string;
 }
 
-// ─── record_topics ──────────────────────────────────────────────
-
-export interface RecordTopicsTable {
-  record_id: string;
-  topic_id: string;
-  relation: string;
-  created_at: string;
-}
-
-// ─── messages ───────────────────────────────────────────────────
-
-export interface MessagesTable {
+export interface CreationProposalsTable {
   id: Generated<number>;
+  proposal_id: string;
   user_id: string;
-  topic_id: string;
+  creation_id: string | null;
+  base_creation_version: number | null;
+  operation: string;
   session_id: string;
-  role: string;
-  payload: string;
-  timestamp: number;
-}
-
-// ─── tasks ──────────────────────────────────────────────────────
-
-export interface TasksTable {
-  id: string;
-  user_id: string;
-  type: string;
+  title: string | null;
+  kind_id: string | null;
+  summary: string | null;
+  content: string | null;
+  ext_data: string | null;
   status: string;
-  input: string | null;
-  result: string | null;
   error: string | null;
   created_at: string;
   updated_at: string;
 }
 
-// ─── DB ─────────────────────────────────────────────────────────
+export interface CreationKindsTable { kind_id: string; owner_user_id: string | null; name: string; title: string; created_at: string; updated_at: string; }
+export interface EntityRelationsTable { relation_id: string; user_id: string; source_entity_id: string; source_entity_type: string; target_entity_id: string; target_entity_type: string; relation_type: string; source_created_at: string; created_at: string; }
+
+export interface TasksTable {
+  id: Generated<number>;
+  task_id: string;
+  user_id: string;
+  type: string;
+  status: string;
+  payload: string;
+  execution_metadata: string;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MediaAssetsTable {
+  id: Generated<number>;
+  media_id: string;
+  user_id: string;
+  object_key: string;
+  media_type: string;
+  mime_type: string;
+  bytes: number;
+  status: string;
+  ext_data: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VectorItemsTable {
+  id: Generated<number>;
+  user_id: string;
+  type: string;
+  outer_id: string;
+  content: string;
+  content_hash: string;
+  status: string;
+  error_code: string | null;
+  indexed_at: string | null;
+  created_at: string;
+}
 
 export interface DB {
   users: UsersTable;
   records: RecordsTable;
-  topics: TopicsTable;
-  record_topics: RecordTopicsTable;
-  messages: MessagesTable;
+  creations: CreationsTable;
+  creation_proposals: CreationProposalsTable;
+  creation_kinds: CreationKindsTable;
+  entity_relations: EntityRelationsTable;
   tasks: TasksTable;
+  media_assets: MediaAssetsTable;
+  vector_items: VectorItemsTable;
 }
 
 export type User = Selectable<UsersTable>;
@@ -94,16 +125,3 @@ export type NewUser = Insertable<UsersTable>;
 export type Record = Selectable<RecordsTable>;
 export type NewRecord = Insertable<RecordsTable>;
 export type RecordUpdate = Updateable<RecordsTable>;
-
-export type Topic = Selectable<TopicsTable>;
-export type NewTopic = Insertable<TopicsTable>;
-export type TopicUpdate = Updateable<TopicsTable>;
-
-export type RecordTopic = Selectable<RecordTopicsTable>;
-export type NewRecordTopic = Insertable<RecordTopicsTable>;
-
-export type Message = Selectable<MessagesTable>;
-export type NewMessage = Insertable<MessagesTable>;
-
-export type Task = Selectable<TasksTable>;
-export type NewTask = Insertable<TasksTable>;

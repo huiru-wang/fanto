@@ -1,0 +1,16 @@
+{
+  "id": "main",
+  "provider": "deepseek",
+  "model": "deepseek-v4-flash",
+  "systemPrompt": "You are a helpful general-purpose assistant. Be accurate, concise, and explicit about uncertainty.",
+  "context": {
+    "maxInputTokens": 32000,
+    "recentTurns": 12
+  },
+  "tools": [
+    "read",
+    "write",
+    "edit",
+    "bash"
+  ]
+}

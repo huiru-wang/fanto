@@ -106,9 +106,10 @@ pnpm dev
 
 ## 文档
 
-- [后端服务架构设计](docs/server/architecture.md)
-- [前端设计文档](docs/frontend/design.md)
-- [Contemplate 方案](plan/contemplate-agent.md)
+- [当前实现文档](docs/README.md)
+- [架构与运行边界](docs/architecture.md)
+- [HTTP API](docs/api/http-api.md)
+- [已知边界](docs/known-limitations.md)
 
 ## MVP 取舍
 
