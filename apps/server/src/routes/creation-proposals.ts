@@ -3,10 +3,6 @@ import { requireUserId } from "../interfaces/request-user.js";
 import { CreationProposalRepository } from "../modules/creation/proposal.repository.js";
 
 const proposalIdIsValid = (value: string) => /^[0-9a-f-]{36}$/i.test(value);
-const json = (value: string | null) => {
-  if (!value) return null;
-  try { return JSON.parse(value); } catch { return value; }
-};
 
 export function createCreationProposalRoutes(repo: CreationProposalRepository) {
   const app = new Hono();
@@ -18,7 +14,7 @@ export function createCreationProposalRoutes(repo: CreationProposalRepository) {
       creationId: row.creation_id,
       title: row.title,
       kind: row.kind_id ? { kindId: row.kind_id, name: row.kind_name ?? "unknown", title: row.kind_title ?? "未分类" } : null,
-      summary: json(row.summary),
+      summary: row.summary,
       content: row.content,
       status: row.status,
       sourceCount: await repo.sourceCount(userId, row.proposal_id),

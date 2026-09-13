@@ -39,17 +39,15 @@
 
 ## 脉络模块
 
-- 当前服务装配 Creation、待确认 Proposal 与类型目录查询；Proposal 支持确认（创建/更新长期跟踪脉络）和暂不保留。旧主动创作、Agent、Task 与自动生成 Proposal 的工作流不属于当前运行时，后续按新业务模型重建。
+- 当前服务装配 Creation、待确认 Proposal、类型目录与按类型完整列表查询；Proposal 支持确认（创建/更新长期跟踪脉络）和暂不保留。旧主动创作、Agent、Task 与自动生成 Proposal 的工作流不属于当前运行时，后续按新业务模型重建。
 - 脉络状态统一为 `active`、`resting`、`archived`；类型使用全局 `kind_id`，系统类型可读，用户自定义类型暂不实现。
 - Record 与 Creation / Proposal 的关联使用全局业务 ID。关联来源 Record 分页先查询关系表，再按 ID 批量读取 Record 并按关系顺序重组，禁止为此分页查询使用 JOIN。
 
 ## 前端 H5
 
-- 独立 H5 前端位于 apps/h5，使用 Vite + React + TypeScript。未来原生小程序、Android、iOS 可在 apps 下独立建设，不要求共用 UI 或构建链路。
-- 根目录 `pnpm dev` 只启动后端；`pnpm dev:h5` 启动独立 H5（默认 5174），`pnpm build:h5` 输出到 apps/h5/dist。
-- apps/h5 只复用 @fanto/shared 接口契约；UI 遵循 docs/frontend/product-interactive-demo.html 的纸白底色、绿色点缀和底部三栏导航。
-- H5 请求使用相对 `/api` 并由开发服务器代理到后端。前端固定开发用户不是正式认证，禁止在浏览器中放置模型密钥。
-- Topic Markdown 使用 markdown-it 解析和 DOMPurify 清洗。真实 Topic 对话、录音、反馈、Record tag 和标签管理仍不实现。
+- 当前工作区没有 `apps/h5` 工程。根目录仍保留的 `pnpm dev:h5`、`pnpm build:h5` 暂无可执行目标，不得作为验证命令。
+- 重建范围以 `plan/2026-09-14-h5-ios-server-parity/` 为准；在实现和验证完成前，不把其中的页面、接口调用或交互视为运行时能力。
+- 重建后的 H5 只复用 `@fanto/shared` 接口契约，请求使用相对 `/api`；固定开发用户不是正式认证，禁止在浏览器中放置模型密钥。
 - 浏览器自动化必须使用模拟或隔离 API，不得触发真实整理任务或修改用户数据库。
 
 ## iOS 底部交互层

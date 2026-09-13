@@ -15,6 +15,13 @@ enum RecordLoadState: Equatable {
     case failed(String)
 }
 
+enum ProposalLoadState: Equatable {
+    case idle
+    case loading
+    case loaded
+    case failed(String)
+}
+
 @Observable
 final class FantoStore {
     var records: [Record]
@@ -23,6 +30,7 @@ final class FantoStore {
     var creationKinds: [CreationKind]
     var recordLoadState: RecordLoadState = .idle
     var creationLoadState: CreationLoadState = .idle
+    var proposalLoadState: ProposalLoadState = .idle
     var proposalActionError: String?
 
     init(
@@ -65,10 +73,14 @@ final class FantoStore {
     }
 
     func loadProposals() async {
+        proposalLoadState = .loading
+
         do {
             proposals = try await CreationAPIClient.shared.fetchProposals()
+            proposalLoadState = .loaded
         } catch {
             proposals = []
+            proposalLoadState = .failed(error.localizedDescription)
         }
     }
 

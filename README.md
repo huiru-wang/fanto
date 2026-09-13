@@ -29,25 +29,22 @@ MVP 重点关注三类体验：
 
 - 后端：Hono + TypeScript + SQLite + Kysely + pi-agent-core。
 - 向量索引：`sqlite-vec`，与业务数据保存在同一个 SQLite 文件中。
-- 前端：apps/h5 为独立 Vite + React + TypeScript H5；原生微信小程序、Android、iOS 可后续在 apps 下独立建设。
+- 客户端：当前已保留并接入的是 `apps/ios/fanto` 原生 iOS 客户端。旧 `apps/h5` 源码已从工作区移除，重建方案见 `plan/2026-09-14-h5-ios-server-parity/`；微信小程序、Android 仍是后续范围。
 
-## 核心逻辑
+## 当前运行链路
 
 ```mermaid
 flowchart TD
-    A["用户输入碎片想法"] --> B["创建 Record"]
-    B --> C["异步写入向量索引"]
-    B --> D["触发 Contemplate 整理"]
-    D --> E["向量搜索召回相关 Topic"]
-    E --> F{"AI 判断"}
-    F -->|相关| G["更新已有 Topic"]
-    F -->|独立且有价值| H["创建新 Topic"]
-    F -->|信息量不足| I["标记 skipped，保留原文"]
-    G --> J["写入 RecordTopic 关联"]
-    H --> J
+    A["用户输入 Record"] --> B["写入 SQLite"]
+    B --> C["异步图像理解（如有图片）"]
+    B --> D["异步向量索引"]
+    E["待确认 Proposal"] --> F{"用户决定"}
+    F -->|长期跟踪| G["创建或更新 Creation"]
+    F -->|暂不保留| H["Proposal 标为 rejected"]
+    G --> I["迁移来源 Record 关联"]
 ```
 
-Record 是用户的原始输入，Topic 是 AI 整理后的长期思考方向。两者通过 RecordTopic 关联，避免原文和整理结果混在一起。
+Record 是用户原始输入；Creation 是长期跟踪的脉络。当前运行入口不自动整理 Record 或生成 Proposal，Proposal 由现有数据提供读取和用户确认流程。
 
 ## 本地启动
 
@@ -87,14 +84,6 @@ http://127.0.0.1:3000
 curl http://127.0.0.1:3000/health
 ```
 
-启动独立 H5：
-
-```bash
-pnpm dev:h5
-```
-
-浏览器访问 http://localhost:5174；`pnpm build:h5` 输出到 apps/h5/dist。
-
 ## 常用命令
 
 ```bash
@@ -118,5 +107,5 @@ pnpm dev
 - 不单独启动向量数据库服务。
 - 不引入分布式任务队列。
 - 不把 Agent Runtime 拆成独立服务。
-- 不要求用户手动分类或管理任务。
+- 不提供自动生成脉络的运行入口；现有 Proposal 只支持读取与用户决策。
 - 向量索引可重建，业务真相保存在 SQLite 主表。

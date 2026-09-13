@@ -241,6 +241,14 @@ private struct CreationDetailPayload: Decodable {
 private struct SummaryPayload: Decodable {
     let overview: String
 
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let text = try? container.decode(String.self) { overview = text; return }
+        overview = try container.decode(Legacy.self).overview
+    }
+
+    private struct Legacy: Decodable { let overview: String }
+
     static func overview(from encoded: String) -> String {
         guard let data = encoded.data(using: .utf8),
               let summary = try? JSONDecoder().decode(Self.self, from: data)
@@ -284,6 +292,11 @@ private struct ProposalKindPayload: Decodable {
     let kindID: String
     let name: String
     let title: String
+
+    enum CodingKeys: String, CodingKey {
+        case kindID = "kindId"
+        case name, title
+    }
 }
 
 private struct ProposalDecisionPayload: Decodable {

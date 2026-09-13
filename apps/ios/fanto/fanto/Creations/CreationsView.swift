@@ -53,7 +53,34 @@ struct CreationsView: View {
 
     @ViewBuilder
     private var proposalSection: some View {
-        if !store.proposals.isEmpty {
+        switch store.proposalLoadState {
+        case .idle:
+            EmptyView()
+        case .loaded where store.proposals.isEmpty:
+            EmptyView()
+        case .loading:
+            Section("等待你的确认") {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("正在读取建议")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        case let .failed(message):
+            Section("等待你的确认") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("建议未能加载", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.secondary)
+                    Text(message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button("重新加载") {
+                        Task { await store.loadProposals() }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        case .loaded:
             Section("等待你的确认") {
                 ProposalDeckView(proposals: store.proposals, onDetail: showDetail)
                     .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 6, trailing: 0))

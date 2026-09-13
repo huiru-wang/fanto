@@ -13,13 +13,8 @@
 
 Creation 状态限定为 `active`、`resting`、`archived`。概览仅返回 `active`；详情按用户和业务 ID 查询，可返回已归档脉络。
 
-摘要字段是 JSON 字符串，当前约定至少含：
+摘要字段 `summary` 是纯文本，可为空（Proposal 在待确认阶段也可能尚未具备完整内容）。旧数据库中 JSON 摘要会在迁移时提取其中的 `overview` 文本。正文 `content` 当前以 Markdown 字符串保存和返回。
 
-```json
-{ "schemaVersion": 1, "overview": "摘要文本", "summaryVersion": 1 }
-```
-
-正文 `content` 当前以 Markdown 字符串保存和返回。
 
 ## 读取逻辑
 
@@ -41,4 +36,4 @@ flowchart LR
 
 执行 `pnpm --filter @fanto/server seed:creation-demo` 会为用户 `creation-demo-user` 重置并写入：3 个系统类型、5 条 active 脉络、50 条纯文本记录、25 个 Creation-Record 关联，以及 3 条待确认 Proposal 数据。概览接口仍只展示最近 3 条 active 脉络。
 
-每条演示 Proposal 同时关联三条来源 Record，便于验证「为什么会出现」详情。确认时会在同一事务内创建或更新 Creation，并将关联迁移为 `record_creation`。
+每条演示 Proposal 同时关联三条来源 Record，便于验证「为什么会出现」详情。确认时会在同一事务内创建或更新 Creation，并将关联迁移为 `record_creation`。Creation 的完整列表可按可选 `kindId` 从 `GET /api/creations` 读取；概览的三条限制不影响该列表。

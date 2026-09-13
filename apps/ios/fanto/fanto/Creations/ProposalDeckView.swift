@@ -81,7 +81,7 @@ struct ProposalDeckView: View {
                         declineCurrentProposal()
                     }
                 } else if abs(translation.height) >= verticalThreshold {
-                    if translation.height < 0 {
+                    if translation.height > 0 {
                         advance()
                     } else {
                         retreat()
