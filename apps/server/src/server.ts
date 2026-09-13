@@ -12,6 +12,8 @@ import { validUserId } from "./interfaces/request-user.js";
 import { logAccess, logError } from "./infrastructure/logger.js";
 import { CreationReadRepository } from "./modules/creation/read.repository.js";
 import { createCreationReadRoutes } from "./routes/creation-read.js";
+import { CreationProposalRepository } from "./modules/creation/proposal.repository.js";
+import { createCreationProposalRoutes } from "./routes/creation-proposals.js";
 
 const redact = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(redact);
@@ -25,7 +27,7 @@ const jsonBody = async (response: Response) => {
   try { return redact(JSON.parse(await response.clone().text())); } catch { return null; }
 };
 
-export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: LocalMediaQueue, oss: OssStorage, ai: { apiKey: string; asrBaseUrl: string; vlBaseUrl: string }, vectors?: LocalVectorQueue, creationRead?: CreationReadRepository) {
+export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: LocalMediaQueue, oss: OssStorage, ai: { apiKey: string; asrBaseUrl: string; vlBaseUrl: string }, vectors?: LocalVectorQueue, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository) {
   const app = new Hono();
   app.onError((error, c) => {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });
@@ -46,6 +48,7 @@ export function createApp(records: RecordRepository, media: SqliteMediaRepositor
   app.route("/api/uploads", createUploadRoutes(media, oss, ai));
   app.route("/api/records", createRecordRoutes(records, media, queue, vectors));
   if (creationRead) app.route("/api", createCreationReadRoutes(creationRead));
+  if (creationProposals) app.route("/api", createCreationProposalRoutes(creationProposals));
   app.get("/api/media/:id", async c => { const asset = await media.findMedia(c.req.param("id"), c.req.header("x-user-id")!.trim()); return asset?.status === "ready" ? c.redirect(oss.readUrl(asset.objectKey), 302) : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404); });
   return app;
 }

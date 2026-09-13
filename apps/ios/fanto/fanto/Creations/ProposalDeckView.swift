@@ -91,14 +91,22 @@ struct ProposalDeckView: View {
     }
 
     private func acceptCurrentProposal() {
-        withAnimation(deckAnimation) {
-            store.accept(currentProposal)
+        let proposal = currentProposal
+        Task {
+            guard await store.accept(proposal) else { return }
+            withAnimation(deckAnimation) {
+                currentIndex = min(currentIndex, max(proposals.count - 1, 0))
+            }
         }
     }
 
     private func declineCurrentProposal() {
-        withAnimation(deckAnimation) {
-            store.decline(currentProposal)
+        let proposal = currentProposal
+        Task {
+            guard await store.decline(proposal) else { return }
+            withAnimation(deckAnimation) {
+                currentIndex = min(currentIndex, max(proposals.count - 1, 0))
+            }
         }
     }
 

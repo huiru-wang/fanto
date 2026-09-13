@@ -2,14 +2,14 @@
 
 ## 概念与数据模型
 
-脉络（Creation）是由多个 Record 形成的长期线索。当前服务仅提供读取能力；Creation 的生成、Proposal 的确认/拒绝均未挂载。
+脉络（Creation）是由多个 Record 形成的长期线索。待确认 Proposal 可被用户转为长期跟踪，或标记为暂不保留；自动生成 Proposal 的工作流仍未挂载。
 
 | 实体 | 作用 |
 | --- | --- |
 | `creation_kinds` | 全局或用户自定义的脉络类型。当前演示数据使用全局类型。 |
 | `creations` | 脉络正文、摘要、状态、类型、版本。 |
 | `entity_relations` | Record 与 Creation 的关联。当前读取使用 `record_creation` 关系。 |
-| `creation_proposals` | 数据表与旧代码保留，但当前 API 不提供 Proposal 读取或写入。 |
+| `creation_proposals` | 待确认提案；支持读取、详情、确认与暂不保留。 |
 
 Creation 状态限定为 `active`、`resting`、`archived`。概览仅返回 `active`；详情按用户和业务 ID 查询，可返回已归档脉络。
 
@@ -41,4 +41,4 @@ flowchart LR
 
 执行 `pnpm --filter @fanto/server seed:creation-demo` 会为用户 `creation-demo-user` 重置并写入：3 个系统类型、5 条 active 脉络、50 条纯文本记录、25 个 Creation-Record 关联，以及 3 条待确认 Proposal 数据。概览接口仍只展示最近 3 条 active 脉络。
 
-注意：演示 Proposal 虽会写入数据库，但当前运行服务没有对外 Proposal 路由，客户端不能使用它们完成长期跟踪或暂不保留。
+每条演示 Proposal 同时关联三条来源 Record，便于验证「为什么会出现」详情。确认时会在同一事务内创建或更新 Creation，并将关联迁移为 `record_creation`。

@@ -17,7 +17,7 @@ struct RecordsView: View {
                     RecordCalendarView(selectedDate: $selectedDate, records: store.records) {
                         showingComposer = true
                     }
-                    RecordTimelineView(date: selectedDate, records: dayRecords)
+                    timeline(date: selectedDate, records: dayRecords)
                 }
                 .padding(.horizontal)
                 .padding(.bottom, 28)
@@ -27,6 +27,36 @@ struct RecordsView: View {
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }
+            .refreshable {
+                await store.loadRecords()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func timeline(date: Date, records: [Record]) -> some View {
+        switch store.recordLoadState {
+        case .idle, .loading:
+            VStack(spacing: 12) {
+                Text(ChineseDateText.timelineTitle(date))
+                    .font(.title3)
+                    .bold()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                ProgressView("正在读取记录")
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 36)
+            }
+        case let .failed(message):
+            VStack(spacing: 16) {
+                ContentUnavailableView("暂时无法读取记录", systemImage: "wifi.exclamationmark", description: Text(message))
+                Button("重新加载") {
+                    Task { await store.loadRecords() }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+        case .loaded:
+            RecordTimelineView(date: date, records: records)
         }
     }
 }

@@ -40,15 +40,21 @@ struct ProposalDetailView: View {
             .safeAreaInset(edge: .bottom) {
                 HStack {
                     Button("暂不保留", systemImage: "xmark") {
-                        store.decline(proposal)
-                        dismiss()
+                        Task {
+                            if await store.decline(proposal) {
+                                dismiss()
+                            }
+                        }
                     }
                     .buttonStyle(.bordered)
                     .tint(.secondary)
                     Spacer()
                     Button("长期跟踪", systemImage: "checkmark") {
-                        store.accept(proposal)
-                        dismiss()
+                        Task {
+                            if await store.accept(proposal) {
+                                dismiss()
+                            }
+                        }
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(FantoTheme.accent)

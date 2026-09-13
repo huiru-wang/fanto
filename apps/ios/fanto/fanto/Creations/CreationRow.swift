@@ -13,13 +13,13 @@ struct CreationRow: View {
             Text(creation.summary)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Label(creation.status.title, systemImage: creation.status.symbol)
                 if let sourceCount = creation.sourceCount {
                     Text("\(sourceCount) 条记录")
                 }
-                Text(creation.updatedAt, format: .relative(presentation: .named))
+                Text(FantoDateText.timestamp(creation.updatedAt))
             }
             .font(.caption)
             .foregroundStyle(.tertiary)

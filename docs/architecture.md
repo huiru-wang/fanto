@@ -5,7 +5,7 @@
 ```mermaid
 flowchart TB
   H5[H5: Vite / React] -->|/api 代理| S
-  IOS[iOS: SwiftUI] -->|脉络只读，直连本地地址| S[Hono 服务]
+  IOS[iOS: SwiftUI] -->|记录、脉络与待确认提案，直连 ECS 地址| S[Hono 服务]
   S --> DB[(SQLite + sqlite-vec)]
   S --> OSS[阿里云 OSS]
   S --> Q[进程内事件队列]
@@ -25,7 +25,8 @@ flowchart TB
 | 健康检查 | `/health` | 返回服务状态与时间 |
 | 上传 | `/api/uploads` | 申请直传、确认上传、音频转写 SSE |
 | 记录 | `/api/records` | 新建、更新、分页读取、单条读取 |
-| 脉络只读 | `/api/creation-kinds`、`/api/creations` | 类型、概览、详情、关联记录分页 |
+| 脉络 | `/api/creation-kinds`、`/api/creations` | 类型、概览、详情、关联记录分页 |
+| 待确认提案 | `/api/creation-proposals` | 列表、详情、长期跟踪、暂不保留 |
 | 媒体读取 | `/api/media/:id` | 对已就绪媒体 302 到 OSS 读取地址 |
 
 除健康检查外，所有 API 都经过 CORS、中间件日志与 `x-user-id` 格式校验。日志会递归脱敏名称中包含 key、token、secret、password、authorization 的字段。

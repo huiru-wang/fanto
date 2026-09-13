@@ -23,6 +23,14 @@ struct CreationsView: View {
             }
             .navigationDestination(for: Creation.self, destination: CreationDetailView.init)
             .sheet(item: $proposalForDetail, content: ProposalDetailView.init)
+            .alert("操作未完成", isPresented: Binding(
+                get: { store.proposalActionError != nil },
+                set: { if !$0 { store.proposalActionError = nil } }
+            )) {
+                Button("好", role: .cancel) { store.proposalActionError = nil }
+            } message: {
+                Text(store.proposalActionError ?? "请稍后重试。")
+            }
         }
     }
 
@@ -76,11 +84,15 @@ struct CreationsView: View {
         if !store.creationKinds.isEmpty {
             Section {
                 ForEach(store.creationKinds) { kind in
-                    Label(kind.title, systemImage: kind.symbol)
-                        .foregroundStyle(FantoTheme.accent)
+                    NavigationLink {
+                        CreationKindListView(kind: kind)
+                    } label: {
+                        Label(kind.title, systemImage: kind.symbol)
+                            .foregroundStyle(FantoTheme.accent)
+                    }
                 }
             } header: {
-                Text("脉络类型")
+                Text("更多")
             } footer: {
                 Text("类型随你的脉络自然出现。")
             }

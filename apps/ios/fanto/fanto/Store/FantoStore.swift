@@ -8,13 +8,22 @@ enum CreationLoadState: Equatable {
     case failed(String)
 }
 
+enum RecordLoadState: Equatable {
+    case idle
+    case loading
+    case loaded(hasMore: Bool)
+    case failed(String)
+}
+
 @Observable
 final class FantoStore {
     var records: [Record]
     var proposals: [Proposal]
     var creations: [Creation]
     var creationKinds: [CreationKind]
+    var recordLoadState: RecordLoadState = .idle
     var creationLoadState: CreationLoadState = .idle
+    var proposalActionError: String?
 
     init(
         records: [Record] = [],
@@ -39,26 +48,51 @@ final class FantoStore {
         } catch {
             creationLoadState = .failed(error.localizedDescription)
         }
+
+        await loadProposals()
     }
 
-    // Proposal 写接口尚未由本地服务提供；以下仅保留给 SwiftUI Preview 使用。
-    func accept(_ proposal: Proposal) {
-        creations.insert(
-            Creation(
-                kind: proposal.kind,
-                title: proposal.title,
-                summary: proposal.insight,
-                updatedAt: .now,
-                sourceCount: proposal.sourceCount,
-                nextStep: proposal.suggestedNextStep
-            ),
-            at: 0
-        )
-        proposals.removeAll { $0.id == proposal.id }
+    func loadRecords() async {
+        recordLoadState = .loading
+
+        do {
+            let page = try await CreationAPIClient.shared.fetchRecords()
+            records = page.records
+            recordLoadState = .loaded(hasMore: page.hasMore)
+        } catch {
+            recordLoadState = .failed(error.localizedDescription)
+        }
     }
 
-    func decline(_ proposal: Proposal) {
-        proposals.removeAll { $0.id == proposal.id }
+    func loadProposals() async {
+        do {
+            proposals = try await CreationAPIClient.shared.fetchProposals()
+        } catch {
+            proposals = []
+        }
+    }
+
+    func accept(_ proposal: Proposal) async -> Bool {
+        do {
+            try await CreationAPIClient.shared.confirmProposal(id: proposal.id)
+            proposals.removeAll { $0.id == proposal.id }
+            await loadCreations()
+            return true
+        } catch {
+            proposalActionError = error.localizedDescription
+            return false
+        }
+    }
+
+    func decline(_ proposal: Proposal) async -> Bool {
+        do {
+            try await CreationAPIClient.shared.rejectProposal(id: proposal.id)
+            proposals.removeAll { $0.id == proposal.id }
+            return true
+        } catch {
+            proposalActionError = error.localizedDescription
+            return false
+        }
     }
 
     func addRecord(text: String, location: String?) {
@@ -75,6 +109,7 @@ extension FantoStore {
             creationKinds: [.thread]
         )
         store.creationLoadState = .loaded
+        store.recordLoadState = .loaded(hasMore: false)
         return store
     }()
 }

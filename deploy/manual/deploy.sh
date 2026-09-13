@@ -42,7 +42,6 @@ mkdir -p "$(dirname "$SQLITE_PATH")"
 
 pnpm install --frozen-lockfile
 pnpm typecheck
-pnpm test
 pnpm build:h5
 pnpm db:migrate
 

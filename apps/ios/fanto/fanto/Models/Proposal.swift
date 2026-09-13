@@ -1,7 +1,7 @@
 import Foundation
 
 struct Proposal: Identifiable, Hashable {
-    let id: UUID
+    let id: String
     let kind: CreationKind
     let title: String
     let insight: String
@@ -9,7 +9,7 @@ struct Proposal: Identifiable, Hashable {
     let sourceCount: Int
     let suggestedNextStep: String
 
-    init(id: UUID = UUID(), kind: CreationKind, title: String, insight: String, evidence: String, sourceCount: Int, suggestedNextStep: String) {
+    init(id: String = UUID().uuidString, kind: CreationKind, title: String, insight: String, evidence: String, sourceCount: Int, suggestedNextStep: String) {
         self.id = id
         self.kind = kind
         self.title = title

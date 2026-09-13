@@ -6,6 +6,7 @@ struct CreationDetailView: View {
     @State private var sourceRecords: [CreationSourceRecord] = []
     @State private var nextCursor: String?
     @State private var hasMoreRecords = false
+    @State private var isLoadingMoreRecords = false
     @State private var errorMessage: String?
 
     private var displayedCreation: Creation { detail ?? creation }
@@ -13,29 +14,21 @@ struct CreationDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Label(displayedCreation.kind.title, systemImage: displayedCreation.kind.symbol)
-                    .font(.headline)
-                    .foregroundStyle(FantoTheme.accent)
                 Text(displayedCreation.title)
                     .font(.largeTitle)
                     .bold()
+                Text("\(displayedCreation.status.title) · \(FantoDateText.timestamp(displayedCreation.updatedAt))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 Text(displayedCreation.summary)
-                    .font(.title3)
+                    .font(.subheadline)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
 
                 if let content = displayedCreation.content {
-                    Divider()
-                    Text("内容")
-                        .font(.headline)
-                    Text(content)
-                        .textSelection(.enabled)
-                }
-
-                Divider()
-                LabeledContent("最近更新") {
-                    Text(displayedCreation.updatedAt, format: .dateTime.year().month().day())
-                }
-                LabeledContent("状态") {
-                    Label(displayedCreation.status.title, systemImage: displayedCreation.status.symbol)
+                    MarkdownContentView(markdown: content, leadingTitleToOmit: displayedCreation.title)
                 }
 
                 sourceSection
@@ -59,19 +52,18 @@ struct CreationDetailView: View {
             Divider()
             Text("来源记录")
                 .font(.headline)
-            ForEach(sourceRecords) { record in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(record.text)
-                    Text(record.createdAt, format: .dateTime.year().month().day())
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
-            }
-            if hasMoreRecords {
-                Button("加载更多来源记录") {
-                    Task { await loadMoreRecords() }
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(sourceRecords) { record in
+                    CreationSourceTimelineRow(
+                        record: record,
+                        showsLineAfter: record.id != sourceRecords.last?.id
+                    )
+                    if record.id == sourceRecords.last?.id, hasMoreRecords {
+                        ProgressView()
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .task { await loadMoreRecords() }
+                    }
                 }
             }
         }
@@ -89,7 +81,9 @@ struct CreationDetailView: View {
     }
 
     private func loadMoreRecords() async {
-        guard let nextCursor else { return }
+        guard let nextCursor, !isLoadingMoreRecords else { return }
+        isLoadingMoreRecords = true
+        defer { isLoadingMoreRecords = false }
         do {
             let page = try await CreationAPIClient.shared.fetchSourceRecords(id: creation.id, cursor: nextCursor)
             sourceRecords.append(contentsOf: page.records)

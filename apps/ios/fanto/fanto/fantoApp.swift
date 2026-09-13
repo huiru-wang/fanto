@@ -16,7 +16,9 @@ struct FantoApp: App {
             AppRootView()
                 .environment(store)
                 .task {
-                    await store.loadCreations()
+                    async let records: Void = store.loadRecords()
+                    async let creations: Void = store.loadCreations()
+                    await (records, creations)
                 }
         }
     }

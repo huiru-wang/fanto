@@ -14,13 +14,14 @@ import { createApp } from "./server.js";
 import { logInfo } from "./infrastructure/logger.js";
 import { RecordMemoryService } from "./application/memory/record-memory.js";
 import { CreationReadRepository } from "./modules/creation/read.repository.js";
+import { CreationProposalRepository } from "./modules/creation/proposal.repository.js";
 
 loadEnv(); const config = loadConfig(); const db = createDatabase(config.sqlitePath); await runMigrations(db);
 if (!(await db.selectFrom("users").select("id").where("user_id", "=", "default-user").executeTakeFirst())) await db.insertInto("users").values({ user_id: "default-user", wx_openid: "default", created_at: nowIso() }).execute();
 const oss = new OssStorage(config.oss);
-const records = new SqliteRecordRepository(db); const media = new SqliteMediaRepository(db); const creationRead = new CreationReadRepository(db); const memory = new RecordMemoryService(db, config); const queue = new LocalMediaQueue(); const vectors = new LocalVectorQueue(); const ai = { apiKey: config.dashscope.apiKey, asrBaseUrl: config.dashscope.asrBaseUrl, vlBaseUrl: config.dashscope.vlBaseUrl };
+const records = new SqliteRecordRepository(db); const media = new SqliteMediaRepository(db); const creationRead = new CreationReadRepository(db); const creationProposals = new CreationProposalRepository(db); const memory = new RecordMemoryService(db, config); const queue = new LocalMediaQueue(); const vectors = new LocalVectorQueue(); const ai = { apiKey: config.dashscope.apiKey, asrBaseUrl: config.dashscope.asrBaseUrl, vlBaseUrl: config.dashscope.vlBaseUrl };
 registerImageUnderstandingListener(queue, records, media, oss, new QwenImageUnderstanding(ai.apiKey, ai.vlBaseUrl));
 registerRecordVectorListener(vectors, memory);
-const server = serve({ fetch: createApp(records, media, queue, oss, ai, vectors, creationRead).fetch, port: config.port, hostname: config.host });
+const server = serve({ fetch: createApp(records, media, queue, oss, ai, vectors, creationRead, creationProposals).fetch, port: config.port, hostname: config.host });
 logInfo("main", "Server listening", { host: config.host, port: config.port });
 const shutdown = async () => { server.close(); await db.destroy(); process.exit(0); }; process.on("SIGINT", shutdown); process.on("SIGTERM", shutdown);
