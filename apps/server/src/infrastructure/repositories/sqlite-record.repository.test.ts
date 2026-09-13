@@ -90,6 +90,13 @@ test("record HTTP accepts source and requires a valid user header", async () => 
   } finally { await db.destroy(); await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true }); }
 });
 
+test("HTTP returns a stable JSON envelope for unhandled errors", async () => {
+  const app = createApp({} as any, { findMedia: async () => { throw new Error("database connection failed"); } } as any, new LocalMediaQueue(), {} as any, { apiKey: "", asrBaseUrl: "", vlBaseUrl: "" });
+  const response = await app.request(`/api/media/${randomUUID()}`, { headers: { "x-user-id": "u" } });
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), { success: false, errorCode: "INTERNAL_ERROR", errorMsg: "Internal server error" });
+});
+
 test("record rejects image-only content and requires ready media", async () => {
   const path = `/tmp/fanto-content-${randomUUID()}.sqlite`; const db = createDatabase(path); await runMigrations(db);
   try {

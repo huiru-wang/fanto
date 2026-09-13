@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#000000">
+  <title>Fanto · 记录</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #000;
+      --surface: #181818;
+      --line: #2d2d2f;
+      --text: #f5f5f7;
+      --muted: #a4a4aa;
+      --accent: #43a577;
+      --ease-out: cubic-bezier(.23, 1, .32, 1);
+      --ease-drawer: cubic-bezier(.32, .72, 0, 1);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #101010;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", sans-serif;
+      font-size: 16px;
+    }
+
+    button {
+      font: inherit;
+      color: inherit;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    svg {
+      display: block;
+    }
+
+    .phone {
+      position: relative;
+      display: grid;
+      width: min(100%, 430px);
+      min-height: 100dvh;
+      margin: auto;
+      overflow: hidden;
+      background: var(--bg);
+    }
+
+    .screen {
+      grid-area: 1 / 1;
+      min-height: 100dvh;
+      padding: calc(16px + env(safe-area-inset-top)) 18px 116px;
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 180ms var(--ease-out), visibility 0s linear 180ms;
+    }
+
+    .screen.active {
+      z-index: 1;
+      visibility: visible;
+      opacity: 1;
+      pointer-events: auto;
+      transition-delay: 0s;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 0 2px 39px;
+    }
+
+    .year-button,
+    .top-actions,
+    .today,
+    .bottom-nav {
+      border: 1px solid #363638;
+      background: rgba(28, 28, 29, .92);
+      box-shadow: inset 0 1px rgba(255, 255, 255, .08), 0 2px 8px rgba(0, 0, 0, .25);
+    }
+
+    .year-button {
+      height: 51px;
+      padding: 0 20px 0 12px;
+      border-radius: 27px;
+      display: flex;
+      gap: 7px;
+      align-items: center;
+      font-size: 20px;
+      letter-spacing: .01em;
+    }
+
+    .top-actions {
+      height: 51px;
+      padding: 3px;
+      border-radius: 27px;
+      display: flex;
+      align-items: center;
+    }
+
+    .icon-button {
+      width: 50px;
+      height: 43px;
+      border: 0;
+      border-radius: 22px;
+      background: transparent;
+      display: grid;
+      place-items: center;
+    }
+
+    .icon-button:active,
+    .nav-icon:active,
+    .today:active,
+    .year-button:active {
+      transform: scale(.94);
+    }
+
+    .icon-button:focus-visible,
+    .nav-icon:focus-visible,
+    .today:focus-visible,
+    .year-button:focus-visible,
+    .day:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .month-title {
+      font-size: 52px;
+      line-height: 1;
+      font-weight: 750;
+      letter-spacing: -.07em;
+      margin: 0 0 29px 2px;
+    }
+
+    .calendar-heading {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 0 2px 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .calendar-heading button {
+      border: 0;
+      background: transparent;
+      padding: 6px;
+      color: var(--text);
+      border-radius: 10px;
+    }
+
+    .week-strip {
+      display: grid;
+      grid-template-columns: 30px repeat(7, minmax(0, 1fr)) 30px;
+      align-items: stretch;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .week-arrow {
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 25px;
+      padding: 0;
+    }
+
+    .week-days {
+      grid-column: 2 / 9;
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      min-width: 0;
+    }
+
+    .week-arrow:first-child {
+      grid-column: 1;
+      grid-row: 1;
+    }
+
+    .week-arrow:last-child {
+      grid-column: 9;
+      grid-row: 1;
+    }
+
+    .day {
+      position: relative;
+      height: 82px;
+      border: 0;
+      background: transparent;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 10px 0 0;
+      color: var(--text);
+    }
+
+    .day-name {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1;
+      margin-bottom: 8px;
+    }
+
+    .day-number {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      font-size: 20px;
+      font-weight: 650;
+      line-height: 1;
+    }
+
+    .day.selected .day-number {
+      background: var(--text);
+      color: #000;
+    }
+
+    .record-dot {
+      position: absolute;
+      bottom: 8px;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .day.selected .record-dot {
+      background: var(--text);
+    }
+
+    .day.muted {
+      color: #75757b;
+    }
+
+    .day.muted .day-name {
+      color: #66666a;
+    }
+
+    .month-grid-wrap {
+      display: none;
+      border-bottom: 1px solid var(--line);
+      animation: reveal 200ms var(--ease-out);
+    }
+
+    .month-grid-wrap.open {
+      display: block;
+    }
+
+    .month-weekdays,
+    .month-grid {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+    }
+
+    .month-weekdays {
+      padding: 13px 5px 5px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 12px;
+    }
+
+    .month-grid {
+      padding: 0 5px 9px;
+    }
+
+    .month-day {
+      position: relative;
+      height: 53px;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      font-size: 19px;
+      font-weight: 600;
+    }
+
+    .month-day.empty {
+      pointer-events: none;
+    }
+
+    .month-day.current {
+      color: #000;
+    }
+
+    .month-day.current span {
+      width: 36px;
+      height: 36px;
+      margin: auto;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--text);
+    }
+
+    .month-day .record-dot {
+      bottom: 3px;
+      left: calc(50% - 2.5px);
+    }
+
+    @keyframes reveal {
+      from {
+        opacity: 0;
+        transform: translateY(-8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    .record-list {
+      padding: 25px 4px 0;
+    }
+
+    .record-list h2 {
+      margin: 0 0 18px;
+      font-size: 17px;
+      letter-spacing: -.02em;
+    }
+
+    .record {
+      position: relative;
+      border-left: 1px solid #303033;
+      padding: 0 0 24px 17px;
+      margin-left: 6px;
+    }
+
+    .record::before {
+      content: "";
+      position: absolute;
+      left: -4px;
+      top: 6px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .record p {
+      display: -webkit-box;
+      margin: 0 0 8px;
+      overflow: hidden;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      font-size: 16px;
+      line-height: 1.55;
+      letter-spacing: -.012em;
+      text-overflow: ellipsis;
+    }
+
+    .record time {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .audio {
+      width: max-content;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      margin: 9px 0;
+      border-radius: 11px;
+      background: #232325;
+      color: #dedee1;
+      font-size: 13px;
+    }
+
+    .audio i {
+      font-style: normal;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--accent);
+      color: #00190c;
+      font-size: 9px;
+    }
+
+    .photo-stack {
+      display: flex;
+      gap: 7px;
+      margin: 11px 0 10px;
+      overflow: hidden;
+    }
+
+    .photo-preview {
+      flex: 0 0 116px;
+      height: 90px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 11px;
+      background-position: center;
+      background-size: cover;
+    }
+
+    .photo-preview:nth-child(1) {
+      background-image: linear-gradient(145deg, #7c9d9b 0%, #b7cbb9 43%, #3d5d58 100%);
+    }
+
+    .photo-preview:nth-child(2) {
+      background-image: linear-gradient(145deg, #d0a775 0%, #795b48 48%, #263b42 100%);
+    }
+
+    .photo-preview:nth-child(3) {
+      background-image: linear-gradient(145deg, #bca7ba 0%, #7e5d6e 45%, #233640 100%);
+    }
+
+    .bottom {
+      position: absolute;
+      z-index: 3;
+      bottom: max(18px, env(safe-area-inset-bottom));
+      left: 18px;
+      right: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+    }
+
+    .today {
+      pointer-events: auto;
+      height: 54px;
+      min-width: 83px;
+      padding: 0 18px;
+      border-radius: 27px;
+      font-size: 18px;
+      font-weight: 650;
+    }
+
+    .bottom-nav {
+      pointer-events: auto;
+      height: 54px;
+      padding: 3px;
+      border-radius: 27px;
+      display: flex;
+      gap: 3px;
+    }
+
+    .nav-icon {
+      width: 58px;
+      border: 0;
+      border-radius: 23px;
+      background: transparent;
+      display: grid;
+      place-items: center;
+      color: #ededee;
+    }
+
+    .nav-icon.active {
+      background: #343436;
+    }
+
+    .creation-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 0 0 22px;
+    }
+
+    .creation-head h1 {
+      margin: 0;
+      font-size: 35px;
+      letter-spacing: -.055em;
+    }
+
+    .creation-head button {
+      border: 0;
+      background: transparent;
+      padding: 10px;
+      color: var(--muted);
+    }
+
+    .creation-intro {
+      color: var(--muted);
+      margin: 0 0 27px;
+      line-height: 1.55;
+    }
+
+    .creation-section {
+      margin: 0 0 29px;
+    }
+
+    .creation-section h2 {
+      font-size: 17px;
+      margin: 0 0 12px;
+    }
+
+    .rail {
+      display: flex;
+      gap: 11px;
+      margin: 0 -18px;
+      padding: 0 18px 5px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .rail::-webkit-scrollbar {
+      display: none;
+    }
+
+    .creation-card {
+      flex: 0 0 79%;
+      min-height: 166px;
+      padding: 17px;
+      text-align: left;
+      border: 1px solid #323234;
+      border-radius: 20px;
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .creation-card small {
+      color: var(--accent);
+    }
+
+    .creation-card h3 {
+      margin: 13px 0 8px;
+      font-size: 20px;
+      letter-spacing: -.035em;
+    }
+
+    .creation-card p {
+      margin: 0;
+      color: #c2c2c7;
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .sheet-backdrop {
+      visibility: hidden;
+      pointer-events: none;
+      position: absolute;
+      z-index: 5;
+      inset: 0;
+      opacity: 0;
+      background: rgba(0, 0, 0, 0);
+      transition: opacity 220ms var(--ease-out), background-color 220ms var(--ease-out), visibility 0s linear 280ms;
+    }
+
+    .sheet-backdrop.open {
+      visibility: visible;
+      pointer-events: auto;
+      opacity: 1;
+      background: rgba(0, 0, 0, .56);
+      transition-delay: 0s;
+    }
+
+    .sheet {
+      position: absolute;
+      bottom: 0;
+      width: 100%;
+      height: min(75dvh, 640px);
+      padding: 10px 20px calc(26px + env(safe-area-inset-bottom));
+      border-radius: 27px 27px 0 0;
+      background: #1c1c1e;
+      transform: translateY(100%);
+      transition: transform 280ms var(--ease-drawer);
+      will-change: transform;
+    }
+
+    .sheet-backdrop.open .sheet {
+      transform: translateY(0);
+    }
+
+    .grab {
+      width: 36px;
+      height: 4px;
+      margin: 0 auto 15px;
+      border-radius: 9px;
+      background: #69696e;
+    }
+
+    .sheet-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .sheet-head h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .close {
+      border: 0;
+      background: transparent;
+      color: var(--accent);
+      padding: 9px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 135px;
+      resize: none;
+      margin: 20px 0 12px;
+      padding: 14px;
+      border: 1px solid #414144;
+      border-radius: 15px;
+      outline-color: var(--accent);
+      background: #28282a;
+      color: var(--text);
+      font: inherit;
+    }
+
+    .sheet-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--muted);
+    }
+
+    .attachment {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      font-size: 14px;
+    }
+
+    .save {
+      border: 0;
+      border-radius: 12px;
+      padding: 10px 16px;
+      color: #001a0d;
+      background: var(--accent);
+      font-weight: 750;
+    }
+
+    .search-panel {
+      display: none;
+      margin: -22px 0 22px;
+    }
+
+    .search-panel.open {
+      display: block;
+    }
+
+    .search-panel input {
+      width: 100%;
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: #242426;
+      color: var(--text);
+      font: inherit;
+      outline-color: var(--accent);
+    }
+
+    .toast {
+      position: absolute;
+      z-index: 8;
+      left: 50%;
+      bottom: 93px;
+      transform: translate(-50%, 20px);
+      opacity: 0;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: #333337;
+      color: #fff;
+      font-size: 13px;
+      white-space: nowrap;
+      transition: opacity 180ms var(--ease-out), transform 180ms var(--ease-out);
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    @media (prefers-reduced-motion:reduce) {
+      .screen {
+        transition: opacity 120ms ease, visibility 0s linear 120ms;
+      }
+
+      .month-grid-wrap {
+        animation: none;
+      }
+
+      .sheet-backdrop {
+        transition: opacity 180ms ease, visibility 0s linear 180ms;
+      }
+
+      .sheet {
+        transform: none !important;
+        transition: none;
+        opacity: 0;
+      }
+
+      .sheet-backdrop.open .sheet {
+        opacity: 1;
+        transition: opacity 180ms ease;
+      }
+    }
+
+    @media (prefers-reduced-transparency:reduce) {
+
+      .year-button,
+      .top-actions,
+      .today,
+      .bottom-nav {
+        background: #202022;
+      }
+    }
+
+    @media (min-width:700px) {
+      .phone {
+        min-height: 840px;
+        margin: 24px auto;
+        border-radius: 32px;
+        box-shadow: 0 25px 70px rgba(0, 0, 0, .4);
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="phone">
+    <main class="screen active" id="recordsScreen">
+      <header class="toolbar">
+        <button class="year-button" aria-label="返回年份视图"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m15 18-6-6 6-6" />
+          </svg><span>2026 年</span></button>
+        <div class="top-actions" aria-label="记录操作">
+          <button class="icon-button" id="calendarToggle" aria-label="展开月历" aria-expanded="false"><svg width="25"
+              height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="4" width="18" height="14" rx="3" />
+              <path d="M7 8h8M7 12h2m2 0h2m2 0h2" />
+            </svg></button>
+          <button class="icon-button" id="searchButton" aria-label="搜索记录"><svg width="28" height="28"
+              viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round">
+              <circle cx="11" cy="11" r="6.5" />
+              <path d="m16 16 4.2 4.2" />
+            </svg></button>
+          <button class="icon-button" id="addRecord" aria-label="新建记录"><svg width="29" height="29" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <path d="M12 4v16M4 12h16" />
+            </svg></button>
+        </div>
+      </header>
+      <div class="search-panel" id="searchPanel"><input aria-label="搜索记录" placeholder="搜索记录" autofocus></div>
+      <h1 class="month-title">九月</h1>
+      <div class="calendar-heading"><span id="weekRange">9 月 6 日 – 12 日</span></div>
+      <section class="week-strip" aria-label="本周日历"><button class="week-arrow" id="previousWeek"
+          aria-label="上一周">‹</button>
+        <div class="week-days" id="weekDays"></div><button class="week-arrow" id="nextWeek" aria-label="下一周">›</button>
+      </section>
+      <section class="month-grid-wrap" id="monthGridWrap" aria-label="九月月历">
+        <div class="month-weekdays">
+          <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+        <div class="month-grid" id="monthGrid"></div>
+      </section>
+      <section class="record-list">
+        <h2 id="selectedTitle">9 月 10 日</h2>
+        <div id="records"></div>
+      </section>
+    </main>
+    <main class="screen" id="creationsScreen">
+      <header class="creation-head">
+        <h1>Creation</h1>
+      </header>
+      <p class="creation-intro">Fanto 从记录中留下值得继续看的内容。</p>
+      <div class="creation-section">
+        <h2>Thread</h2>
+        <div class="rail"><button class="creation-card"><small>今天更新</small>
+            <h3>从工作消耗到自主创作</h3>
+            <p>最近的记录让这个线索更具体：你需要的是更容易开始的节奏。</p>
+          </button><button class="creation-card"><small>9 月 7 日</small>
+            <h3>把日常观察留下来</h3>
+            <p>几次散步与整理，正在形成自己的采集方式。</p>
+          </button></div>
+      </div>
+      <div class="creation-section">
+        <h2>Research</h2>
+        <div class="rail"><button class="creation-card"><small>9 月 4 日</small>
+            <h3>关于独立创作节奏的研究</h3>
+            <p>3 个发现，和 2 个仍值得验证的问题。</p>
+          </button></div>
+      </div>
+    </main>
+    <div class="bottom"><button class="today" id="todayButton">今天</button>
+      <nav class="bottom-nav" aria-label="主导航"><button class="nav-icon active" data-screen="recordsScreen"
+          aria-label="记录"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2">
+            <rect x="3" y="4" width="18" height="16" rx="3" />
+            <path d="M7 8h2m2 0h2m2 0h2M7 12h2m2 0h2m2 0h2M7 16h2m2 0h2" />
+          </svg></button><button class="nav-icon" data-screen="creationsScreen" aria-label="Creation"><svg width="27"
+            height="27" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+            stroke-linejoin="round">
+            <path d="M12 3 9 8l-5 .7 3.6 3.6-.9 5.1L12 14.7l5.3 2.7-.9-5.1L20 8.7 15 8l-3-5Z" />
+          </svg></button></nav>
+    </div>
+    <div class="sheet-backdrop" id="sheetBackdrop" role="dialog" aria-modal="true" aria-labelledby="composerTitle">
+      <div class="sheet">
+        <div class="grab"></div>
+        <div class="sheet-head">
+          <h2 id="composerTitle">新记录</h2><button class="close" id="closeComposer">关闭</button>
+        </div><textarea id="draft" placeholder="想到什么，就记下来。"></textarea>
+        <div class="sheet-footer">
+          <div class="attachment"><span>图片</span><span>按住说话</span></div><button class="save" id="saveRecord">保存</button>
+        </div>
+      </div>
+    </div>
+    <div class="toast" id="toast" role="status"></div>
+  </div>
+  <script>
+    const recordsByDate = { "2026-09-10": [{ text: "今天在写这个产品方案时，突然觉得：不是把每一个念头都变成任务，而是留下它们正在生长的证据。", time: "21:42:16 · 中国·杭州·西湖区" }, { text: "傍晚经过湖边，光线和云层刚好都慢了下来。", photos: 3, time: "18:36:24 · 中国·杭州·西湖区" }, { text: "下午散步时想到，创作的节奏也许需要一个更小、更不会失败的起点。", audio: "00:42", time: "17:08:02 · 中国·杭州·拱墅区" }], "2026-09-09": [{ text: "和朋友聊到「忙」的时候，发现自己真正抗拒的是失去选择感。", time: "22:05:41 · 中国·杭州" }], "2026-09-08": [{ text: "整理书桌时把旧速写本翻出来，想把它们做成一个持续的小项目。", time: "19:14:09" }] };
+    const dayNames = ['日', '一', '二', '三', '四', '五', '六'], pad = n => String(n).padStart(2, '0'), key = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, format = d => `${d.getMonth() + 1} 月 ${d.getDate()} 日`;
+    let weekStart = new Date(2026, 8, 6), selected = new Date(2026, 8, 10); const weekDays = document.querySelector('#weekDays'), recordHost = document.querySelector('#records'), selectedTitle = document.querySelector('#selectedTitle');
+    function renderWeek() { const days = Array.from({ length: 7 }, (_, i) => new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + i)); document.querySelector('#weekRange').textContent = `${format(days[0])} – ${format(days[6])}`; weekDays.innerHTML = days.map(d => { const chosen = key(d) === key(selected), has = Boolean(recordsByDate[key(d)]); return `<button class="day ${chosen ? 'selected' : ''} ${d.getMonth() !== 8 ? 'muted' : ''}" data-date="${key(d)}" aria-label="${format(d)}，周${dayNames[d.getDay()]}${has ? '，有记录' : ''}${chosen ? '，已选中' : ''}"><span class="day-name">${dayNames[d.getDay()]}</span><span class="day-number">${d.getDate()}</span>${has ? '<i class="record-dot" aria-hidden="true"></i>' : ''}</button>` }).join(''); document.querySelectorAll('[data-date]').forEach(button => button.onclick = () => { selected = new Date(`${button.dataset.date}T00:00:00`); renderAll(); }); }
+    function renderRecords() { const items = recordsByDate[key(selected)] || []; selectedTitle.textContent = format(selected); recordHost.innerHTML = items.length ? items.map(item => `<article class="record"><p>${item.text}</p>${item.photos ? `<div class="photo-stack" aria-label="${item.photos} 张图片"><i class="photo-preview"></i><i class="photo-preview"></i><i class="photo-preview"></i></div>` : ''}${item.audio ? `<div class="audio"><i>▶</i><strong>${item.audio}</strong></div>` : ''}<time>${item.time}</time></article>`).join('') : '<article class="record"><p>这一天还没有记录。</p><time>留一点空白也很好。</time></article>'; }
+    function renderMonth() { const host = document.querySelector('#monthGrid'), first = new Date(2026, 8, 1).getDay(), days = new Date(2026, 9, 0).getDate(); host.innerHTML = Array.from({ length: first }, () => '<button class="month-day empty" aria-hidden="true"></button>').join('') + Array.from({ length: days }, (_, i) => { const d = new Date(2026, 8, i + 1), chosen = key(d) === key(selected), has = Boolean(recordsByDate[key(d)]); return `<button class="month-day ${chosen ? 'current' : ''}" data-month-date="${key(d)}" aria-label="${format(d)}${has ? '，有记录' : ''}"><span>${d.getDate()}</span>${has ? '<i class="record-dot" aria-hidden="true"></i>' : ''}</button>` }).join(''); document.querySelectorAll('[data-month-date]').forEach(button => button.onclick = () => { selected = new Date(`${button.dataset.monthDate}T00:00:00`); weekStart = new Date(selected.getFullYear(), selected.getMonth(), selected.getDate() - selected.getDay()); document.querySelector('#monthGridWrap').classList.remove('open'); document.querySelector('#calendarToggle').setAttribute('aria-expanded', 'false'); document.querySelector('#calendarToggle').setAttribute('aria-label', '展开月历'); renderAll(); }); }
+    function renderAll() { renderWeek(); renderRecords(); renderMonth(); } function showToast(text) { const toast = document.querySelector('#toast'); toast.textContent = text; toast.classList.add('show'); clearTimeout(window.toastTimer); window.toastTimer = setTimeout(() => toast.classList.remove('show'), 1800); }
+    document.querySelector('#previousWeek').onclick = () => { weekStart.setDate(weekStart.getDate() - 7); renderWeek(); }; document.querySelector('#nextWeek').onclick = () => { weekStart.setDate(weekStart.getDate() + 7); renderWeek(); }; document.querySelector('#calendarToggle').onclick = () => { const grid = document.querySelector('#monthGridWrap'), open = !grid.classList.contains('open'); grid.classList.toggle('open', open); document.querySelector('#calendarToggle').setAttribute('aria-expanded', String(open)); document.querySelector('#calendarToggle').setAttribute('aria-label', open ? '关闭月历' : '展开月历'); }; document.querySelector('#searchButton').onclick = () => { const panel = document.querySelector('#searchPanel'); panel.classList.toggle('open'); if (panel.classList.contains('open')) panel.querySelector('input').focus(); }; document.querySelector('#todayButton').onclick = () => { selected = new Date(2026, 8, 10); weekStart = new Date(2026, 8, 6); renderAll(); showToast('已回到今天'); };
+    const backdrop = document.querySelector('#sheetBackdrop'), closeComposer = () => backdrop.classList.remove('open'); document.querySelector('#addRecord').onclick = () => { backdrop.classList.add('open'); document.querySelector('#draft').focus(); }; document.querySelector('#closeComposer').onclick = closeComposer; backdrop.onclick = e => { if (e.target === backdrop) closeComposer(); }; document.querySelector('#saveRecord').onclick = () => { const value = document.querySelector('#draft').value.trim() || '留下一条刚刚想到的记录。', todayKey = '2026-09-10'; recordsByDate[todayKey].unshift({ text: value, time: '22:16:03 · 中国-杭州' }); selected = new Date(2026, 8, 10); weekStart = new Date(2026, 8, 6); document.querySelector('#draft').value = ''; closeComposer(); renderAll(); showToast('已保存'); };
+    document.querySelectorAll('[data-screen]').forEach(button => button.onclick = () => { const screen = button.dataset.screen; document.querySelectorAll('.screen').forEach(item => item.classList.toggle('active', item.id === screen)); document.querySelectorAll('[data-screen]').forEach(item => item.classList.toggle('active', item === button)); document.querySelector('.today').style.visibility = screen === 'recordsScreen' ? 'visible' : 'hidden'; }); renderAll();
+  </script>
+</body>
+
+</html>

@@ -21,6 +21,7 @@ export interface AppConfig {
   dashscope: { apiKey: string; asrBaseUrl: string; vlBaseUrl: string };
   agentWorkspaceRoot: string;
   agentSessionDatabasePath: string;
+  agentDefinitionsDir: string;
 }
 
 export function loadEnv(path = ".env") {
@@ -44,6 +45,7 @@ export function loadConfig(): AppConfig {
   mkdirSync(dirname(sqlitePath), { recursive: true });
   const agentWorkspaceRoot = resolve(process.env.AGENT_WORKSPACE_ROOT ?? "../../data/agent-workspaces");
   const agentSessionDatabasePath = resolve(process.env.AGENT_SESSION_DATABASE_PATH ?? "../../data/agent-sessions.sqlite");
+  const agentDefinitionsDir = resolve(process.env.AGENT_DEFINITIONS_DIR ?? "src/agent/definitions");
   mkdirSync(agentWorkspaceRoot, { recursive: true });
   mkdirSync(dirname(agentSessionDatabasePath), { recursive: true });
   const endpoint = process.env.OSS_ENDPOINT?.trim();
@@ -76,5 +78,6 @@ export function loadConfig(): AppConfig {
     },
     agentWorkspaceRoot,
     agentSessionDatabasePath,
+    agentDefinitionsDir,
   };
 }

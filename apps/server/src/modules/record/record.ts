@@ -1,6 +1,6 @@
 import type { RecordContent } from "@fanto/shared";
 
-export type RecordStatus = "active";
+export type RecordStatus = "pending" | "updated" | "processing" | "processed";
 
 export interface Record {
   extData: { [key: string]: unknown } | null;
@@ -10,6 +10,7 @@ export interface Record {
   content: RecordContent;
   version: number;
   status: RecordStatus;
+  taskId: string | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,11 +1,11 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import type { Entry } from "@earendil-works/pi-agent-core";
+import { TODO_CONTEXT, type Entry } from "@earendil-works/pi-agent-core";
 import type { AgentHarnessManager } from "../agent/harness-manager.js";
 import { requireUserId } from "../interfaces/request-user.js";
 
-const input = z.object({ sessionId: z.string().uuid(), message: z.string().min(1) }).strict();
+const input = z.object({ sessionId: z.string().uuid(), agentId: z.string().min(1).max(64).optional(), message: z.string().min(1) }).strict();
 const params = z.object({ sessionId: z.string().uuid() });
 const cursor = z.coerce.number().int().nonnegative().default(0);
 const limit = z.coerce.number().int().min(1).max(100).default(50);
@@ -21,15 +21,16 @@ export function createAgentRoutes(sessions: AgentHarnessManager): Hono {
   app.post("/stream", async (c) => {
     const body = input.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: body.error.message }, 400);
-    const thread = await sessions.getOrCreate(requireUserId(c.req.raw), body.data.sessionId);
+    const thread = await sessions.getOrCreate(requireUserId(c.req.raw), body.data.sessionId, body.data.agentId ?? "main");
     if (!thread) return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Session not found" }, 404);
-    const previous = await thread.harness.session.findEntries({ order: "newestFirst", limit: 1 });
+    const previous = await thread.lane.findEntries({ order: "newestFirst", limit: 1 }, TODO_CONTEXT);
     const afterSeq = previous[0]?.seq ?? 0;
     return streamSSE(c, async (stream) => {
-      const unsubscribe = thread.harness.events.on("run_start", event => stream.writeSSE({ event: "run_start", data: JSON.stringify(event) }));
+      const unsubscribe = thread.harness.events.on("message_update", event => stream.writeSSE({ event: "message_update", data: JSON.stringify(redact(event)) }));
       try {
-        const outcome = await thread.harness.prompt(body.data.message);
-        const entries = await thread.harness.session.findEntries({ order: "oldestFirst", cursor: { afterSeq } });
+        await stream.writeSSE({ event: "run_start", data: JSON.stringify({ sessionId: body.data.sessionId }) });
+        const outcome = await thread.lane.prompt(body.data.message, undefined, TODO_CONTEXT);
+        const entries = await thread.lane.findEntries({ order: "oldestFirst", cursor: { seq: afterSeq } }, TODO_CONTEXT);
         for (const entry of entries) await stream.writeSSE({ event: "entry", data: JSON.stringify(redact(entry)) });
         await stream.writeSSE({ event: "done", data: JSON.stringify(outcome) });
       } catch (cause) {

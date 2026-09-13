@@ -25,7 +25,8 @@
 
 ## Agent 会话与工具
 
-- Agent 使用 Pi `AgentHarness + SessionStorage`；`sessionId` 是持久 Session、Harness 缓存和工作区的唯一隔离边界，`userId` 只用于接口授权与会话 metadata 归属校验。
+- Agent 使用 Pi `AgentHarness + SQLite Session`；`sessionId` 是持久 Session、Harness 缓存和工作区的唯一隔离边界。`userId` 与 `agentId` 写入 Pi Session 的 `fanto.session_owner` custom entry，用于接口授权与归属校验；不另建 Agent 业务表。
+- 默认 Agent 为 `main`；其 JSON Definition 的 `tools` 只能配置 Pi 内置 `read`、`write`、`edit`、`bash`。文件工具限制在 session 工作区，bash 使用最小环境、危险命令限制与工作区 cwd。
 - 原始消息读取基于 Pi Session entry，不以旧 `messages` 表中的运行时事件作为真相源；对外 DTO 必须脱敏密钥、令牌、密码和 Authorization 字段。
 - bash 工具必须在 sessionId 对应工作区执行，采用最小环境、超时和危险命令限制。生产环境如需更强隔离，应使用容器或微虚拟机，不能放宽宿主机 bash 权限。
 - Record Memory 仅在 Record 创建/更新后异步生成；向量项固定 `type=record`、`outerId=recordId`，内容仅含用户文本和保存时已就绪的音频 ASR 文本。图片不向量化，失败仅记录日志且不重试。
@@ -35,6 +36,12 @@
 - records/topics.ext_data 存 JSON，实体/API 为 extData；organization 命名空间保存最近一次成功摘要。更新时只替换该命名空间，不覆盖其他扩展键。不增加反馈字段、接口或 Record tag。
 - PATCH /api/records/:id 只接受 content，变化后 status=updated；processing 返回 409；相同内容不更新状态和时间。旧摘要在重整前保留。
 - 整理成功后事务提交摘要和最终状态；重新规划替换本批关联，原、新 Topic 都根据当前有效记录重写，无记录 Topic 归档。失败恢复记录状态和原关联不等于 Topic 正文事务回滚。
+
+## 脉络只读模块
+
+- 当前服务只装配 Creation、Creation Proposal 与类型目录的只读查询；旧主动创作、Agent、Task 和确认写链路不属于当前运行时，后续按新业务模型重建。
+- 脉络状态统一为 `active`、`resting`、`archived`；类型使用全局 `kind_id`，系统类型可读，用户自定义类型暂不实现。
+- Record 与 Creation / Proposal 的关联使用全局业务 ID。关联来源 Record 分页先查询关系表，再按 ID 批量读取 Record 并按关系顺序重组，禁止为此分页查询使用 JOIN。
 
 ## 前端 H5
 
@@ -47,6 +54,8 @@
 
 ## iOS 底部交互层
 
-- 当前 iOS 只读版只包含“记录 / 回声”两项原生 `TabView` 导航；禁止实现加号、创建入口、候选菜单、底栏 overlay 或自定义抽屉。
-- 部署目标为 iOS 17；iOS 26 的 Liquid Glass 仅由系统 tab bar 自动提供，不覆盖系统 tab bar 的背景、尺寸、动画或命中区域。
-- 页面内需要呈现内容时，使用各 tab 独立的 `NavigationStack`；不使用透明全屏点击层。
+- iOS 工程位于 `apps/ios/fanto`，使用原生 `TabView` 提供“记录 / 脉络”两项导航；不覆盖系统 tab bar 的背景、尺寸、动画或命中区域。
+- “新建记录”位于记录页导航栏，使用系统 sheet 呈现；不使用底栏 overlay、透明全屏点击层或自定义抽屉。
+- 记录页日历以周日为一周起点。`selectedDate`、周锚点和日历呈现状态有单一所有者；月历展开/收起使用同一日历区域的连续布局过渡，不得将单行周历和整月日历以两份内容并置。Timeline 按所选日期展示，音频记录仅显示播放动作与时长。
+- iOS 运行态已接入本地 Creation 只读 API：概览仅展示服务端返回的最多三条 active 脉络与实际类型目录；详情读取正文、状态和来源 Record 游标分页。Proposal、按类型的完整列表、搜索和状态筛选等待服务端对应路由后再接入，禁止用本地样例冒充真实数据。
+- 当前为 iOS 26.5 最低部署目标。使用系统组件和语义颜色；Material 只用于短暂的系统导航/呈现层。

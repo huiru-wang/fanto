@@ -19,7 +19,7 @@ export class SqliteRecordRepository implements RecordRepository {
       const blocks = await this.blocks(trx, input.userId, input.value);
       if (typeof blocks === "string") return blocks;
       const now = nowIso();
-      const row = { record_id: randomUUID(), user_id: input.userId, source: input.source ?? "home", content: JSON.stringify({ text: input.value.text, blocks }), version: 1, status: "active", created_at: now, updated_at: now };
+      const row = { record_id: randomUUID(), user_id: input.userId, source: input.source ?? "home", content: JSON.stringify({ text: input.value.text, blocks }), version: 1, status: "pending", task_id: null, created_at: now, updated_at: now };
       await trx.insertInto("records").values(row).execute();
       await this.link(trx, input.userId, input.value.media.map(item => item.mediaId), row.record_id);
       return this.toEntity(row);
@@ -47,7 +47,7 @@ export class SqliteRecordRepository implements RecordRepository {
       const oldIds = (JSON.parse(previous.content) as RecordContent).blocks.map(block => block.mediaId);
       const newIds = input.value.media.map(item => item.mediaId);
       const now = nowIso();
-      const row = await trx.updateTable("records").set({ content: JSON.stringify({ text: input.value.text, blocks }), version: sql<number>`version + 1`, updated_at: now }).where("record_id", "=", id).returningAll().executeTakeFirstOrThrow();
+      const row = await trx.updateTable("records").set({ content: JSON.stringify({ text: input.value.text, blocks }), version: sql<number>`version + 1`, status: "updated", task_id: null, updated_at: now }).where("record_id", "=", id).returningAll().executeTakeFirstOrThrow();
       await this.link(trx, userId, newIds, id);
       for (const mediaId of oldIds.filter(mediaId => !newIds.includes(mediaId))) await this.unlink(trx, userId, mediaId, now);
       return this.toEntity(row);
@@ -67,6 +67,23 @@ export class SqliteRecordRepository implements RecordRepository {
       const updated = await trx.updateTable("records").set({ content: JSON.stringify(content), updated_at: nowIso() }).where("record_id", "=", input.recordId).where("version", "=", input.version).executeTakeFirst();
       return updated.numUpdatedRows === 1n;
     });
+  }
+
+  async claimForTask(userId: string, taskId: string, limit: number): Promise<Record[]> {
+    return this.db.transaction().execute(async trx => {
+      const rows = await trx.selectFrom("records").selectAll().where("user_id", "=", userId).where("status", "in", ["pending", "updated"]).orderBy("created_at", "asc").orderBy("record_id", "asc").limit(limit).execute();
+      if (!rows.length) return [];
+      await trx.updateTable("records").set({ status: "processing", task_id: taskId, updated_at: nowIso() }).where("record_id", "in", rows.map(row => row.record_id)).execute();
+      return rows.map(row => this.toEntity({ ...row, status: "processing", task_id: taskId }));
+    });
+  }
+
+  async finishTask(userId: string, taskId: string): Promise<void> {
+    await this.db.updateTable("records").set({ status: "processed", updated_at: nowIso() }).where("user_id", "=", userId).where("task_id", "=", taskId).where("status", "=", "processing").execute();
+  }
+
+  async releaseTask(userId: string, taskId: string): Promise<void> {
+    await this.db.updateTable("records").set({ status: "pending", task_id: null, updated_at: nowIso() }).where("user_id", "=", userId).where("task_id", "=", taskId).where("status", "=", "processing").execute();
   }
 
   private async blocks(trx: Kysely<DB>, userId: string, value: SaveRecordContent, recordId?: string): Promise<RecordContent["blocks"] | "invalid_media" | "invalid_content"> {
@@ -90,5 +107,5 @@ export class SqliteRecordRepository implements RecordRepository {
     if (media) await trx.updateTable("media_assets").set({ ext_data: JSON.stringify({ ...ext(media.ext_data), recordId: null }), updated_at: now }).where("media_id", "=", mediaId).execute();
   }
 
-  private toEntity(row: any): Record { return { extData: null, id: row.record_id, userId: row.user_id, source: row.source, content: JSON.parse(row.content), version: row.version, status: "active", createdAt: row.created_at, updatedAt: row.updated_at }; }
+  private toEntity(row: any): Record { return { extData: null, id: row.record_id, userId: row.user_id, source: row.source, content: JSON.parse(row.content), version: row.version, status: row.status, taskId: row.task_id, createdAt: row.created_at, updatedAt: row.updated_at }; }
 }

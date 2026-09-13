@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import type { AgentHarnessManager } from "./agent/harness-manager.js";
 import type { LocalMediaQueue } from "./infrastructure/local-media-queue.js";
 import type { LocalVectorQueue } from "./infrastructure/local-vector-queue.js";
 import type { OssStorage } from "./infrastructure/oss-storage.js";
@@ -9,9 +8,10 @@ import { nowIso } from "./infrastructure/time.js";
 import type { RecordRepository } from "./modules/record/record.repository.js";
 import { createRecordRoutes } from "./routes/records.js";
 import { createUploadRoutes } from "./routes/uploads.js";
-import { createAgentRoutes } from "./routes/agent.js";
 import { validUserId } from "./interfaces/request-user.js";
-import { logAccess } from "./infrastructure/logger.js";
+import { logAccess, logError } from "./infrastructure/logger.js";
+import { CreationReadRepository } from "./modules/creation/read.repository.js";
+import { createCreationReadRoutes } from "./routes/creation-read.js";
 
 const redact = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(redact);
@@ -25,8 +25,12 @@ const jsonBody = async (response: Response) => {
   try { return redact(JSON.parse(await response.clone().text())); } catch { return null; }
 };
 
-export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: LocalMediaQueue, oss: OssStorage, ai: { apiKey: string; asrBaseUrl: string; vlBaseUrl: string }, sessions?: AgentHarnessManager, vectors?: LocalVectorQueue) {
+export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: LocalMediaQueue, oss: OssStorage, ai: { apiKey: string; asrBaseUrl: string; vlBaseUrl: string }, vectors?: LocalVectorQueue, creationRead?: CreationReadRepository) {
   const app = new Hono();
+  app.onError((error, c) => {
+    logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });
+    return c.json({ success: false, errorCode: "INTERNAL_ERROR", errorMsg: "Internal server error" }, 500);
+  });
   app.use("*", cors());
   app.use("/api/*", async (c, next) => {
     const requestBody = c.req.header("content-type")?.includes("application/json") ? await c.req.raw.clone().json().then(redact).catch(() => null) : null;
@@ -41,7 +45,7 @@ export function createApp(records: RecordRepository, media: SqliteMediaRepositor
   app.get("/health", c => c.json({ status: "ok", timestamp: nowIso() }));
   app.route("/api/uploads", createUploadRoutes(media, oss, ai));
   app.route("/api/records", createRecordRoutes(records, media, queue, vectors));
-  if (sessions) app.route("/api/agent", createAgentRoutes(sessions));
+  if (creationRead) app.route("/api", createCreationReadRoutes(creationRead));
   app.get("/api/media/:id", async c => { const asset = await media.findMedia(c.req.param("id"), c.req.header("x-user-id")!.trim()); return asset?.status === "ready" ? c.redirect(oss.readUrl(asset.objectKey), 302) : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404); });
   return app;
 }

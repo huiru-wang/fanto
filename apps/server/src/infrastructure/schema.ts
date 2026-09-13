@@ -24,6 +24,58 @@ export interface RecordsTable {
   content: string;
   version: number;
   status: string;
+  task_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreationsTable {
+  id: Generated<number>;
+  creation_id: string;
+  user_id: string;
+  title: string;
+  kind_id: string;
+  session_id: string;
+  summary: string;
+  content: string;
+  status: "active" | "resting" | "archived";
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreationProposalsTable {
+  id: Generated<number>;
+  proposal_id: string;
+  user_id: string;
+  creation_id: string | null;
+  base_creation_version: number | null;
+  operation: string;
+  session_id: string;
+  title: string | null;
+  kind_id: string | null;
+  summary: string | null;
+  content: string | null;
+  ext_data: string | null;
+  status: string;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreationKindsTable { kind_id: string; owner_user_id: string | null; name: string; title: string; created_at: string; updated_at: string; }
+export interface EntityRelationsTable { relation_id: string; user_id: string; source_entity_id: string; source_entity_type: string; target_entity_id: string; target_entity_type: string; relation_type: string; source_created_at: string; created_at: string; }
+
+export interface TasksTable {
+  id: Generated<number>;
+  task_id: string;
+  user_id: string;
+  type: string;
+  status: string;
+  payload: string;
+  execution_metadata: string;
+  error_code: string | null;
+  error_message: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -38,16 +90,6 @@ export interface MediaAssetsTable {
   bytes: number;
   status: string;
   ext_data: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface MessagesTable {
-  id: Generated<number>;
-  user_id: string;
-  session_id: string;
-  role: string;
-  payload: string;
   created_at: string;
   updated_at: string;
 }
@@ -68,8 +110,12 @@ export interface VectorItemsTable {
 export interface DB {
   users: UsersTable;
   records: RecordsTable;
+  creations: CreationsTable;
+  creation_proposals: CreationProposalsTable;
+  creation_kinds: CreationKindsTable;
+  entity_relations: EntityRelationsTable;
+  tasks: TasksTable;
   media_assets: MediaAssetsTable;
-  messages: MessagesTable;
   vector_items: VectorItemsTable;
 }
 

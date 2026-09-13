@@ -12,7 +12,7 @@ export function createSearchRecordsTool(): AgentHarnessTool<MemoryToolContext, t
     label: "search_records",
     description: "Search the current user's related record memories. Each result includes a recordId for retrieving the original record.",
     parameters: searchParameters,
-    execute: async (_id, args, _signal, _onUpdate, context) => ({ content: [{ type: "text", text: JSON.stringify({ matches: await context.memory.search(context.userId, args.query, args.limit ?? 8) }) }], details: undefined }),
+    execute: async (_id, args, _onUpdate, toolContext) => ({ content: [{ type: "text", text: JSON.stringify({ matches: await toolContext.memory.search(toolContext.userId, args.query, args.limit ?? 8) }) }], details: undefined }),
   } as AgentHarnessTool<MemoryToolContext, typeof searchParameters>;
 }
 
@@ -22,6 +22,6 @@ export function createGetRecordsTool(): AgentHarnessTool<MemoryToolContext, type
     label: "get_records",
     description: "Get complete original records for the current user by recordId. This does not search vector memory.",
     parameters: getParameters,
-    execute: async (_id, args, _signal, _onUpdate, context) => ({ content: [{ type: "text", text: JSON.stringify({ records: await context.memory.getRecords(context.userId, args.recordIds) }) }], details: undefined }),
+    execute: async (_id, args, _onUpdate, toolContext) => ({ content: [{ type: "text", text: JSON.stringify({ records: await toolContext.memory.getRecords(toolContext.userId, args.recordIds) }) }], details: undefined }),
   } as AgentHarnessTool<MemoryToolContext, typeof getParameters>;
 }

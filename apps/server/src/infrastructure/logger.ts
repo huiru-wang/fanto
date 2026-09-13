@@ -4,7 +4,7 @@ import { nowIso } from "./time.js";
 
 const logDir = process.env.LOG_DIR ?? resolve(process.cwd(), "../..", "logs");
 
-function write(file: "service.log" | "agent.log" | "access.log", line: string) {
+function write(file: "service.log" | "agent.log" | "access.log" | "proactive-creation.log", line: string) {
   mkdirSync(logDir, { recursive: true });
   appendFileSync(resolve(logDir, file), `${line}\n`);
 }
@@ -23,6 +23,10 @@ export function logError(scope: string, message: string, details?: Record<string
 
 export function logAgent(level: "info" | "warn" | "error", scope: string, message: string, details?: Record<string, unknown>) {
   write("agent.log", formatLog(level, scope, message, details));
+}
+
+export function logProactiveCreation(level: "info" | "warn" | "error", message: string, details: Record<string, unknown>) {
+  write("proactive-creation.log", formatLog(level, "proactive-creation", message, details));
 }
 
 export function logAccess(input: { path: string; method: string; requestBody: unknown; responseBody: unknown; status: number }) {

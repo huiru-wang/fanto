@@ -29,14 +29,3 @@ export type TopicDto = {
   updatedAt: string;
   extData: { [key: string]: unknown } | null;
 };
-
-// Existing message rows store raw Agent events, not rendered chat messages.
-export type MessageEventDto = {
-  id: number;
-  userId: string;
-  topicId: string;
-  sessionId: string;
-  role: string;
-  payload: string;
-  timestamp: number;
-};

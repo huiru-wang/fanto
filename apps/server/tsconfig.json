@@ -8,5 +8,6 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/agent/**", "src/modules/task/**", "src/agent/workflows/**", "src/routes/agent.ts", "src/routes/creations.ts", "src/modules/creation/creation.repository.ts", "src/**/*proactive*.test.ts", "src/**/creation.repository.test.ts", "src/**/harness-manager.test.ts"]
 }

@@ -1,4 +1,4 @@
-export type RecordStatus = 'active';
+export type RecordStatus = 'pending' | 'updated' | 'processing' | 'processed';
 
 export type RecordView = {
   extData: { [key: string]: unknown } | null;
