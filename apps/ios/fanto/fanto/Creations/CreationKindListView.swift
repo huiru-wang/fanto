@@ -7,11 +7,15 @@ struct CreationKindListView: View {
 
     var body: some View {
         List(creations) { creation in
-            NavigationLink(value: creation) { CreationRow(creation: creation) }
+            NavigationLink {
+                CreationDetailView(creation: creation)
+            } label: {
+                CreationRow(creation: creation)
+            }
         }
         .navigationTitle(kind.title)
         .navigationBarTitleDisplayMode(.inline)
         .overlay { if let error { ContentUnavailableView("无法读取脉络", systemImage: "wifi.exclamationmark", description: Text(error)) } }
-        .task(id: kind.id) { do { creations = try await CreationAPIClient.shared.fetchCreations(kindID: kind.id) } catch { self.error = error.localizedDescription } }
+        .task(id: kind.id) { do { creations = try await CreationAPIClient.shared.fetchCreations(kind: kind) } catch { self.error = error.localizedDescription } }
     }
 }

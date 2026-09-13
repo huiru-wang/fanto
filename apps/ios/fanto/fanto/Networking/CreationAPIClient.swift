@@ -69,12 +69,12 @@ struct CreationAPIClient {
         return response.creation
     }
 
-    func fetchCreations(kindID: String) async throws -> [Creation] {
+    func fetchCreations(kind: CreationKind) async throws -> [Creation] {
         var components = URLComponents(url: baseURL.appending(path: "api/creations"), resolvingAgainstBaseURL: false)
-        components?.queryItems = [URLQueryItem(name: "kindId", value: kindID)]
+        components?.queryItems = [URLQueryItem(name: "kindId", value: kind.id)]
         guard let url = components?.url else { throw CreationAPIError.invalidBaseURL }
         let response: CreationListPayload = try await request(url: url)
-        return response.data.map { $0.creation(kindID: kindID) }
+        return response.data.map { $0.creation(kind: kind) }
     }
 
     func fetchProposals() async throws -> [Proposal] {
@@ -101,7 +101,7 @@ struct CreationAPIClient {
 
     func fetchSourceRecords(id: String, cursor: String? = nil) async throws -> CreationSourceRecordPage {
         var components = URLComponents(url: baseURL.appending(path: "api/creations/\(id)/records"), resolvingAgainstBaseURL: false)
-        components?.queryItems = [URLQueryItem(name: "limit", value: "20")]
+        components?.queryItems = [URLQueryItem(name: "limit", value: "5")]
         if let cursor {
             components?.queryItems?.append(URLQueryItem(name: "cursor", value: cursor))
         }
@@ -261,7 +261,7 @@ private struct CreationListPayload: Decodable { let data: [CreationListItemPaylo
 private struct CreationListItemPayload: Decodable {
     let creationID: String; let title: String; let summary: String; let status: String; let updatedAt: Date
     enum CodingKeys: String, CodingKey { case creationID = "creation_id"; case title, summary, status; case updatedAt = "updated_at" }
-    func creation(kindID: String) -> Creation { Creation(id: creationID, kind: CreationKind(id: kindID, name: "unknown", title: "未分类"), title: title, summary: SummaryPayload.overview(from: summary), updatedAt: updatedAt, status: CreationStatus(apiValue: status)) }
+    func creation(kind: CreationKind) -> Creation { Creation(id: creationID, kind: kind, title: title, summary: SummaryPayload.overview(from: summary), updatedAt: updatedAt, status: CreationStatus(apiValue: status)) }
 }
 
 private struct SourceRecordsPayload: Decodable {
@@ -278,13 +278,36 @@ private struct ProposalPayload: Decodable {
     let proposalID: String
     let title: String?
     let kind: ProposalKindPayload?
-    let summary: SummaryPayload?
+    let summary: ProposalSummaryPayload?
     let content: String?
     let sourceCount: Int
+    let createdAt: Date?
+    let sources: [ProposalSourceRecordPayload]?
 
     enum CodingKeys: String, CodingKey {
         case proposalID = "proposalId"
-        case title, kind, summary, content, sourceCount
+        case title, kind, summary, content, sourceCount, createdAt, sources
+    }
+}
+
+private enum ProposalSummaryPayload: Decodable {
+    case text(String)
+    case structured(SummaryPayload)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let text = try? container.decode(String.self) {
+            self = .text(text)
+        } else {
+            self = .structured(try container.decode(SummaryPayload.self))
+        }
+    }
+
+    var overview: String {
+        switch self {
+        case let .text(text): text
+        case let .structured(summary): summary.overview
+        }
     }
 }
 
@@ -307,6 +330,18 @@ private struct ProposalDecisionPayload: Decodable {
     }
 }
 
+private struct ProposalSourceRecordPayload: Decodable {
+    let recordID: String
+    let content: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case recordID = "record_id"
+        case content
+        case createdAt = "created_at"
+    }
+}
+
 private extension Proposal {
     init?(_ payload: ProposalPayload) {
         guard let title = payload.title, let kind = payload.kind else { return nil }
@@ -317,7 +352,19 @@ private extension Proposal {
             insight: payload.summary?.overview ?? "这是一条等待确认的观察。",
             evidence: payload.content ?? "暂未提供更多依据。",
             sourceCount: payload.sourceCount,
-            suggestedNextStep: "长期跟踪后，继续在脉络中积累。"
+            suggestedNextStep: "长期跟踪后，继续在脉络中积累。",
+            createdAt: payload.createdAt,
+            sourceRecords: (payload.sources ?? []).map(ProposalSourceRecord.init)
+        )
+    }
+}
+
+private extension ProposalSourceRecord {
+    init(_ payload: ProposalSourceRecordPayload) {
+        self.init(
+            id: payload.recordID,
+            text: RecordContentPayload.text(from: payload.content),
+            createdAt: payload.createdAt
         )
     }
 }

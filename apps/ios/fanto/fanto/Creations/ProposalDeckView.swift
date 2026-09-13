@@ -53,7 +53,7 @@ struct ProposalDeckView: View {
             .accessibilityAction(named: "下一张提案") { advance() }
             .accessibilityAction(named: "上一张提案") { retreat() }
 
-            Text("第 \(currentIndex + 1) 张，共 \(proposals.count) 张")
+            Text("\(currentIndex + 1) / \(proposals.count)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.top, 8)

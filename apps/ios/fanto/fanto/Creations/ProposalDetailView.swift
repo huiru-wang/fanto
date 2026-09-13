@@ -4,38 +4,41 @@ struct ProposalDetailView: View {
     let proposal: Proposal
     @Environment(FantoStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @State private var detail: Proposal?
+    @State private var errorMessage: String?
+
+    private var displayedProposal: Proposal { detail ?? proposal }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    Label(proposal.kind.title, systemImage: proposal.kind.symbol)
-                        .font(.headline)
-                        .foregroundStyle(FantoTheme.accent)
-                    Text(proposal.title)
+                    Text(displayedProposal.title)
                         .font(.largeTitle)
                         .bold()
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Fanto 看见的连接")
-                            .font(.headline)
-                        Text(proposal.insight)
-                            .font(.body)
-                    }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("为什么会出现")
-                            .font(.headline)
-                        Text(proposal.evidence)
+                    if let createdAt = displayedProposal.createdAt {
+                        Text("等待确认 · \(FantoDateText.timestamp(createdAt))")
+                            .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    LabeledContent("如果接受") {
-                        Text(proposal.suggestedNextStep)
-                            .multilineTextAlignment(.trailing)
+                    Text(displayedProposal.insight)
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+
+                    MarkdownContentView(markdown: displayedProposal.evidence, leadingTitleToOmit: displayedProposal.title)
+
+                    sourceSection
+
+                    if let errorMessage {
+                        ContentUnavailableView("部分内容未能加载", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
                     }
-                    .font(.subheadline)
                 }
                 .padding()
             }
-            .navigationTitle("提案")
+            .navigationTitle(displayedProposal.kind.title)
             .navigationBarTitleDisplayMode(.inline)
             .safeAreaInset(edge: .bottom) {
                 HStack {
@@ -67,6 +70,34 @@ struct ProposalDetailView: View {
                     Button("关闭", action: dismiss.callAsFunction)
                 }
             }
+            .task(id: proposal.id) {
+                await loadDetail()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var sourceSection: some View {
+        if !displayedProposal.sourceRecords.isEmpty {
+            Divider()
+            Text("来源记录")
+                .font(.headline)
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(displayedProposal.sourceRecords) { record in
+                    ProposalSourceTimelineRow(
+                        record: record,
+                        showsLineAfter: record.id != displayedProposal.sourceRecords.last?.id
+                    )
+                }
+            }
+        }
+    }
+
+    private func loadDetail() async {
+        do {
+            detail = try await CreationAPIClient.shared.fetchProposal(id: proposal.id)
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }

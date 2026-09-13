@@ -18,7 +18,7 @@ struct FantoApp: App {
                 .task {
                     async let records: Void = store.loadRecords()
                     async let creations: Void = store.loadCreations()
-                    await (records, creations)
+                    _ = await (records, creations)
                 }
         }
     }

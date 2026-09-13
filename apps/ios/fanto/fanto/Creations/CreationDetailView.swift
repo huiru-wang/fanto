@@ -15,8 +15,10 @@ struct CreationDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 Text(displayedCreation.title)
-                    .font(.largeTitle)
+                    .font(.title)
                     .bold()
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("\(displayedCreation.status.title) · \(FantoDateText.timestamp(displayedCreation.updatedAt))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -59,10 +61,19 @@ struct CreationDetailView: View {
                         showsLineAfter: record.id != sourceRecords.last?.id
                     )
                     if record.id == sourceRecords.last?.id, hasMoreRecords {
-                        ProgressView()
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .task { await loadMoreRecords() }
+                        Button {
+                            Task { await loadMoreRecords() }
+                        } label: {
+                            if isLoadingMoreRecords {
+                                ProgressView()
+                            } else {
+                                Text("更多")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(isLoadingMoreRecords)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
                     }
                 }
             }

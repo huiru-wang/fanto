@@ -10,19 +10,28 @@ struct ProposalCard: View {
                     .font(.subheadline)
                     .foregroundStyle(tint)
                 Spacer()
-                Text("基于 \(proposal.sourceCount) 条记录")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if proposal.sourceCount > 0 {
+                    Text("基于 \(proposal.sourceCount) 条记录")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
-            Text(proposal.title)
-                .font(.title3)
-                .bold()
-                .fixedSize(horizontal: false, vertical: true)
-            Text(proposal.insight)
-                .foregroundStyle(.secondary)
-                .lineLimit(4)
+            Spacer(minLength: 8)
 
+            VStack(alignment: .leading, spacing: 10) {
+                Text(proposal.title)
+                    .font(.title3)
+                    .bold()
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(proposal.insight)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(5)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
         }
         .padding(20)
         .frame(maxWidth: .infinity, minHeight: 250, alignment: .leading)
