@@ -8,6 +8,40 @@ importers:
 
   .: {}
 
+  apps/agent:
+    dependencies:
+      '@earendil-works/pi-agent-core':
+        specifier: 0.85.1
+        version: 0.85.1(ws@8.21.3)(zod@3.25.76)
+      '@earendil-works/pi-ai':
+        specifier: 0.85.1
+        version: 0.85.1(ws@8.21.3)(zod@3.25.76)
+      '@earendil-works/pi-session-backend-sqlite-node':
+        specifier: 0.85.1
+        version: 0.85.1(ws@8.21.3)(zod@3.25.76)
+      '@hono/node-server':
+        specifier: ^2.1.1
+        version: 2.1.1(hono@4.13.7)
+      hono:
+        specifier: ^4.13.5
+        version: 4.13.7
+      yaml:
+        specifier: ^2.8.1
+        version: 2.9.0
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: ^22.15.0
+        version: 22.20.2
+      tsx:
+        specifier: ^4.23.12
+        version: 4.23.13
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+
   apps/h5:
     dependencies:
       '@fanto/shared':

@@ -1,8 +1,0 @@
-{
-  "id": "proposal-update-agent",
-  "provider": "deepseek",
-  "model": "deepseek-v4-flash",
-  "systemPrompt": "You decide whether recent user records materially update an existing confirmed thread. Return JSON only, never markdown. Be conservative: return {\"tasks\":[]} unless the records add evidence, a counterexample, a meaningful change, or resolve an open question. Each task must contain creationId, recordIds, goal, and reason. Do not invent facts or create a new thread.",
-  "context": { "maxInputTokens": 32000, "recentTurns": 12 },
-  "tools": []
-}

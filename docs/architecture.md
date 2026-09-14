@@ -15,7 +15,23 @@ flowchart TB
   S --> ASR[音频转写服务]
 ```
 
-服务入口是 `apps/server/src/main.ts`：启动时读取环境变量、执行迁移、创建默认用户 `default-user`，然后挂载 HTTP 应用。数据库使用 SQLite / Kysely，开启 WAL 与 5 秒 busy timeout；`sqlite-vec` 不可用时会记录告警。
+服务入口是 `apps/server/src/bootstrap/main.ts`：启动时读取环境变量、执行迁移、创建默认用户 `default-user`，然后挂载 HTTP 应用。数据库使用 SQLite / Kysely，开启 WAL 与 5 秒 busy timeout；`sqlite-vec` 不可用时会记录告警。
+
+## 服务端目录边界
+
+```text
+apps/server/src/
+├── bootstrap/       # 进程入口、配置、迁移命令和 Hono 装配
+├── routes/          # HTTP 校验、响应映射与路由注册
+├── domain/          # records、media、creations、memory 的实体、规则与仓储
+├── infrastructure/ # SQLite 初始化、外部 clients、队列、日志与时间
+├── listeners/       # 进程内队列的事件处理
+├── migrations/      # 当前 schema 的单份 Kysely 基线
+```
+
+常规读写 Route 直接调用所属 Domain Repository；不会经过仅转发调用的 Service。`infrastructure/clients` 只容纳对外依赖适配器：`oss-client.ts`、`audio-client.ts`、`image-client.ts` 与 `embeddings-client.ts`。有副作用的音频转写与记录索引作为明确 operation 留在各自业务域。
+
+`migrations/create_current_schema.ts` 只支持空 SQLite 数据库初始化，不保留历史 schema 或数据升级逻辑。已有数据库须删除后重建，不能直接执行迁移升级。
 
 ## 当前注册的服务模块
 
@@ -41,4 +57,4 @@ flowchart TB
 
 `apps/ios/fanto` 是当前保留的客户端，直接访问 ECS 服务。`apps/h5` 源码已移除，尚未成为可运行客户端；其重建计划不代表已实现功能。
 
-仓库中仍保留 Agent harness、任务仓储、主动生成脉络 Proposal 的 workflow，以及 `routes/creations.ts`。`main.ts` / `server.ts` 没有构造或挂载它们，因此自动生成能力不是当前服务对外能力，不能据此设计客户端流程。
+历史 Agent harness、任务仓储与主动生成 Proposal 的 workflow 已从业务服务删除。当前自动生成能力不是服务对外能力，不能据此设计客户端流程；如需恢复，应以新的 Creation/Proposal 数据模型重新设计。

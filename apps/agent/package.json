@@ -1,0 +1,28 @@
+{
+  "name": "@fanto/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.19.0" },
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/bootstrap/main.ts",
+    "start": "node --env-file-if-exists=.env dist/bootstrap/main.js",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@earendil-works/pi-agent-core": "0.85.1",
+    "@earendil-works/pi-ai": "0.85.1",
+    "@earendil-works/pi-session-backend-sqlite-node": "0.85.1",
+    "@hono/node-server": "^2.1.1",
+    "hono": "^4.13.5",
+    "yaml": "^2.8.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.8.3"
+  }
+}

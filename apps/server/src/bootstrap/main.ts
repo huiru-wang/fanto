@@ -1,0 +1,27 @@
+import { serve } from "@hono/node-server";
+import { loadConfig, loadEnv } from "./config.js";
+import { createDatabase, runMigrations } from "../infrastructure/database/database.js";
+import { QwenImageUnderstanding } from "../infrastructure/clients/image-client.js";
+import { LocalMediaQueue } from "../infrastructure/queue/media-queue.js";
+import { LocalVectorQueue } from "../infrastructure/queue/vector-queue.js";
+import { OssStorage } from "../infrastructure/clients/oss-client.js";
+import { SqliteMediaRepository } from "../domain/media/sqlite-repository.js";
+import { SqliteRecordRepository } from "../domain/records/sqlite-repository.js";
+import { nowIso } from "../infrastructure/time.js";
+import { registerImageUnderstandingListener } from "../listeners/image-understanding.listener.js";
+import { registerRecordVectorListener } from "../listeners/record-vector.listener.js";
+import { createApp } from "./app.js";
+import { logInfo } from "../infrastructure/logging/logger.js";
+import { RecordMemoryService } from "../domain/memory/record-index.js";
+import { CreationReadRepository } from "../domain/creations/creation-repository.js";
+import { CreationProposalRepository } from "../domain/creations/proposal-repository.js";
+
+loadEnv(); const config = loadConfig(); const db = createDatabase(config.sqlitePath); await runMigrations(db);
+if (!(await db.selectFrom("users").select("id").where("user_id", "=", "default-user").executeTakeFirst())) await db.insertInto("users").values({ user_id: "default-user", wx_openid: "default", created_at: nowIso() }).execute();
+const oss = new OssStorage(config.oss);
+const records = new SqliteRecordRepository(db); const media = new SqliteMediaRepository(db); const creationRead = new CreationReadRepository(db); const creationProposals = new CreationProposalRepository(db); const memory = new RecordMemoryService(db, config); const queue = new LocalMediaQueue(); const vectors = new LocalVectorQueue(); const ai = { apiKey: config.dashscope.apiKey, asrBaseUrl: config.dashscope.asrBaseUrl, vlBaseUrl: config.dashscope.vlBaseUrl };
+registerImageUnderstandingListener(queue, records, media, oss, new QwenImageUnderstanding(ai.apiKey, ai.vlBaseUrl));
+registerRecordVectorListener(vectors, memory);
+const server = serve({ fetch: createApp(records, media, queue, oss, ai, vectors, creationRead, creationProposals).fetch, port: config.port, hostname: config.host });
+logInfo("main", "Server listening", { host: config.host, port: config.port });
+const shutdown = async () => { server.close(); await db.destroy(); process.exit(0); }; process.on("SIGINT", shutdown); process.on("SIGTERM", shutdown);

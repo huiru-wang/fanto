@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { parseSaveRecord } from "../domain/record-content.js";
-import type { LocalMediaQueue } from "../infrastructure/local-media-queue.js";
-import type { LocalVectorQueue } from "../infrastructure/local-vector-queue.js";
-import type { SqliteMediaRepository } from "../infrastructure/repositories/sqlite-media.repository.js";
-import { decodeRecordCursor, encodeRecordCursor } from "../modules/record/record-cursor.js";
-import type { RecordRepository } from "../modules/record/record.repository.js";
-import { requireUserId } from "../interfaces/request-user.js";
+import { parseSaveRecord } from "../domain/records/content.js";
+import type { LocalMediaQueue } from "../infrastructure/queue/media-queue.js";
+import type { LocalVectorQueue } from "../infrastructure/queue/vector-queue.js";
+import type { SqliteMediaRepository } from "../domain/media/sqlite-repository.js";
+import { decodeRecordCursor, encodeRecordCursor } from "../domain/records/cursor.js";
+import type { RecordRepository } from "../domain/records/repository.js";
+import { requireUserId } from "./request-user.js";
 
 const media = z.array(z.unknown());
 const createInput = z.object({ text: z.string(), media, source: z.string().max(100).optional() }).strict();

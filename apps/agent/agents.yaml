@@ -1,0 +1,25 @@
+version: 1
+
+defaults:
+  provider: deepseek
+  model: deepseek-v4-pro
+  tools: [read, write, edit, bash]
+  compaction:
+    enabled: true
+    reserveTokens: 16384
+    keepRecentTokens: 20000
+
+agents:
+  - id: general
+    description: 通用中文助手
+    systemPrompt: |
+      你是准确、简洁的中文助手。
+    tools: []
+    skills: []
+
+  - id: coding
+    description: 在隔离工作区中执行代码任务
+    systemPrompt: |
+      你在隔离工作区中工作。先阅读相关文件，再做最小改动。
+    tools: [read, write, edit, bash]
+    skills: []

@@ -4,14 +4,14 @@
 - 技术方案超过五项任务时，将方案和任务分别保存到 `plan/<方案目录>/`；每个方案目录是一次独立变更，至少包含设计与任务文件。图表使用 Mermaid。
 - 核心链路或模块重构时同步 docs/ 和本文件。
 
-## Contemplate
+## 服务端目录
 
-- 当前工作流位于 apps/server/src/agent/workflows/contemplate/，版本为 contemplate-workflow-v2.2-simple。
-- merge_record、create_topic、skip_record 统一使用非空、不重复的 recordIds；skip 的执行结果仍逐条记录 recordId。
-- 规划阶段的 JSON、结构和业务校验共用一次修正额度。执行阶段不自动重跑，模型或输出截断错误直接失败。
-- planningAttempts 保存每次完整规划输出、校验诊断、耗时、结束原因；不能仅依赖响应开头的日志预览排查错误。
-- 候选 Topic 不是强制分类列表，禁止硬合并无关记录。原始 Record 是正文依据，不强制补写推断或探索章节。
-- 记录状态恢复不等于 Topic 写入回滚。真实模型效果测试使用独立数据库副本，禁止直接重跑用户数据作为验证。
+- 运行入口与 Hono 组装位于 `apps/server/src/bootstrap/`；当前启动文件为 `bootstrap/main.ts`，迁移命令为 `bootstrap/migrate.ts`。
+- `src/migrations/` 只有面向空 SQLite 数据库的当前 schema 基线；不增加旧 schema、旧字段或旧数据的升级兼容。需要变更时允许删除数据库重建。
+- `routes/` 仅处理 HTTP，普通 CRUD 可直接调用相应 `domain/` Repository；不要新建只转发调用的 Service。
+- `domain/records`、`domain/media`、`domain/creations` 与 `domain/memory` 保存业务实体、校验、游标、业务操作和 SQLite Repository 实现。
+- `infrastructure/clients/` 是所有外部依赖适配器，使用 `oss-client.ts`、`audio-client.ts`、`image-client.ts`、`embeddings-client.ts` 命名；进程内异步处理只有 `listeners/`，没有 workers。
+- 旧主动创作、Task 与 Agent workflow 已从业务服务删除；未来按新的 Creation/Proposal 模型重建，不恢复旧路由或旧数据模型。
 
 ## HTTP 查询
 
@@ -24,6 +24,9 @@
 - 按 Topic 查记录仍需校验 Record 和 Topic 的用户归属，使用 EXISTS 避免重复关联放大结果集。
 
 ## Agent 会话与工具
+
+- `apps/agent` 是独立的 Hono + Pi AgentHarness 服务。项目根 `agents.yaml` 是唯一 Agent 定义来源；`POST /api/agent` 必须传 `agentId`，可传 `sessionId` 续传 SQLite 会话，`GET /api/sessions/:sessionId/messages` 分页返回会话记录。每个会话绑定一个 Agent 配置并拥有独立工作区；使用服务端 Bearer Token，不接入业务数据库。启动和接口说明见 `apps/agent/README.md`。
+- Agent 配置只能启用 Pi 内置 `read`、`write`、`edit`、`bash`，Skills 仅从 `apps/agent/skills/<id>/SKILL.md` 加载。文件工具不得离开 Session 工作区；bash 使用最小环境与固定 cwd。云端生产环境启用 bash 必须采用容器或微虚拟机隔离，不能将 NodeExecutionEnv、路径检查或命令黑名单视为宿主机隔离。
 
 - Agent 使用 Pi `AgentHarness + SQLite Session`；`sessionId` 是持久 Session、Harness 缓存和工作区的唯一隔离边界。`userId` 与 `agentId` 写入 Pi Session 的 `fanto.session_owner` custom entry，用于接口授权与归属校验；不另建 Agent 业务表。
 - 默认 Agent 为 `main`；其 JSON Definition 的 `tools` 只能配置 Pi 内置 `read`、`write`、`edit`、`bash`。文件工具限制在 session 工作区，bash 使用最小环境、危险命令限制与工作区 cwd。
@@ -55,5 +58,5 @@
 - iOS 工程位于 `apps/ios/fanto`，使用原生 `TabView` 提供“记录 / 脉络”两项导航；不覆盖系统 tab bar 的背景、尺寸、动画或命中区域。
 - “新建记录”位于记录页导航栏，使用系统 sheet 呈现；不使用底栏 overlay、透明全屏点击层或自定义抽屉。
 - 记录页日历以周日为一周起点。`selectedDate`、周锚点和日历呈现状态有单一所有者；月历展开/收起使用同一日历区域的连续布局过渡，不得将单行周历和整月日历以两份内容并置。Timeline 按所选日期展示，音频记录仅显示播放动作与时长。
-- iOS 运行态已接入 ECS 的 Record、Creation 与 Proposal API：概览仅展示服务端返回的最多三条 active 脉络与实际类型目录；详情读取正文、状态和来源 Record 游标分页；Proposal 卡片读取待确认列表，长期跟踪 / 暂不保留写回服务端。按类型完整列表、搜索和状态筛选仍等待对应路由，禁止用本地样例冒充真实数据。
+- iOS 运行态已接入 ECS 的 Record、Creation 与 Proposal API：概览仅展示服务端返回的最多三条 active 脉络与实际类型目录；详情读取正文、状态和来源 Record 游标分页；Proposal 卡片读取待确认列表，长期跟踪 / 暂不保留写回服务端。按类型完整列表已由 `kindId` 查询支持；搜索和状态筛选仍等待对应路由，禁止用本地样例冒充真实数据。
 - 当前为 iOS 26.5 最低部署目标。使用系统组件和语义颜色；Material 只用于短暂的系统导航/呈现层。

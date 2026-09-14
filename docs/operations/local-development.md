@@ -24,7 +24,7 @@ pnpm dev:server
 | `pnpm test` | 所有 workspace 测试 |
 | `pnpm db:migrate` | 执行数据库迁移 |
 | `pnpm vector:rebuild` | 重建记录向量索引 |
-| `pnpm --filter @fanto/server seed:creation-demo` | 写入脉络演示数据 |
+| `pnpm --filter @fanto/server seed:creation-showcase` | 重置并写入脉络展示数据 |
 
 ## 关键环境变量
 
@@ -38,6 +38,8 @@ pnpm dev:server
 | `EMBEDDING_DIMENSION` | 必须为 `1536` |
 
 服务启动时自动迁移数据库，也会确保存在 `default-user`。脉络演示数据使用另一个用户 `creation-demo-user`，调用它的接口时必须传同名 Header。
+
+迁移目录只保留当前 schema 的空库基线，不支持旧 SQLite 文件原地升级。需要重置时，先停止服务并删除 `SQLITE_PATH` 指向的数据库文件及同目录的 `-wal`、`-shm` 文件，再执行 `pnpm db:migrate`。
 
 当前工作区的 `apps/h5` 已删除，因此尽管根目录仍保留 `dev:h5`、`build:h5` 脚本，它们没有可运行目标。H5 重建完成前请不要把这些命令用于本地验证。
 

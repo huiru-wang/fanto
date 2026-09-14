@@ -1,8 +1,8 @@
-import type { ImageUnderstanding } from "../infrastructure/ai/image-understanding.js";
-import type { LocalMediaQueue } from "../infrastructure/local-media-queue.js";
-import type { OssStorage } from "../infrastructure/oss-storage.js";
-import type { SqliteMediaRepository } from "../infrastructure/repositories/sqlite-media.repository.js";
-import type { RecordRepository } from "../modules/record/record.repository.js";
+import type { ImageUnderstanding } from "../infrastructure/clients/image-client.js";
+import type { LocalMediaQueue } from "../infrastructure/queue/media-queue.js";
+import type { OssStorage } from "../infrastructure/clients/oss-client.js";
+import type { SqliteMediaRepository } from "../domain/media/sqlite-repository.js";
+import type { RecordRepository } from "../domain/records/repository.js";
 
 export function registerImageUnderstandingListener(queue: LocalMediaQueue, records: RecordRepository, media: SqliteMediaRepository, oss: OssStorage, image: ImageUnderstanding) {
   queue.on("image_understanding", async task => {

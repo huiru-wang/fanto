@@ -1,8 +1,7 @@
-import { loadConfig, loadEnv } from "../apps/server/src/env.js";
-import { createDatabase, runMigrations } from "../apps/server/src/infrastructure/database.js";
-import { SqliteRecordRepository } from "../apps/server/src/infrastructure/repositories/sqlite-record.repository.js";
-import { SqliteTopicRepository } from "../apps/server/src/infrastructure/repositories/sqlite-topic.repository.js";
-import { SqliteVecVectorStore } from "../apps/server/src/infrastructure/vector-store.js";
+import { loadConfig, loadEnv } from "../apps/server/src/bootstrap/config.js";
+import { RecordMemoryService } from "../apps/server/src/domain/memory/record-index.js";
+import { SqliteRecordRepository } from "../apps/server/src/domain/records/sqlite-repository.js";
+import { createDatabase, runMigrations } from "../apps/server/src/infrastructure/database/database.js";
 
 loadEnv();
 const config = loadConfig();
@@ -12,20 +11,14 @@ try {
   await runMigrations(db);
 
   const recordRepo = new SqliteRecordRepository(db);
-  const topicRepo = new SqliteTopicRepository(db);
-  const vectorStore = new SqliteVecVectorStore(db, config);
+  const memory = new RecordMemoryService(db, config);
 
   const records = await recordRepo.findByUserId("default-user", { limit: 10_000 });
   for (const record of records) {
-    await vectorStore.upsertRecord(record);
+    await memory.index({ userId: record.userId, recordId: record.id, operation: "replace" });
   }
 
-  const topics = await topicRepo.findByUserId("default-user", { limit: 10_000 });
-  for (const topic of topics) {
-    await vectorStore.upsertTopic(topic);
-  }
-
-  console.log(`[vector] rebuilt index: records=${records.length}, topics=${topics.length}`);
+  console.log(`[vector] rebuilt record index: records=${records.length}`);
 } finally {
   await db.destroy();
 }

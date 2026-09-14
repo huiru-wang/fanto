@@ -52,6 +52,10 @@
 | POST | `/api/creation-proposals/:id/confirm` | 确认并创建/更新为长期跟踪脉络 |
 | POST | `/api/creation-proposals/:id/reject` | 将提案标记为暂不保留 |
 
-`summary` 在 Creation 和 Proposal 的响应中均为可空的纯文本；数据库迁移会把旧 JSON 摘要中的 `overview` 提取为文本。iOS 客户端仍兼容旧 JSON 形态，但新客户端不应依赖该兼容行为。
+`summary` 在 Creation 和 Proposal 的响应中均为可空的纯文本。当前服务只支持从空数据库创建的 schema，不提供旧 JSON 摘要或历史数据库的升级兼容。
 
 提案列表只支持 `pending_confirmation` 状态。确认使用事务创建或更新 Creation，并把来源 Record 关联迁移到该 Creation；若更新目标版本已变化，则返回 `VERSION_CONFLICT`。Creation 完整列表目前支持可选的类型筛选；尚未提供搜索、状态筛选或列表分页。
+
+## 独立 Agent 服务
+
+`apps/agent` 独立运行于默认 3001 端口，由项目根 `agents.yaml` 配置 Agent。它提供 `GET /health`、Bearer Token 保护的 `POST /api/agent` SSE 接口，以及 `GET /api/sessions/:sessionId/messages` 会话记录分页查询；不复用业务服务的用户认证或数据库。请求、事件与 curl 示例见 [Agent 服务说明](../../apps/agent/README.md)。

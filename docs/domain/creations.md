@@ -34,6 +34,6 @@ flowchart LR
 
 ## 演示数据
 
-执行 `pnpm --filter @fanto/server seed:creation-demo` 会为用户 `creation-demo-user` 重置并写入：3 个系统类型、5 条 active 脉络、50 条纯文本记录、25 个 Creation-Record 关联，以及 3 条待确认 Proposal 数据。概览接口仍只展示最近 3 条 active 脉络。
+执行 `pnpm --filter @fanto/server seed:creation-showcase` 会为用户 `creation-demo-user` 重置并写入：3 个系统类型、5 条 active 脉络、50 条纯文本记录、35 个 Creation-Record 关联，以及 3 条待确认 Proposal 数据。概览接口仍只展示最近 3 条 active 脉络。
 
 每条演示 Proposal 同时关联三条来源 Record，便于验证「为什么会出现」详情。确认时会在同一事务内创建或更新 Creation，并将关联迁移为 `record_creation`。Creation 的完整列表可按可选 `kindId` 从 `GET /api/creations` 读取；概览的三条限制不影响该列表。
