@@ -12,14 +12,14 @@ const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const projectRoot = resolve(appRoot, "../..");
 const port = Number(process.env.PORT ?? 3001);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid PORT");
-const fromAppRoot = (value: string | undefined, fallback: string) => value ? (isAbsolute(value) ? value : resolve(appRoot, value)) : resolve(appRoot, fallback);
+const fromProjectRoot = (value: string | undefined, fallback: string) => value ? (isAbsolute(value) ? value : resolve(projectRoot, value)) : resolve(projectRoot, fallback);
 const skills = new SkillLoader(resolve(appRoot, "skills"));
 const factory = new HarnessFactory(new ToolRegistry(), skills);
 const registry = new AgentRegistry(resolve(projectRoot, "agents.yaml"), factory.models, skills);
 const sessions = new AgentSessionManager(
   factory,
-  fromAppRoot(process.env.AGENT_SESSION_DB, "data/agent-sessions.sqlite"),
-  fromAppRoot(process.env.AGENT_WORKSPACE_ROOT, "data/workspaces"),
+  fromProjectRoot(process.env.AGENT_SESSION_DB, "data/agent-sessions.sqlite"),
+  fromProjectRoot(process.env.AGENT_WORKSPACE_ROOT, "data/workspaces"),
 );
 const app = createApp(process.env.AGENT_TOKEN ?? "", registry, sessions);
 const server = serve({ fetch: app.fetch, hostname: "0.0.0.0", port }, info => {

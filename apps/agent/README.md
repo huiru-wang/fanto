@@ -13,7 +13,7 @@ cp apps/agent/.env.example apps/agent/.env
 pnpm --filter @fanto/agent dev
 ```
 
-服务默认监听 `0.0.0.0:3001`。`AGENT_SESSION_DB` 和 `AGENT_WORKSPACE_ROOT` 相对 `apps/agent` 解析；开发环境默认写入 `apps/agent/data/`。
+服务默认监听 `0.0.0.0:3001`。`AGENT_SESSION_DB` 和 `AGENT_WORKSPACE_ROOT` 相对项目根目录解析；开发环境默认写入根目录 `data/agent-sessions.sqlite` 与 `data/workspaces/`。
 
 服务只在启动时读取 `agents.yaml`。配置修改后必须重启服务，密钥只能通过环境变量注入，不能放入 YAML。
 
