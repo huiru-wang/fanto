@@ -5,18 +5,22 @@ import { TODO_CONTEXT, type AgentHarness, type AgentLane, type Entry, type Execu
 import { createNodeSqliteFactory, SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlite-node";
 import type { AgentDefinition } from "../config/agent-config.js";
 import { HarnessFactory } from "./harness-factory.js";
+import { createRunContext, type RunMetadata } from "./run-context.js";
 import { createWorkspace } from "./workspace.js";
 
-const AGENT_CONFIG_ENTRY = "fanto.agent_config";
+const SESSION_OWNER_ENTRY = "fanto.session_owner";
 const validSessionId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export class SessionNotFoundError extends Error {}
-export class SessionAgentMismatchError extends Error {}
+export class SessionOwnershipError extends Error {}
 export class SessionBusyError extends Error {}
 
+export type SessionOwner = { agentId: string; userId: string; revision?: string };
 export type ManagedSession = {
   id: string;
   agentId: string;
+  userId: string;
+  revision: string;
   harness: AgentHarness<ExecutionToolContext>;
   lane: AgentLane;
   session: Session;
@@ -37,28 +41,38 @@ export class AgentSessionManager {
     });
   }
 
-  async acquire(definition: AgentDefinition, requestedSessionId?: string): Promise<ManagedSession> {
-    if (!requestedSessionId) return this.create(definition);
-    if (!validSessionId.test(requestedSessionId)) throw new SessionNotFoundError("Invalid session id");
-    const cached = this.sessions.get(requestedSessionId);
-    if (cached) {
-      if (cached.agentId !== definition.id) throw new SessionAgentMismatchError("Session belongs to another agent");
-      return cached;
-    }
-    const metadata = (await this.repository.list(undefined, TODO_CONTEXT)).find(item => item.id === requestedSessionId);
-    if (!metadata) throw new SessionNotFoundError("Session not found");
-    const session = await this.repository.open(metadata, TODO_CONTEXT);
+  async create(definition: AgentDefinition, userId: string): Promise<ManagedSession> {
+    const id = randomUUID();
+    const session = await this.repository.create({ id }, TODO_CONTEXT);
     try {
-      const agentId = await this.readAgentId(session);
-      if (!agentId) throw new SessionNotFoundError("Session is not an agent session");
-      if (agentId !== definition.id) throw new SessionAgentMismatchError("Session belongs to another agent");
-      const runtime = await this.factory.create(session, definition, createWorkspace(this.workspaceRoot, requestedSessionId));
-      const managed = { id: requestedSessionId, agentId, session, ...runtime };
-      this.sessions.set(requestedSessionId, managed);
+      const managed = await this.createManaged(session, id, userId, definition);
+      await this.writeBinding(managed, definition);
+      this.sessions.set(id, managed);
       return managed;
     } catch (cause) {
       await session.close(TODO_CONTEXT);
       throw cause;
+    }
+  }
+
+  async acquire(definition: AgentDefinition, id: string, userId?: string): Promise<ManagedSession> {
+    if (!validSessionId.test(id)) throw new SessionNotFoundError("Invalid session id");
+    const cached = this.sessions.get(id);
+    if (cached) {
+      this.assertOwner(cached, userId);
+      if (cached.agentId === definition.id && cached.revision === definition.revision) return cached;
+      if (this.running.has(id)) throw new SessionBusyError("Session is already running");
+      return this.replaceCachedHarness(cached, definition);
+    }
+    return this.openAndConfigure(definition, id, userId);
+  }
+
+  async assertOwnership(id: string, userId: string): Promise<void> {
+    const { close, owner } = await this.openOwner(id);
+    try {
+      if (owner.userId !== userId) throw new SessionOwnershipError("Session belongs to another user");
+    } finally {
+      await close();
     }
   }
 
@@ -68,38 +82,45 @@ export class AgentSessionManager {
     return () => this.running.delete(session.id);
   }
 
-  async prompt(session: ManagedSession, message: string, signal: AbortSignal, emit: (delta: string) => Promise<void>): Promise<void> {
+  async prompt(session: ManagedSession, message: string, signal: AbortSignal, metadata: Omit<RunMetadata, "userId">, emit: (delta: string) => Promise<void>): Promise<string> {
     let unsubscribe: (() => void) | undefined;
+    let output = "";
     const abort = () => { void session.lane.abort(TODO_CONTEXT).catch(() => {}); };
     try {
       signal.addEventListener("abort", abort, { once: true });
       signal.throwIfAborted();
       unsubscribe = session.harness.events.on("message_update", async ({ event }) => {
-        if (event.type === "text_delta" && !signal.aborted) await emit(event.delta);
+        if (event.type !== "text_delta" || signal.aborted) return;
+        output += event.delta;
+        await emit(event.delta);
       });
-      const result = await session.lane.prompt(message, undefined, TODO_CONTEXT);
+      const result = await session.lane.prompt(message, undefined, createRunContext({ userId: session.userId, ...metadata }));
       signal.throwIfAborted();
       if (!result.ok || result.value.status !== "completed") throw new Error("Agent run did not complete");
+      return output;
     } finally {
       signal.removeEventListener("abort", abort);
       unsubscribe?.();
     }
   }
 
-  async entries(id: string, afterSeq: number, limit: number): Promise<{ agentId: string; entries: Entry[] }> {
-    if (!validSessionId.test(id)) throw new SessionNotFoundError("Invalid session id");
-    const cached = this.sessions.get(id);
-    if (cached) return { agentId: cached.agentId, entries: await cached.session.findEntries({ order: "asc", cursor: { seq: afterSeq }, limit }, TODO_CONTEXT) };
-    const metadata = (await this.repository.list(undefined, TODO_CONTEXT)).find(item => item.id === id);
-    if (!metadata) throw new SessionNotFoundError("Session not found");
-    const session = await this.repository.open(metadata, TODO_CONTEXT);
+  async history(id: string, cursor: number | undefined, limit: number, userId: string): Promise<{ agentId: string; entries: Entry[]; hasMore: boolean; nextCursor: number | null }> {
+    const { agentId, session, close } = await this.openForRead(id, userId);
     try {
-      const agentId = await this.readAgentId(session);
-      if (!agentId) throw new SessionNotFoundError("Session is not an agent session");
-      const entries = await session.findEntries({ order: "asc", cursor: { seq: afterSeq }, limit }, TODO_CONTEXT);
-      return { agentId, entries };
+      const visible: Entry[] = [];
+      let currentCursor = cursor;
+      let exhausted = false;
+      while (visible.length <= limit && !exhausted) {
+        const batch = await session.findEntries({ order: "desc", cursor: currentCursor === undefined ? undefined : { seq: currentCursor }, limit: 100 }, TODO_CONTEXT);
+        if (batch.length === 0) break;
+        currentCursor = batch.at(-1)?.seq;
+        for (const entry of batch) if (isVisibleHistoryEntry(entry)) visible.push(entry);
+        exhausted = batch.length < 100;
+      }
+      const data = visible.slice(0, limit);
+      return { agentId, entries: data, hasMore: visible.length > limit || !exhausted, nextCursor: visible.length > limit ? data.at(-1)?.seq ?? null : null };
     } finally {
-      await session.close(TODO_CONTEXT);
+      await close();
     }
   }
 
@@ -109,13 +130,22 @@ export class AgentSessionManager {
     await this.repository.close(TODO_CONTEXT);
   }
 
-  private async create(definition: AgentDefinition): Promise<ManagedSession> {
-    const id = randomUUID();
-    const session = await this.repository.create({ id }, TODO_CONTEXT);
+  private async replaceCachedHarness(current: ManagedSession, definition: AgentDefinition): Promise<ManagedSession> {
+    this.sessions.delete(current.id);
+    await current.harness.close(TODO_CONTEXT);
+    return this.openAndConfigure(definition, current.id, current.userId);
+  }
+
+  private async openAndConfigure(definition: AgentDefinition, id: string, userId?: string): Promise<ManagedSession> {
+    const metadata = (await this.repository.list(undefined, TODO_CONTEXT)).find(item => item.id === id);
+    if (!metadata) throw new SessionNotFoundError("Session not found");
+    const session = await this.repository.open(metadata, TODO_CONTEXT);
     try {
-      const runtime = await this.factory.create(session, definition, createWorkspace(this.workspaceRoot, id));
-      await runtime.lane.appendCustomEntry(AGENT_CONFIG_ENTRY, { agentId: definition.id }, TODO_CONTEXT);
-      const managed = { id, agentId: definition.id, session, ...runtime };
+      const owner = await this.readOwner(session);
+      if (!owner) throw new SessionNotFoundError("Session is not an agent session");
+      if (userId && owner.userId !== userId) throw new SessionOwnershipError("Session belongs to another user");
+      const managed = await this.createManaged(session, id, owner.userId, definition);
+      if (owner.agentId !== definition.id || owner.revision !== definition.revision) await this.writeBinding(managed, definition);
       this.sessions.set(id, managed);
       return managed;
     } catch (cause) {
@@ -124,10 +154,60 @@ export class AgentSessionManager {
     }
   }
 
-  private async readAgentId(session: Session): Promise<string | undefined> {
-    const entry = await session.findEntry({ type: "custom", customType: AGENT_CONFIG_ENTRY, order: "asc" }, TODO_CONTEXT);
+  private async createManaged(session: Session, id: string, userId: string, definition: AgentDefinition): Promise<ManagedSession> {
+    const runtime = await this.factory.create(session, definition, createWorkspace(this.workspaceRoot, id));
+    await runtime.lane.setModel({ provider: definition.provider, modelId: definition.model }, TODO_CONTEXT);
+    await runtime.lane.setActiveTools(definition.tools, TODO_CONTEXT);
+    return { id, agentId: definition.id, userId, revision: definition.revision, session, ...runtime };
+  }
+
+  private async writeBinding(session: ManagedSession, definition: AgentDefinition): Promise<void> {
+    await session.lane.appendCustomEntry(SESSION_OWNER_ENTRY, { agentId: definition.id, userId: session.userId, revision: definition.revision }, TODO_CONTEXT);
+  }
+
+  private assertOwner(session: ManagedSession, userId: string | undefined): void {
+    if (userId && session.userId !== userId) throw new SessionOwnershipError("Session belongs to another user");
+  }
+
+  private async openForRead(id: string, userId: string): Promise<{ agentId: string; session: Session; close: () => Promise<void> }> {
+    if (!validSessionId.test(id)) throw new SessionNotFoundError("Invalid session id");
+    const cached = this.sessions.get(id);
+    if (cached) {
+      this.assertOwner(cached, userId);
+      return { agentId: cached.agentId, session: cached.session, close: async () => {} };
+    }
+    const { session, owner, close } = await this.openOwner(id);
+    if (owner.userId !== userId) {
+      await close();
+      throw new SessionOwnershipError("Session belongs to another user");
+    }
+    return { agentId: owner.agentId, session, close };
+  }
+
+  private async openOwner(id: string): Promise<{ session: Session; owner: SessionOwner; close: () => Promise<void> }> {
+    if (!validSessionId.test(id)) throw new SessionNotFoundError("Invalid session id");
+    const cached = this.sessions.get(id);
+    if (cached) return { session: cached.session, owner: { agentId: cached.agentId, userId: cached.userId, revision: cached.revision }, close: async () => {} };
+    const metadata = (await this.repository.list(undefined, TODO_CONTEXT)).find(item => item.id === id);
+    if (!metadata) throw new SessionNotFoundError("Session not found");
+    const session = await this.repository.open(metadata, TODO_CONTEXT);
+    const owner = await this.readOwner(session);
+    if (!owner) {
+      await session.close(TODO_CONTEXT);
+      throw new SessionNotFoundError("Session is not an agent session");
+    }
+    return { session, owner, close: () => session.close(TODO_CONTEXT) };
+  }
+
+  private async readOwner(session: Session): Promise<SessionOwner | undefined> {
+    const entry = await session.findEntry({ type: "custom", customType: SESSION_OWNER_ENTRY, order: "desc" }, TODO_CONTEXT);
     if (!entry || entry.type !== "custom" || !entry.data || typeof entry.data !== "object") return undefined;
     const value = entry.data as Record<string, unknown>;
-    return typeof value.agentId === "string" ? value.agentId : undefined;
+    if (typeof value.agentId !== "string" || typeof value.userId !== "string") return undefined;
+    return { agentId: value.agentId, userId: value.userId, revision: typeof value.revision === "string" ? value.revision : undefined };
   }
+}
+
+function isVisibleHistoryEntry(entry: Entry): boolean {
+  return entry.type !== "compaction" && !(entry.type === "custom" && entry.customType.startsWith("fanto."));
 }

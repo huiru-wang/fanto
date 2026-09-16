@@ -1,6 +1,6 @@
 # 配置驱动 Agent 服务
 
-这是一个基于 Hono 和 Pi `AgentHarness` 的云端 SSE 服务。Agent 定义从项目根目录的 [`agents.yaml`](../../agents.yaml) 加载，模型默认使用 DeepSeek。每个会话持久化到 SQLite，并拥有独立工作区。
+这是一个基于 Hono 和 Pi `AgentHarness` 的云端 SSE 服务。Agent 定义从 [`apps/agent/agents.yaml`](agents.yaml) 加载，模型默认使用 DeepSeek。每个会话持久化到 SQLite，并拥有独立工作区。
 
 ## 启动
 
@@ -15,7 +15,7 @@ pnpm --filter @fanto/agent dev
 
 服务默认监听 `0.0.0.0:3001`。`AGENT_SESSION_DB` 和 `AGENT_WORKSPACE_ROOT` 相对项目根目录解析；开发环境默认写入根目录 `data/agent-sessions.sqlite` 与 `data/workspaces/`。
 
-服务只在启动时读取 `agents.yaml`。配置修改后必须重启服务，密钥只能通过环境变量注入，不能放入 YAML。
+服务只在启动时读取 `apps/agent/agents.yaml`。配置修改后必须重启服务，密钥只能通过环境变量注入，不能放入 YAML。
 
 ## agents.yaml
 
@@ -32,7 +32,7 @@ defaults:
     reserveTokens: 16384
     keepRecentTokens: 20000
 agents:
-  - id: general
+  - id: main
     description: 通用中文助手
     systemPrompt: 你是准确、简洁的中文助手。
     tools: []
@@ -49,32 +49,54 @@ Skill 用 ID 声明在 `skills` 中，文件固定为 `apps/agent/skills/<id>/SK
 
 ```text
 Authorization: Bearer <AGENT_TOKEN>
+X-User-Id: <用户 ID>
+X-Trace-Id: <可选链路 ID，可省略>
 ```
 
-### 运行 Agent
+### 创建 Session
 
-`POST /api/agent` 的请求体：
+先调用 `POST /api/agent/sessions` 创建 Session。请求体只包含 `agentId`；服务从 `x-user-id` 读取用户归属并写入 Pi Session，同时创建 `data/workspaces/<sessionId>` 工作区。`traceId` 只从 `x-trace-id` 读取。
 
 ```json
-{ "agentId": "general", "sessionId": "可选 UUID", "message": "你好" }
+{ "agentId": "main" }
 ```
-
-首次请求省略 `sessionId`。`start` SSE 事件会返回服务生成的 ID；后续请求传回该值以恢复对话与压缩历史。一个会话固定绑定首次使用的 `agentId`，运行中的会话返回 409。
 
 ```sh
 export AGENT_TOKEN='替换为服务端 AGENT_TOKEN'
 
-curl -N http://127.0.0.1:3001/api/agent \
+SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
   -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H 'X-User-Id: user_123' \
+  -H 'X-Trace-Id: trace_001' \
   -H 'Content-Type: application/json' \
-  -d '{"agentId":"general","message":"用一句话介绍你自己"}'
+  -d '{"agentId":"main"}' \
+  | node -pe 'JSON.parse(require("fs").readFileSync(0, "utf8")).result.sessionId')
+```
+
+一个 Session 固定绑定 `userId` 与工作区。流式和异步执行必须携带已有的 `sessionId`，缺失时返回 400，运行中的同一 Session 返回 409。服务重启后，旧 Session 在下一次执行时会自动应用当前 `agentId` 的模型、工具和运行配置；传入不同 `agentId` 时会自动切换到该 Agent，历史与工作区保持不变。
+
+### 流式运行 Agent
+
+`POST /api/agent/stream` 的请求体：
+
+```json
+{ "agentId": "main", "sessionId": "UUID", "message": "你好" }
+```
+
+```sh
+curl -N http://127.0.0.1:3001/api/agent/stream \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H 'X-User-Id: user_123' \
+  -H 'X-Trace-Id: trace_002' \
+  -H 'Content-Type: application/json' \
+  -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"用一句话介绍你自己\"}"
 ```
 
 响应事件顺序如下：
 
 ```text
 event: start
-data: {"sessionId":"...","agentId":"general"}
+data: {"sessionId":"...","agentId":"main","traceId":"trace_002"}
 
 event: delta
 data: {"text":"你好！"}
@@ -85,13 +107,14 @@ data: {}
 
 失败时发送 `error` 而不发送 `done`。服务每 15 秒发送心跳；断连会取消运行，单次请求最长 120 秒。浏览器应使用 `fetch` 读取 POST 响应流，而不是原生 `EventSource`。
 
-### 查询会话记录
+### 查询会话历史
 
-`GET /api/sessions/:sessionId/messages` 返回该会话的消息、工具结果和上下文压缩记录。支持 `cursor`（默认 0）与 `limit`（默认 50，最大 100）分页；内部 Agent 配置条目不会返回。
+`GET /api/agent/sessions/:sessionId/history` 返回从新到旧的可见历史。`cursor` 是上一页最后一条记录的 `seq`，首次请求不传；`limit` 默认 50，最大 100。压缩记录和内部 `fanto.*` Session 条目不会返回。
 
 ```sh
-curl "http://127.0.0.1:3001/api/sessions/$SESSION_ID/messages?cursor=0&limit=50" \
-  -H "Authorization: Bearer $AGENT_TOKEN"
+curl "http://127.0.0.1:3001/api/agent/sessions/$SESSION_ID/history?limit=50" \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H 'X-User-Id: user_123'
 ```
 
 返回格式：
@@ -101,13 +124,35 @@ curl "http://127.0.0.1:3001/api/sessions/$SESSION_ID/messages?cursor=0&limit=50"
   "success": true,
   "result": {
     "sessionId": "...",
-    "agentId": "general",
+    "agentId": "main",
     "data": [],
     "hasMore": false,
     "nextCursor": null
   }
 }
 ```
+
+### 异步任务
+
+`POST /api/agent/tasks` 立即返回 `202` 与任务元数据。任务在后台使用既有 Session 执行，状态依次为 `pending`、`running`、`completed` 或 `failed`。查询使用 `GET /api/agent/tasks/:taskId`。
+
+```sh
+TASK_ID=$(curl -sS http://127.0.0.1:3001/api/agent/tasks \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H 'X-User-Id: user_123' \
+  -H 'X-Trace-Id: trace_003' \
+  -H 'Content-Type: application/json' \
+  -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"列出当前工作区的文件\"}" \
+  | node -pe 'JSON.parse(require("fs").readFileSync(0, "utf8")).result.id')
+
+curl "http://127.0.0.1:3001/api/agent/tasks/$TASK_ID" \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H 'X-User-Id: user_123'
+```
+
+异步任务持久化在 `agent_tasks`，与 Pi Session 共用 Agent 专用 SQLite。当前 Runner 仅适用于单实例服务；服务重启时遗留的 `running` 任务会标记为 `failed`，避免重复执行带写操作的任务。
+
+`agents.yaml` 不做运行时热更新。修改 `apps/agent/agents.yaml` 后重启 Agent 服务；无需调用 Session 状态或配置更新接口，下一次 stream 或 task 执行会自动升级旧 Session 的配置。
 
 ## 工具隔离
 

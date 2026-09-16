@@ -8,7 +8,7 @@ import { CreationReadRepository } from "../domain/creations/creation-repository.
 import { SqliteMediaRepository } from "../domain/media/sqlite-repository.js";
 import { SqliteRecordRepository } from "../domain/records/sqlite-repository.js";
 import { createDatabase, runMigrations } from "../infrastructure/database/database.js";
-import { LocalMediaQueue } from "../infrastructure/queue/media-queue.js";
+import { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import { nowIso } from "../infrastructure/time.js";
 
 test("creation and proposal HTTP routes preserve the public read and decision contract", async () => {
@@ -32,7 +32,7 @@ test("creation and proposal HTTP routes preserve the public read and decision co
     }
     await db.insertInto("entity_relations").values({ relation_id: randomUUID(), user_id: userId, source_entity_id: recordId, source_entity_type: "record", target_entity_id: proposalId, target_entity_type: "creation_proposal", relation_type: "record_creation_proposal", source_created_at: now, created_at: now }).execute();
 
-    const app = createApp(new SqliteRecordRepository(db), new SqliteMediaRepository(db), new LocalMediaQueue(), { readUrl: () => "https://private.example", putUrl: () => "https://upload.example" } as any, { apiKey: "", asrBaseUrl: "", vlBaseUrl: "" }, undefined, new CreationReadRepository(db), new CreationProposalRepository(db));
+    const app = createApp(new SqliteRecordRepository(db), new SqliteMediaRepository(db), new RecordPostprocessQueue(), { readUrl: () => "https://private.example", putUrl: () => "https://upload.example" } as any, new CreationReadRepository(db), new CreationProposalRepository(db));
     const auth = { "x-user-id": userId };
     assert.equal((await app.request("/health")).status, 200);
     assert.equal((await app.request("/api/creation-kinds", { headers: auth })).status, 200);

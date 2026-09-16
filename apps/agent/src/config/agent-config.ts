@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { parseDocument } from "yaml";
 import { z } from "zod";
 import type { Models } from "@earendil-works/pi-ai";
@@ -37,7 +38,7 @@ const definitionSchema = z.object({
   compaction,
 }).strict();
 
-export type AgentDefinition = z.infer<typeof definitionSchema>;
+export type AgentDefinition = z.infer<typeof definitionSchema> & { revision: string };
 
 export function readAgentDefinitions(path: string, models: Models, knownSkills: ReadonlySet<string>): AgentDefinition[] {
   const parsed = parseDocument(readFileSync(path, "utf8"), { uniqueKeys: true });
@@ -74,6 +75,6 @@ export function readAgentDefinitions(path: string, models: Models, knownSkills: 
     if (model.contextWindow > 0 && definition.data.compaction.reserveTokens + definition.data.compaction.keepRecentTokens >= model.contextWindow) {
       throw new Error(`Agent "${id}" compaction token budget exceeds its model context window`);
     }
-    return definition.data;
+    return { ...definition.data, revision: createHash("sha256").update(JSON.stringify(definition.data)).digest("hex") };
   });
 }

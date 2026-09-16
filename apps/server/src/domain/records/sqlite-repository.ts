@@ -42,6 +42,7 @@ export class SqliteRecordRepository implements RecordRepository {
       const previous = await trx.selectFrom("records").selectAll().where("record_id", "=", id).where("user_id", "=", userId).executeTakeFirst();
       if (!previous) return "not_found";
       if (previous.version !== input.expectedVersion) return "conflict";
+      if (previous.status === "processing") return "conflict";
       const blocks = await this.blocks(trx, userId, input.value, id);
       if (typeof blocks === "string") return blocks;
       const oldIds = (JSON.parse(previous.content) as RecordContent).blocks.map(block => block.mediaId);
@@ -54,36 +55,36 @@ export class SqliteRecordRepository implements RecordRepository {
     });
   }
 
-  async writeImageDescription(input: { recordId: string; userId: string; mediaId: string; version: number; description: string }) {
+  async claimPostprocess(input: { recordId: string; userId: string; version: number; runId: string }) {
+    const row = await this.db.updateTable("records").set({ status: "processing", task_id: input.runId, updated_at: nowIso() }).where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "in", ["pending", "updated"]).returningAll().executeTakeFirst();
+    return row ? this.toEntity(row) : null;
+  }
+
+  async completePostprocess(input: { recordId: string; userId: string; version: number; runId: string; images: Array<{ mediaId: string; description: string }>; audio: Array<{ mediaId: string; transcription?: string; asr: { status: "succeeded" | "failed"; model?: string; emotion?: string; language?: string; completedAt?: string; errorCode?: string } }> }) {
     return this.db.transaction().execute(async trx => {
-      const row = await trx.selectFrom("records").selectAll().where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).executeTakeFirst();
+      const row = await trx.selectFrom("records").selectAll().where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).executeTakeFirst();
       if (!row) return false;
       const content = JSON.parse(row.content) as RecordContent;
-      const index = content.blocks.findIndex(block => block.mediaId === input.mediaId && block.type === "image");
-      if (index < 0) return false;
-      const block = content.blocks[index] as { type: "image"; mediaId: string; description?: string };
-      if (block.description) return false;
-      content.blocks[index] = { ...block, description: input.description };
-      const updated = await trx.updateTable("records").set({ content: JSON.stringify(content), updated_at: nowIso() }).where("record_id", "=", input.recordId).where("version", "=", input.version).executeTakeFirst();
+      const images = new Map(input.images.map(item => [item.mediaId, item.description]));
+      const audio = new Map(input.audio.map(item => [item.mediaId, item]));
+      content.blocks = content.blocks.map(block => {
+        if (block.type === "image") return images.has(block.mediaId) ? { ...block, description: images.get(block.mediaId) } : block;
+        const result = audio.get(block.mediaId);
+        return result?.transcription ? { ...block, transcription: result.transcription } : block;
+      });
+      const now = nowIso();
+      for (const result of input.audio) {
+        const media = await trx.selectFrom("media_assets").selectAll().where("media_id", "=", result.mediaId).where("user_id", "=", input.userId).where("media_type", "=", "audio").executeTakeFirst();
+        if (!media || ext(media.ext_data).recordId !== input.recordId) continue;
+        await trx.updateTable("media_assets").set({ ext_data: JSON.stringify({ ...ext(media.ext_data), asr: result.asr }), updated_at: now }).where("media_id", "=", result.mediaId).where("user_id", "=", input.userId).execute();
+      }
+      const updated = await trx.updateTable("records").set({ content: JSON.stringify(content), status: "processed", task_id: null, updated_at: now }).where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).executeTakeFirst();
       return updated.numUpdatedRows === 1n;
     });
   }
 
-  async claimForTask(userId: string, taskId: string, limit: number): Promise<Record[]> {
-    return this.db.transaction().execute(async trx => {
-      const rows = await trx.selectFrom("records").selectAll().where("user_id", "=", userId).where("status", "in", ["pending", "updated"]).orderBy("created_at", "asc").orderBy("record_id", "asc").limit(limit).execute();
-      if (!rows.length) return [];
-      await trx.updateTable("records").set({ status: "processing", task_id: taskId, updated_at: nowIso() }).where("record_id", "in", rows.map(row => row.record_id)).execute();
-      return rows.map(row => this.toEntity({ ...row, status: "processing", task_id: taskId }));
-    });
-  }
-
-  async finishTask(userId: string, taskId: string): Promise<void> {
-    await this.db.updateTable("records").set({ status: "processed", updated_at: nowIso() }).where("user_id", "=", userId).where("task_id", "=", taskId).where("status", "=", "processing").execute();
-  }
-
-  async releaseTask(userId: string, taskId: string): Promise<void> {
-    await this.db.updateTable("records").set({ status: "pending", task_id: null, updated_at: nowIso() }).where("user_id", "=", userId).where("task_id", "=", taskId).where("status", "=", "processing").execute();
+  async releasePostprocess(input: { recordId: string; userId: string; version: number; runId: string }): Promise<void> {
+    await this.db.updateTable("records").set({ status: "pending", task_id: null, updated_at: nowIso() }).where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).execute();
   }
 
   private async blocks(trx: Kysely<DB>, userId: string, value: SaveRecordContent, recordId?: string): Promise<RecordContent["blocks"] | "invalid_media" | "invalid_content"> {

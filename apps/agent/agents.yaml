@@ -10,7 +10,7 @@ defaults:
     keepRecentTokens: 20000
 
 agents:
-  - id: general
+  - id: main
     description: 通用中文助手
     systemPrompt: |
       你是准确、简洁的中文助手。

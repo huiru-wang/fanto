@@ -10,4 +10,4 @@ description: Follow this repository's conventions before editing code.
 Read AGENTS.md before making changes.
 ```
 
-在项目根 `agents.yaml` 的 Agent 定义中将该 ID 加入 `skills` 后，服务启动时会加载它。
+在 `apps/agent/agents.yaml` 的 Agent 定义中将该 ID 加入 `skills` 后，服务启动时会加载它。

@@ -1,14 +1,13 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import type { LocalMediaQueue } from "../infrastructure/queue/media-queue.js";
-import type { LocalVectorQueue } from "../infrastructure/queue/vector-queue.js";
+import type { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import type { OssStorage } from "../infrastructure/clients/oss-client.js";
 import type { SqliteMediaRepository } from "../domain/media/sqlite-repository.js";
 import { nowIso } from "../infrastructure/time.js";
 import type { RecordRepository } from "../domain/records/repository.js";
 import { createRecordRoutes } from "../routes/records.js";
 import { createUploadRoutes } from "../routes/media.js";
-import { validUserId } from "../routes/request-user.js";
+import { requireUserId, validUserId } from "../routes/request-user.js";
 import { logAccess, logError } from "../infrastructure/logging/logger.js";
 import { CreationReadRepository } from "../domain/creations/creation-repository.js";
 import { createCreationReadRoutes } from "../routes/creations.js";
@@ -27,7 +26,7 @@ const jsonBody = async (response: Response) => {
   try { return redact(JSON.parse(await response.clone().text())); } catch { return null; }
 };
 
-export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: LocalMediaQueue, oss: OssStorage, ai: { apiKey: string; asrBaseUrl: string; vlBaseUrl: string }, vectors?: LocalVectorQueue, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository) {
+export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository) {
   const app = new Hono();
   app.onError((error, c) => {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });
@@ -45,10 +44,10 @@ export function createApp(records: RecordRepository, media: SqliteMediaRepositor
     await next();
   });
   app.get("/health", c => c.json({ status: "ok", timestamp: nowIso() }));
-  app.route("/api/uploads", createUploadRoutes(media, oss, ai));
-  app.route("/api/records", createRecordRoutes(records, media, queue, vectors));
+  app.route("/api/uploads", createUploadRoutes(media, oss));
+  app.route("/api/records", createRecordRoutes(records, media, queue));
   if (creationRead) app.route("/api", createCreationReadRoutes(creationRead));
   if (creationProposals) app.route("/api", createCreationProposalRoutes(creationProposals));
-  app.get("/api/media/:id", async c => { const asset = await media.findMedia(c.req.param("id"), c.req.header("x-user-id")!.trim()); return asset?.status === "ready" ? c.redirect(oss.readUrl(asset.objectKey), 302) : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404); });
+  app.get("/api/media/:id", async c => { const asset = await media.findMedia(c.req.param("id"), requireUserId(c.req.raw)); return asset?.status === "ready" ? c.redirect(oss.readUrl(asset.objectKey), 302) : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404); });
   return app;
 }

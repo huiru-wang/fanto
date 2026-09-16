@@ -1,19 +1,18 @@
-import { randomUUID } from "node:crypto";
 import type { Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
 import { nowIso } from "../../infrastructure/time.js";
 
 export type MediaAsset = { mediaId: string; userId: string; objectKey: string; mediaType: "image" | "audio"; mimeType: string; bytes: number; status: "uploading" | "ready"; extData: Record<string, unknown>; createdAt: string; updatedAt: string };
-export type AudioAsr = { status: "running" | "succeeded" | "failed"; transcript?: string; model?: string; completedAt?: string; errorCode?: string };
+export type AudioAsr = { status: "running" | "succeeded" | "failed"; model?: string; emotion?: string; language?: string; completedAt?: string; errorCode?: string };
 const json = (value: string | null): Record<string, unknown> => value ? JSON.parse(value) : {};
 const asset = (row: any): MediaAsset => ({ mediaId: row.media_id, userId: row.user_id, objectKey: row.object_key, mediaType: row.media_type, mimeType: row.mime_type, bytes: row.bytes, status: row.status, extData: json(row.ext_data), createdAt: row.created_at, updatedAt: row.updated_at });
 
 export class SqliteMediaRepository {
   constructor(private db: Kysely<DB>) {}
 
-  async create(input: { userId: string; objectKey: string; mediaType: "image" | "audio"; mimeType: string; bytes: number }) {
+  async create(input: { mediaId: string; userId: string; objectKey: string; mediaType: "image" | "audio"; mimeType: string; bytes: number }) {
     const now = nowIso();
-    const row = { media_id: randomUUID(), user_id: input.userId, object_key: input.objectKey, media_type: input.mediaType, mime_type: input.mimeType, bytes: input.bytes, status: "uploading", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now };
+    const row = { media_id: input.mediaId, user_id: input.userId, object_key: input.objectKey, media_type: input.mediaType, mime_type: input.mimeType, bytes: input.bytes, status: "uploading", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now };
     await this.db.insertInto("media_assets").values(row).execute();
     return asset(row);
   }
@@ -31,10 +30,4 @@ export class SqliteMediaRepository {
 
   async findMedia(id: string, userId: string) { const row = await this.db.selectFrom("media_assets").selectAll().where("media_id", "=", id).where("user_id", "=", userId).executeTakeFirst(); return row ? asset(row) : null; }
   async findMediaByIds(ids: string[], userId: string) { if (!ids.length) return []; return (await this.db.selectFrom("media_assets").selectAll().where("user_id", "=", userId).where("media_id", "in", ids).execute()).map(asset); }
-  async updateAsr(id: string, userId: string, asr: AudioAsr) {
-    const row = await this.db.selectFrom("media_assets").selectAll().where("media_id", "=", id).where("user_id", "=", userId).where("media_type", "=", "audio").executeTakeFirst();
-    if (!row) return null;
-    const updated = await this.db.updateTable("media_assets").set({ ext_data: JSON.stringify({ ...json(row.ext_data), asr }), updated_at: nowIso() }).where("media_id", "=", id).where("user_id", "=", userId).returningAll().executeTakeFirst();
-    return updated ? asset(updated) : null;
-  }
 }

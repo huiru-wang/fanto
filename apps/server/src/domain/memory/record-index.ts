@@ -3,11 +3,11 @@ import { sql, type Kysely } from "kysely";
 import type { RecordContent } from "@fanto/shared";
 import type { AppConfig } from "../../bootstrap/config.js";
 import { EmbeddingsClient } from "../../infrastructure/clients/embeddings-client.js";
-import type { RecordVectorTask } from "../../infrastructure/queue/vector-queue.js";
 import type { DB } from "../../infrastructure/database/schema.js";
 import { nowIso } from "../../infrastructure/time.js";
 
 type VectorRow = { id: number; distance: number };
+export type RecordVectorTask = { userId: string; recordId: string; operation: "upsert" | "replace" };
 
 export class RecordMemoryService {
   private readonly embeddings: EmbeddingsClient;
@@ -43,10 +43,7 @@ export class RecordMemoryService {
   async getRecords(userId: string, recordIds: string[]) {
     if (!recordIds.length) return [];
     const records = await this.db.selectFrom("records").selectAll().where("user_id", "=", userId).where("record_id", "in", recordIds).execute();
-    const mediaIds = records.flatMap(row => (JSON.parse(row.content) as RecordContent).blocks.map(block => block.mediaId));
-    const assets = mediaIds.length ? await this.db.selectFrom("media_assets").selectAll().where("user_id", "=", userId).where("media_id", "in", mediaIds).execute() : [];
-    const byId = new Map(assets.map(asset => [asset.media_id, asset]));
-    return records.map(row => { const content = JSON.parse(row.content) as RecordContent; return { recordId: row.record_id, text: content.text, createdAt: row.created_at, updatedAt: row.updated_at, media: content.blocks.map(block => { const asset = byId.get(block.mediaId); const ext = asset?.ext_data ? JSON.parse(asset.ext_data) as { asr?: { transcript?: string } } : {}; return block.type === "image" ? { mediaId: block.mediaId, type: "image", description: block.description ?? null } : { mediaId: block.mediaId, type: "audio", asrTranscript: ext.asr?.transcript ?? null }; }) }; });
+    return records.map(row => { const content = JSON.parse(row.content) as RecordContent; return { recordId: row.record_id, text: content.text, createdAt: row.created_at, updatedAt: row.updated_at, media: content.blocks.map(block => block.type === "image" ? { mediaId: block.mediaId, type: "image", description: block.description ?? null } : { mediaId: block.mediaId, type: "audio", asrTranscript: block.transcription ?? null }) }; });
   }
 
   private async remove(userId: string, recordId: string) {
@@ -59,10 +56,7 @@ export class RecordMemoryService {
     const record = await this.db.selectFrom("records").select("content").where("record_id", "=", recordId).where("user_id", "=", userId).executeTakeFirst();
     if (!record) return null;
     const content = JSON.parse(record.content) as RecordContent;
-    const audioIds = content.blocks.filter(block => block.type === "audio").map(block => block.mediaId);
-    const assets = audioIds.length ? await this.db.selectFrom("media_assets").select("ext_data").where("user_id", "=", userId).where("media_id", "in", audioIds).execute() : [];
-    const transcripts = assets.flatMap(asset => { const ext = asset.ext_data ? JSON.parse(asset.ext_data) as { asr?: { transcript?: string } } : {}; return ext.asr?.transcript?.trim() ? [ext.asr.transcript.trim()] : []; });
-    const parts = [content.text.trim() ? `用户记录：${content.text.trim()}` : "", ...transcripts.map(text => `音频转写：${text}`)].filter(Boolean);
+    const parts = [content.text.trim() ? `用户记录：${content.text.trim()}` : "", ...content.blocks.flatMap(block => block.type === "image" && block.description?.trim() ? [`图片描述：${block.description.trim()}`] : block.type === "audio" && block.transcription?.trim() ? [`音频转写：${block.transcription.trim()}`] : [])].filter(Boolean);
     return parts.length ? parts.join("\n") : null;
   }
 }

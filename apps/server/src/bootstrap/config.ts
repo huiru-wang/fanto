@@ -14,7 +14,7 @@ export interface AppConfig {
   embeddingModel: string;
   embeddingDimension: number;
   oss: { region: string; endpoint?: string; bucket: string; accessKeyId: string; accessKeySecret: string };
-  dashscope: { apiKey: string; asrBaseUrl: string; vlBaseUrl: string };
+  dashscope: { apiKey: string; visionBaseUrl: string; asrBaseUrl: string; visionModel: string; asrModel: string };
 }
 
 export function loadEnv(path = ".env") {
@@ -26,7 +26,7 @@ export function loadEnv(path = ".env") {
       if (eq === -1) continue;
       const key = trimmed.slice(0, eq).trim();
       const val = trimmed.slice(eq + 1).trim();
-      if (process.env[key] === undefined) process.env[key] = val;
+      process.env[key] = val;
     }
   } catch {
     /* .env 不存在则跳过 */
@@ -57,8 +57,10 @@ export function loadConfig(): AppConfig {
     },
     dashscope: {
       apiKey: process.env.DASHSCOPE_API_KEY ?? "",
-      asrBaseUrl: process.env.DASHSCOPE_ASR_BASE_URL ?? process.env.DASHSCOPE_BASE_URL ?? "https://ws-2gkw6cbbhgg7bqz5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-      vlBaseUrl: process.env.DASHSCOPE_VL_BASE_URL ?? process.env.DASHSCOPE_BASE_URL ?? "https://ws-2gkw6cbbhgg7bqz5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      visionBaseUrl: process.env.DASHSCOPE_VL_BASE_URL ?? process.env.DASHSCOPE_BASE_URL ?? "https://ws-2gkw6cbbhgg7bqz5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      asrBaseUrl: process.env.DASHSCOPE_ASR_BASE_URL ?? "https://ws-2gkw6cbbhgg7bqz5.cn-beijing.maas.aliyuncs.com",
+      visionModel: process.env.DASHSCOPE_VL_MODEL ?? "qwen3-vl-flash",
+      asrModel: process.env.DASHSCOPE_ASR_MODEL ?? "qwen3-asr-flash",
     },
   };
 }

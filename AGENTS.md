@@ -25,14 +25,14 @@
 
 ## Agent 会话与工具
 
-- `apps/agent` 是独立的 Hono + Pi AgentHarness 服务。项目根 `agents.yaml` 是唯一 Agent 定义来源；`POST /api/agent` 必须传 `agentId`，可传 `sessionId` 续传 SQLite 会话，`GET /api/sessions/:sessionId/messages` 分页返回会话记录。每个会话绑定一个 Agent 配置并拥有独立工作区；使用服务端 Bearer Token，不接入业务数据库。启动和接口说明见 `apps/agent/README.md`。
+- `apps/agent` 是独立的 Hono + Pi AgentHarness 服务。`apps/agent/agents.yaml` 是唯一 Agent 定义来源，仅在服务启动时加载；先通过 `POST /api/agent/sessions` 创建 SQLite Session，再使用 `POST /api/agent/stream` 或 `POST /api/agent/tasks` 执行，二者都必须传 `agentId` 与 `sessionId`。`agentId` 是执行目标，空闲旧 Session 在下一次执行时隐式升级或切换 Agent；不提供 YAML 热更新、Session 状态或配置更新接口。`GET /api/agent/sessions/:sessionId/history` 按 `seq` 倒序返回可见历史，`GET /api/agent/tasks/:taskId` 查询异步任务。每个会话绑定用户归属并拥有独立工作区；使用服务端 Bearer Token，不接入业务数据库。启动和接口说明见 `apps/agent/README.md`。
 - Agent 配置只能启用 Pi 内置 `read`、`write`、`edit`、`bash`，Skills 仅从 `apps/agent/skills/<id>/SKILL.md` 加载。文件工具不得离开 Session 工作区；bash 使用最小环境与固定 cwd。云端生产环境启用 bash 必须采用容器或微虚拟机隔离，不能将 NodeExecutionEnv、路径检查或命令黑名单视为宿主机隔离。
 
-- Agent 使用 Pi `AgentHarness + SQLite Session`；`sessionId` 是持久 Session、Harness 缓存和工作区的唯一隔离边界。`userId` 与 `agentId` 写入 Pi Session 的 `fanto.session_owner` custom entry，用于接口授权与归属校验；不另建 Agent 业务表。
+- Agent 使用 Pi `AgentHarness + SQLite Session`；`sessionId` 是持久 Session、Harness 缓存和工作区的唯一隔离边界。`userId` 与当前 `agentId`、配置 revision 写入 Pi Session 的 `fanto.session_owner` custom entry，用于接口授权、归属校验和隐式配置升级；异步任务只使用 Agent 专用 SQLite 的 `agent_tasks` 表，不另建业务服务表。
 - 默认 Agent 为 `main`；其 JSON Definition 的 `tools` 只能配置 Pi 内置 `read`、`write`、`edit`、`bash`。文件工具限制在 session 工作区，bash 使用最小环境、危险命令限制与工作区 cwd。
 - 原始消息读取基于 Pi Session entry，不以旧 `messages` 表中的运行时事件作为真相源；对外 DTO 必须脱敏密钥、令牌、密码和 Authorization 字段。
 - bash 工具必须在 sessionId 对应工作区执行，采用最小环境、超时和危险命令限制。生产环境如需更强隔离，应使用容器或微虚拟机，不能放宽宿主机 bash 权限。
-- Record Memory 仅在 Record 创建/更新后异步生成；向量项固定 `type=record`、`outerId=recordId`，内容仅含用户文本和保存时已就绪的音频 ASR 文本。图片不向量化，失败仅记录日志且不重试。
+- Record 创建/更新后由同一个后置 listener 处理图片理解、音频 ASR 与向量生成；图片 description、audio block 的 transcription 与用户文本按 block 顺序共同索引。向量项固定 `type=record`、`outerId=recordId`。图片描述和音频转写一次事务回写到 Record；Media 的 ASR 扩展数据保存状态、模型、完成时间及服务返回的语种和情绪。失败仅记录日志且不重试。
 
 ## 整理摘要与修改
 

@@ -27,6 +27,7 @@ test("loads merged DeepSeek definitions with explicit ids, compaction and skills
     assert.deepEqual(definitions[0]?.tools, ["read", "write"]);
     assert.equal(definitions[0]?.compaction.keepRecentTokens, 20_000);
     assert.deepEqual(definitions[0]?.skills, ["repo-conventions"]);
+    assert.match(definitions[0]?.revision ?? "", /^[a-f0-9]{64}$/);
   } finally { rmSync(files.root, { recursive: true, force: true }); }
 });
 

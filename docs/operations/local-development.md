@@ -33,7 +33,9 @@ pnpm dev:server
 | `PORT` / `HOST` | `3000` / `0.0.0.0` |
 | `SQLITE_PATH` | `../../data/fanto.sqlite` |
 | `OSS_*` | OSS 区域、桶、访问凭据；对象地址必须可公开读取给模型与客户端 |
-| `DASHSCOPE_API_KEY` | 图片理解和音频转写凭据 |
+| `DASHSCOPE_API_KEY` | 图片理解和音频转写凭据；`apps/server/.env` 中的值优先于启动进程环境变量 |
+| `DASHSCOPE_VL_BASE_URL` / `DASHSCOPE_VL_MODEL` | 图片理解接口地址与模型 |
+| `DASHSCOPE_ASR_BASE_URL` / `DASHSCOPE_ASR_MODEL` | 音频转写接口地址与模型；ASR 使用多模态生成接口 |
 | `EMBEDDING_API_KEY` | 向量索引凭据，可回退到 `OPENAI_API_KEY` |
 | `EMBEDDING_DIMENSION` | 必须为 `1536` |
 

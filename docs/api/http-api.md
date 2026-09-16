@@ -21,22 +21,51 @@
 | GET | `/api/records/:id` | 单条记录 |
 | PATCH | `/api/records/:id` | 以 expectedVersion 更新内容 |
 
-创建体：`{ text, media, source? }`；更新体：`{ text, media, expectedVersion }`。`media` 为 `{ mediaId }[]`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
+创建体：`{ text, media, source? }`；更新体：`{ text, media, expectedVersion }`。`media` 为 `{ mediaId }[]`。创建或更新完成后，服务端异步处理当前版本的图片理解、音频转写与向量索引；图片 description 写入对应 image block，音频 transcription 写入对应 audio block。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
 
 列表结果：`{ data, hasMore, nextCursor, pageSize }`。`nextCursor` 只应在 `hasMore=true` 时使用。
+
+### Record 后置处理与返回字段
+
+`content.blocks` 是图片描述和音频转写正文的唯一来源。客户端创建或更新时只提交 `{ mediaId }`，不得提交 `description` 或 `transcription`；这些字段由服务端在后置处理完成后补充。
+
+```json
+{
+  "id": "record_id",
+  "status": "processed",
+  "content": {
+    "text": "准备周末徒步",
+    "blocks": [
+      { "type": "image", "mediaId": "image_media_id", "description": "雨衣和登山杖放在玄关。" },
+      { "type": "audio", "mediaId": "audio_media_id", "transcription": "周末去西山徒步。" }
+    ]
+  },
+  "media": [
+    { "mediaId": "image_media_id", "type": "image", "url": "/api/media/image_media_id", "description": "雨衣和登山杖放在玄关。" },
+    { "mediaId": "audio_media_id", "type": "audio", "url": "/api/media/audio_media_id", "durationMs": 12000, "asr": { "status": "succeeded", "transcript": "周末去西山徒步。", "model": "qwen3-asr-flash", "emotion": "neutral", "language": "zh", "completedAt": "2026-09-17T00:00:00.000Z", "errorCode": null } }
+  ]
+}
+```
+
+`status` 取值为：`pending`（已保存，等待处理）、`updated`（内容已更新，等待处理）、`processing`（正在进行图片/音频理解）和 `processed`（当前版本处理完成）。音频完成后，`media[].asr` 同步返回转写文本、模型、情绪 `emotion` 与语种 `language`；情绪与语种由 ASR 服务的 `audio_info` 注解提供，缺失时为 `null`。单个媒体失败不会阻断其他媒体或向量索引：失败音频的 `media[].asr.status` 为 `failed`，其 `transcript` 为 `null`；图片失败时对应 block 不含 `description`。
+
+### 本次接口变更
+
+- **移除** `POST /api/uploads/:mediaId/transcription` 及其 SSE `delta`、`completed`、`failed` 事件。音频转写改为在 Record 创建或更新后的自动后置处理中执行。
+- **新增返回字段**：audio block 的可选 `transcription`。同一文本也会投影为 `media[].asr.transcript`，方便现有媒体展示；其正式存储位置是 Record 的 audio block。
+- **新增更新限制**：Record 为 `processing` 时，`PATCH /api/records/:id` 返回 `409 VERSION_CONFLICT`；读取接口始终可用。
 
 ## 上传与媒体
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/uploads` | 创建上传凭据，返回直传 URL |
-| POST | `/api/uploads/:id/complete` | 校验对象并将媒体标记 ready |
-| POST | `/api/uploads/:id/transcription` | 音频转写 SSE |
-| GET | `/api/media/:id` | 已就绪媒体重定向到 OSS |
+| POST | `/api/uploads` | 根据 MIME 创建上传凭据，返回直传 URL |
+| POST | `/api/uploads/:mediaId/complete` | 校验对象并将媒体标记 ready |
+| GET | `/api/media/:mediaId` | 已就绪且属于当前用户的媒体重定向到 OSS |
 
-创建上传体：`{ fileName, mediaType: "image" | "audio", mimeType, bytes }`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
+创建上传体：`{ mimeType, bytes }`。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
 
-转写 SSE 事件：`delta`（`{ text }`）、`completed`（`{ transcript }`）、`failed`（`{ message }`）。
+`GET /api/media/:mediaId` 必须携带 `x-user-id`。不存在、未完成或不属于该用户的媒体统一返回 `404 NOT_FOUND`；成功时仅该业务请求返回 302 到短期 OSS 签名地址。
 
 ## 脉络与待确认提案
 
@@ -58,4 +87,75 @@
 
 ## 独立 Agent 服务
 
-`apps/agent` 独立运行于默认 3001 端口，由项目根 `agents.yaml` 配置 Agent。它提供 `GET /health`、Bearer Token 保护的 `POST /api/agent` SSE 接口，以及 `GET /api/sessions/:sessionId/messages` 会话记录分页查询；不复用业务服务的用户认证或数据库。请求、事件与 curl 示例见 [Agent 服务说明](../../apps/agent/README.md)。
+Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的认证或数据库。除 `GET /health` 外，所有接口要求：
+
+```text
+Authorization: Bearer <AGENT_TOKEN>
+X-User-Id: <用户 ID>
+X-Trace-Id: <可选链路 ID，可省略>
+```
+
+| 方法 | 路径 | 请求 | 成功响应 |
+| --- | --- | --- | --- |
+| POST | `/api/agent/sessions` | `{ agentId }` | `201`，返回 `sessionId` 与 `agentId` |
+| POST | `/api/agent/stream` | `{ agentId, sessionId, message }` | `200`，SSE 事件流 |
+| GET | `/api/agent/sessions/:sessionId/history?cursor=&limit=` | 无请求体 | `200`，倒序历史页 |
+| POST | `/api/agent/tasks` | `{ agentId, sessionId, message }` | `202`，任务元数据 |
+| GET | `/api/agent/tasks/:taskId` | 无请求体 | `200`，任务状态与结果 |
+
+先创建 Session；`stream` 和 `tasks` 必须使用该 `sessionId`。Session 固定绑定 `userId` 和工作区；请求的 `agentId` 是本次执行目标，服务会在 Session 空闲时自动应用或切换到该 Agent。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<sessionId>`。
+
+```sh
+export AGENT_TOKEN='替换为服务端 AGENT_TOKEN'
+
+SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H 'X-User-Id: user_123' \
+  -H 'X-Trace-Id: trace_001' \
+  -H 'Content-Type: application/json' \
+  -d '{"agentId":"main"}' \
+  | node -pe 'JSON.parse(require("fs").readFileSync(0, "utf8")).result.sessionId')
+```
+
+流式执行使用 POST 响应体的 SSE 流，不使用浏览器原生 `EventSource`：
+
+```sh
+curl -N http://127.0.0.1:3001/api/agent/stream \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H 'X-User-Id: user_123' \
+  -H 'X-Trace-Id: trace_002' \
+  -H 'Content-Type: application/json' \
+  -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"你好\"}"
+```
+
+事件依次为 `start`、零到多个 `delta`，最终为 `done` 或 `error`。单次请求最长 120 秒；同一 Session 已在运行时返回 `409`。
+
+历史接口按 `seq` 从新到旧返回。`cursor` 填上页最后一项的 `seq`；`limit` 默认 50，范围为 1–100。`compaction` 和内部 `fanto.*` 条目不对外返回，敏感字段会被脱敏：
+
+```json
+{
+  "success": true,
+  "result": {
+    "sessionId": "...",
+    "agentId": "main",
+    "data": [],
+    "hasMore": false,
+    "nextCursor": null
+  }
+}
+```
+
+异步任务创建后立即返回 `pending` 元数据。任务状态为 `pending`、`running`、`completed` 或 `failed`；完成时 `output` 有值，失败时 `error` 有值：
+
+```sh
+curl -sS http://127.0.0.1:3001/api/agent/tasks \
+  -H "Authorization: Bearer $AGENT_TOKEN" \
+  -H 'X-User-Id: user_123' \
+  -H 'X-Trace-Id: trace_003' \
+  -H 'Content-Type: application/json' \
+  -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"列出工作区文件\"}"
+```
+
+`agent_tasks` 与 Pi Session 共用 Agent 专用 SQLite。当前后台 Runner 只支持单实例部署；服务中断时遗留的 `running` 任务会标记为 `failed`，不自动重跑。完整配置与更多示例见 [Agent 服务说明](../../apps/agent/README.md)。
+
+`apps/agent/agents.yaml` 仅在服务启动时加载，不做运行时热更新。变更 YAML 后重启服务；已有 Session 在下一次 stream 或 task 执行时会自动升级，无需额外状态查询或配置更新接口。
