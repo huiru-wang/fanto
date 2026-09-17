@@ -28,7 +28,7 @@ struct TimelineRecordRow: View {
                     RecordMediaView(media: media)
                 }
                 HStack(spacing: 6) {
-                    Text(FantoDateText.timestamp(record.createdAt))
+                    Text(FantoDateText.timestamp(record.eventAt))
                     if let location = record.location {
                         Text("·")
                         Label(location, systemImage: "location")

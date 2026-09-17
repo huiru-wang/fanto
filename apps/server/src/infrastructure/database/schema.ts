@@ -25,6 +25,7 @@ export interface RecordsTable {
   version: number;
   status: string;
   task_id: string | null;
+  event_at: string;
   created_at: string;
   updated_at: string;
 }

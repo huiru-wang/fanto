@@ -20,7 +20,7 @@
 - Topic 列表使用 updatedAt/id 复合游标且仅返回 active，详情允许查询本用户归档 Topic。
 
 - 当前 HTTP 接口与 curl 示例统一维护在 docs/api/http-api.md，接口变更时同步更新。
-- GET /api/records 可按 topicId 过滤，按 createdAt、id 倒序。nextCursor 是复合游标，避免批量记录共享时间戳导致漏页；不要改回仅时间的游标。
+- GET /api/records 可按 topicId 过滤，按 eventAt、id 倒序。nextCursor 是复合游标，避免批量记录共享时间戳导致漏页；不要改回仅时间的游标。Record 创建必须提交带时区的 ISO 8601 `eventAt`，日历和时间线均以该业务时间渲染。
 - 按 Topic 查记录仍需校验 Record 和 Topic 的用户归属，使用 EXISTS 避免重复关联放大结果集。
 
 ## Agent 会话与工具

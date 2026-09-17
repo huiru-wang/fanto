@@ -3,8 +3,10 @@ import SwiftUI
 struct RecordComposerView: View {
     @Environment(FantoStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    let didSave: (Date) -> Void
     @State private var text = ""
     @State private var includesLocation = false
+    @State private var eventAt = Date.now
 
     var body: some View {
         NavigationStack {
@@ -12,6 +14,11 @@ struct RecordComposerView: View {
                 Section {
                     TextField("想到什么，就记下来。", text: $text, axis: .vertical)
                         .lineLimit(7...12)
+                }
+
+                Section("发生时间") {
+                    DatePicker("发生时间", selection: $eventAt, displayedComponents: [.date, .hourAndMinute])
+                        .datePickerStyle(.compact)
                 }
 
                 Section {
@@ -34,7 +41,8 @@ struct RecordComposerView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
-                        store.addRecord(text: text, location: includesLocation ? "杭州 · 西湖区" : nil)
+                        store.addRecord(text: text, location: includesLocation ? "杭州 · 西湖区" : nil, eventAt: eventAt)
+                        didSave(eventAt)
                         dismiss()
                     }
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

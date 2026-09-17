@@ -107,8 +107,9 @@ final class FantoStore {
         }
     }
 
-    func addRecord(text: String, location: String?) {
-        records.insert(Record(text: text, location: location), at: 0)
+    func addRecord(text: String, location: String?, eventAt: Date) {
+        records.append(Record(text: text, eventAt: eventAt, location: location))
+        records.sort { $0.eventAt > $1.eventAt }
     }
 }
 

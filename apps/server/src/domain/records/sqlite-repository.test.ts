@@ -10,6 +10,7 @@ import { RecordPostprocessQueue } from "../../infrastructure/queue/record-postpr
 import { registerRecordPostprocessListener } from "../../listeners/record-postprocess.listener.js";
 import { createApp } from "../../bootstrap/app.js";
 import { RecordMemoryService } from "../memory/record-index.js";
+import { encodeRecordCursor } from "./cursor.js";
 
 test("timestamps are stored in UTC ISO format", () => {
   assert.match(nowIso(), /^\d{4}-\d{2}-\d{2}T.*Z$/);
@@ -20,7 +21,7 @@ test("postprocess writes audio transcription and annotations to Record media", a
   try {
     const now = nowIso(); const mediaId = randomUUID(); await db.insertInto("users").values({ user_id: "u", wx_openid: "u", created_at: now }).execute();
     await db.insertInto("media_assets").values({ media_id: mediaId, user_id: "u", object_key: "private/audio", media_type: "audio", mime_type: "audio/mp4", bytes: 3, status: "ready", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now }).execute();
-    const records = new SqliteRecordRepository(db); const record = await records.create({ userId: "u", value: { text: "手写文本", media: [{ mediaId }] } });
+    const records = new SqliteRecordRepository(db); const record = await records.create({ userId: "u", eventAt: now, value: { text: "手写文本", media: [{ mediaId }] } });
     assert.notEqual(typeof record, "string"); if (typeof record === "string") return;
     const runId = randomUUID(); assert.ok(await records.claimPostprocess({ recordId: record.id, userId: "u", version: 1, runId }));
     assert.equal(await records.completePostprocess({ recordId: record.id, userId: "u", version: 1, runId, images: [], audio: [{ mediaId, transcription: "语音转写", asr: { status: "succeeded", model: "qwen3-asr-flash", emotion: "neutral", language: "zh", completedAt: now } }] }), true);
@@ -39,7 +40,7 @@ test("record memory indexes text and ASR with record outerId", async () => {
     const now = nowIso(); const mediaId = randomUUID(); const imageId = randomUUID(); await db.insertInto("users").values({ user_id: "u", wx_openid: "u", created_at: now }).execute();
     await db.insertInto("media_assets").values({ media_id: mediaId, user_id: "u", object_key: "private/audio", media_type: "audio", mime_type: "audio/mp4", bytes: 3, status: "ready", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now }).execute();
     await db.insertInto("media_assets").values({ media_id: imageId, user_id: "u", object_key: "private/image", media_type: "image", mime_type: "image/png", bytes: 3, status: "ready", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now }).execute();
-    const records = new SqliteRecordRepository(db); const record = await records.create({ userId: "u", value: { text: "准备雨衣", media: [{ mediaId }, { mediaId: imageId }] } });
+    const records = new SqliteRecordRepository(db); const record = await records.create({ userId: "u", eventAt: now, value: { text: "准备雨衣", media: [{ mediaId }, { mediaId: imageId }] } });
     assert.notEqual(typeof record, "string"); if (typeof record === "string") return;
     const runId = randomUUID(); await records.claimPostprocess({ recordId: record.id, userId: "u", version: 1, runId }); await records.completePostprocess({ recordId: record.id, userId: "u", version: 1, runId, images: [{ mediaId: imageId, description: "雨衣和登山杖放在玄关。" }], audio: [{ mediaId, transcription: "周末去西山徒步", asr: { status: "succeeded" } }] });
     const memory = new RecordMemoryService(db, { embeddingApiKey: "test", embeddingApiBase: "https://embedding.test/v1", embeddingModel: "test", embeddingDimension: 1536 } as any);
@@ -60,7 +61,7 @@ test("record save links ready media and rejects stale versions", async () => {
     await db.insertInto("users").values({ user_id: "u", wx_openid: "u", created_at: nowIso() }).execute();
     const mediaId = randomUUID(); const now = nowIso();
     await db.insertInto("media_assets").values({ media_id: mediaId, user_id: "u", object_key: "private/audio", media_type: "audio", mime_type: "audio/mp4", bytes: 3, status: "ready", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now }).execute();
-    const records = new SqliteRecordRepository(db); const created = await records.create({ userId: "u", value: { text: "memo", media: [{ mediaId }] } });
+    const records = new SqliteRecordRepository(db); const created = await records.create({ userId: "u", eventAt: now, value: { text: "memo", media: [{ mediaId }] } });
     assert.notEqual(typeof created, "string"); if (typeof created === "string") return;
     assert.equal(created.version, 1); assert.deepEqual(created.content.blocks[0], { type: "audio", mediaId });
     const stale = await records.updateContent(created.id, "u", { value: { text: "new", media: [{ mediaId }] }, expectedVersion: 2 });
@@ -72,12 +73,27 @@ test("record save links ready media and rejects stale versions", async () => {
   } finally { await db.destroy(); await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true }); }
 });
 
+test("record list orders and pages by event time", async () => {
+  const path = `/tmp/fanto-record-event-${randomUUID()}.sqlite`; const db = createDatabase(path); await runMigrations(db);
+  try {
+    await db.insertInto("users").values({ user_id: "u", wx_openid: "u", created_at: nowIso() }).execute();
+    const records = new SqliteRecordRepository(db);
+    const earliest = await records.create({ userId: "u", eventAt: "2026-09-17T00:00:00.000Z", value: { text: "最早发生", media: [] } });
+    const latest = await records.create({ userId: "u", eventAt: "2026-09-17T12:00:00.000Z", value: { text: "最后发生", media: [] } });
+    assert.notEqual(typeof earliest, "string"); assert.notEqual(typeof latest, "string"); if (typeof earliest === "string" || typeof latest === "string") return;
+    const page = await records.findByUserId("u", { limit: 1 });
+    assert.deepEqual(page.map(record => record.id), [latest.id]);
+    const cursor = encodeRecordCursor(page[0]);
+    assert.deepEqual((await records.findByUserId("u", { cursor, limit: 1 })).map(record => record.id), [earliest.id]);
+  } finally { await db.destroy(); await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true }); }
+});
+
 test("record postprocess writes image and audio results once, then indexes", async () => {
   const path = `/tmp/fanto-image-${randomUUID()}.sqlite`; const db = createDatabase(path); await runMigrations(db);
   try {
     const now = nowIso(); const imageId = randomUUID(); const audioId = randomUUID(); await db.insertInto("users").values({ user_id: "u", wx_openid: "u", created_at: now }).execute();
     for (const [mediaId, mediaType, mimeType] of [[imageId, "image", "image/png"], [audioId, "audio", "audio/mpeg"]] as const) await db.insertInto("media_assets").values({ media_id: mediaId, user_id: "u", object_key: `private/${mediaId}`, media_type: mediaType, mime_type: mimeType, bytes: 3, status: "ready", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now }).execute();
-    const records = new SqliteRecordRepository(db); const media = new SqliteMediaRepository(db); const created = await records.create({ userId: "u", value: { text: "photo", media: [{ mediaId: imageId }, { mediaId: audioId }] } });
+    const records = new SqliteRecordRepository(db); const media = new SqliteMediaRepository(db); const created = await records.create({ userId: "u", eventAt: now, value: { text: "photo", media: [{ mediaId: imageId }, { mediaId: audioId }] } });
     assert.notEqual(typeof created, "string"); if (typeof created === "string") return;
     const indexed: unknown[] = []; const queue = new RecordPostprocessQueue(); registerRecordPostprocessListener(queue, records, media, { readUrl: (key: string) => `https://private.example/${key}` } as any, { describe: async () => ({ description: "一棵树。" }) }, { transcribe: async () => ({ transcript: "鸟鸣很清楚", model: "qwen3-asr-flash" }) }, { index: async (task: unknown) => { indexed.push(task); } } as any);
     queue.publish({ recordId: created.id, userId: "u", version: created.version }); queue.publish({ recordId: created.id, userId: "u", version: created.version }); await new Promise(resolve => setTimeout(resolve, 20));
@@ -98,9 +114,10 @@ test("record HTTP accepts source and requires a valid user header", async () => 
     assert.equal((await app.request(`/api/uploads/${uploaded.mediaId}/complete`, { method: "POST", headers: { "Content-Type": "application/json", "x-user-id": "u" }, body: "{}" })).status, 200);
     assert.equal((await app.request(`/api/media/${uploaded.mediaId}`, { headers: { "x-user-id": "u" } })).status, 302);
     assert.equal((await app.request(`/api/media/${uploaded.mediaId}`, { headers: { "x-user-id": "other" } })).status, 404);
-    const created = await app.request("/api/records", { method: "POST", headers: { "Content-Type": "application/json", "x-user-id": "u" }, body: JSON.stringify({ text: "with source", media: [], source: "capture" }) });
-    assert.equal(created.status, 201); assert.equal((await created.json() as any).result.source, "capture");
-    const unauthorized = await app.request("/api/records", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "no user", media: [] }) });
+    const created = await app.request("/api/records", { method: "POST", headers: { "Content-Type": "application/json", "x-user-id": "u" }, body: JSON.stringify({ text: "with source", media: [], source: "capture", eventAt: "2026-09-17T10:30:00+08:00" }) });
+    assert.equal(created.status, 201); const createdBody = await created.json() as any; assert.equal(createdBody.result.source, "capture"); assert.equal(createdBody.result.eventAt, "2026-09-17T02:30:00.000Z");
+    assert.equal((await app.request("/api/records", { method: "POST", headers: { "Content-Type": "application/json", "x-user-id": "u" }, body: JSON.stringify({ text: "missing event time", media: [] }) })).status, 400);
+    const unauthorized = await app.request("/api/records", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "no user", media: [], eventAt: "2026-09-17T10:30:00+08:00" }) });
     assert.equal(unauthorized.status, 401);
   } finally { await db.destroy(); await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true }); }
 });
@@ -118,8 +135,8 @@ test("record rejects image-only content and requires ready media", async () => {
     const now = nowIso(); const imageId = randomUUID(); await db.insertInto("users").values({ user_id: "u", wx_openid: "u", created_at: now }).execute();
     await db.insertInto("media_assets").values({ media_id: imageId, user_id: "u", object_key: "private/image", media_type: "image", mime_type: "image/png", bytes: 3, status: "ready", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now }).execute();
     const records = new SqliteRecordRepository(db);
-    assert.equal(await records.create({ userId: "u", value: { text: "", media: [{ mediaId: imageId }] } }), "invalid_content");
+    assert.equal(await records.create({ userId: "u", eventAt: now, value: { text: "", media: [{ mediaId: imageId }] } }), "invalid_content");
     await db.updateTable("media_assets").set({ status: "uploading" }).where("media_id", "=", imageId).execute();
-    assert.equal(await records.create({ userId: "u", value: { text: "caption", media: [{ mediaId: imageId }] } }), "invalid_media");
+    assert.equal(await records.create({ userId: "u", eventAt: now, value: { text: "caption", media: [{ mediaId: imageId }] } }), "invalid_media");
   } finally { await db.destroy(); await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true }); }
 });

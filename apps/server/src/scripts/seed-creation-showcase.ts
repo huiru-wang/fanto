@@ -35,7 +35,7 @@ await db.transaction().execute(async trx => {
   await trx.deleteFrom("creations").where("user_id", "=", userId).execute();
   await trx.deleteFrom("records").where("user_id", "=", userId).execute();
   for (const [kind_id, name, title] of kinds) await trx.insertInto("creation_kinds").values({ kind_id, owner_user_id: null, name, title, created_at: now, updated_at: now }).onConflict(oc => oc.column("kind_id").doNothing()).execute();
-  const records = notes.map((text, index) => ({ record_id: randomUUID(), user_id: userId, source: "creation-showcase", content: JSON.stringify({ text, blocks: [] }), version: 1, status: "pending", task_id: null, created_at: dateFor(index), updated_at: dateFor(index) }));
+  const records = notes.map((text, index) => { const event_at = dateFor(index); return { record_id: randomUUID(), user_id: userId, source: "creation-showcase", content: JSON.stringify({ text, blocks: [] }), version: 1, status: "pending", task_id: null, event_at, created_at: event_at, updated_at: event_at }; });
   await trx.insertInto("records").values(records).execute();
   const creationIds: string[] = [];
   for (const [title, kind_id, summary, content] of creations) { const creationId = randomUUID(); creationIds.push(creationId); await trx.insertInto("creations").values({ creation_id: creationId, user_id: userId, title, kind_id, session_id: "showcase", summary, content, status: "active", version: 1, created_at: now, updated_at: now }).execute(); }

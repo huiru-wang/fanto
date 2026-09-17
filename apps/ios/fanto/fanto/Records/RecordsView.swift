@@ -11,8 +11,8 @@ struct RecordsView: View {
         NavigationStack {
             ScrollView {
                 let dayRecords = store.records
-                    .filter { calendar.isDate($0.createdAt, inSameDayAs: selectedDate) }
-                    .sorted { $0.createdAt > $1.createdAt }
+                    .filter { calendar.isDate($0.eventAt, inSameDayAs: selectedDate) }
+                    .sorted { $0.eventAt > $1.eventAt }
                 LazyVStack(alignment: .leading, spacing: 28) {
                     RecordCalendarView(selectedDate: $selectedDate, records: store.records) {
                         showingComposer = true
@@ -23,7 +23,9 @@ struct RecordsView: View {
                 .padding(.bottom, 28)
             }
             .sheet(isPresented: $showingComposer) {
-                RecordComposerView()
+                RecordComposerView { eventAt in
+                    selectedDate = calendar.startOfDay(for: eventAt)
+                }
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
             }

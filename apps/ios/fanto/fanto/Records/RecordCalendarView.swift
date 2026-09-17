@@ -94,7 +94,7 @@ struct RecordCalendarView: View {
     }
 
     private func hasRecords(on date: Date) -> Bool {
-        records.contains { calendar.isDate($0.createdAt, inSameDayAs: date) }
+        records.contains { calendar.isDate($0.eventAt, inSameDayAs: date) }
     }
 
     private func select(_ date: Date) {

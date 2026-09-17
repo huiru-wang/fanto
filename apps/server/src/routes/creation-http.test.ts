@@ -24,7 +24,7 @@ test("creation and proposal HTTP routes preserve the public read and decision co
   try {
     await db.insertInto("users").values({ user_id: userId, wx_openid: userId, created_at: now }).execute();
     await db.insertInto("creation_kinds").values({ kind_id: "kind-thread", owner_user_id: null, name: "thread", title: "持续线索", created_at: now, updated_at: now }).execute();
-    await db.insertInto("records").values({ record_id: recordId, user_id: userId, source: "test", content: JSON.stringify({ text: "一条关联记录", blocks: [] }), version: 1, status: "pending", task_id: null, created_at: now, updated_at: now }).execute();
+    await db.insertInto("records").values({ record_id: recordId, user_id: userId, source: "test", content: JSON.stringify({ text: "一条关联记录", blocks: [] }), version: 1, status: "pending", task_id: null, event_at: now, created_at: now, updated_at: now }).execute();
     await db.insertInto("creations").values({ creation_id: creationId, user_id: userId, title: "正在验证的脉络", kind_id: "kind-thread", session_id: "test", summary: "可被前端直接展示的摘要", content: "## 正文\n\n保留 Markdown 内容。", status: "active", version: 1, created_at: now, updated_at: now }).execute();
     await db.insertInto("entity_relations").values({ relation_id: randomUUID(), user_id: userId, source_entity_id: recordId, source_entity_type: "record", target_entity_id: creationId, target_entity_type: "creation", relation_type: "record_creation", source_created_at: now, created_at: now }).execute();
     for (const [id, title] of [[proposalId, "待确认的新脉络"], [rejectedProposalId, "待暂不保留的脉络"]] as const) {

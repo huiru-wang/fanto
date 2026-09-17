@@ -408,13 +408,13 @@ private struct RecordsPayload: Decodable {
 private struct RecordPayload: Decodable {
     let id: String
     let content: RecordContentPayload
-    let createdAt: Date
+    let eventAt: Date
     let media: [RecordMediaPayload]
 
     enum CodingKeys: String, CodingKey {
         case id
         case content
-        case createdAt = "createdAt"
+        case eventAt
         case media
     }
 }
@@ -436,7 +436,7 @@ private extension Record {
             nil
         }
 
-        self.init(id: payload.id, text: payload.content.text, createdAt: payload.createdAt, media: media)
+        self.init(id: payload.id, text: payload.content.text, eventAt: payload.eventAt, media: media)
     }
 }
 

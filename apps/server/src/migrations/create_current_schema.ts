@@ -19,10 +19,11 @@ export async function up(db: Kysely<any>) {
     .addColumn("version", "integer", c => c.notNull())
     .addColumn("status", "text", c => c.notNull())
     .addColumn("task_id", "text")
+    .addColumn("event_at", "text", c => c.notNull())
     .addColumn("created_at", "text", c => c.notNull())
     .addColumn("updated_at", "text", c => c.notNull())
     .execute();
-  await db.schema.createIndex("idx_records_user_created").on("records").columns(["user_id", "created_at", "record_id"]).execute();
+  await db.schema.createIndex("idx_records_user_event").on("records").columns(["user_id", "event_at", "record_id"]).execute();
 
   await db.schema.createTable("media_assets")
     .addColumn("id", "integer", c => c.primaryKey().autoIncrement())

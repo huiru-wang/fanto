@@ -11,6 +11,7 @@ export interface Record {
   version: number;
   status: RecordStatus;
   taskId: string | null;
+  eventAt: string;
   createdAt: string;
   updatedAt: string;
 }

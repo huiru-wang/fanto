@@ -14,12 +14,12 @@ const ext = (value: string | null): ExtData => value ? JSON.parse(value) as ExtD
 export class SqliteRecordRepository implements RecordRepository {
   constructor(private db: Kysely<DB>) {}
 
-  async create(input: { userId: string; source?: string; value: SaveRecordContent }): Promise<Record | "invalid_media" | "invalid_content"> {
+  async create(input: { userId: string; source?: string; eventAt: string; value: SaveRecordContent }): Promise<Record | "invalid_media" | "invalid_content"> {
     return this.db.transaction().execute(async trx => {
       const blocks = await this.blocks(trx, input.userId, input.value);
       if (typeof blocks === "string") return blocks;
       const now = nowIso();
-      const row = { record_id: randomUUID(), user_id: input.userId, source: input.source ?? "home", content: JSON.stringify({ text: input.value.text, blocks }), version: 1, status: "pending", task_id: null, created_at: now, updated_at: now };
+      const row = { record_id: randomUUID(), user_id: input.userId, source: input.source ?? "home", content: JSON.stringify({ text: input.value.text, blocks }), version: 1, status: "pending", task_id: null, event_at: input.eventAt, created_at: now, updated_at: now };
       await trx.insertInto("records").values(row).execute();
       await this.link(trx, input.userId, input.value.media.map(item => item.mediaId), row.record_id);
       return this.toEntity(row);
@@ -32,9 +32,9 @@ export class SqliteRecordRepository implements RecordRepository {
     let query = this.db.selectFrom("records").selectAll().where("user_id", "=", userId);
     if (opts.cursor) {
       const cursor = decodeRecordCursor(opts.cursor);
-      if (cursor.id) query = query.where(eb => eb.or([eb("created_at", "<", cursor.createdAt), eb.and([eb("created_at", "=", cursor.createdAt), eb("record_id", "<", cursor.id!)]) ]));
+      query = query.where(eb => eb.or([eb("event_at", "<", cursor.eventAt), eb.and([eb("event_at", "=", cursor.eventAt), eb("record_id", "<", cursor.id!)]) ]));
     }
-    return (await query.orderBy("created_at", "desc").orderBy("record_id", "desc").limit(opts.limit).execute()).map(row => this.toEntity(row));
+    return (await query.orderBy("event_at", "desc").orderBy("record_id", "desc").limit(opts.limit).execute()).map(row => this.toEntity(row));
   }
 
   async updateContent(id: string, userId: string, input: { value: SaveRecordContent; expectedVersion: number }): Promise<Record | "not_found" | "conflict" | "invalid_media" | "invalid_content"> {
@@ -108,5 +108,5 @@ export class SqliteRecordRepository implements RecordRepository {
     if (media) await trx.updateTable("media_assets").set({ ext_data: JSON.stringify({ ...ext(media.ext_data), recordId: null }), updated_at: now }).where("media_id", "=", mediaId).execute();
   }
 
-  private toEntity(row: any): Record { return { extData: null, id: row.record_id, userId: row.user_id, source: row.source, content: JSON.parse(row.content), version: row.version, status: row.status, taskId: row.task_id, createdAt: row.created_at, updatedAt: row.updated_at }; }
+  private toEntity(row: any): Record { return { extData: null, id: row.record_id, userId: row.user_id, source: row.source, content: JSON.parse(row.content), version: row.version, status: row.status, taskId: row.task_id, eventAt: row.event_at, createdAt: row.created_at, updatedAt: row.updated_at }; }
 }

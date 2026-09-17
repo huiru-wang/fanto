@@ -21,7 +21,7 @@
 | GET | `/api/records/:id` | 单条记录 |
 | PATCH | `/api/records/:id` | 以 expectedVersion 更新内容 |
 
-创建体：`{ text, media, source? }`；更新体：`{ text, media, expectedVersion }`。`media` 为 `{ mediaId }[]`。创建或更新完成后，服务端异步处理当前版本的图片理解、音频转写与向量索引；图片 description 写入对应 image block，音频 transcription 写入对应 audio block。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
+创建体：`{ text, media, eventAt, source? }`；更新体：`{ text, media, expectedVersion }`。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。创建或更新完成后，服务端异步处理当前版本的图片理解、音频转写与向量索引；图片 description 写入对应 image block，音频 transcription 写入对应 audio block。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
 
 列表结果：`{ data, hasMore, nextCursor, pageSize }`。`nextCursor` 只应在 `hasMore=true` 时使用。
 
@@ -32,6 +32,7 @@
 ```json
 {
   "id": "record_id",
+  "eventAt": "2026-09-17T02:30:00.000Z",
   "status": "processed",
   "content": {
     "text": "准备周末徒步",
@@ -48,6 +49,8 @@
 ```
 
 `status` 取值为：`pending`（已保存，等待处理）、`updated`（内容已更新，等待处理）、`processing`（正在进行图片/音频理解）和 `processed`（当前版本处理完成）。音频完成后，`media[].asr` 同步返回转写文本、模型、情绪 `emotion` 与语种 `language`；情绪与语种由 ASR 服务的 `audio_info` 注解提供，缺失时为 `null`。单个媒体失败不会阻断其他媒体或向量索引：失败音频的 `media[].asr.status` 为 `failed`，其 `transcript` 为 `null`；图片失败时对应 block 不含 `description`。
+
+`eventAt` 是 Record 的业务发生时间；`createdAt`、`updatedAt` 仅表示服务端保存与变更时间。当前 schema 只支持空 SQLite 数据库初始化；已有数据库需要重建后才包含 `event_at` 列与对应索引。
 
 ### 本次接口变更
 

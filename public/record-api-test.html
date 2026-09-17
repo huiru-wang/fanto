@@ -464,6 +464,8 @@
             maxlength="20000"
             placeholder="写下一点想法，或只添加媒体…"
           ></textarea>
+          <label for="event-at">发生时间</label>
+          <input id="event-at" type="datetime-local" required />
           <div class="attachment-zone">
             <div class="attachment-actions">
               <label class="file-button"
@@ -545,6 +547,11 @@
         const $ = (selector) => document.querySelector(selector);
         const apiBase = () => $("#api-base").value.trim().replace(/\/$/, "");
         const userId = () => $("#user-id").value.trim();
+        const eventAt = () => {
+          const value = $("#event-at").value;
+          const date = new Date(value);
+          return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+        };
         const headers = (json) => ({
           "x-user-id": userId(),
           ...(json ? { "Content-Type": "application/json" } : {}),
@@ -859,6 +866,7 @@
             return notify("请先停止录音，并等待录音加入附件。", "error");
           if (!apiBase() || !userId())
             return notify("请先填写服务地址和测试用户 ID。", "error");
+          if (!eventAt()) return notify("请选择有效的发生时间。", "error");
           $("#submit").disabled = true;
           try {
             const mediaIds = [];
@@ -873,6 +881,7 @@
                 text,
                 media: mediaIds.map((mediaId) => ({ mediaId })),
                 source: "h5-api-test",
+                eventAt: eventAt(),
               }),
             });
             notify(
@@ -917,7 +926,7 @@
             }),
           );
           const date = new Date(
-            record.createdAt || record.updatedAt,
+            record.eventAt || record.createdAt || record.updatedAt,
           ).toLocaleString("zh-CN", { hour12: false });
           return `<article class="record"><div class="record-meta"><span>${escapeHtml(date)}</span><span class="badge ${escapeHtml(record.status)}">${escapeHtml(record.status)}</span></div>${record.content?.text ? `<p class="record-text">${escapeHtml(record.content.text)}</p>` : ""}${mediaHtml.length ? `<div class="record-media">${mediaHtml.join("")}</div>` : ""}</article>`;
         }
@@ -956,6 +965,9 @@
           localStorage.getItem("fanto-record-test-api") || $("#api-base").value;
         $("#user-id").value =
           localStorage.getItem("fanto-record-test-user") || $("#user-id").value;
+        $("#event-at").value = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000)
+          .toISOString()
+          .slice(0, 16);
         $("#save-settings").addEventListener("click", saveSettings);
         $("#refresh").addEventListener("click", () => loadRecords());
         $("#load-more").addEventListener("click", () => loadRecords(true));
