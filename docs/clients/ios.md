@@ -1,25 +1,52 @@
 # iOS 客户端
 
-目录：`apps/ios/fanto`。使用 SwiftUI，最低部署目标为 iOS 26.5，底部为系统 `TabView` 的「记录 / 脉络」。
+目录：`apps/ios/fanto`。当前使用 SwiftUI，最低部署目标为 iOS 26.5。
 
-## 页面与数据来源
+## 根导航
 
-| 页面 | 数据来源 | 状态 |
+应用使用系统 `TabView`：
+
+- 记录；
+- 脉络。
+
+## 当前页面与数据来源
+
+| 能力 | 数据来源 | 当前状态 |
 | --- | --- | --- |
-| 记录 | `/api/records` 首批最多 100 条 | 已接入启动加载、下拉刷新、日历标记与按天 Timeline。 |
-| 新记录 | 本地 Store | 支持文字与位置开关；保存尚不会请求服务，附件仅占位。 |
-| 脉络首页 | `/api/creations/overview` | 已接入加载、下拉刷新、失败重试；继续跟踪最多显示三条 active 脉络。 |
-| 类型脉络列表 | `/api/creations?kindId=` | 已接入，按所选类型读取当前用户的完整脉络列表。 |
-| 脉络详情 | `/api/creations/:id` 与 `/records` | 已接入正文、状态与来源记录分页。 |
-| Proposal 卡片 | `/api/creation-proposals` | 已接入真实待确认卡片、加载/失败重试；长期跟踪/暂不保留会请求服务端并刷新脉络。 |
+| Record 列表 / 日历 / Timeline | `GET /api/records?limit=100` | 已接真实 Server |
+| 新建 Record | 本地 `FantoStore.addRecord` | 仅本地，不持久化到 Server |
+| 媒体写入 | UI / model 占位 | 未形成 Server 上传链路 |
+| Creation 概览 | `GET /api/creations/overview` | 已接 |
+| 按类型 Creation 列表 | `GET /api/creations?kindId=` | 已接 |
+| Creation 详情 | `GET /api/creations/:id` | 已接 |
+| Creation 来源 Record | `GET /api/creations/:id/records` | 已接分页 |
+| Proposal 列表 / 详情 | `/api/creation-proposals` | 已接 |
+| Proposal confirm / reject | 对应 POST 接口 | 已接 |
 
-记录页日历以周日为一周起点，支持周行 / 整月切换；当前加载记录接口的首批 100 条并据此展示日历标记和 Timeline。音频 UI 只显示播放动作和时长，不显示摘要。Creation / Proposal 的 `summary` 已是纯文本；客户端仍能读取历史 JSON 摘要以便平滑升级。
+Record 首批最多读取 100 条，当前客户端据此生成日历标记和 Timeline；尚未实现继续加载整个 Record 历史。
 
-## 本地服务连接限制
+## Record UI
 
-`CreationAPIClient` 当前固定使用 `http://47.118.26.9` 和演示用户 `creation-demo-user`。
+Record 日历以周日为一周起点，周视图 / 月视图共享同一日期选择状态。音频 Record 当前主要显示播放入口和时长；图片按已有媒体投影展示。
 
-- Debug 构建为当前 HTTP ECS 服务设置了 ATS 例外；Release 构建保持 ATS 默认安全策略，因此必须改用 HTTPS。
-- 当前客户端没有服务地址配置或正式身份认证。
+“新建记录”通过系统 sheet 打开 Composer，但保存动作当前只追加到本地 Store。不要把这一界面视为已经完成了 Server Record Create。
 
-上线前应由 ECS 提供 HTTPS，并把服务地址与身份认证统一配置化。
+## 网络边界
+
+`CreationAPIClient` 当前固定：
+
+```text
+baseURL = http://47.118.26.9
+userID  = creation-demo-user
+```
+
+Debug 对当前 HTTP 服务配置 ATS 例外；正式上线前需要：
+
+- HTTPS；
+- 服务地址配置化；
+- 正式认证 / 用户身份；
+- 去除演示用户硬编码。
+
+## Preview
+
+SwiftUI Preview 可以使用 `FantoStore.preview` 样例数据。Preview 数据只用于界面开发，不代表运行态 Server 已具备对应自动生成能力。

@@ -1,46 +1,35 @@
-# Fanto 当前实现文档
+# Fanto 文档索引
 
-本文档描述仓库中**当前已接入运行入口的能力**。它不把设计稿、旧代码或尚未接入的 Agent 工作流当作可用功能。
+`docs/` 只描述**当前已经存在的产品语义与系统事实**。如果文档与实际代码冲突，应先验证代码路径，再修正文档。
 
-## 产品定位
+## 产品
 
-Fanto 用于收下用户的碎片记录，并把已经形成的长期线索以「脉络」展示出来。当前实现以两条链路为主：
+- [产品愿景](product/vision.md)：Fanto 为什么存在、长期想成为怎样的产品。
+- [产品原则](product/principles.md)：功能和 AI 行为发生取舍时的稳定原则。
+- [当前产品边界](product/current-scope.md)：当前仓库已经接入与尚未接入的能力。
 
-```mermaid
-flowchart LR
-  U[用户] --> R[记录]
-  R --> M[媒体上传 / 解析]
-  R --> V[异步向量索引]
-  R --> C[脉络关联记录]
-  C --> O[脉络只读概览与详情]
-```
+## 架构
 
-## 产品方向（规划）
+- [系统总览](architecture/overview.md)：当前运行组件、依赖关系与数据边界。
+- [业务 Server](architecture/server.md)：Hono Server 的模块边界、请求与异步处理链路。
+- [Agent Runtime](architecture/agent-runtime.md)：Pi AgentHarness、Session、Task、Workspace 与安全边界。
 
-[Fanto 产品方向：认识你的陪伴型个人智能](product-direction.md) 描述中长期定位、AI 介入层级、用户控制、MVP 验证重点与信任边界；该文档不代表当前已实现能力。
+## 领域
 
-## 文档导航
+- [Record](domain/records.md)：原始记录、状态、版本和时间语义。
+- [Media](domain/media.md)：上传、OSS、图片理解与音频转写。
+- [Memory / Retrieval](domain/memory.md)：Record 向量索引、检索与派生数据边界。
+- [Creation / Proposal](domain/creations.md)：长期脉络、待确认发现和来源关系。
 
-| 文档 | 内容 |
-| --- | --- |
-| [架构与运行边界](architecture.md) | 运行入口、模块关系、遗留代码边界 |
-| [记录与媒体](domain/records.md) | Record、附件、图像理解、音频转写、向量索引 |
-| [脉络](domain/creations.md) | Creation、类型、记录关联、Proposal 决策与读取能力 |
-| [HTTP API](api/http-api.md) | 当前服务实际注册的接口与请求约定 |
-| [H5 客户端](clients/h5.md) | H5 当前缺失的工程及重建边界 |
-| [iOS 客户端](clients/ios.md) | 当前 iOS 页面、数据来源与限制 |
-| [本地开发](operations/local-development.md) | 环境变量、启动、迁移、种子数据和校验 |
-| [已知边界](known-limitations.md) | 尚未接入或仅保留代码的能力 |
+## 客户端与接口
 
-## 快速启动
+- [HTTP API](api/http-api.md)：当前实际注册的 HTTP 接口。
+- [iOS](clients/ios.md)：当前 SwiftUI 客户端页面、真实数据源与未接入能力。
 
-```bash
-pnpm install
-cp apps/server/.env.example apps/server/.env
-pnpm db:migrate
-pnpm dev:server
-```
+## 工程
 
-服务默认监听 `http://127.0.0.1:3000`，健康检查为 `GET /health`。当前工作区没有可独立运行的 H5 工程。
+- [本地开发](engineering/local-development.md)
+- [配置](engineering/configuration.md)
+- [测试与验证](engineering/testing.md)
 
-所有 `/api/*` 请求均须传递合法的 `x-user-id`。开发演示的脉络数据用户为 `creation-demo-user`。
+仓库协作规则从根目录 [AGENTS.md](../AGENTS.md) 开始；进入 Server、Agent 或 iOS 时继续读取对应目录的局部 `AGENTS.md`。
