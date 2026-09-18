@@ -3,7 +3,7 @@ version: 1
 defaults:
   provider: deepseek
   model: deepseek-v4-pro
-  tools: [read, write, edit, bash]
+  tools: []
   compaction:
     enabled: true
     reserveTokens: 16384
@@ -11,7 +11,13 @@ defaults:
 
 agents:
   - id: main
-    description: 通用中文助手
-    systemPrompt: 你是准确、简洁的中文助手。
+    description: Personal record-aware assistant
+    systemPrompt: Use Record tools only when the current question benefits from the user's past records.
+    tools: [record_get, record_list, record_search]
+    skills: []
+
+  - id: coding
+    description: Coding assistant
+    systemPrompt: Read relevant files first, then make the smallest necessary changes.
     tools: [read, write, edit, bash]
     skills: []

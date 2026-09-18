@@ -4,7 +4,7 @@ import { parseDocument } from "yaml";
 import { z } from "zod";
 import type { Models } from "@earendil-works/pi-ai";
 
-const tool = z.enum(["read", "write", "edit", "bash"]);
+const tool = z.enum(["read", "write", "edit", "bash", "record_get", "record_list", "record_search"]);
 const compaction = z.object({
   enabled: z.boolean(),
   reserveTokens: z.number().int().nonnegative(),

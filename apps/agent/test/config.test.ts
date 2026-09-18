@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { readAgentDefinitions } from "../src/config/agent-config.js";
@@ -42,5 +43,35 @@ test("rejects duplicate tools", () => {
   const files = fixture(`version: 1\ndefaults:\n  provider: deepseek\n  model: deepseek-v4-pro\n  compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 }\nagents:\n  - id: coding\n    systemPrompt: Work carefully.\n    tools: [read, read]\n`);
   try {
     assert.throws(() => readAgentDefinitions(files.config, builtinModels(), new Set()), /duplicate tools/);
+  } finally { rmSync(files.root, { recursive: true, force: true }); }
+});
+
+test("loads Record tools for main while coding remains isolated", () => {
+  const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const skills = new SkillLoader(resolve(appRoot, "skills"));
+  const definitions = readAgentDefinitions(resolve(appRoot, "agents.yaml"), builtinModels(), skills.ids());
+  const main = definitions.find(definition => definition.id === "main");
+  const coding = definitions.find(definition => definition.id === "coding");
+  assert.deepEqual(main?.tools, ["record_get", "record_list", "record_search"]);
+  assert.match(main?.systemPrompt ?? "", /record_list/);
+  assert.match(main?.systemPrompt ?? "", /record_search/);
+  assert.match(main?.systemPrompt ?? "", /record_get/);
+  assert.deepEqual(coding?.tools, ["read", "write", "edit", "bash"]);
+});
+
+test("accepts configured Record tool names", () => {
+  const files = fixture(`version: 1
+defaults:
+  provider: deepseek
+  model: deepseek-v4-pro
+  compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 }
+agents:
+  - id: main
+    systemPrompt: Use records carefully.
+    tools: [record_get, record_list, record_search]
+`);
+  try {
+    const definitions = readAgentDefinitions(files.config, builtinModels(), new Set());
+    assert.deepEqual(definitions[0]?.tools, ["record_get", "record_list", "record_search"]);
   } finally { rmSync(files.root, { recursive: true, force: true }); }
 });

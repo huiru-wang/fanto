@@ -16,3 +16,13 @@ export function createRunContext(metadata: RunMetadata): Context {
   if (metadata.traceId) context = withContextValue(traceIdContextKey, metadata.traceId, context);
   return context;
 }
+
+export function requireRunMetadata(context: Context): RunMetadata {
+  const userId = context.value(userIdContextKey);
+  if (!userId) throw new Error("Agent run is missing user context");
+  return {
+    userId,
+    taskId: context.value(taskIdContextKey),
+    traceId: context.value(traceIdContextKey),
+  };
+}

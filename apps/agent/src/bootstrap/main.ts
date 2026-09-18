@@ -9,6 +9,7 @@ import { SkillLoader } from "../skills/loader.js";
 import { ToolRegistry } from "../tools/registry.js";
 import { AgentTaskRepository } from "../tasks/task-repository.js";
 import { TaskRunner } from "../tasks/task-runner.js";
+import { FantoServerClient } from "../clients/fanto-server-client.js";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const projectRoot = resolve(appRoot, "../..");
@@ -16,7 +17,8 @@ const port = Number(process.env.PORT ?? 3001);
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid PORT");
 const fromProjectRoot = (value: string | undefined, fallback: string) => value ? (isAbsolute(value) ? value : resolve(projectRoot, value)) : resolve(projectRoot, fallback);
 const skills = new SkillLoader(resolve(appRoot, "skills"));
-const factory = new HarnessFactory(new ToolRegistry(), skills);
+const fantoServer = new FantoServerClient(process.env.FANTO_SERVER_BASE_URL ?? "http://127.0.0.1:3000");
+const factory = new HarnessFactory(new ToolRegistry(fantoServer), skills);
 const registry = new AgentRegistry(resolve(appRoot, "agents.yaml"), factory.models, skills);
 const sessions = new AgentSessionManager(
   factory,

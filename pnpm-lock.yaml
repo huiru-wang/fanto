@@ -25,6 +25,9 @@ importers:
       hono:
         specifier: ^4.13.5
         version: 4.13.7
+      typebox:
+        specifier: 1.3.7
+        version: 1.3.7
       yaml:
         specifier: ^2.8.1
         version: 2.9.0
