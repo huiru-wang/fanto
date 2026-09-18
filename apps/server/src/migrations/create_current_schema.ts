@@ -53,7 +53,7 @@ export async function up(db: Kysely<any>) {
     .addColumn("created_at", "text", c => c.notNull())
     .execute();
   await db.schema.createIndex("idx_vector_items_lookup").on("vector_items").columns(["user_id", "type", "outer_id", "status"]).execute();
-  await sql`CREATE VIRTUAL TABLE record_vectors USING vec0(embedding float[1536])`.execute(db);
+  await sql`CREATE VIRTUAL TABLE record_vectors USING vec0(user_id text partition key, embedding float[1536])`.execute(db);
 
   await db.schema.createTable("creation_kinds")
     .addColumn("kind_id", "text", c => c.primaryKey())

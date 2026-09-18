@@ -9,7 +9,8 @@
     "test": "tsx --test $(find src -name '*.test.ts' -print)",
     "db:migrate": "tsx src/bootstrap/migrate.ts",
     "seed:creation-showcase": "tsx src/scripts/seed-creation-showcase.ts",
-    "vector:rebuild": "tsx ../../scripts/rebuild-vector-index.ts",
+    "memory:rebuild": "tsx ../../scripts/rebuild-memory-index.ts",
+    "vector:rebuild": "pnpm memory:rebuild",
     "experiment:pi-proactive": "tsx src/experiments/pi-proactive/run.ts",
     "test:pi-proactive": "tsx --test src/experiments/pi-proactive/*.test.ts"
   },

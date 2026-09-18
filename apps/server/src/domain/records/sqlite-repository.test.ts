@@ -9,7 +9,9 @@ import { nowIso } from "../../infrastructure/time.js";
 import { RecordPostprocessQueue } from "../../infrastructure/queue/record-postprocess-queue.js";
 import { registerRecordPostprocessListener } from "../../listeners/record-postprocess.listener.js";
 import { createApp } from "../../bootstrap/app.js";
-import { RecordMemoryService } from "../memory/record-index.js";
+import { MemoryService } from "../memory/memory-service.js";
+import { EmbeddingsClient } from "../../infrastructure/clients/embeddings-client.js";
+import { SqliteVecMemoryIndex } from "../../infrastructure/memory/sqlite-vec-memory-index.js";
 import { encodeRecordCursor } from "./cursor.js";
 
 test("timestamps are stored in UTC ISO format", () => {
@@ -24,7 +26,8 @@ test("postprocess writes audio transcription and annotations to Record media", a
     const records = new SqliteRecordRepository(db); const record = await records.create({ userId: "u", eventAt: now, value: { text: "手写文本", media: [{ mediaId }] } });
     assert.notEqual(typeof record, "string"); if (typeof record === "string") return;
     const runId = randomUUID(); assert.ok(await records.claimPostprocess({ recordId: record.id, userId: "u", version: 1, runId }));
-    assert.equal(await records.completePostprocess({ recordId: record.id, userId: "u", version: 1, runId, images: [], audio: [{ mediaId, transcription: "语音转写", asr: { status: "succeeded", model: "qwen3-asr-flash", emotion: "neutral", language: "zh", completedAt: now } }] }), true);
+    const completed = await records.completePostprocess({ recordId: record.id, userId: "u", version: 1, runId, images: [], audio: [{ mediaId, transcription: "语音转写", asr: { status: "succeeded", model: "qwen3-asr-flash", emotion: "neutral", language: "zh", completedAt: now } }] });
+    assert.equal(completed?.status, "processed");
     const saved = await records.findById(record.id); assert.equal((saved?.content.blocks[0] as { transcription?: string }).transcription, "语音转写"); assert.equal(saved?.status, "processed");
     const media = new SqliteMediaRepository(db); const asset = await media.findMedia(mediaId, "u"); assert.deepEqual(asset?.extData.asr, { status: "succeeded", model: "qwen3-asr-flash", emotion: "neutral", language: "zh", completedAt: now });
     const app = createApp(records, media, new RecordPostprocessQueue(), {} as any); const response = await app.request(`/api/records/${record.id}`, { headers: { "x-user-id": "u" } });
@@ -32,7 +35,7 @@ test("postprocess writes audio transcription and annotations to Record media", a
   } finally { await db.destroy(); await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true }); }
 });
 
-test("record memory indexes text and ASR with record outerId", async () => {
+test("record memory indexes processed Record content through MemoryService", async () => {
   const path = `/tmp/fanto-vector-${randomUUID()}.sqlite`; const db = createDatabase(path); await runMigrations(db);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ data: [{ embedding: Array.from({ length: 1536 }, () => 0.1) }] }), { status: 200, headers: { "Content-Type": "application/json" } });
@@ -42,16 +45,30 @@ test("record memory indexes text and ASR with record outerId", async () => {
     await db.insertInto("media_assets").values({ media_id: imageId, user_id: "u", object_key: "private/image", media_type: "image", mime_type: "image/png", bytes: 3, status: "ready", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now }).execute();
     const records = new SqliteRecordRepository(db); const record = await records.create({ userId: "u", eventAt: now, value: { text: "准备雨衣", media: [{ mediaId }, { mediaId: imageId }] } });
     assert.notEqual(typeof record, "string"); if (typeof record === "string") return;
-    const runId = randomUUID(); await records.claimPostprocess({ recordId: record.id, userId: "u", version: 1, runId }); await records.completePostprocess({ recordId: record.id, userId: "u", version: 1, runId, images: [{ mediaId: imageId, description: "雨衣和登山杖放在玄关。" }], audio: [{ mediaId, transcription: "周末去西山徒步", asr: { status: "succeeded" } }] });
-    const memory = new RecordMemoryService(db, { embeddingApiKey: "test", embeddingApiBase: "https://embedding.test/v1", embeddingModel: "test", embeddingDimension: 1536 } as any);
-    await memory.index({ userId: "u", recordId: record.id, operation: "upsert" });
-    assert.deepEqual(await memory.search("u", "徒步", 5), [{ recordId: record.id, snippet: "用户记录：准备雨衣\n音频转写：周末去西山徒步\n图片描述：雨衣和登山杖放在玄关。", score: 0 }]);
+    const runId = randomUUID(); await records.claimPostprocess({ recordId: record.id, userId: "u", version: 1, runId });
+    const completed = await records.completePostprocess({ recordId: record.id, userId: "u", version: 1, runId, images: [{ mediaId: imageId, description: "雨衣和登山杖放在玄关。" }], audio: [{ mediaId, transcription: "周末去西山徒步", asr: { status: "succeeded" } }] });
+    assert.ok(completed);
+
+    const memory = new MemoryService(
+      new SqliteVecMemoryIndex(db),
+      new EmbeddingsClient("test", "https://embedding.test/v1", "test", 1536),
+    );
+    await memory.replaceRecord(completed);
+    assert.deepEqual(await memory.searchRecords({ userId: "u", query: "徒步", limit: 5 }), [{
+      sourceType: "record",
+      sourceId: record.id,
+      snippet: "用户记录：准备雨衣\n音频转写：周末去西山徒步\n图片描述：雨衣和登山杖放在玄关。",
+      distance: 0,
+    }]);
+
     const updated = await records.updateContent(record.id, "u", { value: { text: "准备登山杖", media: [{ mediaId }, { mediaId: imageId }] }, expectedVersion: 1 });
     if (typeof updated === "string") return;
-    const updatedRunId = randomUUID(); await records.claimPostprocess({ recordId: record.id, userId: "u", version: updated.version, runId: updatedRunId }); await records.completePostprocess({ recordId: record.id, userId: "u", version: updated.version, runId: updatedRunId, images: [{ mediaId: imageId, description: "雨衣和登山杖放在玄关。" }], audio: [{ mediaId, transcription: "周末去西山徒步", asr: { status: "succeeded" } }] });
-    assert.notEqual(typeof updated, "string"); await memory.index({ userId: "u", recordId: record.id, operation: "replace" });
-    assert.deepEqual(await memory.search("u", "徒步", 5), [{ recordId: record.id, snippet: "用户记录：准备登山杖\n音频转写：周末去西山徒步\n图片描述：雨衣和登山杖放在玄关。", score: 0 }]);
-    assert.deepEqual((await memory.getRecords("u", [record.id]))[0]?.media, [{ mediaId, type: "audio", asrTranscript: "周末去西山徒步" }, { mediaId: imageId, type: "image", description: "雨衣和登山杖放在玄关。" }]);
+    const updatedRunId = randomUUID(); await records.claimPostprocess({ recordId: record.id, userId: "u", version: updated.version, runId: updatedRunId });
+    const updatedCompleted = await records.completePostprocess({ recordId: record.id, userId: "u", version: updated.version, runId: updatedRunId, images: [{ mediaId: imageId, description: "雨衣和登山杖放在玄关。" }], audio: [{ mediaId, transcription: "周末去西山徒步", asr: { status: "succeeded" } }] });
+    assert.ok(updatedCompleted);
+    await memory.replaceRecord(updatedCompleted);
+    assert.deepEqual((await memory.searchRecords({ userId: "u", query: "徒步", limit: 5 }))[0]?.snippet, "用户记录：准备登山杖\n音频转写：周末去西山徒步\n图片描述：雨衣和登山杖放在玄关。");
+    assert.equal((await db.selectFrom("vector_items").selectAll().where("user_id", "=", "u").where("outer_id", "=", record.id).execute()).length, 1);
   } finally { globalThis.fetch = originalFetch; await db.destroy(); await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true }); }
 });
 
@@ -95,9 +112,37 @@ test("record postprocess writes image and audio results once, then indexes", asy
     for (const [mediaId, mediaType, mimeType] of [[imageId, "image", "image/png"], [audioId, "audio", "audio/mpeg"]] as const) await db.insertInto("media_assets").values({ media_id: mediaId, user_id: "u", object_key: `private/${mediaId}`, media_type: mediaType, mime_type: mimeType, bytes: 3, status: "ready", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now }).execute();
     const records = new SqliteRecordRepository(db); const media = new SqliteMediaRepository(db); const created = await records.create({ userId: "u", eventAt: now, value: { text: "photo", media: [{ mediaId: imageId }, { mediaId: audioId }] } });
     assert.notEqual(typeof created, "string"); if (typeof created === "string") return;
-    const indexed: unknown[] = []; const queue = new RecordPostprocessQueue(); registerRecordPostprocessListener(queue, records, media, { readUrl: (key: string) => `https://private.example/${key}` } as any, { describe: async () => ({ description: "一棵树。" }) }, { transcribe: async () => ({ transcript: "鸟鸣很清楚", model: "qwen3-asr-flash" }) }, { index: async (task: unknown) => { indexed.push(task); } } as any);
+    const indexed: Array<{ id: string; status: string }> = []; const queue = new RecordPostprocessQueue(); registerRecordPostprocessListener(queue, records, media, { readUrl: (key: string) => `https://private.example/${key}` } as any, { describe: async () => ({ description: "一棵树。" }) }, { transcribe: async () => ({ transcript: "鸟鸣很清楚", model: "qwen3-asr-flash" }) }, { replaceRecord: async (record: any) => { indexed.push({ id: record.id, status: record.status }); } } as any);
     queue.publish({ recordId: created.id, userId: "u", version: created.version }); queue.publish({ recordId: created.id, userId: "u", version: created.version }); await new Promise(resolve => setTimeout(resolve, 20));
-    const saved = await records.findById(created.id); assert.equal((saved?.content.blocks[0] as { description?: string }).description, "一棵树。"); assert.equal((saved?.content.blocks[1] as { transcription?: string }).transcription, "鸟鸣很清楚"); assert.equal(saved?.status, "processed"); assert.deepEqual(indexed, [{ userId: "u", recordId: created.id, operation: "replace" }]);
+    const saved = await records.findById(created.id); assert.equal((saved?.content.blocks[0] as { description?: string }).description, "一棵树。"); assert.equal((saved?.content.blocks[1] as { transcription?: string }).transcription, "鸟鸣很清楚"); assert.equal(saved?.status, "processed"); assert.deepEqual(indexed, [{ id: created.id, status: "processed" }]);
+  } finally { await db.destroy(); await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true }); }
+});
+
+test("memory indexing failure does not roll back a processed Record", async () => {
+  const path = `/tmp/fanto-memory-failure-${randomUUID()}.sqlite`; const db = createDatabase(path); await runMigrations(db);
+  try {
+    const now = nowIso(); await db.insertInto("users").values({ user_id: "u", wx_openid: "u", created_at: now }).execute();
+    const records = new SqliteRecordRepository(db); const media = new SqliteMediaRepository(db);
+    const created = await records.create({ userId: "u", eventAt: now, value: { text: "should stay processed", media: [] } });
+    assert.notEqual(typeof created, "string"); if (typeof created === "string") return;
+
+    const queue = new RecordPostprocessQueue();
+    registerRecordPostprocessListener(
+      queue,
+      records,
+      media,
+      {} as any,
+      {} as any,
+      {} as any,
+      { replaceRecord: async () => { throw new Error("embedding unavailable"); } } as any,
+    );
+
+    queue.publish({ recordId: created.id, userId: "u", version: created.version });
+    await new Promise(resolve => setTimeout(resolve, 20));
+
+    const saved = await records.findById(created.id);
+    assert.equal(saved?.status, "processed");
+    assert.equal(saved?.taskId, null);
   } finally { await db.destroy(); await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true }); }
 });
 
@@ -120,6 +165,47 @@ test("record HTTP accepts source and requires a valid user header", async () => 
     const unauthorized = await app.request("/api/records", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "no user", media: [], eventAt: "2026-09-17T10:30:00+08:00" }) });
     assert.equal(unauthorized.status, 401);
   } finally { await db.destroy(); await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true }); }
+});
+
+test("record search HTTP is user-scoped and validates input", async () => {
+  const calls: unknown[] = [];
+  const memory = {
+    searchRecords: async (input: unknown) => {
+      calls.push(input);
+      return [{ sourceType: "record", sourceId: "record-1", snippet: "用户记录：AI Coding", distance: 0.1 }];
+    },
+  };
+  const app = createApp({} as any, {} as any, new RecordPostprocessQueue(), {} as any, undefined, undefined, memory as any);
+
+  const response = await app.request("/api/records/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-user-id": "u1" },
+    body: JSON.stringify({ query: "  AI Coding  ", limit: 5 }),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    success: true,
+    result: { data: [{ recordId: "record-1", snippet: "用户记录：AI Coding" }] },
+    errorCode: null,
+    errorMsg: null,
+  });
+  assert.deepEqual(calls, [{ userId: "u1", query: "AI Coding", limit: 5 }]);
+
+  assert.equal((await app.request("/api/records/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-user-id": "u1" },
+    body: JSON.stringify({ query: "   " }),
+  })).status, 400);
+  assert.equal((await app.request("/api/records/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-user-id": "u1" },
+    body: JSON.stringify({ query: "x", limit: 21 }),
+  })).status, 400);
+  assert.equal((await app.request("/api/records/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query: "x" }),
+  })).status, 401);
 });
 
 test("HTTP returns a stable JSON envelope for unhandled errors", async () => {

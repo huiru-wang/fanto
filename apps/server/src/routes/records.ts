@@ -5,11 +5,13 @@ import type { RecordPostprocessQueue } from "../infrastructure/queue/record-post
 import type { SqliteMediaRepository } from "../domain/media/sqlite-repository.js";
 import { decodeRecordCursor, encodeRecordCursor } from "../domain/records/cursor.js";
 import type { RecordRepository } from "../domain/records/repository.js";
+import type { MemoryService } from "../domain/memory/memory-service.js";
 import { requireUserId } from "./request-user.js";
 
 const media = z.array(z.unknown());
 const createInput = z.object({ text: z.string(), media, source: z.string().max(100).optional(), eventAt: z.string().datetime({ offset: true }) }).strict();
 const updateInput = z.object({ text: z.string(), media, expectedVersion: z.number().int().positive() }).strict();
+const searchInput = z.object({ query: z.string().trim().min(1), limit: z.number().int().min(1).max(20).optional().default(10) }).strict();
 const saveValue = (body: { text: string; media: unknown[] }) => parseSaveRecord({ text: body.text, media: body.media });
 
 async function view(record: any, media: SqliteMediaRepository) {
@@ -19,11 +21,14 @@ async function view(record: any, media: SqliteMediaRepository) {
 }
 function error(c: any, value: string, current?: unknown) { if (value === "not_found") return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Record not found" }, 404); if (value === "conflict") return c.json({ success: false, result: current ?? null, errorCode: "VERSION_CONFLICT", errorMsg: "Record was changed by another edit" }, 409); if (value === "invalid_content") return c.json({ success: false, errorCode: "INVALID_CONTENT", errorMsg: "Record requires text or audio" }, 400); return c.json({ success: false, errorCode: "INVALID_MEDIA", errorMsg: "Media is missing, not ready, belongs to another user, or already linked" }, 400); }
 
-export function createRecordRoutes(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue) {
+type RecordSearch = Pick<MemoryService, "searchRecords">;
+
+export function createRecordRoutes(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue, memory?: RecordSearch) {
   const app = new Hono();
   app.post("/", async c => { const body = createInput.safeParse(await c.req.json().catch(() => null)); if (!body.success) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: body.error.message }, 400); try { const record = await records.create({ userId: requireUserId(c.req.raw), source: body.data.source, eventAt: new Date(body.data.eventAt).toISOString(), value: saveValue(body.data) }); if (typeof record === "string") return error(c, record); queue.publish({ userId: record.userId, recordId: record.id, version: record.version }); return c.json({ success: true, result: await view(record, media), errorCode: null, errorMsg: null }, 201); } catch (cause) { return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: cause instanceof Error ? cause.message : "Invalid record" }, 400); } });
   app.patch("/:id", async c => { const body = updateInput.safeParse(await c.req.json().catch(() => null)); if (!body.success) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: body.error.message }, 400); const currentUser = requireUserId(c.req.raw); try { const record = await records.updateContent(c.req.param("id"), currentUser, { value: saveValue(body.data), expectedVersion: body.data.expectedVersion }); if (record === "conflict") { const current = await records.findById(c.req.param("id")); return error(c, record, current?.userId === currentUser ? await view(current, media) : null); } if (typeof record === "string") return error(c, record); queue.publish({ userId: record.userId, recordId: record.id, version: record.version }); return c.json({ success: true, result: await view(record, media), errorCode: null, errorMsg: null }); } catch (cause) { return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: cause instanceof Error ? cause.message : "Invalid record" }, 400); } });
   app.get("/", async c => { const cursor = c.req.query("cursor"); try { if (cursor) decodeRecordCursor(cursor); } catch { return c.json({ success: false, errorCode: "INVALID_CURSOR", errorMsg: "Invalid record cursor" }, 400); } const limit = Math.min(Math.max(Number(c.req.query("limit") ?? 20), 1), 100); const rows = await records.findByUserId(requireUserId(c.req.raw), { cursor, limit: limit + 1 }); const data = await Promise.all(rows.slice(0, limit).map(record => view(record, media))); return c.json({ success: true, result: { data, hasMore: rows.length > limit, nextCursor: rows.length > limit && data.at(-1) ? encodeRecordCursor(data.at(-1)) : null, pageSize: limit }, errorCode: null, errorMsg: null }); });
+  if (memory) app.post("/search", async c => { const body = searchInput.safeParse(await c.req.json().catch(() => null)); if (!body.success) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: body.error.message }, 400); const results = await memory.searchRecords({ userId: requireUserId(c.req.raw), query: body.data.query, limit: body.data.limit }); return c.json({ success: true, result: { data: results.map(result => ({ recordId: result.sourceId, snippet: result.snippet })) }, errorCode: null, errorMsg: null }); });
   app.get("/:id", async c => { const record = await records.findById(c.req.param("id")); if (!record || record.userId !== requireUserId(c.req.raw)) return c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Record not found" }, 404); return c.json({ success: true, result: await view(record, media), errorCode: null, errorMsg: null }); });
   return app;
 }

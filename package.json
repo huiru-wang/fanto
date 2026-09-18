@@ -12,7 +12,8 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "db:migrate": "pnpm --filter @fanto/server db:migrate",
-    "vector:rebuild": "pnpm --filter @fanto/server vector:rebuild"
+    "memory:rebuild": "pnpm --filter @fanto/server memory:rebuild",
+    "vector:rebuild": "pnpm memory:rebuild"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

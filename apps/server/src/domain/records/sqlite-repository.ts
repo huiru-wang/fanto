@@ -63,7 +63,7 @@ export class SqliteRecordRepository implements RecordRepository {
   async completePostprocess(input: { recordId: string; userId: string; version: number; runId: string; images: Array<{ mediaId: string; description: string }>; audio: Array<{ mediaId: string; transcription?: string; asr: { status: "succeeded" | "failed"; model?: string; emotion?: string; language?: string; completedAt?: string; errorCode?: string } }> }) {
     return this.db.transaction().execute(async trx => {
       const row = await trx.selectFrom("records").selectAll().where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).executeTakeFirst();
-      if (!row) return false;
+      if (!row) return null;
       const content = JSON.parse(row.content) as RecordContent;
       const images = new Map(input.images.map(item => [item.mediaId, item.description]));
       const audio = new Map(input.audio.map(item => [item.mediaId, item]));
@@ -78,8 +78,8 @@ export class SqliteRecordRepository implements RecordRepository {
         if (!media || ext(media.ext_data).recordId !== input.recordId) continue;
         await trx.updateTable("media_assets").set({ ext_data: JSON.stringify({ ...ext(media.ext_data), asr: result.asr }), updated_at: now }).where("media_id", "=", result.mediaId).where("user_id", "=", input.userId).execute();
       }
-      const updated = await trx.updateTable("records").set({ content: JSON.stringify(content), status: "processed", task_id: null, updated_at: now }).where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).executeTakeFirst();
-      return updated.numUpdatedRows === 1n;
+      const updated = await trx.updateTable("records").set({ content: JSON.stringify(content), status: "processed", task_id: null, updated_at: now }).where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).returningAll().executeTakeFirst();
+      return updated ? this.toEntity(updated) : null;
     });
   }
 

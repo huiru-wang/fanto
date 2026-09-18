@@ -13,6 +13,7 @@ import { CreationReadRepository } from "../domain/creations/creation-repository.
 import { createCreationReadRoutes } from "../routes/creations.js";
 import { CreationProposalRepository } from "../domain/creations/proposal-repository.js";
 import { createCreationProposalRoutes } from "../routes/proposals.js";
+import type { MemoryService } from "../domain/memory/memory-service.js";
 
 const redact = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(redact);
@@ -26,7 +27,7 @@ const jsonBody = async (response: Response) => {
   try { return redact(JSON.parse(await response.clone().text())); } catch { return null; }
 };
 
-export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository) {
+export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository, memory?: Pick<MemoryService, "searchRecords">) {
   const app = new Hono();
   app.onError((error, c) => {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });
@@ -45,7 +46,7 @@ export function createApp(records: RecordRepository, media: SqliteMediaRepositor
   });
   app.get("/health", c => c.json({ status: "ok", timestamp: nowIso() }));
   app.route("/api/uploads", createUploadRoutes(media, oss));
-  app.route("/api/records", createRecordRoutes(records, media, queue));
+  app.route("/api/records", createRecordRoutes(records, media, queue, memory));
   if (creationRead) app.route("/api", createCreationReadRoutes(creationRead));
   if (creationProposals) app.route("/api", createCreationProposalRoutes(creationProposals));
   app.get("/api/media/:id", async c => { const asset = await media.findMedia(c.req.param("id"), requireUserId(c.req.raw)); return asset?.status === "ready" ? c.redirect(oss.readUrl(asset.objectKey), 302) : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404); });
