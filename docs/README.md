@@ -33,3 +33,15 @@
 - [测试与验证](engineering/testing.md)
 
 仓库协作规则从根目录 [AGENTS.md](../AGENTS.md) 开始；进入 Server、Agent 或 iOS 时继续读取对应目录的局部 `AGENTS.md`。
+
+## 文档刷新检查点
+
+`docs/.checkpoint` 记录最近一次**已经完成 Documentation Impact Review 的代码 commit**。它不是“最后一次修改 docs 的 commit”，也不是要求每个 commit 都同步文档。
+
+刷新文档时，从 checkpoint 到当前 `HEAD` 查看 commit、changed files 和相关最终 diff，只更新真正受语义变化影响的 Current Docs；确认这段增量都已经 review 后，再推进 checkpoint。
+
+因此 checkpoint 的含义是：
+
+> 截至这个 commit 的仓库变化，已经判断过它们是否需要反映到 Current Docs。
+
+具体执行规则见根目录 [AGENTS.md](../AGENTS.md)。

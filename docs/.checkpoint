@@ -1,0 +1,4 @@
+version: 1
+reviewed_through: 69a491aae57915bcd0520feaf14c3a7e905b569d
+reviewed_commit_message: "feat:文档重构"
+meaning: "All repository changes through reviewed_through have completed documentation impact review."

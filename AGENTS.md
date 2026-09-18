@@ -46,3 +46,32 @@ pnpm test
 ```
 
 更具体的验证范围见 `docs/engineering/testing.md` 和各模块 `AGENTS.md`。
+
+## 5. 文档刷新
+
+Plan 是可选的执行上下文，不是当前事实来源。文档刷新以 Git 已提交的最终变化为依据。
+
+当用户要求同步 / 刷新项目文档，或任务明确包含文档整理时：
+
+1. 读取 `docs/.checkpoint` 的 `reviewed_through`。
+2. 先查看 `reviewed_through..HEAD` 的 commit message 与 changed files：
+   - `git log --oneline <checkpoint>..HEAD`
+   - `git diff --name-status <checkpoint>..HEAD`
+3. 根据变化路径判断候选文档，再读取相关代码的具体 diff；不要默认全量重写 docs。
+4. Commit message 用于理解意图，最终代码、测试、schema 与实际 diff 才是事实依据。
+5. 只在用户行为、API contract、Domain 语义、数据生命周期、架构 / 安全 / 可靠性边界或配置方式变化时更新 Current Docs；纯重构和等价实现通常无需改文档。
+6. `docs/product/current-scope.md` 只在产品 Capability 变化时更新，不作为 changelog。
+7. 全部增量都完成 Documentation Impact Review 后，再把 checkpoint 推进到本次已审查到的 commit。checkpoint 表示“reviewed through”，不表示每个 commit 都产生过文档修改。
+
+常见代码到文档的检查关系：
+
+- `apps/server/src/domain/records/**`、Record routes → `docs/domain/records.md`、必要时 `docs/api/http-api.md`
+- `apps/server/src/domain/media/**`、媒体 Client → `docs/domain/media.md`
+- `apps/server/src/domain/memory/**`、向量脚本 → `docs/domain/memory.md`
+- `apps/server/src/domain/creations/**` → `docs/domain/creations.md`
+- `apps/agent/**` → `docs/architecture/agent-runtime.md`
+- `apps/ios/fanto/**` → `docs/clients/ios.md`
+- 配置读取逻辑 → `docs/engineering/configuration.md`
+- 跨组件能力真正接入 / 移除 → 检查 `docs/product/current-scope.md`
+
+这些映射只用于缩小 Review 范围，不替代对最终 diff 的判断。
