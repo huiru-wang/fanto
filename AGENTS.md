@@ -21,9 +21,9 @@
 
 优先级：
 
-1. 实际代码、测试、schema / migration 决定可执行事实。
+1. 实际代码、测试、schema / migration、配置决定可执行事实。
 2. `docs/` 描述当前已经存在的系统与产品语义。
-3. `plan/` 是工作设计或历史方案，不是当前运行能力的证明。
+3. `plan/` 仅是可选的执行过程材料，不属于 Current Knowledge，也不用于判断当前系统状态。
 
 如果文档与代码冲突，先验证实际运行路径，再以代码事实修正文档；不要根据旧方案猜测当前能力。
 
@@ -36,7 +36,19 @@
 - 不把尚未接入运行入口的代码、设计稿或计划描述成已经可用的产品能力。
 - 修改前先阅读目标模块局部 `AGENTS.md` 与相关 current docs。
 
-## 4. 验证入口
+## 4. 技术方案
+
+原则：技术方案应描述从**已验证的当前系统**到目标状态的**最小必要变化**。
+
+规则：
+
+1. 基于现状设计：先确认相关代码、Schema、配置、测试，再做方案。
+2. 只做最小必要变化：明确改什么、不改什么，优先复用现有结构，不顺手扩架构。
+3. 讲清关键链路：说明主要数据流、调用关系和职责归属。
+4. 守住关键约束：明确不能破坏的数据边界、依赖方向、状态/失败语义。
+5. 提前定义验证：方案完成时就应知道如何证明实现正确。
+
+## 5. 验证入口
 
 仓库级：
 
@@ -47,18 +59,18 @@ pnpm test
 
 更具体的验证范围见 `docs/engineering/testing.md` 和各模块 `AGENTS.md`。
 
-## 5. 文档刷新
+## 6. 文档刷新
 
-Plan 是可选的执行上下文，不是当前事实来源。文档刷新以 Git 已提交的最终变化为依据。
+Current Docs 只描述**当前最终仓库状态**。文档刷新比较 `docs/.checkpoint` 所指向的仓库状态与当前 `HEAD`，不重建中间开发过程。
 
 当用户要求同步 / 刷新项目文档，或任务明确包含文档整理时：
 
 1. 读取 `docs/.checkpoint` 的 `reviewed_through`。
-2. 先查看 `reviewed_through..HEAD` 的 commit message 与 changed files：
-   - `git log --oneline <checkpoint>..HEAD`
+2. 查看 `reviewed_through..HEAD` 的整体变化，用于定位受影响范围：
    - `git diff --name-status <checkpoint>..HEAD`
-3. 根据变化路径判断候选文档，再读取相关代码的具体 diff；不要默认全量重写 docs。
-4. Commit message 用于理解意图，最终代码、测试、schema 与实际 diff 才是事实依据。
+   - 必要时查看 `git log --oneline <checkpoint>..HEAD` 辅助理解变化背景。
+3. 根据 changed files 判断候选文档，再读取相关最终代码与具体 diff。最终代码、测试、schema / migration、配置和最终 diff 才是事实依据。
+4. 不读取、核对、整理、补全、归档或修正 `plan/` 来完成文档刷新。Plan 可能过期、未完成、被放弃或与最终实现不同，这不构成文档问题。
 5. 只在用户行为、API contract、Domain 语义、数据生命周期、架构 / 安全 / 可靠性边界或配置方式变化时更新 Current Docs；纯重构和等价实现通常无需改文档。
 6. `docs/product/current-scope.md` 只在产品 Capability 变化时更新，不作为 changelog。
 7. 全部增量都完成 Documentation Impact Review 后，再把 checkpoint 推进到本次已审查到的 commit。checkpoint 表示“reviewed through”，不表示每个 commit 都产生过文档修改。
@@ -74,32 +86,18 @@ Plan 是可选的执行上下文，不是当前事实来源。文档刷新以 Gi
 - 配置读取逻辑 → `docs/engineering/configuration.md`
 - 跨组件能力真正接入 / 移除 → 检查 `docs/product/current-scope.md`
 
-这些映射只用于缩小 Review 范围，不替代对最终 diff 的判断。
+这些映射只用于缩小 Review 范围，不替代对当前最终状态的判断。
 
-## 6. Commit Message
+## 7. Commit Message
 
-Commit message 用于帮助后续通过 Git 增量快速理解变更意图，但不是系统事实来源；最终事实仍以代码、测试、schema 和实际 diff 为准。
+Commit message 可以帮助理解变化背景，但文档刷新不依赖特定的 commit 结构，也不要求为了文档维护拆分 commit。
 
-推荐格式：
+推荐使用清晰、可理解的描述，例如：
 
 ```text
-<type>(<scope>): <what changed>
+feat(memory): add user-scoped retrieval
+fix(records): reject stale postprocess writes
+docs: update current memory architecture
 ```
 
-其中 `scope` 可选。常用 `type`：
-
-- `feat`：新增能力
-- `fix`：修复行为问题
-- `refactor`：不改变对外语义的重构
-- `docs`：文档变化
-- `test`：测试变化
-- `chore`：配置、依赖或工程杂项
-
-常用 `scope` 可使用 `records`、`media`、`memory`、`creations`、`agent`、`ios`、`server` 等领域或模块名。
-
-要求：
-
-- message 至少能看出改动类型、影响对象和核心意图；避免 `update`、`fix bug`、`调整`、`优化` 这类无法帮助未来判断变更范围的描述。
-- 一个 commit 尽量只表达一个主要意图；无关变化应拆分，避免一个 message 无法概括真实 diff。
-- 重要架构或行为变化可以补充简短 body 说明原因，但不要把 commit message 写成完整设计文档。
-- 后续 Documentation Impact Review 可使用 commit message 缩小理解成本，但不能仅凭 message 判断当前系统行为。
+重要架构或行为变化可以补充简短 body 说明原因，但最终系统事实仍以代码、测试、schema / migration、配置与最终 diff 为准。
