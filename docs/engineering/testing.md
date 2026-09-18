@@ -16,12 +16,12 @@ pnpm --filter @fanto/server typecheck
 pnpm --filter @fanto/server test
 ```
 
-当前测试重点覆盖 Record Repository / HTTP、Creation HTTP、配置、MIME 与部分外部 Client 行为。
+当前测试重点覆盖 Record Repository / HTTP、Memory Core、sqlite-vec MemoryIndex、Creation HTTP、配置、MIME 与部分外部 Client 行为。
 
 涉及以下内容时还需要针对性验证：
 
 - schema 变化：空库 migration；
-- Record 向量：索引、搜索、必要时 `pnpm vector:rebuild`；
+- Memory：Record document 构建、user-scoped sqlite-vec 检索、Record 接入、Search HTTP，以及必要时 `pnpm memory:rebuild`；
 - OSS：signed PUT、complete、媒体读取；
 - Vision / ASR / Embedding：真实凭据下的最小 smoke test。
 
@@ -39,7 +39,11 @@ pnpm --filter @fanto/agent build
 - 同一 Session 并发保护；
 - workspace confinement；
 - 配置 reload / revision 行为；
-- HTTP 错误映射。
+- HTTP 错误映射；
+- Record Tool 的 Run Context 用户身份、`FantoServerClient` Header / timeout / cancellation / envelope；
+- `record_list / record_search / record_get` 的模型 DTO 投影与 Agent 权限配置。
+
+Record Tool 变更除单元测试外，还应至少做一次 Business Server + Agent Runtime 真实 smoke；真实模型的 Tool Selection 不作为 CI 的确定性断言。
 
 ## iOS
 

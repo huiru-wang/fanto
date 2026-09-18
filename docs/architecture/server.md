@@ -9,13 +9,13 @@ apps/server/src/
 ├── bootstrap/       # 启动、配置、Hono 装配、迁移命令
 ├── routes/          # HTTP 输入、用户边界、响应映射
 ├── domain/          # records / media / memory / creations
-├── infrastructure/ # SQLite、外部 client、queue、logging、time
+├── infrastructure/ # SQLite、Memory adapter、外部 client、queue、logging、time
 ├── listeners/       # 进程内事件处理
 ├── migrations/      # 当前空库 schema 基线
 └── scripts/         # 演示数据等运维脚本
 ```
 
-普通 CRUD Route 直接调用相应 Repository。外部 OSS、图片理解、音频转写与 Embedding 通过 `infrastructure/clients/` 适配。
+普通 CRUD Route 直接调用相应 Repository。Memory 通过 Domain 内的 `MemoryService + MemoryIndex / EmbeddingProvider` 边界编排，当前 sqlite-vec 实现位于 `infrastructure/memory/`。外部 OSS、图片理解、音频转写与 Embedding 通过 infrastructure adapter 适配。
 
 ## HTTP 请求路径
 
@@ -50,7 +50,7 @@ sequenceDiagram
   participant L as Postprocess Listener
   participant R as Record Repository
   participant AI as Vision / ASR
-  participant M as Record Memory
+  participant M as MemoryService
 
   HTTP->>Q: publish(userId, recordId, version)
   Q->>L: task
@@ -61,13 +61,13 @@ sequenceDiagram
     L->>AI: audio transcribe
   end
   L->>R: completePostprocess
-  R-->>L: status=processed
-  L->>M: replace vector index
+  R-->>L: processed Record
+  L->>M: replaceRecord(processed Record)
 ```
 
-图片与音频任务可以部分失败；成功结果写回对应 Record block，音频 ASR 状态同时写入 Media `ext_data`。只有完成当前 Record 版本的 postprocess 后才会重建该 Record 向量。
+图片与音频任务可以部分失败；成功结果写回对应 Record block，音频 ASR 状态同时写入 Media `ext_data`。只有完成当前 Record 版本的 postprocess 后才会把最终 Record 交给 Memory。
 
-该队列是进程内机制，服务进程退出时未完成任务不会恢复。
+Record 已成功变成 `processed` 后，Memory / Embedding 失败只记录错误，不会重新 release Record；索引属于可重建派生数据。该队列仍是进程内机制，服务进程退出时未完成任务不会恢复，也没有持久 retry。
 
 ## 数据库与 migration
 
@@ -75,4 +75,4 @@ sequenceDiagram
 
 当前 migration 策略是：**只维护一个面向空数据库的当前 schema 基线**。它不是历史数据库升级系统。已有旧 schema 文件不能假设可以直接原地升级。
 
-SQLite 开启 WAL，并设置 busy timeout。向量索引存储在同一业务数据库，但属于派生数据。
+SQLite 开启 WAL，并设置 busy timeout。向量索引存储在同一业务数据库，但属于派生数据；`record_vectors.user_id` 是 sqlite-vec partition key，Record KNN 从 candidate generation 阶段就限定当前用户。

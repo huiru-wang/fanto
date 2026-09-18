@@ -13,16 +13,15 @@ flowchart LR
 
   AR[Agent Runtime / Hono + Pi] --> ADB[(agent-sessions.sqlite)]
   AR --> WS[Session Workspaces]
-
-  S -. 当前尚未接入业务 Tool .- AR
+  AR -->|Record Tools / HTTP| S
 ```
 
 Fanto 当前有两个独立服务：
 
-1. **Business Server**：Record、Media、Creation / Proposal 与 Record 向量索引的业务运行时。
-2. **Agent Runtime**：Agent 定义、Session、流式执行、异步任务、工作区与 Pi 内置工具的独立运行时。
+1. **Business Server**：Record、Media、Memory / Retrieval、Creation / Proposal 的业务运行时。
+2. **Agent Runtime**：Agent 定义、Session、流式执行、异步任务、工作区、Pi 内置工具与只读 Record Tool 的独立运行时。
 
-两者当前没有共享数据库。Agent Runtime 也还没有通过业务 Tool 调用 Business Server。
+两者没有共享数据库。Agent Runtime 当前只通过 `FantoServerClient` 使用 Business Server 的 Record HTTP API；业务数据仍由 Business Server 负责用户隔离与访问。
 
 ## 业务数据边界
 

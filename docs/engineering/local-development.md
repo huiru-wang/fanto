@@ -61,9 +61,11 @@ Server migration 当前只支持空库基线，不是历史 upgrade chain。需�
 pnpm typecheck
 pnpm test
 pnpm db:migrate
+pnpm memory:rebuild
+# 兼容别名
 pnpm vector:rebuild
 
 pnpm --filter @fanto/server seed:creation-showcase
 ```
 
-当前根 package 仍保留 `dev:h5` / `build:h5` 脚本，但仓库没有 `apps/h5` package，因此它们不是有效的本地运行入口。
+`memory:rebuild` 会 reset 可重建的 Memory 派生索引，并按批次重新索引所有用户当前为 `processed` 的 Records；执行前应确认 Embedding 配置可用。它不会删除 Record / Media / Creation 等业务表。当前根 package 仍保留 `dev:h5` / `build:h5` 脚本，但仓库没有 `apps/h5` package，因此它们不是有效的本地运行入口。

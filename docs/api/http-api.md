@@ -20,10 +20,26 @@
 | GET | `/api/records?limit=20&cursor=` | 倒序分页读取，limit 为 1–100 |
 | GET | `/api/records/:id` | 单条记录 |
 | PATCH | `/api/records/:id` | 以 expectedVersion 更新内容 |
+| POST | `/api/records/search` | 当前用户 Record 语义搜索 |
 
 创建体：`{ text, media, eventAt, source? }`；更新体：`{ text, media, expectedVersion }`。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。创建或更新完成后，服务端异步处理当前版本的图片理解、音频转写与向量索引；图片 description 写入对应 image block，音频 transcription 写入对应 audio block。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
 
 列表结果：`{ data, hasMore, nextCursor, pageSize }`。`nextCursor` 只应在 `hasMore=true` 时使用。
+
+### Record 语义搜索
+
+`POST /api/records/search` 请求体：
+
+```json
+{ "query": "AI Coding", "limit": 10 }
+```
+
+- `query` trim 后不能为空；
+- `limit` 默认 10，范围 1–20；
+- 当前用户只来自 `x-user-id`，请求体不能传 `userId`；
+- 搜索通过 Memory 模块在当前用户的 sqlite-vec partition 内执行；
+- 返回 `{ data: [{ recordId, snippet }] }`；
+- sqlite-vec distance 不作为 HTTP 产品 score 暴露。
 
 ### Record 后置处理与返回字段
 
@@ -48,7 +64,7 @@
 }
 ```
 
-`status` 取值为：`pending`（已保存，等待处理）、`updated`（内容已更新，等待处理）、`processing`（正在进行图片/音频理解）和 `processed`（当前版本处理完成）。音频完成后，`media[].asr` 同步返回转写文本、模型、情绪 `emotion` 与语种 `language`；情绪与语种由 ASR 服务的 `audio_info` 注解提供，缺失时为 `null`。单个媒体失败不会阻断其他媒体或向量索引：失败音频的 `media[].asr.status` 为 `failed`，其 `transcript` 为 `null`；图片失败时对应 block 不含 `description`。
+`status` 取值为：`pending`（已保存，等待处理）、`updated`（内容已更新，等待处理）、`processing`（正在进行图片/音频理解）和 `processed`（当前版本处理完成）。音频完成后，`media[].asr` 同步返回转写文本、模型、情绪 `emotion` 与语种 `language`；情绪与语种由 ASR 服务的 `audio_info` 注解提供，缺失时为 `null`。单个媒体失败不会阻断其他媒体处理；失败音频的 `media[].asr.status` 为 `failed`，其 `transcript` 为 `null`；图片失败时对应 block 不含 `description`。Record 完成当前版本的 postprocess 后才更新 Memory；后续 Embedding / Memory Index 失败不会把已经 `processed` 的 Record 回滚。
 
 `eventAt` 是 Record 的业务发生时间；`createdAt`、`updatedAt` 仅表示服务端保存与变更时间。当前 schema 只支持空 SQLite 数据库初始化；已有数据库需要重建后才包含 `event_at` 列与对应索引。
 
@@ -90,7 +106,7 @@
 
 ## 独立 Agent 服务
 
-Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的认证或数据库。除 `GET /health` 外，所有接口要求：
+Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 可通过 `FantoServerClient` 调用 Business Server 的 `record_list`、`record_search`、`record_get` 三个只读工具；Tool schema 不接受 `userId`，实际用户身份来自 Session Run Context，并由 Client 转成 Business Server 的 `x-user-id`。除 `GET /health` 外，Agent HTTP 接口要求：
 
 ```text
 Authorization: Bearer <AGENT_TOKEN>

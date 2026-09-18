@@ -18,7 +18,7 @@
 
 - [Record](domain/records.md)：原始记录、状态、版本和时间语义。
 - [Media](domain/media.md)：上传、OSS、图片理解与音频转写。
-- [Memory / Retrieval](domain/memory.md)：Record 向量索引、检索与派生数据边界。
+- [Memory / Retrieval](domain/memory.md)：Memory 模块、Record 索引、检索与派生数据边界。
 - [Creation / Proposal](domain/creations.md)：长期脉络、待确认发现和来源关系。
 
 ## 客户端与接口
@@ -36,7 +36,7 @@
 
 ## 文档刷新检查点
 
-`docs/.checkpoint` 记录最近一次**已经完成 Documentation Impact Review 的代码 commit**。它不是“最后一次修改 docs 的 commit”，也不是要求每个 commit 都同步文档。
+`docs/.checkpoint` 记录最近一次**已经完成 Documentation Impact Review 的仓库 commit**。它不是“最后一次修改 docs 的 commit”，也不是要求每个 commit 都同步文档。
 
 刷新文档时，从 checkpoint 到当前 `HEAD` 查看 commit、changed files 和相关最终 diff，只更新真正受语义变化影响的 Current Docs；确认这段增量都已经 review 后，再推进 checkpoint。
 

@@ -11,7 +11,11 @@ flowchart TD
   HTTP --> TR[Task Runner]
   REG --> YAML[agents.yaml]
   SM --> PI[Pi AgentHarness]
-  PI --> TOOLS[read / write / edit / bash]
+  PI --> TOOLS[Configured Tools]
+  TOOLS --> BUILTIN[read / write / edit / bash]
+  TOOLS --> RECORD[record_get / record_list / record_search]
+  RECORD --> FSC[FantoServerClient]
+  FSC -->|x-user-id / x-trace-id| SERVER[Business Server]
   PI --> SKILLS[Skills]
   SM --> DB[(Agent SQLite)]
   TR --> DB
@@ -28,14 +32,19 @@ flowchart TD
 - skills；
 - compaction 配置。
 
-当前 Tool schema 只接受：
+当前 Tool schema 接受：
 
 ```text
 read
 write
 edit
 bash
+record_get
+record_list
+record_search
 ```
+
+当前 `main` 只开启三个只读 Record Tool；`coding` 只开启 `read / write / edit / bash`。Tool 权限仍由 Agent definition 显式声明。
 
 Skill 通过 ID 映射到 `apps/agent/skills/<id>/SKILL.md`。密钥不写入 YAML。
 
@@ -82,6 +91,16 @@ Session History 直接读取 Pi Session entry，以 `seq` 倒序分页。内部 
 
 ## 与 Fanto 业务数据的当前关系
 
-Agent Runtime 当前不连接 Business Server 数据库，也没有 Record / Creation 业务工具。因此它不能因为“知道 userId”就直接访问用户 Record。
+Agent Runtime 不连接 Business Server 数据库。当前只读 Record 能力通过 `FantoServerClient` 调用已有 Business Server HTTP API：
+
+```text
+record_list   → GET  /api/records
+record_get    → GET  /api/records/:id
+record_search → POST /api/records/search
+```
+
+每次 prompt 已把 Session owner 的 `userId` 与可选 `traceId` 写入 Pi Run Context。Record Tool 从当前 Tool execution Context 读取这些值，再由 Client 转为 `x-user-id` / `x-trace-id`；LLM Tool schema 不包含 `userId`。
+
+Client 统一负责 Business Server base URL、JSON envelope、15 秒 timeout、运行取消和安全错误映射。当前 Business Server 的 `x-user-id` 仍是开发期用户隔离，不是正式的 service-to-service authentication。
 
 接口和运行示例见 [apps/agent/README.md](../../apps/agent/README.md)。

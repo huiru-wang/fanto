@@ -6,7 +6,7 @@
 
 | 组件 | 当前状态 |
 | --- | --- |
-| Server | 可运行，负责 Record、Media、Creation / Proposal 与 Record 向量索引 |
+| Server | 可运行，负责 Record、Media、Memory / Retrieval、Creation / Proposal |
 | Agent Runtime | 可独立运行，负责 Agent Session、流式执行、异步任务与工作区 |
 | iOS | 可运行；Record 读取、Creation / Proposal 主要链路已接 Server |
 | H5 | 当前仓库不存在可运行产品工程 |
@@ -32,9 +32,11 @@ Server 已经会为处理完成的 Record 构建向量索引，索引文本包�
 - 已生成的图片描述；
 - 已生成的音频转写。
 
-当前 `RecordMemoryService` 已有内部语义搜索能力，但业务 Server 尚未注册 Record Search HTTP API，Agent Runtime 也尚未接入 Record 业务工具。
+当前 Server 已形成独立的 Memory Domain 边界：Record postprocess 成功后把最终 processed Record 交给 `MemoryService`，sqlite-vec 通过 `MemoryIndex` adapter 提供派生索引。
 
-当前搜索实现仍是全局 KNN 候选后再按 `user_id` 过滤，不应把它视为最终的多用户检索边界。详见 [../domain/memory.md](../domain/memory.md)。
+`POST /api/records/search` 已注册，可对当前用户 Record 做语义搜索。sqlite-vec 使用 `user_id partition key`，KNN candidate generation 本身限定当前用户，并在读取 metadata 时再次校验用户归属。
+
+Agent Runtime 已通过 Business Server HTTP 接入 `record_get`、`record_list`、`record_search` 三个只读工具；LLM 不传 `userId`，用户身份来自当前 Session 的 Run Context。
 
 ## Creation / Proposal
 
@@ -61,9 +63,10 @@ Server 已经会为处理完成的 Record 构建向量索引，索引文本包�
 - 异步任务提交和查询；
 - 每个 Session 独立工作区；
 - Pi 内置 `read`、`write`、`edit`、`bash` 工具；
+- `record_get`、`record_list`、`record_search` 三个只读 Record Tool；
 - Skill 文件加载。
 
-它当前不直接访问 Fanto 业务数据库，也没有 `record_get`、`record_list`、`record_search` 等业务 Tool。
+它不直接访问 Fanto 业务数据库；Record Tool 统一通过 `FantoServerClient` 调用 Business Server，并从当前 Run Context 获取用户身份。当前 `main` 开启 Record Tool，`coding` 默认不具备个人历史访问能力。
 
 ## 当前基础设施边界
 

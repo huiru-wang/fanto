@@ -75,3 +75,31 @@ Plan 是可选的执行上下文，不是当前事实来源。文档刷新以 Gi
 - 跨组件能力真正接入 / 移除 → 检查 `docs/product/current-scope.md`
 
 这些映射只用于缩小 Review 范围，不替代对最终 diff 的判断。
+
+## 6. Commit Message
+
+Commit message 用于帮助后续通过 Git 增量快速理解变更意图，但不是系统事实来源；最终事实仍以代码、测试、schema 和实际 diff 为准。
+
+推荐格式：
+
+```text
+<type>(<scope>): <what changed>
+```
+
+其中 `scope` 可选。常用 `type`：
+
+- `feat`：新增能力
+- `fix`：修复行为问题
+- `refactor`：不改变对外语义的重构
+- `docs`：文档变化
+- `test`：测试变化
+- `chore`：配置、依赖或工程杂项
+
+常用 `scope` 可使用 `records`、`media`、`memory`、`creations`、`agent`、`ios`、`server` 等领域或模块名。
+
+要求：
+
+- message 至少能看出改动类型、影响对象和核心意图；避免 `update`、`fix bug`、`调整`、`优化` 这类无法帮助未来判断变更范围的描述。
+- 一个 commit 尽量只表达一个主要意图；无关变化应拆分，避免一个 message 无法概括真实 diff。
+- 重要架构或行为变化可以补充简短 body 说明原因，但不要把 commit message 写成完整设计文档。
+- 后续 Documentation Impact Review 可使用 commit message 缩小理解成本，但不能仅凭 message 判断当前系统行为。

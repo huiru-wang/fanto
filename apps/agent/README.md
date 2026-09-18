@@ -10,6 +10,7 @@ Node.js 22.19+。在仓库根目录执行：
 pnpm install
 cp apps/agent/.env.example apps/agent/.env
 # 编辑 .env，设置 AGENT_TOKEN 和 DEEPSEEK_API_KEY
+# FANTO_SERVER_BASE_URL 默认 http://127.0.0.1:3000
 pnpm --filter @fanto/agent dev
 ```
 
@@ -33,15 +34,42 @@ defaults:
     keepRecentTokens: 20000
 agents:
   - id: main
-    description: 通用中文助手
-    systemPrompt: 你是准确、简洁的中文助手。
-    tools: []
+    description: 认识用户长期记录、在需要时调用个人记忆的中文助手
+    systemPrompt: |
+      你是准确、简洁的中文助手。
+      只有当前问题确实需要用户过去记录时，才使用 Record Tools。
+    tools: [record_get, record_list, record_search]
+    skills: []
+
+  - id: coding
+    description: 在隔离工作区中执行代码任务
+    systemPrompt: 先阅读相关文件，再做最小改动。
+    tools: [read, write, edit, bash]
     skills: []
 ```
 
-可用工具为 `read`、`write`、`edit`、`bash`。每个 Agent 仅获得其配置列出的工具。`compaction` 会原样传给 Pi；三个字段分别控制是否启用、为摘要保留的 token 以及压缩后保留的最近上下文。它在使用同一 `sessionId` 的多轮对话中生效。
+可用工具为 `read`、`write`、`edit`、`bash`、`record_get`、`record_list`、`record_search`。每个 Agent 仅获得其配置列出的工具；当前 `main` 只开启三个只读 Record Tool，`coding` 保持文件 / shell 工具，不默认获得个人历史访问能力。`compaction` 会原样传给 Pi；三个字段分别控制是否启用、为摘要保留的 token 以及压缩后保留的最近上下文。它在使用同一 `sessionId` 的多轮对话中生效。
 
 Skill 用 ID 声明在 `skills` 中，文件固定为 `apps/agent/skills/<id>/SKILL.md`；YAML 不能指定任意本地路径。
+
+## Record Tools
+
+`main` 当前通过 Business Server HTTP 使用三个只读 Record Tool：
+
+- `record_list(limit?, cursor?)`：按时间浏览最近记录；Agent 侧默认 10 条、最大 20 条，并把每条 Record 压缩成最多约 500 字符的 preview。
+- `record_search(query, limit?)`：按语义搜索历史记录；返回 `recordId + snippet`，不暴露向量 distance。
+- `record_get(recordId)`：已有 Record ID 时读取完整 `content.text + content.blocks`；不会把媒体 signed URL 注入模型上下文。
+
+Record Tool 不直接访问业务 SQLite。调用链为：
+
+```text
+Agent Tool
+→ current Run Context userId / traceId
+→ FantoServerClient
+→ Business Server HTTP
+```
+
+`userId` 不存在于 Tool 参数中，只能来自 Session 对应的 Run Context。Business Server 地址由 `FANTO_SERVER_BASE_URL` 配置，默认 `http://127.0.0.1:3000`。Client 统一处理 `x-user-id`、可选 `x-trace-id`、15 秒 timeout、运行取消和 Fanto JSON envelope。
 
 ## HTTP / SSE
 

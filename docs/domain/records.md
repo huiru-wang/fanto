@@ -44,15 +44,30 @@ stateDiagram-v2
   pending --> processing: postprocess claim
   updated --> processing: postprocess claim
   processing --> processed: complete
-  processing --> pending: release after failure
+  processing --> pending: release before complete on failure
   pending --> updated: user edit
   processed --> updated: user edit
 ```
 
 当状态为 `processing` 时，不接受内容更新；版本冲突或 processing 更新会返回 `409 VERSION_CONFLICT`。
 
+`completePostprocess` 只有在 `recordId + userId + version + runId` 都匹配当前 processing 任务时才完成，并返回最终的 processed Record；过期任务返回 `null`。
+
 ## 后置理解
 
-Record 创建 / 更新后会触发 [Media](media.md) 理解与 [Memory](memory.md) 索引。图片描述和音频转写都回写到当前 Record 版本的 block；旧 task 不能覆盖已经变化的版本。
+Record 创建 / 更新后会触发 [Media](media.md) 理解与 [Memory](memory.md) 索引：
+
+```text
+Record save
+→ postprocess claim
+→ Vision / ASR
+→ completePostprocess
+→ processed Record
+→ MemoryService.replaceRecord
+```
+
+图片描述和音频转写都写回当前 Record 版本的 block；旧 task 不能覆盖已经变化的版本。
+
+Memory 是派生能力。Record 已经成功变成 `processed` 后，如果 Embedding 或 Memory Index 写入失败，不会把 Record 回滚到 pending；当前没有持久重试，索引可通过 Memory rebuild 恢复。
 
 Record 的完整 HTTP 投影还会把 block 关联到 Media URL、音频时长和 ASR 元数据，见 [HTTP API](../api/http-api.md)。
