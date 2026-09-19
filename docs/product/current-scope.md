@@ -8,7 +8,7 @@
 | --- | --- |
 | Server | 可运行，负责 Record、Media、Memory / Retrieval、Creation / Proposal |
 | Agent Runtime | 可独立运行，负责 Agent Session、流式执行、异步任务与工作区 |
-| iOS | 可运行；Record 读取、Creation / Proposal 主要链路已接 Server |
+| iOS | 可运行；Record 读取、Creation / Proposal 主要链路已接 Server；Fanto 已接单默认 Session 的文本多轮对话客户端 |
 | H5 | 当前仓库不存在可运行产品工程 |
 
 ## Record 与 Media
@@ -23,6 +23,8 @@
 - 按用户读取媒体，并通过短期 OSS 地址返回内容。
 
 当前 iOS 已从 Server 读取 Record 列表并用于日历 / Timeline，但“新建记录”仍只写入本地 Store，没有调用 Server 创建接口；媒体上传也没有在 iOS 端形成完整写入链路。
+
+当前 iOS 中间 Fanto Tab 通过 Agent Runtime 的 Session、History 与 SSE Stream 接口支持开发态文本多轮对话。它只恢复最近 10 条历史，在 Keychain 保存一个默认 Session ID，不支持会话切换、新话题、跨设备恢复、Markdown 富文本、媒体、来源引用、Tool 产品效果或正式认证。Agent 网关若将 HTTP 转至 HTTPS，真机联调依赖系统信任该 HTTPS 证书；客户端不接受不受信任的证书。
 
 ## Memory / Retrieval
 
