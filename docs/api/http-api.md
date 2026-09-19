@@ -150,7 +150,7 @@ curl -N http://127.0.0.1:3001/api/agent/stream \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"你好\"}"
 ```
 
-事件依次为 `start`、零到多个 `delta`，最终为 `done` 或 `error`。单次请求最长 120 秒；同一 Session 已在运行时返回 `409`。
+事件以 `start` 开始，期间可发送 `turn_start`、`tool_start`（`toolCallId`、`toolName`）、`tool_end`（再加 `status: succeeded | failed`）和零到多个 `delta`，最终为 `done` 或 `error`。工具事件只提供客户端状态展示所需的标识与状态，不返回工具参数、工具结果、内部错误或 reasoning。单次请求最长 120 秒；同一 Session 已在运行时返回 `409`。
 
 历史接口按 `seq` 从新到旧返回。`cursor` 填上页最后一项的 `seq`；`limit` 默认 50，范围为 1–100。`compaction` 和内部 `fanto.*` 条目不对外返回，敏感字段会被脱敏：
 

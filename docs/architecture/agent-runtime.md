@@ -70,7 +70,7 @@ Skill 通过 ID 映射到 `apps/agent/skills/<id>/SKILL.md`。密钥不写入 YA
 
 ### Stream
 
-`POST /api/agent/stream` 使用 POST 响应体 SSE，事件为 `start`、`delta`、`done` / `error`。断连会取消执行，单次请求有超时限制。
+`POST /api/agent/stream` 使用 POST 响应体 SSE。除 `start`、`delta`、`done` / `error` 外，还会发送 Pi 运行阶段的 `turn_start`、`tool_start` 和 `tool_end`。工具事件只公开 `toolCallId`、`toolName` 与成功/失败状态，供客户端映射无内容的活动提示；不公开工具参数、结果、内部错误或 reasoning。断连会取消执行，单次请求有超时限制。
 
 ### Task
 

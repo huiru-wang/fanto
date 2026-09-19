@@ -120,11 +120,20 @@ curl -N http://127.0.0.1:3001/api/agent/stream \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"用一句话介绍你自己\"}"
 ```
 
-响应事件顺序如下：
+响应事件顺序如下。`turn_start`、`tool_start` 和 `tool_end` 表示运行阶段；工具事件只公开调用 ID、工具名和执行状态，不公开参数、返回内容、内部错误或 reasoning：
 
 ```text
 event: start
 data: {"sessionId":"...","agentId":"main","traceId":"trace_002"}
+
+event: turn_start
+data: {}
+
+event: tool_start
+data: {"toolCallId":"...","toolName":"record_search"}
+
+event: tool_end
+data: {"toolCallId":"...","toolName":"record_search","status":"succeeded"}
 
 event: delta
 data: {"text":"你好！"}

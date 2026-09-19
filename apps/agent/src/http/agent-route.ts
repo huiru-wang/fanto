@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { AgentRegistry } from "../config/agent-registry.js";
-import { AgentSessionManager } from "../harness/session-manager.js";
+import { AgentSessionManager, type AgentStreamEvent } from "../harness/session-manager.js";
 import { sessionError } from "./errors.js";
 import { streamRequestSchema, traceIdSchema, userIdSchema } from "./schemas.js";
 
@@ -30,8 +30,8 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
       const heartbeat = setInterval(() => { void stream.write(": ping\n\n").catch(() => controller.abort()); }, 15_000);
       try {
         await stream.writeSSE({ event: "start", data: JSON.stringify({ sessionId: session.id, agentId: session.agentId, traceId: traceId.data }) });
-        await sessions.prompt(session, body.data.message, controller.signal, { traceId: traceId.data }, async delta => {
-          await stream.writeSSE({ event: "delta", data: JSON.stringify({ text: delta }) });
+        await sessions.prompt(session, body.data.message, controller.signal, { traceId: traceId.data }, async event => {
+          await writeStreamEvent(stream, event);
         });
         controller.signal.throwIfAborted();
         await stream.writeSSE({ event: "done", data: "{}" });
@@ -48,4 +48,20 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
     });
   });
   return app;
+}
+
+async function writeStreamEvent(stream: { writeSSE: (event: { event: string; data: string }) => Promise<void> }, event: AgentStreamEvent): Promise<void> {
+  switch (event.type) {
+    case "turn_start":
+      await stream.writeSSE({ event: "turn_start", data: "{}" });
+      return;
+    case "tool_start":
+      await stream.writeSSE({ event: "tool_start", data: JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName }) });
+      return;
+    case "tool_end":
+      await stream.writeSSE({ event: "tool_end", data: JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName, status: event.status }) });
+      return;
+    case "delta":
+      await stream.writeSSE({ event: "delta", data: JSON.stringify({ text: event.text }) });
+  }
 }

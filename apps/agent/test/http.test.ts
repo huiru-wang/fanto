@@ -41,9 +41,12 @@ test("creates a session before streaming and requires its id", async () => {
     create: async () => ({ id: sessionId, agentId: "coding" }),
     acquire: async () => ({ id: sessionId, agentId: "coding", userId: "user_1" }),
     reserve: () => () => {},
-    prompt: async (_session: unknown, message: string, _signal: AbortSignal, _metadata: unknown, emit: (delta: string) => Promise<void>) => {
+    prompt: async (_session: unknown, message: string, _signal: AbortSignal, _metadata: unknown, emit: (event: { type: string; [key: string]: unknown }) => Promise<void>) => {
       calls.push(message);
-      await emit("你好");
+      await emit({ type: "turn_start" });
+      await emit({ type: "tool_start", toolCallId: "call-1", toolName: "record_search", args: { query: "private" } });
+      await emit({ type: "tool_end", toolCallId: "call-1", toolName: "record_search", status: "succeeded", result: { private: true } });
+      await emit({ type: "delta", text: "你好" });
       return "你好";
     },
     history: async () => ({ agentId: "coding", entries: [], hasMore: false, nextCursor: null }),
@@ -59,6 +62,14 @@ test("creates a session before streaming and requires its id", async () => {
   assert.equal(response.status, 200);
   assert.match(text, /event: start/);
   assert.match(text, new RegExp(`"sessionId":"${sessionId}"`));
+  assert.match(text, /event: turn_start/);
+  assert.match(text, /event: tool_start/);
+  assert.match(text, /"toolCallId":"call-1","toolName":"record_search"/);
+  assert.match(text, /event: tool_end/);
+  assert.match(text, /"status":"succeeded"/);
+  assert.match(text, /event: delta/);
+  assert.match(text, /"text":"你好"/);
+  assert.doesNotMatch(text, /private/);
   assert.match(text, /event: done/);
   assert.deepEqual(calls, ["hello"]);
 });

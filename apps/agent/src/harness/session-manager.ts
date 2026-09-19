@@ -26,6 +26,12 @@ export type ManagedSession = {
   session: Session;
 };
 
+export type AgentStreamEvent =
+  | { type: "turn_start" }
+  | { type: "tool_start"; toolCallId: string; toolName: string }
+  | { type: "tool_end"; toolCallId: string; toolName: string; status: "succeeded" | "failed" }
+  | { type: "delta"; text: string };
+
 export class AgentSessionManager {
   private readonly repository: SqliteSessionRepo;
   private readonly sessions = new Map<string, ManagedSession>();
@@ -82,25 +88,34 @@ export class AgentSessionManager {
     return () => this.running.delete(session.id);
   }
 
-  async prompt(session: ManagedSession, message: string, signal: AbortSignal, metadata: Omit<RunMetadata, "userId">, emit: (delta: string) => Promise<void>): Promise<string> {
-    let unsubscribe: (() => void) | undefined;
+  async prompt(session: ManagedSession, message: string, signal: AbortSignal, metadata: Omit<RunMetadata, "userId">, emit: (event: AgentStreamEvent) => Promise<void>): Promise<string> {
+    const unsubscribes: Array<() => void> = [];
     let output = "";
     const abort = () => { void session.lane.abort(TODO_CONTEXT).catch(() => {}); };
     try {
       signal.addEventListener("abort", abort, { once: true });
       signal.throwIfAborted();
-      unsubscribe = session.harness.events.on("message_update", async ({ event }) => {
+      unsubscribes.push(session.harness.events.on("turn_start", async () => {
+        if (!signal.aborted) await emit({ type: "turn_start" });
+      }));
+      unsubscribes.push(session.harness.events.on("tool_start", async event => {
+        if (!signal.aborted) await emit({ type: "tool_start", toolCallId: event.toolCallId, toolName: event.toolName });
+      }));
+      unsubscribes.push(session.harness.events.on("tool_end", async event => {
+        if (!signal.aborted) await emit({ type: "tool_end", toolCallId: event.toolCallId, toolName: event.toolName, status: event.isError ? "failed" : "succeeded" });
+      }));
+      unsubscribes.push(session.harness.events.on("message_update", async ({ event }) => {
         if (event.type !== "text_delta" || signal.aborted) return;
         output += event.delta;
-        await emit(event.delta);
-      });
+        await emit({ type: "delta", text: event.delta });
+      }));
       const result = await session.lane.prompt(message, undefined, createRunContext({ userId: session.userId, ...metadata }));
       signal.throwIfAborted();
       if (!result.ok || result.value.status !== "completed") throw new Error("Agent run did not complete");
       return output;
     } finally {
       signal.removeEventListener("abort", abort);
-      unsubscribe?.();
+      unsubscribes.forEach(unsubscribe => unsubscribe());
     }
   }
 

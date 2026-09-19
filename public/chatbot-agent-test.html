@@ -256,7 +256,34 @@
         animation: blink .9s infinite;
       }
 
+      .activity {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 24px;
+        color: var(--muted);
+        font-size: 13px;
+        animation: activity-pulse 1.35s ease-in-out infinite;
+      }
+
+      .activity-dots { display: inline-flex; gap: 3px; }
+      .activity-dots i {
+        width: 4px;
+        height: 4px;
+        border-radius: 999px;
+        background: currentColor;
+        animation: activity-dot 1.05s ease-in-out infinite;
+      }
+      .activity-dots i:nth-child(2) { animation-delay: .14s; }
+      .activity-dots i:nth-child(3) { animation-delay: .28s; }
+
       @keyframes blink { 50% { opacity: .18; } }
+      @keyframes activity-pulse { 50% { opacity: .62; } }
+      @keyframes activity-dot { 50% { opacity: .2; transform: scale(.72); } }
+
+      @media (prefers-reduced-motion: reduce) {
+        .activity, .activity-dots i { animation: none; }
+      }
 
       .markdown > :first-child { margin-top: 0; }
       .markdown > :last-child { margin-bottom: 0; }
@@ -434,6 +461,8 @@
           messages: [],
           running: false,
           mediaUrls: new Set(),
+          activity: null,
+          activeTools: new Map(),
         };
 
         const agentBase = () => $("#agent-base").value.trim().replace(/\/$/, "");
@@ -520,6 +549,8 @@
           revokeMediaUrls();
           state.sessionId = null;
           state.messages = [];
+          state.activity = null;
+          state.activeTools.clear();
           if (userId()) {
             localStorage.removeItem(sessionKey());
             localStorage.removeItem(messagesKey());
@@ -597,7 +628,27 @@
           if (message.role === "user") {
             return `<div class="message-row user" data-message-index="${index}"><div class="bubble">${escapeHtml(message.content)}</div></div>`;
           }
-          return `<div class="message-row assistant" data-message-index="${index}"><div class="bubble markdown${message.streaming ? " streaming" : ""}">${markdownHtml(message.content)}</div></div>`;
+          const activity = state.running && index === state.messages.length - 1 && state.activity
+            ? `<div class="activity"><span class="activity-dots"><i></i><i></i><i></i></span><span>${escapeHtml(state.activity)}</span></div>`
+            : "";
+          return `<div class="message-row assistant" data-message-index="${index}"><div class="bubble markdown${message.streaming && message.content ? " streaming" : ""}">${markdownHtml(message.content)}${activity}</div></div>`;
+        }
+
+        function activityForTool(toolName) {
+          return ({
+            record_search: "正在回忆…",
+            record_list: "正在整理最近的记忆…",
+            record_get: "正在回看一段记忆…",
+          })[toolName] || "正在处理…";
+        }
+
+        function showThinking() {
+          if (!state.activeTools.size) state.activity = "正在思考…";
+        }
+
+        function showMostRecentToolOrThinking() {
+          const toolNames = [...state.activeTools.values()];
+          state.activity = toolNames.length ? activityForTool(toolNames.at(-1)) : "正在思考…";
         }
 
         async function renderTranscript(hydrate = false) {
@@ -675,6 +726,8 @@
           }
 
           state.running = true;
+          state.activity = "正在思考…";
+          state.activeTools.clear();
           $("#send").disabled = true;
           $("#new-chat").disabled = true;
           $("#chat-input").disabled = true;
@@ -705,16 +758,32 @@
                 try { payload = JSON.parse(item.data); } catch { payload = {}; }
               }
               if (item.event === "delta" && typeof payload.text === "string") {
+                state.activity = null;
                 assistant.content += payload.text;
+                await renderTranscript(false);
+              } else if (item.event === "turn_start") {
+                showThinking();
+                await renderTranscript(false);
+              } else if (item.event === "tool_start" && typeof payload.toolCallId === "string" && typeof payload.toolName === "string") {
+                state.activeTools.set(payload.toolCallId, payload.toolName);
+                showMostRecentToolOrThinking();
+                await renderTranscript(false);
+              } else if (item.event === "tool_end" && typeof payload.toolCallId === "string") {
+                state.activeTools.delete(payload.toolCallId);
+                showMostRecentToolOrThinking();
                 await renderTranscript(false);
               } else if (item.event === "error") {
                 throw new Error(payload.error || "Agent 执行失败");
               } else if (item.event === "done") {
                 assistant.streaming = false;
+                state.activity = null;
+                state.activeTools.clear();
               }
             }
 
             assistant.streaming = false;
+            state.activity = null;
+            state.activeTools.clear();
             persistConversation();
             await renderTranscript(true);
             setConnection("已连接");
@@ -729,6 +798,8 @@
             setConnection("对话失败", true);
           } finally {
             state.running = false;
+            state.activity = null;
+            state.activeTools.clear();
             $("#send").disabled = false;
             $("#new-chat").disabled = false;
             $("#chat-input").disabled = false;
