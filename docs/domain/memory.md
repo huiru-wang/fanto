@@ -108,7 +108,7 @@ ORDER BY distance
 - `removeRecord({ userId, recordId })`；
 - `searchRecords({ userId, query, limit })`。
 
-当前只接入 `record` source type；接口结构允许以后增加 Creation 或 Conversation summary，但这些能力尚未存在。
+当前 Memory 的业务来源只接入 Record；一个 Record 内部再拆成 `record_text` / `image` / `audio` 三类原子检索单元。接口结构允许以后增加 Creation 或 Conversation summary，但这些能力尚未存在。
 
 ## HTTP Search
 

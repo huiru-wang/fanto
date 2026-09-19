@@ -26,11 +26,7 @@
 
 ## Memory / Retrieval
 
-Server 已经会为处理完成的 Record 构建向量索引，索引文本包含：
-
-- 用户文本；
-- 已生成的图片描述；
-- 已生成的音频转写。
+Server 已经会为处理完成的 Record 构建向量索引。用户文本、图片描述和音频转写不会再拼成一个 embedding，而是分别作为 `record_text`、`image`、`audio` 原子单元独立索引；媒体单元仍保留与原 Record / mediaId 的关联。
 
 当前 Server 已形成独立的 Memory Domain 边界：Record postprocess 成功后把最终 processed Record 交给 `MemoryService`，sqlite-vec 通过 `MemoryIndex` adapter 提供派生索引。
 
@@ -56,7 +52,7 @@ Agent Runtime 已通过 Business Server HTTP 接入 `record_get`、`record_list`
 
 独立 Agent 服务当前支持：
 
-- 从 `apps/agent/agents.yaml` 加载 Agent 定义；
+- 从 `apps/agent/agents.yaml` 加载 Agent 定义，并支持通过 `systemPromptFile` 加载独立 Prompt 文件；
 - 创建持久 Session；
 - 基于同一 Session 的多轮流式执行；
 - Session 历史分页；

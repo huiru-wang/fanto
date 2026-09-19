@@ -40,8 +40,9 @@
 - `limit` 默认 10，范围 1–20；
 - 当前用户只来自 `x-user-id`，请求体不能传 `userId`；
 - 搜索通过 Memory 模块在当前用户的 sqlite-vec partition 内执行；
-- 返回 `{ data: [{ recordId, snippet }] }`；
-- sqlite-vec distance 不作为 HTTP 产品 score 暴露。
+- 返回 `{ data: [{ recordId, sourceType, mediaId, snippet, distance }] }`；
+- `sourceType` 为 `record_text` / `image` / `audio`，媒体命中通过 `mediaId` 关联具体图片或音频；
+- `distance` 是 sqlite-vec 原始向量距离，仅用于检索相关性判断，不代表已经校准的产品置信度或概率。
 
 ### Record 后置处理与返回字段
 
@@ -179,4 +180,4 @@ curl -sS http://127.0.0.1:3001/api/agent/tasks \
 
 `agent_tasks` 与 Pi Session 共用 Agent 专用 SQLite。当前后台 Runner 只支持单实例部署；服务中断时遗留的 `running` 任务会标记为 `failed`，不自动重跑。完整配置与更多示例见 [Agent 服务说明](../../apps/agent/README.md)。
 
-`apps/agent/agents.yaml` 仅在服务启动时加载，不做运行时热更新。变更 YAML 后重启服务；已有 Session 在下一次 stream 或 task 执行时会自动升级，无需额外状态查询或配置更新接口。
+`apps/agent/agents.yaml` 及其通过 `systemPromptFile` 引用的 Prompt 文件仅在服务启动时加载，不做运行时热更新。变更 YAML 或 Prompt 后需要重启服务；已有 Session 在下一次 stream 或 task 执行时会自动升级，无需额外状态查询或配置更新接口。

@@ -25,7 +25,7 @@ flowchart TD
 
 ## Agent Definition
 
-`apps/agent/agents.yaml` 是 Agent 定义入口，只在服务启动时读取。定义包含：
+`apps/agent/agents.yaml` 是 Agent 定义入口；YAML 及其引用的 Prompt 文件都只在服务启动时读取。定义包含：
 
 - provider / model；
 - systemPrompt 或 systemPromptFile；
