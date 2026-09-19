@@ -7,7 +7,7 @@
 
 ## 当前边界
 
-- `agents.yaml` 是 Agent 定义来源，只在服务启动时加载。
+- `agents.yaml` 是 Agent 定义入口，只在服务启动时加载；可通过 `systemPromptFile` 引用同目录树下的 Prompt 文件，Prompt 同样只在启动时读取。
 - Tool Registry 支持 Pi 内置 `read`、`write`、`edit`、`bash`，以及只读业务 Tool `record_get`、`record_list`、`record_search`。
 - Agent Session、任务与业务 Server 使用不同的数据存储；Agent Runtime 不直接访问 Fanto 业务数据库，Record Tool 只能通过 `FantoServerClient` 调用 Business Server HTTP API。
 - 每个 Session 固定绑定用户归属与独立工作区，`sessionId` 是运行时、历史与工作区的隔离边界。

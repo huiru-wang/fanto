@@ -5,6 +5,7 @@ import type { DB } from "../database/schema.js";
 import { nowIso } from "../time.js";
 
 type VectorRow = { id: number; distance: number };
+const MEDIA_TYPES: MemorySourceType[] = ["image", "audio"];
 
 export class SqliteVecMemoryIndex implements MemoryIndex {
   constructor(private readonly db: Kysely<DB>) {}
@@ -84,9 +85,28 @@ export class SqliteVecMemoryIndex implements MemoryIndex {
     });
   }
 
+  async listRecordRefs(userId: string, recordId: string): Promise<MemoryRef[]> {
+    const rows = await this.db
+      .selectFrom("vector_items")
+      .select(["type", "outer_id"])
+      .where("user_id", "=", userId)
+      .where("status", "=", "indexed")
+      .where(eb => eb.or([
+        eb.and([eb("type", "=", "record_text"), eb("outer_id", "=", recordId)]),
+        eb.and([eb("type", "in", MEDIA_TYPES), eb("outer_id", "like", `${recordId}:%`)]),
+      ]))
+      .execute();
+
+    return rows.map(row => ({
+      userId,
+      sourceType: row.type as MemorySourceType,
+      sourceId: row.outer_id,
+    }));
+  }
+
   async search(input: {
     userId: string;
-    sourceType: MemorySourceType;
+    sourceTypes: MemorySourceType[];
     embedding: number[];
     limit: number;
   }): Promise<MemoryIndexHit[]> {
@@ -107,7 +127,7 @@ export class SqliteVecMemoryIndex implements MemoryIndex {
       .select(["id", "user_id", "type", "outer_id", "content"])
       .where("id", "in", ids)
       .where("user_id", "=", input.userId)
-      .where("type", "=", input.sourceType)
+      .where("type", "in", input.sourceTypes)
       .where("status", "=", "indexed")
       .execute();
 

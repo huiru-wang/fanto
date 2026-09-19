@@ -22,7 +22,7 @@ infrastructure/memory/
 - `MemoryService`：编排 Record 索引、删除与搜索，不直接访问 SQLite。
 - `EmbeddingProvider`：Embedding 能力契约；当前由 `EmbeddingsClient` 实现。
 - `MemoryIndex`：派生索引契约；当前由 `SqliteVecMemoryIndex` 实现。
-- `record-memory.ts`：把 processed Record 转成稳定的索引文本和 `contentHash`。
+- `record-memory.ts`：把 processed Record 拆成稳定的原子索引文档并生成 `contentHash`。
 
 因此 sqlite-vec 是当前 Memory 的基础设施实现，不是 Domain API。
 
@@ -38,17 +38,17 @@ Memory 不再自行反查 `records` 表。
 
 如果图片或音频单项失败，其余结果仍可写回；如果后续 Embedding 或 Memory Index 写入失败，Record 已完成的 `processed` 状态不会回滚。当前队列没有持久重试，缺失索引依靠后续 rebuild 恢复。
 
-## 索引文本
+## 原子索引单元
 
-Record 的索引文本按原始内容顺序组合：
+Memory 不再把整条 Record 的文本、图片描述和音频转写拼成一个 embedding。一个 processed Record 会按可独立检索的语义单元拆分：
 
 ```text
-用户记录：<text>
-图片描述：<image description>
-音频转写：<audio transcription>
+record_text: 用户记录：<text>
+image:       图片描述：<image description>
+audio:       音频转写：<audio transcription>
 ```
 
-没有可索引内容时会移除该 Record 的旧 Memory 索引。组合文本使用 SHA-256 生成 `content_hash`；已有相同 hash 时不会重复调用 Embedding。
+每个非空单元独立生成 embedding 与 SHA-256 `content_hash`。文本单元直接以 `recordId` 标识；图片和音频单元使用内部可逆 source ID 关联 `recordId + mediaId`，因此搜索命中媒体内容后仍可回到所属 Record。Record 更新时只重建发生变化的原子单元，并移除已不存在的旧媒体单元。
 
 ## 存储
 
@@ -62,7 +62,7 @@ flowchart LR
 ```
 
 - `records`：业务事实。
-- `vector_items`：保存 user、source type、source ID、索引文本、hash 与索引状态。
+- `vector_items`：保存 user、原子 source type（`record_text` / `image` / `audio`）、source ID、索引文本、hash 与索引状态。
 - `record_vectors`：1536 维 sqlite-vec 向量索引。
 - `record_vectors.rowid = vector_items.id` 用于关联。
 
@@ -95,7 +95,7 @@ ORDER BY distance
 读取 `vector_items` 时仍再次校验：
 
 - `user_id`；
-- `type = record`；
+- `type ∈ { record_text, image, audio }`；
 - `status = indexed`。
 
 前者是检索边界，后者是业务归属的二次防御。
@@ -120,7 +120,7 @@ POST /api/records/search
 
 它调用 `MemoryService.searchRecords`，并从请求 Header 获取当前用户，不接受客户端在请求体传 `userId`。
 
-HTTP 只返回 Record ID 与索引 snippet；sqlite-vec distance 当前仍是 Memory 内部排序信息，不作为产品“置信度”暴露。
+HTTP 返回 `recordId`、原子 `sourceType`、可选 `mediaId`、`snippet` 与 sqlite-vec `distance`。`distance` 用于 Agent 判断结果相关性，不代表已经校准后的产品置信度。
 
 ## Rebuild
 

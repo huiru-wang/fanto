@@ -27,7 +27,7 @@ test("sends user and trace headers and maps all Record endpoints", async () => {
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     calls.push({ url: String(input), init });
     const url = String(input);
-    if (url.includes("/search")) return ok({ data: [{ recordId: "r1", snippet: "hit" }] });
+    if (url.includes("/search")) return ok({ data: [{ recordId: "r1", sourceType: "image", mediaId: "m1", snippet: "hit", distance: 0.12 }] });
     if (url.includes("?")) return ok({ data: [record], hasMore: true, nextCursor: "next", pageSize: 2 });
     return ok(record);
   }) as typeof fetch;
@@ -36,7 +36,7 @@ test("sends user and trace headers and maps all Record endpoints", async () => {
 
   assert.equal((await client.getRecord(ctx, "r/1")).id, "r1");
   assert.equal((await client.listRecords(ctx, { limit: 2, cursor: "c+d" })).nextCursor, "next");
-  assert.deepEqual((await client.searchRecords(ctx, { query: "AI Coding", limit: 3 })).data, [{ recordId: "r1", snippet: "hit" }]);
+  assert.deepEqual((await client.searchRecords(ctx, { query: "AI Coding", limit: 3 })).data, [{ recordId: "r1", sourceType: "image", mediaId: "m1", snippet: "hit", distance: 0.12 }]);
 
   assert.match(calls[0]?.url ?? "", /\/api\/records\/r%2F1$/);
   assert.match(calls[1]?.url ?? "", /limit=2/);

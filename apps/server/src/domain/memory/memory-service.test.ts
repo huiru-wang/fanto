@@ -5,7 +5,7 @@ import type { EmbeddingProvider } from "./embedding-provider.js";
 import type { MemoryIndex } from "./memory-index.js";
 import type { MemoryDocument, MemoryIndexHit, MemoryRef } from "./model.js";
 import { MemoryService } from "./memory-service.js";
-import { buildRecordMemoryDocument } from "./record-memory.js";
+import { buildRecordMemoryDocuments, parseMemorySource } from "./record-memory.js";
 
 const record = (overrides: Partial<Record> = {}): Record => ({
   extData: null,
@@ -25,22 +25,33 @@ const record = (overrides: Partial<Record> = {}): Record => ({
   ...overrides,
 });
 
-test("record memory builder preserves record and block order with stable hash", () => {
-  const first = buildRecordMemoryDocument(record());
-  const second = buildRecordMemoryDocument(record());
-  assert.ok(first);
-  assert.equal(first.content, "用户记录：准备雨衣\n音频转写：周末去西山徒步\n图片描述：雨衣和登山杖放在玄关。");
-  assert.equal(first.contentHash, second?.contentHash);
-  assert.equal(first.userId, "user-1");
-  assert.equal(first.sourceId, "record-1");
+test("record memory builder creates independent text, audio, and image documents", () => {
+  const first = buildRecordMemoryDocuments(record());
+  const second = buildRecordMemoryDocuments(record());
+  assert.deepEqual(first.map(item => [item.sourceType, item.recordId, item.mediaId, item.content]), [
+    ["record_text", "record-1", null, "用户记录：准备雨衣"],
+    ["audio", "record-1", "audio-1", "音频转写：周末去西山徒步"],
+    ["image", "record-1", "image-1", "图片描述：雨衣和登山杖放在玄关。"],
+  ]);
+  assert.deepEqual(first.map(item => item.contentHash), second.map(item => item.contentHash));
 });
 
-test("record memory builder returns null when there is no indexable content", () => {
-  assert.equal(buildRecordMemoryDocument(record({ content: { text: "   ", blocks: [{ type: "audio", mediaId: "audio-1" }] } })), null);
+test("record memory builder ignores blocks without semantic text", () => {
+  assert.deepEqual(
+    buildRecordMemoryDocuments(record({ content: { text: "   ", blocks: [{ type: "audio", mediaId: "audio-1" }] } })),
+    [],
+  );
+});
+
+test("memory source ids preserve media-to-record association", () => {
+  assert.deepEqual(parseMemorySource("record_text", "record-1"), { recordId: "record-1", mediaId: null });
+  assert.deepEqual(parseMemorySource("image", "record-1:image-1"), { recordId: "record-1", mediaId: "image-1" });
+  assert.deepEqual(parseMemorySource("audio", "record-1:audio-1"), { recordId: "record-1", mediaId: "audio-1" });
 });
 
 class FakeIndex implements MemoryIndex {
   current = false;
+  existing: MemoryRef[] = [];
   replaced: Array<{ document: MemoryDocument; embedding: number[] }> = [];
   removed: MemoryRef[] = [];
   searches: unknown[] = [];
@@ -48,9 +59,16 @@ class FakeIndex implements MemoryIndex {
   async isCurrent() { return this.current; }
   async replace(document: MemoryDocument, embedding: number[]) { this.replaced.push({ document, embedding }); }
   async remove(ref: MemoryRef) { this.removed.push(ref); }
+  async listRecordRefs() { return this.existing; }
   async search(input: any): Promise<MemoryIndexHit[]> {
     this.searches.push(input);
-    return [{ userId: input.userId, sourceType: "record", sourceId: "record-1", content: "用户记录：命中内容", distance: 0.25 }];
+    return [{
+      userId: input.userId,
+      sourceType: "image",
+      sourceId: "record-1:image-1",
+      content: "图片描述：命中内容",
+      distance: 0.25,
+    }];
   }
   async reset() {}
 }
@@ -60,43 +78,69 @@ class FakeEmbeddings implements EmbeddingProvider {
   async embed(text: string) { this.inputs.push(text); return [1, 2, 3]; }
 }
 
-test("memory service skips embedding when the indexed content hash is current", async () => {
+test("memory service skips unchanged atomic documents", async () => {
   const index = new FakeIndex(); index.current = true;
+  index.existing = buildRecordMemoryDocuments(record()).map(({ userId, sourceType, sourceId }) => ({ userId, sourceType, sourceId }));
   const embeddings = new FakeEmbeddings();
   const memory = new MemoryService(index, embeddings);
   await memory.replaceRecord(record());
   assert.equal(embeddings.inputs.length, 0);
   assert.equal(index.replaced.length, 0);
+  assert.equal(index.removed.length, 0);
 });
 
-test("memory service replaces changed record content through ports", async () => {
+test("memory service embeds each atomic document independently", async () => {
   const index = new FakeIndex();
   const embeddings = new FakeEmbeddings();
   const memory = new MemoryService(index, embeddings);
   await memory.replaceRecord(record());
-  assert.deepEqual(embeddings.inputs, ["用户记录：准备雨衣\n音频转写：周末去西山徒步\n图片描述：雨衣和登山杖放在玄关。"]);
-  assert.equal(index.replaced.length, 1);
-  assert.deepEqual(index.replaced[0]?.embedding, [1, 2, 3]);
+  assert.deepEqual(embeddings.inputs, [
+    "用户记录：准备雨衣",
+    "音频转写：周末去西山徒步",
+    "图片描述：雨衣和登山杖放在玄关。",
+  ]);
+  assert.deepEqual(index.replaced.map(item => item.document.sourceType), ["record_text", "audio", "image"]);
 });
 
-test("memory service removes stale index when record has no indexable content", async () => {
+test("memory service removes stale atomic documents after record changes", async () => {
   const index = new FakeIndex();
+  index.existing = [
+    { userId: "user-1", sourceType: "record_text", sourceId: "record-1" },
+    { userId: "user-1", sourceType: "image", sourceId: "record-1:old-image" },
+  ];
   const embeddings = new FakeEmbeddings();
   const memory = new MemoryService(index, embeddings);
-  await memory.replaceRecord(record({ content: { text: "", blocks: [] } }));
-  assert.deepEqual(index.removed, [{ userId: "user-1", sourceType: "record", sourceId: "record-1" }]);
-  assert.equal(embeddings.inputs.length, 0);
+  await memory.replaceRecord(record({ content: { text: "准备雨衣", blocks: [] } }));
+  assert.deepEqual(index.removed, [{ userId: "user-1", sourceType: "image", sourceId: "record-1:old-image" }]);
 });
 
-test("memory service searches records within the requested user scope", async () => {
+test("memory service removes all atomic indexes for a record", async () => {
+  const index = new FakeIndex();
+  index.existing = [
+    { userId: "user-1", sourceType: "record_text", sourceId: "record-1" },
+    { userId: "user-1", sourceType: "audio", sourceId: "record-1:audio-1" },
+  ];
+  const memory = new MemoryService(index, new FakeEmbeddings());
+  await memory.removeRecord({ userId: "user-1", recordId: "record-1" });
+  assert.deepEqual(index.removed, index.existing);
+});
+
+test("memory service search exposes source, record association, and distance", async () => {
   const index = new FakeIndex();
   const embeddings = new FakeEmbeddings();
   const memory = new MemoryService(index, embeddings);
   assert.deepEqual(await memory.searchRecords({ userId: "user-1", query: "徒步", limit: 5 }), [{
-    sourceType: "record",
-    sourceId: "record-1",
-    snippet: "用户记录：命中内容",
+    sourceType: "image",
+    sourceId: "record-1:image-1",
+    recordId: "record-1",
+    mediaId: "image-1",
+    snippet: "图片描述：命中内容",
     distance: 0.25,
   }]);
-  assert.deepEqual(index.searches, [{ userId: "user-1", sourceType: "record", embedding: [1, 2, 3], limit: 5 }]);
+  assert.deepEqual(index.searches, [{
+    userId: "user-1",
+    sourceTypes: ["record_text", "image", "audio"],
+    embedding: [1, 2, 3],
+    limit: 5,
+  }]);
 });

@@ -15,6 +15,26 @@ const request = (url: string, body?: unknown) => new Request(`http://localhost${
 });
 const registry = { get: (id: string) => id === "coding" ? definition : undefined } as never;
 
+
+test("allows browser CORS preflight for Agent APIs", async () => {
+  const app = createApp("test-token", registry, {} as never, {} as never, {} as never);
+  const response = await app.request(new Request("http://localhost/api/agent/stream", {
+    method: "OPTIONS",
+    headers: {
+      Origin: "http://127.0.0.1:8099",
+      "Access-Control-Request-Method": "POST",
+      "Access-Control-Request-Headers": "authorization,content-type,x-user-id",
+    },
+  }));
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get("access-control-allow-origin"), "*");
+  assert.match(response.headers.get("access-control-allow-methods") ?? "", /POST/);
+  const headers = (response.headers.get("access-control-allow-headers") ?? "").toLowerCase();
+  assert.match(headers, /authorization/);
+  assert.match(headers, /content-type/);
+  assert.match(headers, /x-user-id/);
+});
+
 test("creates a session before streaming and requires its id", async () => {
   const calls: string[] = [];
   const sessions = {

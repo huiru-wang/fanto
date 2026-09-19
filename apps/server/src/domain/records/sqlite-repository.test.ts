@@ -54,10 +54,24 @@ test("record memory indexes processed Record content through MemoryService", asy
       new EmbeddingsClient("test", "https://embedding.test/v1", "test", 1536),
     );
     await memory.replaceRecord(completed);
-    assert.deepEqual(await memory.searchRecords({ userId: "u", query: "徒步", limit: 5 }), [{
-      sourceType: "record",
-      sourceId: record.id,
-      snippet: "用户记录：准备雨衣\n音频转写：周末去西山徒步\n图片描述：雨衣和登山杖放在玄关。",
+    const hits = await memory.searchRecords({ userId: "u", query: "徒步", limit: 5 });
+    assert.deepEqual(hits.map(hit => ({ sourceType: hit.sourceType, recordId: hit.recordId, mediaId: hit.mediaId, snippet: hit.snippet, distance: hit.distance })).sort((a, b) => a.sourceType.localeCompare(b.sourceType)), [{
+      sourceType: "audio",
+      recordId: record.id,
+      mediaId,
+      snippet: "音频转写：周末去西山徒步",
+      distance: 0,
+    }, {
+      sourceType: "image",
+      recordId: record.id,
+      mediaId: imageId,
+      snippet: "图片描述：雨衣和登山杖放在玄关。",
+      distance: 0,
+    }, {
+      sourceType: "record_text",
+      recordId: record.id,
+      mediaId: null,
+      snippet: "用户记录：准备雨衣",
       distance: 0,
     }]);
 
@@ -67,8 +81,9 @@ test("record memory indexes processed Record content through MemoryService", asy
     const updatedCompleted = await records.completePostprocess({ recordId: record.id, userId: "u", version: updated.version, runId: updatedRunId, images: [{ mediaId: imageId, description: "雨衣和登山杖放在玄关。" }], audio: [{ mediaId, transcription: "周末去西山徒步", asr: { status: "succeeded" } }] });
     assert.ok(updatedCompleted);
     await memory.replaceRecord(updatedCompleted);
-    assert.deepEqual((await memory.searchRecords({ userId: "u", query: "徒步", limit: 5 }))[0]?.snippet, "用户记录：准备登山杖\n音频转写：周末去西山徒步\n图片描述：雨衣和登山杖放在玄关。");
-    assert.equal((await db.selectFrom("vector_items").selectAll().where("user_id", "=", "u").where("outer_id", "=", record.id).execute()).length, 1);
+    const updatedHits = await memory.searchRecords({ userId: "u", query: "徒步", limit: 5 });
+    assert.equal(updatedHits.find(hit => hit.sourceType === "record_text")?.snippet, "用户记录：准备登山杖");
+    assert.equal((await db.selectFrom("vector_items").selectAll().where("user_id", "=", "u").execute()).length, 3);
   } finally { globalThis.fetch = originalFetch; await db.destroy(); await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true }); }
 });
 
@@ -172,7 +187,7 @@ test("record search HTTP is user-scoped and validates input", async () => {
   const memory = {
     searchRecords: async (input: unknown) => {
       calls.push(input);
-      return [{ sourceType: "record", sourceId: "record-1", snippet: "用户记录：AI Coding", distance: 0.1 }];
+      return [{ sourceType: "record_text", sourceId: "record-1", recordId: "record-1", mediaId: null, snippet: "用户记录：AI Coding", distance: 0.1 }];
     },
   };
   const app = createApp({} as any, {} as any, new RecordPostprocessQueue(), {} as any, undefined, undefined, memory as any);
@@ -185,7 +200,7 @@ test("record search HTTP is user-scoped and validates input", async () => {
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     success: true,
-    result: { data: [{ recordId: "record-1", snippet: "用户记录：AI Coding" }] },
+    result: { data: [{ recordId: "record-1", sourceType: "record_text", mediaId: null, snippet: "用户记录：AI Coding", distance: 0.1 }] },
     errorCode: null,
     errorMsg: null,
   });

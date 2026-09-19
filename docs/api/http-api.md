@@ -22,6 +22,8 @@
 | PATCH | `/api/records/:id` | 以 expectedVersion 更新内容 |
 | POST | `/api/records/search` | 当前用户 Record 语义搜索 |
 
+`POST /api/records/search` 的每个命中返回 `recordId`、`sourceType` (`record_text` / `image` / `audio`)、可选 `mediaId`、`snippet` 和向量 `distance`；图片和音频命中仍关联回原 Record。
+
 创建体：`{ text, media, eventAt, source? }`；更新体：`{ text, media, expectedVersion }`。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。创建或更新完成后，服务端异步处理当前版本的图片理解、音频转写与向量索引；图片 description 写入对应 image block，音频 transcription 写入对应 audio block。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
 
 列表结果：`{ data, hasMore, nextCursor, pageSize }`。`nextCursor` 只应在 `hasMore=true` 时使用。

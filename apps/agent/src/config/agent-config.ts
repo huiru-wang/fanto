@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { parseDocument } from "yaml";
 import { z } from "zod";
 import type { Models } from "@earendil-works/pi-ai";
@@ -15,6 +16,7 @@ const partialDefinition = z.object({
   provider: z.string().min(1).optional(),
   model: z.string().min(1).optional(),
   systemPrompt: z.string().min(1).optional(),
+  systemPromptFile: z.string().min(1).optional(),
   tools: z.array(tool).optional(),
   skills: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)).optional(),
   compaction: compaction.partial().optional(),
@@ -40,25 +42,65 @@ const definitionSchema = z.object({
 
 export type AgentDefinition = z.infer<typeof definitionSchema> & { revision: string };
 
+function assertPromptSource(
+  value: { systemPrompt?: string; systemPromptFile?: string },
+  label: string,
+): void {
+  if (value.systemPrompt && value.systemPromptFile) {
+    throw new Error(`Invalid agents.yaml ${label}: systemPrompt and systemPromptFile are mutually exclusive`);
+  }
+}
+
+function readPromptFile(configPath: string, promptFile: string, agentId: string): string {
+  if (isAbsolute(promptFile)) {
+    throw new Error(`Invalid agents.yaml agent "${agentId}": systemPromptFile must be relative to agents.yaml`);
+  }
+  const root = dirname(resolve(configPath));
+  const promptPath = resolve(root, promptFile);
+  const pathFromRoot = relative(root, promptPath);
+  if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${sep}`)) {
+    throw new Error(`Invalid agents.yaml agent "${agentId}": systemPromptFile must stay inside the config directory`);
+  }
+  let prompt: string;
+  try {
+    prompt = readFileSync(promptPath, "utf8").trim();
+  } catch (cause) {
+    const message = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(`Invalid agents.yaml agent "${agentId}": cannot read systemPromptFile "${promptFile}": ${message}`);
+  }
+  if (!prompt) throw new Error(`Invalid agents.yaml agent "${agentId}": systemPromptFile must not be empty`);
+  return prompt;
+}
+
 export function readAgentDefinitions(path: string, models: Models, knownSkills: ReadonlySet<string>): AgentDefinition[] {
   const parsed = parseDocument(readFileSync(path, "utf8"), { uniqueKeys: true });
   if (parsed.errors.length > 0) throw new Error(`Invalid agents.yaml: ${parsed.errors.map(error => error.message).join("; ")}`);
   const document = documentSchema.safeParse(parsed.toJS());
   if (!document.success) throw new Error(`Invalid agents.yaml: ${document.error.message}`);
+  assertPromptSource(document.data.defaults, "defaults");
 
   const ids = new Set<string>();
   for (const agent of document.data.agents) {
     if (ids.has(agent.id)) throw new Error(`Duplicate agent id "${agent.id}"`);
     ids.add(agent.id);
+    assertPromptSource(agent, `agent "${agent.id}"`);
   }
 
   return document.data.agents.map(configured => {
-    const { id, ...overrides } = configured;
+    const { id, systemPrompt, systemPromptFile, ...overrides } = configured;
+    const defaultPrompt = document.data.defaults.systemPrompt;
+    const defaultPromptFile = document.data.defaults.systemPromptFile;
+    const resolvedPrompt = systemPrompt
+      ?? (systemPromptFile ? readPromptFile(path, systemPromptFile, id) : undefined)
+      ?? defaultPrompt
+      ?? (defaultPromptFile ? readPromptFile(path, defaultPromptFile, id) : undefined);
+    const { systemPrompt: _defaultPrompt, systemPromptFile: _defaultPromptFile, ...defaults } = document.data.defaults;
     const merged = {
-      ...document.data.defaults,
+      ...defaults,
       ...overrides,
       id,
       description: overrides.description ?? document.data.defaults.description ?? "",
+      systemPrompt: resolvedPrompt,
       tools: overrides.tools ?? document.data.defaults.tools ?? [],
       skills: overrides.skills ?? document.data.defaults.skills ?? [],
       compaction: { ...document.data.defaults.compaction, ...overrides.compaction },

@@ -16,7 +16,7 @@ pnpm --filter @fanto/agent dev
 
 服务默认监听 `0.0.0.0:3001`。`AGENT_SESSION_DB` 和 `AGENT_WORKSPACE_ROOT` 相对项目根目录解析；开发环境默认写入根目录 `data/agent-sessions.sqlite` 与 `data/workspaces/`。
 
-服务只在启动时读取 `apps/agent/agents.yaml`。配置修改后必须重启服务，密钥只能通过环境变量注入，不能放入 YAML。
+服务只在启动时读取 `apps/agent/agents.yaml` 以及其中引用的 Prompt 文件。配置或 Prompt 修改后必须重启服务，密钥只能通过环境变量注入，不能放入 YAML。
 
 ## agents.yaml
 
@@ -35,9 +35,7 @@ defaults:
 agents:
   - id: main
     description: 认识用户长期记录、在需要时调用个人记忆的中文助手
-    systemPrompt: |
-      你是准确、简洁的中文助手。
-      只有当前问题确实需要用户过去记录时，才使用 Record Tools。
+    systemPromptFile: ./prompts/fanto.md
     tools: [record_get, record_list, record_search]
     skills: []
 
@@ -48,6 +46,8 @@ agents:
     skills: []
 ```
 
+`systemPrompt` 和 `systemPromptFile` 二选一。`systemPromptFile` 必须是相对 `agents.yaml` 的配置目录内路径，运行时会读取文件内容作为最终 `systemPrompt`；Prompt 内容也参与 Agent revision 计算，因此文件内容变化会让已有 Session 在下次运行时应用新的 Agent definition。
+
 可用工具为 `read`、`write`、`edit`、`bash`、`record_get`、`record_list`、`record_search`。每个 Agent 仅获得其配置列出的工具；当前 `main` 只开启三个只读 Record Tool，`coding` 保持文件 / shell 工具，不默认获得个人历史访问能力。`compaction` 会原样传给 Pi；三个字段分别控制是否启用、为摘要保留的 token 以及压缩后保留的最近上下文。它在使用同一 `sessionId` 的多轮对话中生效。
 
 Skill 用 ID 声明在 `skills` 中，文件固定为 `apps/agent/skills/<id>/SKILL.md`；YAML 不能指定任意本地路径。
@@ -57,7 +57,7 @@ Skill 用 ID 声明在 `skills` 中，文件固定为 `apps/agent/skills/<id>/SK
 `main` 当前通过 Business Server HTTP 使用三个只读 Record Tool：
 
 - `record_list(limit?, cursor?)`：按时间浏览最近记录；Agent 侧默认 10 条、最大 20 条，并把每条 Record 压缩成最多约 500 字符的 preview。
-- `record_search(query, limit?)`：按语义搜索历史记录；返回 `recordId + snippet`，不暴露向量 distance。
+- `record_search(query, limit?)`：按语义搜索历史记录的文本、图片描述和音频转写原子单元；返回 `recordId + sourceType + mediaId + snippet + distance`。
 - `record_get(recordId)`：已有 Record ID 时读取完整 `content.text + content.blocks`；不会把媒体 signed URL 注入模型上下文。
 
 Record Tool 不直接访问业务 SQLite。调用链为：

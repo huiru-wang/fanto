@@ -107,20 +107,26 @@ test("buildRecordPreview preserves text and media understanding in block order",
   );
 });
 
-test("record_search trims query, defaults limit, and returns only recordId and snippet", async () => {
+test("record_search returns atomic source metadata and distance", async () => {
   const calls: any[] = [];
   const client = {
     getRecord: async () => baseRecord,
     listRecords: async () => ({ data: [], hasMore: false, nextCursor: null, pageSize: 10 }),
     searchRecords: async (ctx: unknown, input: unknown) => {
       calls.push({ ctx, input });
-      return { data: [{ recordId: "r1", snippet: "用户记录：AI Coding" }] };
+      return { data: [{ recordId: "r1", sourceType: "image", mediaId: "img1", snippet: "图片描述：AI Coding", distance: 0.18 }] };
     },
   };
   const result = await execute(createRecordSearchTool(client as any), { query: "  AI Coding  " });
   assert.deepEqual(calls[0].input, { query: "AI Coding", limit: 10 });
-  assert.deepEqual(result.details, { data: [{ recordId: "r1", snippet: "用户记录：AI Coding" }] });
-  assert.doesNotMatch(JSON.stringify(result.details), /distance|userId/);
+  assert.deepEqual(result.details, { data: [{
+    recordId: "r1",
+    sourceType: "image",
+    mediaId: "img1",
+    snippet: "图片描述：AI Coding",
+    distance: 0.18,
+  }] });
+  assert.doesNotMatch(JSON.stringify(result.details), /userId/);
 });
 
 test("record_search rejects whitespace-only query before HTTP", async () => {

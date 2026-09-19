@@ -39,7 +39,10 @@ const recordList = z.object({
 const recordSearch = z.object({
   data: z.array(z.object({
     recordId: z.string(),
+    sourceType: z.enum(["record_text", "image", "audio"]),
+    mediaId: z.string().nullable(),
     snippet: z.string(),
+    distance: z.number(),
   }).strict()),
 }).strict();
 

@@ -46,17 +46,76 @@ test("rejects duplicate tools", () => {
   } finally { rmSync(files.root, { recursive: true, force: true }); }
 });
 
-test("loads Record tools for main while coding remains isolated", () => {
+test("loads Fanto prompt file for main while coding remains isolated", () => {
   const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const skills = new SkillLoader(resolve(appRoot, "skills"));
   const definitions = readAgentDefinitions(resolve(appRoot, "agents.yaml"), builtinModels(), skills.ids());
   const main = definitions.find(definition => definition.id === "main");
   const coding = definitions.find(definition => definition.id === "coding");
   assert.deepEqual(main?.tools, ["record_get", "record_list", "record_search"]);
+  assert.deepEqual(main?.skills, []);
+  assert.match(main?.systemPrompt ?? "", /你是 Fanto/);
   assert.match(main?.systemPrompt ?? "", /record_list/);
   assert.match(main?.systemPrompt ?? "", /record_search/);
   assert.match(main?.systemPrompt ?? "", /record_get/);
+  assert.match(main?.systemPrompt ?? "", /工具调用过程必须对用户隐身/);
+  assert.match(main?.systemPrompt ?? "", /不能默认是用户本人/);
+  assert.match(main?.systemPrompt ?? "", /record_search 已返回真实 mediaId 时，可以直接展示/);
+  assert.match(main?.systemPrompt ?? "", /fanto-media/);
+  assert.doesNotMatch((main?.tools ?? []).join(","), /read|write|edit|bash/);
   assert.deepEqual(coding?.tools, ["read", "write", "edit", "bash"]);
+});
+
+test("loads a relative systemPromptFile and includes its content in revision", () => {
+  const files = fixture(`version: 1
+defaults:
+  provider: deepseek
+  model: deepseek-v4-pro
+  compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 }
+agents:
+  - id: main
+    systemPromptFile: ./prompts/main.md
+`);
+  try {
+    mkdirSync(resolve(files.root, "prompts"));
+    const prompt = resolve(files.root, "prompts", "main.md");
+    writeFileSync(prompt, "First prompt.");
+    const first = readAgentDefinitions(files.config, builtinModels(), new Set())[0];
+    writeFileSync(prompt, "Second prompt.");
+    const second = readAgentDefinitions(files.config, builtinModels(), new Set())[0];
+    assert.equal(first?.systemPrompt, "First prompt.");
+    assert.equal(second?.systemPrompt, "Second prompt.");
+    assert.notEqual(first?.revision, second?.revision);
+  } finally { rmSync(files.root, { recursive: true, force: true }); }
+});
+
+test("rejects ambiguous or unsafe systemPromptFile configuration", () => {
+  const both = fixture(`version: 1
+defaults:
+  provider: deepseek
+  model: deepseek-v4-pro
+  compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 }
+agents:
+  - id: main
+    systemPrompt: Inline.
+    systemPromptFile: ./prompt.md
+`);
+  const escape = fixture(`version: 1
+defaults:
+  provider: deepseek
+  model: deepseek-v4-pro
+  compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 }
+agents:
+  - id: main
+    systemPromptFile: ../prompt.md
+`);
+  try {
+    assert.throws(() => readAgentDefinitions(both.config, builtinModels(), new Set()), /mutually exclusive/);
+    assert.throws(() => readAgentDefinitions(escape.config, builtinModels(), new Set()), /inside the config directory/);
+  } finally {
+    rmSync(both.root, { recursive: true, force: true });
+    rmSync(escape.root, { recursive: true, force: true });
+  }
 });
 
 test("accepts configured Record tool names", () => {

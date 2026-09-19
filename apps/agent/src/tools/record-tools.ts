@@ -40,7 +40,13 @@ type RecordListDetails = {
 };
 
 type RecordSearchDetails = {
-  data: Array<{ recordId: string; snippet: string }>;
+  data: Array<{
+    recordId: string;
+    sourceType: "record_text" | "image" | "audio";
+    mediaId: string | null;
+    snippet: string;
+    distance: number;
+  }>;
 };
 
 function requestContext(context: Context) {

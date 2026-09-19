@@ -66,7 +66,7 @@ Agent Runtime 已通过 Business Server HTTP 接入 `record_get`、`record_list`
 - `record_get`、`record_list`、`record_search` 三个只读 Record Tool；
 - Skill 文件加载。
 
-它不直接访问 Fanto 业务数据库；Record Tool 统一通过 `FantoServerClient` 调用 Business Server，并从当前 Run Context 获取用户身份。当前 `main` 开启 Record Tool，`coding` 默认不具备个人历史访问能力。
+它不直接访问 Fanto 业务数据库；Record Tool 统一通过 `FantoServerClient` 调用 Business Server，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool；`coding` 默认不具备个人历史访问能力。`main` 通过 `apps/agent/prompts/fanto.md` 约束长期记忆真实性、工具隐身、对话语气以及 Markdown / Media 表达。
 
 ## 当前基础设施边界
 

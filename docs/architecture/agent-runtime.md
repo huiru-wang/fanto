@@ -10,6 +10,7 @@ flowchart TD
   HTTP --> SM[Session Manager]
   HTTP --> TR[Task Runner]
   REG --> YAML[agents.yaml]
+  YAML --> PROMPTS[prompts/*.md]
   SM --> PI[Pi AgentHarness]
   PI --> TOOLS[Configured Tools]
   TOOLS --> BUILTIN[read / write / edit / bash]
@@ -24,10 +25,10 @@ flowchart TD
 
 ## Agent Definition
 
-`apps/agent/agents.yaml` 是 Agent 定义来源，只在服务启动时读取。定义包含：
+`apps/agent/agents.yaml` 是 Agent 定义入口，只在服务启动时读取。定义包含：
 
 - provider / model；
-- systemPrompt；
+- systemPrompt 或 systemPromptFile；
 - tools；
 - skills；
 - compaction 配置。
@@ -44,7 +45,9 @@ record_list
 record_search
 ```
 
-当前 `main` 只开启三个只读 Record Tool；`coding` 只开启 `read / write / edit / bash`。Tool 权限仍由 Agent definition 显式声明。
+当前 `main` 是 Fanto 面向用户的长期对话 Agent，只开启三个只读 Record Tool；`coding` 只开启 `read / write / edit / bash`。Fanto 的 Prompt 独立位于 `apps/agent/prompts/fanto.md`，通过 `systemPromptFile` 引用；其内容定义长期记忆、对话人格、工具隐身与 Markdown / Media 行为。Tool 权限仍由 Agent definition 显式声明。
+
+`systemPromptFile` 必须是相对 `agents.yaml` 的路径，不能逃逸出配置目录。Loader 会把文件内容解析为最终 `systemPrompt`，并基于解析后的完整 Agent definition 计算 revision，所以只修改 Prompt 文件也会产生新的 revision。
 
 Skill 通过 ID 映射到 `apps/agent/skills/<id>/SKILL.md`。密钥不写入 YAML。
 

@@ -12,8 +12,10 @@ const vector = (x: number, y: number) => [x, y, ...Array.from({ length: 1534 }, 
 
 const document = (userId: string, sourceId: string, content: string) => ({
   userId,
-  sourceType: "record" as const,
+  sourceType: "record_text" as const,
   sourceId,
+  recordId: sourceId,
+  mediaId: null,
   content,
   contentHash: `hash-${userId}-${sourceId}-${content}`,
 });
@@ -27,7 +29,7 @@ test("sqlite memory index searches only within the user partition", async () => 
     await index.replace(document("u2", "c", "u2 closer"), vector(1, 0.01));
     await index.replace(document("u1", "b", "u1 second"), vector(0.9, 0.1));
 
-    const hits = await index.search({ userId: "u1", sourceType: "record", embedding: vector(1, 0), limit: 10 });
+    const hits = await index.search({ userId: "u1", sourceTypes: ["record_text", "image", "audio"], embedding: vector(1, 0), limit: 10 });
     assert.deepEqual(hits.map(hit => hit.sourceId), ["a", "b"]);
     assert.equal(hits.every(hit => hit.userId === "u1"), true);
     assert.equal(hits.some(hit => hit.sourceId === "c"), false);
@@ -54,7 +56,7 @@ test("sqlite memory index replaces, detects current hash, and removes derived da
 
     await index.remove(second);
     assert.equal((await db.selectFrom("vector_items").selectAll().where("user_id", "=", "u1").execute()).length, 0);
-    assert.deepEqual(await index.search({ userId: "u1", sourceType: "record", embedding: vector(0, 1), limit: 10 }), []);
+    assert.deepEqual(await index.search({ userId: "u1", sourceTypes: ["record_text", "image", "audio"], embedding: vector(0, 1), limit: 10 }), []);
   } finally {
     await db.destroy();
     await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true });
