@@ -1,4 +1,4 @@
 version: 1
-reviewed_through: 104e6514fc830cd2bb316e55cd5b72c3e9f1173a
-reviewed_commit_message: "feat: complete Fanto memory-enabled agent MVP"
+reviewed_through: 6ce73fa0fdab2a6423d1e4f57c6a4f22aebddea4
+reviewed_commit_message: "feat(agent): stream tool activity events"
 meaning: "All repository changes through reviewed_through have completed documentation impact review."
