@@ -31,7 +31,7 @@ const sessions = new AgentSessionManager(
 const tasks = new AgentTaskRepository(fromProjectRoot(process.env.AGENT_SESSION_DB, "data/agent-sessions.sqlite"));
 const runner = new TaskRunner(tasks, sessions, registry);
 runner.start();
-const app = createApp(process.env.AGENT_TOKEN ?? "", registry, sessions, tasks, runner);
+const app = createApp(process.env.AGENT_TOKEN ?? "", registry, sessions, tasks, runner, new Set(["default-user"]));
 const server = serve({ fetch: app.fetch, hostname: "0.0.0.0", port }, info => {
   console.log(`Agent service listening on port ${info.port}`);
 });

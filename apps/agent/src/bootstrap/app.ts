@@ -10,7 +10,7 @@ import { createAgentRoutes } from "../http/agent-route.js";
 import { createSessionRoutes } from "../http/session-route.js";
 import { createTaskRoutes } from "../http/task-route.js";
 
-export function createApp(token: string, registry: AgentRegistry, sessions: AgentSessionManager, tasks: AgentTaskRepository, runner: TaskRunner): Hono {
+export function createApp(token: string, registry: AgentRegistry, sessions: AgentSessionManager, tasks: AgentTaskRepository, runner: TaskRunner, allowedUserIds?: ReadonlySet<string>): Hono {
   if (!token.trim()) throw new Error("AGENT_TOKEN is required");
   const app = new Hono();
   app.get("/health", c => c.json({ status: "ok" }));
@@ -20,6 +20,12 @@ export function createApp(token: string, registry: AgentRegistry, sessions: Agen
     allowMethods: ["GET", "POST", "OPTIONS"],
   }));
   app.use("/api/*", bearerAuth({ token }));
+  app.use("/api/*", async (c, next) => {
+    if (c.req.method === "OPTIONS") return next();
+    const userId = c.req.header("x-user-id")?.trim();
+    if (allowedUserIds && (!userId || !allowedUserIds.has(userId))) return c.json({ error: "Unauthorized" }, 401);
+    await next();
+  });
   app.use("/api/agent/*", bodyLimit({ maxSize: 64 * 1024 }));
   app.route("/api/agent", createSessionRoutes(registry, sessions));
   app.route("/api/agent", createAgentRoutes(registry, sessions));

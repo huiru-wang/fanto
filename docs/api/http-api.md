@@ -6,7 +6,7 @@
 { "success": true, "result": {}, "errorCode": null, "errorMsg": null }
 ```
 
-除 `GET /health` 外，请求必须带 `x-user-id`。值需匹配 `[A-Za-z0-9][A-Za-z0-9_-]{0,127}`。当前没有正式认证；该 Header 仅用于用户隔离。
+除 `GET /health` 外，请求必须带 `x-user-id`。当前运行入口只允许 `default-user`；其他 user-id 即使格式合法也返回 `401 UNAUTHORIZED`。这仍是测试期访问边界，不是正式认证。
 
 ## 健康检查
 
@@ -109,7 +109,7 @@
 
 ## 独立 Agent 服务
 
-Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 可通过 `FantoServerClient` 调用 Business Server 的 `record_list`、`record_search`、`record_get` 三个只读工具；Tool schema 不接受 `userId`，实际用户身份来自 Session Run Context，并由 Client 转成 Business Server 的 `x-user-id`。除 `GET /health` 外，Agent HTTP 接口要求：
+Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 可通过 `FantoServerClient` 调用 Business Server 的 `record_list`、`record_search`、`record_get` 三个只读工具；Tool schema 不接受 `userId`，实际用户身份来自 Session Run Context，并由 Client 转成 Business Server 的 `x-user-id`。除 `GET /health` 外，Agent HTTP 接口要求以下 Header，且当前运行入口只允许 `X-User-Id: default-user`：
 
 ```text
 Authorization: Bearer <AGENT_TOKEN>

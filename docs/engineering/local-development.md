@@ -6,6 +6,7 @@
 - pnpm 10.11.0。
 - 需要媒体理解、转写或向量索引时，准备 OSS、DashScope 与 Embedding 凭据。
 - iOS 客户端使用 Xcode / SwiftUI。
+- H5 使用 React + Vite。
 
 ## Business Server
 
@@ -35,6 +36,22 @@ pnpm --filter @fanto/agent dev
 ```
 
 默认监听 3001。完整调用流程见 [apps/agent/README.md](../../apps/agent/README.md)。
+
+## H5
+
+先启动 Business Server 与 Agent Runtime，再在仓库根目录运行：
+
+```bash
+pnpm dev:h5
+```
+
+H5 开发服务器会把 `/api/agent/*` 代理到 `127.0.0.1:3001`，其余 `/api/*` 代理到 `127.0.0.1:3000`。生产构建：
+
+```bash
+pnpm build:h5
+```
+
+手工部署环境可运行 `deploy/manual/publish-h5.sh`，将构建产物同步到 `/var/www/fanto-h5`；配套 Nginx 配置会从该目录提供 SPA。
 
 ## 数据文件
 
@@ -68,4 +85,4 @@ pnpm vector:rebuild
 pnpm --filter @fanto/server seed:creation-showcase
 ```
 
-`memory:rebuild` 会 reset 可重建的 Memory 派生索引，并按批次重新索引所有用户当前为 `processed` 的 Records；执行前应确认 Embedding 配置可用。它不会删除 Record / Media / Creation 等业务表。当前根 package 仍保留 `dev:h5` / `build:h5` 脚本，但仓库没有 `apps/h5` package，因此它们不是有效的本地运行入口。
+`memory:rebuild` 会 reset 可重建的 Memory 派生索引，并按批次重新索引所有用户当前为 `processed` 的 Records；执行前应确认 Embedding 配置可用。它不会删除 Record / Media / Creation 等业务表。

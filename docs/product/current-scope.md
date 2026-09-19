@@ -9,7 +9,7 @@
 | Server | 可运行，负责 Record、Media、Memory / Retrieval、Creation / Proposal |
 | Agent Runtime | 可独立运行，负责 Agent Session、流式执行、异步任务与工作区 |
 | iOS | 可运行；Record 读取、Creation / Proposal 主要链路已接 Server；Fanto 已接单默认 Session 的文本多轮对话客户端 |
-| H5 | 当前仓库不存在可运行产品工程 |
+| H5 | 可运行；提供响应式 Record 文本记录与 Fanto 文本多轮对话测试客户端，适配 PC / iPad / 手机 |
 
 ## Record 与 Media
 
@@ -25,6 +25,8 @@
 当前 iOS 已从 Server 读取 Record 列表并用于日历 / Timeline，但“新建记录”仍只写入本地 Store，没有调用 Server 创建接口；媒体上传也没有在 iOS 端形成完整写入链路。
 
 当前 iOS 中间 Fanto Tab 通过 Agent Runtime 的 Session、History 与 SSE Stream 接口支持开发态文本多轮对话。它只恢复最近 10 条历史，在 Keychain 保存一个默认 Session ID，不支持会话切换、新话题、跨设备恢复、Markdown 富文本、媒体、来源引用、Tool 产品效果或正式认证。Agent 网关若将 HTTP 转至 HTTPS，真机联调依赖系统信任该 HTTPS 证书；客户端不接受不受信任的证书。
+
+当前 H5 位于 `apps/h5`，只覆盖测试所需的 Record 与 Agent 基础能力：查看 / 创建 / 语义搜索文本 Record、恢复一个默认 Agent Session、读取历史、POST SSE 流式多轮对话和新建会话。H5 不提供 Creation / Proposal 页面，也不提供正式登录。测试客户端固定使用 `default-user`，Agent Bearer Token 被直接编译进 H5 bundle，因此只适用于受控测试环境。
 
 ## Memory / Retrieval
 
@@ -70,6 +72,7 @@ Agent Runtime 已通过 Business Server HTTP 接入 `record_get`、`record_list`
 
 - 业务数据库使用 SQLite；向量索引使用同一数据库中的 sqlite-vec。
 - Server 的 Record postprocess queue 是进程内机制，不持久化、不重试、不支持多实例恢复。
-- Server 的 `x-user-id` 是开发期用户隔离，不是正式认证。
+- Server 的 `x-user-id` 仍不是正式认证；当前运行入口额外只允许 `default-user`，用于公网测试期收紧访问范围。
 - iOS 当前仍硬编码 HTTP ECS 地址和演示用户。
-- Agent Runtime 使用 Bearer Token + `X-User-Id`，但 bash 的宿主机执行仍只适合开发环境；生产环境需要真正的容器或微虚拟机隔离。
+- H5 固定使用 `default-user` 并内置测试 Agent Token；Token 对能访问前端 bundle 的用户可见，因此该方式只用于测试。
+- Agent Runtime 使用 Bearer Token + `X-User-Id`，当前运行入口同样只允许 `default-user`；bash 的宿主机执行仍只适合开发环境，生产环境需要真正的容器或微虚拟机隔离。

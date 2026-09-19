@@ -27,7 +27,7 @@ const jsonBody = async (response: Response) => {
   try { return redact(JSON.parse(await response.clone().text())); } catch { return null; }
 };
 
-export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository, memory?: Pick<MemoryService, "searchRecords">) {
+export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository, memory?: Pick<MemoryService, "searchRecords">, allowedUserIds?: ReadonlySet<string>) {
   const app = new Hono();
   app.onError((error, c) => {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });
@@ -41,7 +41,8 @@ export function createApp(records: RecordRepository, media: SqliteMediaRepositor
   });
   app.use("/api/*", async (c, next) => {
     if (c.req.method === "OPTIONS") return next();
-    if (!validUserId(c.req.header("x-user-id")?.trim())) return c.json({ success: false, errorCode: "UNAUTHORIZED", errorMsg: "Missing or invalid x-user-id" }, 401);
+    const userId = c.req.header("x-user-id")?.trim();
+    if (!validUserId(userId) || (allowedUserIds && !allowedUserIds.has(userId))) return c.json({ success: false, errorCode: "UNAUTHORIZED", errorMsg: "Unauthorized" }, 401);
     await next();
   });
   app.get("/health", c => c.json({ status: "ok", timestamp: nowIso() }));

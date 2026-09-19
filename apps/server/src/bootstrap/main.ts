@@ -52,7 +52,7 @@ registerRecordPostprocessListener(
 );
 
 const server = serve({
-  fetch: createApp(records, media, queue, oss, creationRead, creationProposals, memory).fetch,
+  fetch: createApp(records, media, queue, oss, creationRead, creationProposals, memory, new Set(["default-user"])).fetch,
   port: config.port,
   hostname: config.host,
 });
