@@ -50,6 +50,12 @@ export function createApp(records: RecordRepository, media: SqliteMediaRepositor
   app.route("/api/records", createRecordRoutes(records, media, queue, memory));
   if (creationRead) app.route("/api", createCreationReadRoutes(creationRead));
   if (creationProposals) app.route("/api", createCreationProposalRoutes(creationProposals));
+  app.get("/api/media/:id/url", async c => {
+    const asset = await media.findMedia(c.req.param("id"), requireUserId(c.req.raw));
+    return asset?.status === "ready"
+      ? c.json({ success: true, result: { url: oss.readUrl(asset.objectKey) }, errorCode: null, errorMsg: null })
+      : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404);
+  });
   app.get("/api/media/:id", async c => { const asset = await media.findMedia(c.req.param("id"), requireUserId(c.req.raw)); return asset?.status === "ready" ? c.redirect(oss.readUrl(asset.objectKey), 302) : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404); });
   return app;
 }

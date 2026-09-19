@@ -1067,3 +1067,341 @@ input:focus-visible {
     transition-duration: .01ms !important;
   }
 }
+
+/* Record multimodal composer */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.draft-media-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 2px 12px 14px 0;
+}
+
+.draft-media {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(248,247,243,.84);
+}
+
+.draft-media.image {
+  aspect-ratio: 4 / 3;
+}
+
+.draft-media.image > img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.draft-media.audio {
+  grid-column: 1 / -1;
+  padding: 13px 42px 12px 13px;
+}
+
+.draft-audio {
+  display: grid;
+  gap: 7px;
+}
+
+.draft-audio audio {
+  width: 100%;
+  height: 34px;
+}
+
+.draft-audio span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.media-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(25,25,23,.68);
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+
+.composer-error {
+  margin: 0 12px 10px 0;
+  padding: 8px 11px;
+  border-radius: 11px;
+  color: #835e59;
+  background: rgba(154,93,88,.08);
+  font-size: 11px;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 1px 0 0;
+}
+
+.media-actions,
+.composer-save {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.composer-tool,
+.composer-date {
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 13px;
+  color: #77746c;
+  background: transparent;
+  font-size: 11px;
+}
+
+.composer-tool {
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.composer-tool:hover:not(:disabled),
+.composer-date:hover {
+  color: var(--text);
+  background: rgba(238,235,227,.72);
+}
+
+.composer-tool:disabled {
+  cursor: default;
+  opacity: .35;
+}
+
+.composer-tool.recording {
+  color: #9a5d58;
+  background: rgba(154,93,88,.08);
+}
+
+.composer-date {
+  position: relative;
+  padding: 0 9px;
+  border: 1px solid transparent;
+}
+
+.composer-date input {
+  width: 132px;
+  border: 0;
+  outline: 0;
+  color: inherit;
+  background: transparent;
+  font-size: 11px;
+}
+
+.composer-date input::-webkit-calendar-picker-indicator {
+  opacity: .45;
+  cursor: pointer;
+}
+
+/* Timeline media */
+.record-media-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 11px;
+}
+
+.record-image-grid {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 6px;
+  overflow: hidden;
+  border-radius: 15px;
+}
+
+.record-image-grid.count-1 {
+  grid-template-columns: minmax(0, 340px);
+}
+
+.record-image-grid.count-2,
+.record-image-grid.count-3,
+.record-image-grid.count-4 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.record-image,
+.record-image-loading,
+.record-image-fallback {
+  min-height: 120px;
+  overflow: hidden;
+  border-radius: 13px;
+  background: #ebe9e2;
+}
+
+.record-image {
+  display: block;
+  aspect-ratio: 4 / 3;
+}
+
+.record-image img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  transition: transform 180ms ease;
+}
+
+.record-image:hover img {
+  transform: scale(1.015);
+}
+
+.record-image-loading,
+.record-image-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
+.record-image-loading svg,
+.audio-loading svg {
+  animation: spin .8s linear infinite;
+}
+
+.record-audio {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 8px;
+  padding: 11px 13px 12px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: rgba(255,255,255,.48);
+}
+
+.record-audio-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #77746c;
+  font-size: 11px;
+}
+
+.record-audio audio {
+  width: 100%;
+  height: 34px;
+}
+
+.audio-loading,
+.audio-retry {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted-2);
+  font-size: 11px;
+}
+
+.audio-retry {
+  width: fit-content;
+  border: 0;
+  padding: 0;
+  color: #77746c;
+  background: transparent;
+  cursor: pointer;
+}
+
+.audio-transcript {
+  margin: 0 !important;
+  padding-top: 2px;
+  color: var(--muted) !important;
+  font-size: 11px !important;
+  line-height: 1.65 !important;
+}
+
+@media (max-width: 840px) {
+  .composer-actions {
+    align-items: flex-end;
+    flex-direction: column;
+  }
+
+  .media-actions,
+  .composer-save {
+    width: 100%;
+  }
+
+  .composer-save {
+    justify-content: flex-end;
+  }
+
+  .composer-date {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .draft-media-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding-right: 8px;
+  }
+
+  .media-actions {
+    display: grid;
+    grid-template-columns: repeat(3, auto) minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .composer-tool {
+    width: 38px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .composer-tool span {
+    display: none;
+  }
+
+  .composer-tool.recording {
+    width: auto;
+    padding: 0 9px;
+  }
+
+  .composer-tool.recording span {
+    display: inline;
+  }
+
+  .composer-date {
+    justify-self: end;
+  }
+
+  .composer-date input {
+    width: 118px;
+  }
+
+  .record-image-grid {
+    width: 100%;
+  }
+}

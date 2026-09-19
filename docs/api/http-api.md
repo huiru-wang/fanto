@@ -84,10 +84,11 @@
 | POST | `/api/uploads` | 根据 MIME 创建上传凭据，返回直传 URL |
 | POST | `/api/uploads/:mediaId/complete` | 校验对象并将媒体标记 ready |
 | GET | `/api/media/:mediaId` | 已就绪且属于当前用户的媒体重定向到 OSS |
+| GET | `/api/media/:mediaId/url` | 返回已就绪媒体的短期 OSS 签名读取地址 |
 
 创建上传体：`{ mimeType, bytes }`。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
 
-`GET /api/media/:mediaId` 必须携带 `x-user-id`。不存在、未完成或不属于该用户的媒体统一返回 `404 NOT_FOUND`；成功时仅该业务请求返回 302 到短期 OSS 签名地址。
+`GET /api/media/:mediaId` 与 `GET /api/media/:mediaId/url` 都必须携带 `x-user-id`。不存在、未完成或不属于该用户的媒体统一返回 `404 NOT_FOUND`；前者成功时返回 302 到短期 OSS 签名地址，后者返回 `{ url }` JSON，供不能附加自定义 Header 的浏览器 `<img>` / `<audio>` 元素使用。
 
 ## 脉络与待确认提案
 

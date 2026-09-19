@@ -1,6 +1,8 @@
-import { ArrowDown, ArrowUp, Clock3, RefreshCw, Search } from "lucide-react";
+import { ArrowDown, Clock3, RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createRecord, getRecord, listRecords, searchRecords, type RecordItem } from "../api/records";
+import { getRecord, listRecords, searchRecords, type RecordItem } from "../api/records";
+import { RecordComposer } from "../components/RecordComposer";
+import { RecordMediaList } from "../components/RecordMedia";
 
 const statusText: Record<RecordItem["status"], string> = {
   pending: "等待整理",
@@ -21,7 +23,6 @@ function timeText(value: string) {
 
 export function RecordsPage() {
   const [records, setRecords] = useState<RecordItem[]>([]);
-  const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<RecordItem[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -29,7 +30,6 @@ export function RecordsPage() {
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -98,22 +98,6 @@ export function RecordsPage() {
     return [...grouped.entries()];
   }, [visibleRecords]);
 
-  const submit = async () => {
-    const text = draft.trim();
-    if (!text || saving) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const record = await createRecord(text);
-      setRecords(current => [record, ...current]);
-      setDraft("");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "记录没有保存成功");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;
     setLoadingMore(true);
@@ -142,25 +126,7 @@ export function RecordsPage() {
         </button>
       </header>
 
-      <section className="record-composer panel">
-        <textarea
-          value={draft}
-          onChange={event => setDraft(event.target.value)}
-          placeholder="此刻想到什么？"
-          rows={4}
-          maxLength={20_000}
-          onKeyDown={event => {
-            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") void submit();
-          }}
-        />
-        <div className="composer-foot">
-          <span className="composer-hint">⌘ / Ctrl + Enter 保存</span>
-          <button className="send-button" disabled={!draft.trim() || saving} onClick={() => void submit()}>
-            {saving ? <span className="button-loading" /> : <ArrowUp size={18} />}
-            <span>{saving ? "保存中" : "记录"}</span>
-          </button>
-        </div>
-      </section>
+      <RecordComposer onCreated={record => setRecords(current => [record, ...current])} />
 
       <div className="record-toolbar">
         <div className="search-field">
@@ -193,7 +159,8 @@ export function RecordsPage() {
                     <time>{timeText(record.eventAt)}</time>
                     <div className="timeline-node" />
                     <div className="record-content">
-                      <p>{record.content.text}</p>
+                      {record.content.text && <p>{record.content.text}</p>}
+                      <RecordMediaList media={record.media ?? []} />
                       <div className="record-meta">
                         <span className={`record-status ${record.status}`}>{statusText[record.status]}</span>
                         {record.content.blocks.length > 0 && <span>{record.content.blocks.length} 个媒体</span>}

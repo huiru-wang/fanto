@@ -45,7 +45,7 @@ pnpm --filter @fanto/agent dev
 pnpm dev:h5
 ```
 
-H5 开发服务器会把 `/api/agent/*` 代理到 `127.0.0.1:3001`，其余 `/api/*` 代理到 `127.0.0.1:3000`。生产构建：
+H5 开发服务器会把 `/api/agent/*` 代理到 `127.0.0.1:3001`，其余 `/api/*` 代理到 `127.0.0.1:3000`。图片和音频上传仍走 Server 返回的 OSS 签名 URL，由浏览器直接 PUT；用于 H5 的 OSS Bucket CORS 需要允许当前 H5 Origin、`PUT` 方法和 `Content-Type` Header。生产构建：
 
 ```bash
 pnpm build:h5

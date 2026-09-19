@@ -2,6 +2,29 @@ import { requestJson } from "./http";
 
 export type RecordStatus = "pending" | "updated" | "processing" | "processed";
 
+export type RecordMedia =
+  | {
+      mediaId: string;
+      type: "image";
+      url: string;
+      description?: string | null;
+    }
+  | {
+      mediaId: string;
+      type: "audio";
+      url: string;
+      durationMs?: number | null;
+      asr?: {
+        status?: string;
+        transcript?: string | null;
+        model?: string | null;
+        emotion?: string | null;
+        language?: string | null;
+        completedAt?: string | null;
+        errorCode?: string | null;
+      } | null;
+    };
+
 export type RecordItem = {
   id: string;
   source: string;
@@ -17,6 +40,7 @@ export type RecordItem = {
       | { type: "audio"; mediaId: string; transcription?: string }
     >;
   };
+  media: RecordMedia[];
 };
 
 type RecordPage = {
@@ -52,14 +76,18 @@ export async function searchRecords(query: string): Promise<RecordSearchHit[]> {
   return result.data;
 }
 
-export async function createRecord(text: string): Promise<RecordItem> {
+export async function createRecord(input: {
+  text: string;
+  mediaIds: string[];
+  eventAt: string;
+}): Promise<RecordItem> {
   return requestJson<RecordItem>("/api/records", {
     method: "POST",
     body: JSON.stringify({
-      text,
-      media: [],
+      text: input.text,
+      media: input.mediaIds.map(mediaId => ({ mediaId })),
       source: "h5",
-      eventAt: new Date().toISOString(),
+      eventAt: input.eventAt,
     }),
   });
 }
