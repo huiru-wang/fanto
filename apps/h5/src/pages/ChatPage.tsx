@@ -7,6 +7,7 @@ import {
   type AgentHistoryMessage,
 } from "../api/agent";
 import { ApiError } from "../api/http";
+import { ChatMarkdown } from "../components/ChatMarkdown";
 import { AGENT_SESSION_KEY } from "../config";
 
 type MessageState = "complete" | "processing" | "streaming" | "stopped" | "failed";
@@ -210,7 +211,9 @@ export function ChatPage() {
                   )}
                   <div className="message-body">
                     {message.text ? (
-                      <p>{message.text}</p>
+                      message.role === "assistant"
+                        ? <ChatMarkdown text={message.text} />
+                        : <p>{message.text}</p>
                     ) : (
                       <div className="thinking-row">
                         <span className="thinking-dots"><i /><i /><i /></span>

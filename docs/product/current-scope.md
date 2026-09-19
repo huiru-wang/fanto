@@ -26,7 +26,7 @@
 
 当前 iOS 中间 Fanto Tab 通过 Agent Runtime 的 Session、History 与 SSE Stream 接口支持开发态文本多轮对话。它只恢复最近 10 条历史，在 Keychain 保存一个默认 Session ID，不支持会话切换、新话题、跨设备恢复、Markdown 富文本、媒体、来源引用、Tool 产品效果或正式认证。Agent 网关若将 HTTP 转至 HTTPS，真机联调依赖系统信任该 HTTPS 证书；客户端不接受不受信任的证书。
 
-当前 H5 位于 `apps/h5`，覆盖测试所需的 Record 与 Agent 基础能力：查看 / 创建 / 语义搜索 Record，支持文字、JPEG/PNG/WebP 图片、M4A/MP3/WAV 音频、浏览器录音、发生时间选择，以及时间线图片缩略图和音频播放；同时支持恢复一个默认 Agent Session、读取历史、POST SSE 流式多轮对话和新建会话。H5 不提供 Creation / Proposal 页面，也不提供正式登录。测试客户端固定使用 `default-user`，Agent Bearer Token 被直接编译进 H5 bundle，因此只适用于受控测试环境。
+当前 H5 位于 `apps/h5`，覆盖测试所需的 Record 与 Agent 基础能力：查看 / 创建 / 语义搜索 Record，支持文字、JPEG/PNG/WebP 图片、M4A/MP3/WAV 音频、浏览器录音、发生时间选择，以及时间线图片缩略图和音频播放；同时支持恢复一个默认 Agent Session、兼容字符串或结构化 content 的历史消息、POST SSE 流式多轮对话和新建会话。Assistant 消息使用 Markdown 渲染，并将 `fanto-media://<mediaId>` 图片引用解析为经过 Server 鉴权的短期 OSS 地址。H5 不提供 Creation / Proposal 页面，也不提供正式登录。测试客户端固定使用 `default-user`，Agent Bearer Token 被直接编译进 H5 bundle，因此只适用于受控测试环境。
 
 ## Memory / Retrieval
 

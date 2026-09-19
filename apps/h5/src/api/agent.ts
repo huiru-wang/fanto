@@ -11,7 +11,7 @@ type HistoryEntry = {
   id: string;
   message?: {
     role?: string;
-    content?: string;
+    content?: unknown;
   };
 };
 
@@ -35,6 +35,28 @@ function agentHeaders(): Headers {
   return headers;
 }
 
+export function extractMessageText(content: unknown): string {
+  if (typeof content === "string") return content;
+
+  if (Array.isArray(content)) {
+    return content
+      .map(part => {
+        if (typeof part === "string") return part;
+        if (!part || typeof part !== "object") return "";
+        const value = part as { type?: unknown; text?: unknown };
+        return value.type === "text" && typeof value.text === "string" ? value.text : "";
+      })
+      .join("");
+  }
+
+  if (content && typeof content === "object") {
+    const text = (content as { text?: unknown }).text;
+    return typeof text === "string" ? text : "";
+  }
+
+  return "";
+}
+
 export async function createAgentSession(): Promise<string> {
   const result = await requestJson<{ sessionId: string }>("/api/agent/sessions", {
     method: "POST",
@@ -53,7 +75,7 @@ export async function fetchAgentHistory(sessionId: string): Promise<AgentHistory
   return result.data
     .flatMap((entry): AgentHistoryMessage[] => {
       const role = entry.message?.role;
-      const text = entry.message?.content?.trim();
+      const text = extractMessageText(entry.message?.content).trim();
       if ((role !== "user" && role !== "assistant") || !text) return [];
       return [{ id: entry.id, role, text }];
     })
