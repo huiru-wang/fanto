@@ -25,7 +25,7 @@
 | `DASHSCOPE_VL_MODEL` | 图片理解，默认 `qwen3-vl-flash` |
 | `DASHSCOPE_ASR_MODEL` | 音频转写，默认 `qwen3-asr-flash` |
 
-注意：当前代码中的 OSS 默认 Region 仍是 `oss-cn-hangzhou`。如果配置计划准备调整它，在代码真正变更前不要把目标值写成当前事实。
+当前 `fanto` OSS Bucket 使用无地域属性（中国内地），默认 Region 为 `oss-rg-china-mainland`，公网 Endpoint 为 `https://oss-rg-china-mainland.aliyuncs.com`。生产环境应显式配置 `OSS_ENDPOINT`，避免误用地域型 Endpoint。
 
 ## Agent Runtime
 

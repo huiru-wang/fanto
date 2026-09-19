@@ -43,7 +43,7 @@ export function loadConfig(): AppConfig {
     port: parseInt(process.env.PORT ?? "3000", 10),
     host: process.env.HOST ?? "0.0.0.0",
     oss: {
-      region: process.env.OSS_REGION ?? "oss-cn-hangzhou",
+      region: process.env.OSS_REGION ?? "oss-rg-china-mainland",
       endpoint: ossEndpoint,
       bucket: process.env.OSS_BUCKET ?? "",
       accessKeyId: process.env.OSS_ACCESS_KEY_ID ?? "",
