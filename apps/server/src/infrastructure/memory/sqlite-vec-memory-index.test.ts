@@ -8,7 +8,7 @@ import { createDatabase, runMigrations } from "../database/database.js";
 import { rebuildMemoryIndex } from "./rebuild-memory-index.js";
 import { SqliteVecMemoryIndex } from "./sqlite-vec-memory-index.js";
 
-const vector = (x: number, y: number) => [x, y, ...Array.from({ length: 1534 }, () => 0)];
+const vector = (x: number, y: number) => [x, y, ...Array.from({ length: 766 }, () => 0)];
 
 const document = (userId: string, sourceId: string, content: string) => ({
   userId,

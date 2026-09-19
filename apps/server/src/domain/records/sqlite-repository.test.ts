@@ -38,7 +38,7 @@ test("postprocess writes audio transcription and annotations to Record media", a
 test("record memory indexes processed Record content through MemoryService", async () => {
   const path = `/tmp/fanto-vector-${randomUUID()}.sqlite`; const db = createDatabase(path); await runMigrations(db);
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({ data: [{ embedding: Array.from({ length: 1536 }, () => 0.1) }] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  globalThis.fetch = async () => new Response(JSON.stringify({ data: [{ embedding: Array.from({ length: 768 }, () => 0.1) }] }), { status: 200, headers: { "Content-Type": "application/json" } });
   try {
     const now = nowIso(); const mediaId = randomUUID(); const imageId = randomUUID(); await db.insertInto("users").values({ user_id: "u", wx_openid: "u", created_at: now }).execute();
     await db.insertInto("media_assets").values({ media_id: mediaId, user_id: "u", object_key: "private/audio", media_type: "audio", mime_type: "audio/mp4", bytes: 3, status: "ready", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now }).execute();
@@ -51,7 +51,7 @@ test("record memory indexes processed Record content through MemoryService", asy
 
     const memory = new MemoryService(
       new SqliteVecMemoryIndex(db),
-      new EmbeddingsClient("test", "https://embedding.test/v1", "test", 1536),
+      new EmbeddingsClient("test", "https://embedding.test/v1", "test", 768),
     );
     await memory.replaceRecord(completed);
     const hits = await memory.searchRecords({ userId: "u", query: "徒步", limit: 5 });

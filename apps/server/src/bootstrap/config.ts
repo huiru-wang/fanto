@@ -9,12 +9,8 @@ export interface AppConfig {
   sqlitePath: string;
   port: number;
   host: string;
-  embeddingApiKey: string | null;
-  embeddingApiBase: string;
-  embeddingModel: string;
-  embeddingDimension: number;
   oss: { region: string; endpoint?: string; bucket: string; accessKeyId: string; accessKeySecret: string };
-  dashscope: { apiKey: string; visionBaseUrl: string; asrBaseUrl: string; visionModel: string; asrModel: string };
+  dashscope: { apiKey: string; baseUrl: string; embeddingModel: string; embeddingDimension: number; visionModel: string; asrModel: string };
 }
 
 export function loadEnv(path = ".env") {
@@ -35,7 +31,9 @@ export function loadEnv(path = ".env") {
 
 export function loadConfig(): AppConfig {
   const sqlitePath = resolve(process.env.SQLITE_PATH ?? "../../data/fanto.sqlite");
+  const embeddingDimension = parseInt(process.env.DASHSCOPE_EMBEDDING_DIMENSION ?? "768", 10);
   mkdirSync(dirname(sqlitePath), { recursive: true });
+  if (embeddingDimension !== 768) throw new Error("DASHSCOPE_EMBEDDING_DIMENSION must be 768");
   const endpoint = process.env.OSS_ENDPOINT?.trim();
   const ossEndpoint = endpoint ? (endpoint.startsWith("http://") || endpoint.startsWith("https://") ? endpoint : `https://${endpoint}`) : undefined;
   if (ossEndpoint?.includes("-internal.")) throw new Error("OSS_ENDPOINT must be publicly reachable");
@@ -44,10 +42,6 @@ export function loadConfig(): AppConfig {
     sqlitePath,
     port: parseInt(process.env.PORT ?? "3000", 10),
     host: process.env.HOST ?? "0.0.0.0",
-    embeddingApiKey: process.env.EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || null,
-    embeddingApiBase: process.env.EMBEDDING_API_BASE ?? process.env.OPENAI_API_BASE ?? "https://api.openai.com/v1",
-    embeddingModel: process.env.EMBEDDING_MODEL ?? "text-embedding-v2",
-    embeddingDimension: parseInt(process.env.EMBEDDING_DIMENSION ?? "1536", 10),
     oss: {
       region: process.env.OSS_REGION ?? "oss-cn-hangzhou",
       endpoint: ossEndpoint,
@@ -57,8 +51,9 @@ export function loadConfig(): AppConfig {
     },
     dashscope: {
       apiKey: process.env.DASHSCOPE_API_KEY ?? "",
-      visionBaseUrl: process.env.DASHSCOPE_VL_BASE_URL ?? process.env.DASHSCOPE_BASE_URL ?? "https://ws-2gkw6cbbhgg7bqz5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
-      asrBaseUrl: process.env.DASHSCOPE_ASR_BASE_URL ?? "https://ws-2gkw6cbbhgg7bqz5.cn-beijing.maas.aliyuncs.com",
+      baseUrl: process.env.DASHSCOPE_BASE_URL ?? "https://ws-2gkw6cbbhgg7bqz5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+      embeddingModel: process.env.DASHSCOPE_EMBEDDING_MODEL ?? "qwen3.7-text-embedding-flash",
+      embeddingDimension,
       visionModel: process.env.DASHSCOPE_VL_MODEL ?? "qwen3-vl-flash",
       asrModel: process.env.DASHSCOPE_ASR_MODEL ?? "qwen3-asr-flash",
     },

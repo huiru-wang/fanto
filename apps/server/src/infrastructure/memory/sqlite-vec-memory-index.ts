@@ -149,7 +149,7 @@ export class SqliteVecMemoryIndex implements MemoryIndex {
     await this.db.transaction().execute(async trx => {
       await trx.deleteFrom("vector_items").execute();
       await sql`DROP TABLE IF EXISTS record_vectors`.execute(trx);
-      await sql`CREATE VIRTUAL TABLE record_vectors USING vec0(user_id text partition key, embedding float[1536])`.execute(trx);
+      await sql`CREATE VIRTUAL TABLE record_vectors USING vec0(user_id text partition key, embedding float[768])`.execute(trx);
     });
   }
 }

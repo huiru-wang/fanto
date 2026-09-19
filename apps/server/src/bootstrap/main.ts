@@ -32,10 +32,10 @@ const media = new SqliteMediaRepository(db);
 const creationRead = new CreationReadRepository(db);
 const creationProposals = new CreationProposalRepository(db);
 const embeddings = new EmbeddingsClient(
-  config.embeddingApiKey ?? "",
-  config.embeddingApiBase,
-  config.embeddingModel,
-  config.embeddingDimension,
+  config.dashscope.apiKey,
+  config.dashscope.baseUrl,
+  config.dashscope.embeddingModel,
+  config.dashscope.embeddingDimension,
 );
 const memoryIndex = new SqliteVecMemoryIndex(db);
 const memory = new MemoryService(memoryIndex, embeddings);
@@ -46,8 +46,8 @@ registerRecordPostprocessListener(
   records,
   media,
   oss,
-  new QwenImageUnderstanding(config.dashscope.apiKey, config.dashscope.visionBaseUrl, config.dashscope.visionModel),
-  new QwenAudioTranscription(config.dashscope.apiKey, config.dashscope.asrBaseUrl, config.dashscope.asrModel),
+  new QwenImageUnderstanding(config.dashscope.apiKey, config.dashscope.baseUrl, config.dashscope.visionModel),
+  new QwenAudioTranscription(config.dashscope.apiKey, config.dashscope.baseUrl, config.dashscope.asrModel),
   memory,
 );
 

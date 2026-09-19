@@ -15,17 +15,15 @@
 | --- | --- |
 | `SQLITE_PATH` | 业务 SQLite 路径，默认 `../../data/fanto.sqlite` |
 | `PORT` / `HOST` | 默认 `3000` / `0.0.0.0` |
-| `EMBEDDING_API_KEY` | Embedding 凭据；代码也允许回退 `OPENAI_API_KEY` |
-| `EMBEDDING_API_BASE` | Embedding API base；可回退 `OPENAI_API_BASE` |
-| `EMBEDDING_MODEL` | 当前默认 `text-embedding-v2` |
-| `EMBEDDING_DIMENSION` | 当前必须为 `1536` |
 | `OSS_REGION` | OSS Region |
 | `OSS_ENDPOINT` | 可选公开 Endpoint；拒绝 `-internal` 地址 |
 | `OSS_BUCKET` | OSS Bucket |
 | `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` | OSS 凭据 |
-| `DASHSCOPE_API_KEY` | 图片理解与 ASR 凭据 |
-| `DASHSCOPE_VL_BASE_URL` / `DASHSCOPE_VL_MODEL` | 图片理解 |
-| `DASHSCOPE_ASR_BASE_URL` / `DASHSCOPE_ASR_MODEL` | 音频转写 |
+| `DASHSCOPE_API_KEY` | 图片理解、音频转写与向量化共用的百炼凭据 |
+| `DASHSCOPE_BASE_URL` | 三类百炼调用共用的 OpenAI 兼容模式地址，默认北京 Workspace 地址 |
+| `DASHSCOPE_EMBEDDING_MODEL` / `DASHSCOPE_EMBEDDING_DIMENSION` | 文本向量化，默认 `qwen3.7-text-embedding-flash` / `768` |
+| `DASHSCOPE_VL_MODEL` | 图片理解，默认 `qwen3-vl-flash` |
+| `DASHSCOPE_ASR_MODEL` | 音频转写，默认 `qwen3-asr-flash` |
 
 注意：当前代码中的 OSS 默认 Region 仍是 `oss-cn-hangzhou`。如果配置计划准备调整它，在代码真正变更前不要把目标值写成当前事实。
 
