@@ -19,7 +19,10 @@ const fromProjectRoot = (value: string | undefined, fallback: string) => value ?
 const skills = new SkillLoader(resolve(appRoot, "skills"));
 const fantoServer = new FantoServerClient(process.env.FANTO_SERVER_BASE_URL ?? "http://127.0.0.1:3000");
 const factory = new HarnessFactory(new ToolRegistry(fantoServer), skills);
-const registry = new AgentRegistry(resolve(appRoot, "agents.yaml"), factory.models, skills);
+const registry = new AgentRegistry(resolve(appRoot, "agents.yaml"), factory.models, skills, {
+  provider: process.env.PROVIDER,
+  model: process.env.MODEL,
+});
 const sessions = new AgentSessionManager(
   factory,
   fromProjectRoot(process.env.AGENT_SESSION_DB, "data/agent-sessions.sqlite"),

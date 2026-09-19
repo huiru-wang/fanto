@@ -5,8 +5,13 @@ import type { SkillLoader } from "../skills/loader.js";
 export class AgentRegistry {
   private readonly definitions: ReadonlyMap<string, AgentDefinition>;
 
-  constructor(configPath: string, models: Models, skills: SkillLoader) {
-    const entries = readAgentDefinitions(configPath, models, skills.ids());
+  constructor(
+    configPath: string,
+    models: Models,
+    skills: SkillLoader,
+    modelDefaults: { provider?: string; model?: string } = {},
+  ) {
+    const entries = readAgentDefinitions(configPath, models, skills.ids(), modelDefaults);
     this.definitions = new Map(entries.map(definition => [definition.id, definition]));
   }
 

@@ -10,6 +10,7 @@ Node.js 22.19+。在仓库根目录执行：
 pnpm install
 cp apps/agent/.env.example apps/agent/.env
 # 编辑 .env，设置 AGENT_TOKEN 和 DEEPSEEK_API_KEY
+# PROVIDER / MODEL 可覆盖 agents.yaml defaults
 # FANTO_SERVER_BASE_URL 默认 http://127.0.0.1:3000
 pnpm --filter @fanto/agent dev
 ```

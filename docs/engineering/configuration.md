@@ -35,6 +35,7 @@
 | --- | --- |
 | `PORT` | Agent 服务端口，默认 3001 |
 | `AGENT_TOKEN` | HTTP Bearer Token |
+| `PROVIDER` / `MODEL` | 覆盖 `agents.yaml` 中的默认模型配置；未设置时使用 YAML defaults |
 | `DEEPSEEK_API_KEY` 等 | 模型 Provider 所需密钥 |
 | `FANTO_SERVER_BASE_URL` | Record Tool 访问 Business Server 的 base URL，默认 `http://127.0.0.1:3000` |
 | `AGENT_SESSION_DB` | Agent Session / Task SQLite |

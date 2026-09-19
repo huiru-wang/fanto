@@ -72,7 +72,12 @@ function readPromptFile(configPath: string, promptFile: string, agentId: string)
   return prompt;
 }
 
-export function readAgentDefinitions(path: string, models: Models, knownSkills: ReadonlySet<string>): AgentDefinition[] {
+export function readAgentDefinitions(
+  path: string,
+  models: Models,
+  knownSkills: ReadonlySet<string>,
+  modelDefaults: { provider?: string; model?: string } = {},
+): AgentDefinition[] {
   const parsed = parseDocument(readFileSync(path, "utf8"), { uniqueKeys: true });
   if (parsed.errors.length > 0) throw new Error(`Invalid agents.yaml: ${parsed.errors.map(error => error.message).join("; ")}`);
   const document = documentSchema.safeParse(parsed.toJS());
@@ -94,7 +99,8 @@ export function readAgentDefinitions(path: string, models: Models, knownSkills: 
       ?? (systemPromptFile ? readPromptFile(path, systemPromptFile, id) : undefined)
       ?? defaultPrompt
       ?? (defaultPromptFile ? readPromptFile(path, defaultPromptFile, id) : undefined);
-    const { systemPrompt: _defaultPrompt, systemPromptFile: _defaultPromptFile, ...defaults } = document.data.defaults;
+    const { systemPrompt: _defaultPrompt, systemPromptFile: _defaultPromptFile, ...yamlDefaults } = document.data.defaults;
+    const defaults = { ...yamlDefaults, ...modelDefaults };
     const merged = {
       ...defaults,
       ...overrides,
