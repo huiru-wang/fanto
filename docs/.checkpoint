@@ -1,4 +1,4 @@
 version: 1
-reviewed_through: 6ce73fa0fdab2a6423d1e4f57c6a4f22aebddea4
-reviewed_commit_message: "feat(agent): stream tool activity events"
+reviewed_through: 26c4835f9b9b324a8a15e869322464b844c28acf
+reviewed_commit_message: "fix(h5): restore chat history and render media"
 meaning: "All repository changes through reviewed_through have completed documentation impact review."

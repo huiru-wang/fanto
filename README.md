@@ -10,10 +10,9 @@ Fanto 目前处于 MVP 阶段，仓库包含：
 
 - `apps/server`：Hono + TypeScript 业务服务，负责 Record、Media、Creation / Proposal 与 Record 向量索引。
 - `apps/agent`：独立的 Pi `AgentHarness` 服务，负责 Agent Session、流式执行、异步任务、工作区与内置工具。
-- `apps/ios/fanto`：SwiftUI iOS 客户端，当前已接入 Record 读取以及 Creation / Proposal 主要读取与决策链路。
+- `apps/ios/fanto`：SwiftUI iOS 客户端，已实现 Record 读取、Creation / Proposal 主要链路与 Fanto 单 Session 对话代码；当前演示用户与公网 allowlist 尚未对齐。
+- `apps/h5`：React + Vite 响应式测试客户端，支持多模态 Record、语义搜索、Fanto 多轮对话、Markdown 与媒体消息渲染。
 - `packages/shared`：TypeScript 共享 API / Record 类型。
-
-当前没有可运行的 H5 产品工程。
 
 ## 快速启动
 

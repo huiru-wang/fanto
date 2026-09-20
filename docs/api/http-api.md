@@ -133,7 +133,7 @@ export AGENT_TOKEN='替换为服务端 AGENT_TOKEN'
 
 SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
   -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user_123' \
+  -H 'X-User-Id: default-user' \
   -H 'X-Trace-Id: trace_001' \
   -H 'Content-Type: application/json' \
   -d '{"agentId":"main"}' \
@@ -145,7 +145,7 @@ SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
 ```sh
 curl -N http://127.0.0.1:3001/api/agent/stream \
   -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user_123' \
+  -H 'X-User-Id: default-user' \
   -H 'X-Trace-Id: trace_002' \
   -H 'Content-Type: application/json' \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"你好\"}"
@@ -173,7 +173,7 @@ curl -N http://127.0.0.1:3001/api/agent/stream \
 ```sh
 curl -sS http://127.0.0.1:3001/api/agent/tasks \
   -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user_123' \
+  -H 'X-User-Id: default-user' \
   -H 'X-Trace-Id: trace_003' \
   -H 'Content-Type: application/json' \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"列出工作区文件\"}"

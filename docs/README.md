@@ -38,7 +38,7 @@
 
 `docs/.checkpoint` 记录最近一次**已经完成 Documentation Impact Review 的仓库 commit**。它不是“最后一次修改 docs 的 commit”，也不是要求每个 commit 都同步文档。
 
-刷新文档时，从 checkpoint 到当前 `HEAD` 查看 commit、changed files 和相关最终 diff，只更新真正受语义变化影响的 Current Docs；确认这段增量都已经 review 后，再推进 checkpoint。
+刷新文档时，从 checkpoint 到当前 `HEAD` 查看 commit、changed files 和相关最终 diff，只更新真正受语义变化影响的 Current State 文档。审计范围不只限于 `docs/**`：根 / 模块 README，以及 AGENTS 中描述当前能力或当前约束的部分也属于 Current State；确认整段增量都已经 review 后，再推进 checkpoint。
 
 因此 checkpoint 的含义是：
 

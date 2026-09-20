@@ -95,7 +95,7 @@ export AGENT_TOKEN='替换为服务端 AGENT_TOKEN'
 
 SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
   -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user_123' \
+  -H 'X-User-Id: default-user' \
   -H 'X-Trace-Id: trace_001' \
   -H 'Content-Type: application/json' \
   -d '{"agentId":"main"}' \
@@ -115,7 +115,7 @@ SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
 ```sh
 curl -N http://127.0.0.1:3001/api/agent/stream \
   -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user_123' \
+  -H 'X-User-Id: default-user' \
   -H 'X-Trace-Id: trace_002' \
   -H 'Content-Type: application/json' \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"用一句话介绍你自己\"}"
@@ -152,7 +152,7 @@ data: {}
 ```sh
 curl "http://127.0.0.1:3001/api/agent/sessions/$SESSION_ID/history?limit=50" \
   -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user_123'
+  -H 'X-User-Id: default-user'
 ```
 
 返回格式：
@@ -177,7 +177,7 @@ curl "http://127.0.0.1:3001/api/agent/sessions/$SESSION_ID/history?limit=50" \
 ```sh
 TASK_ID=$(curl -sS http://127.0.0.1:3001/api/agent/tasks \
   -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user_123' \
+  -H 'X-User-Id: default-user' \
   -H 'X-Trace-Id: trace_003' \
   -H 'Content-Type: application/json' \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"列出当前工作区的文件\"}" \
@@ -185,7 +185,7 @@ TASK_ID=$(curl -sS http://127.0.0.1:3001/api/agent/tasks \
 
 curl "http://127.0.0.1:3001/api/agent/tasks/$TASK_ID" \
   -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user_123'
+  -H 'X-User-Id: default-user'
 ```
 
 异步任务持久化在 `agent_tasks`，与 Pi Session 共用 Agent 专用 SQLite。当前 Runner 仅适用于单实例服务；服务重启时遗留的 `running` 任务会标记为 `failed`，避免重复执行带写操作的任务。

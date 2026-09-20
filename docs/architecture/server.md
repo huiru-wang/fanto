@@ -32,7 +32,7 @@ flowchart LR
 
 | 路由 | 领域 |
 | --- | --- |
-| `/api/uploads`、`/api/media/:id` | Media |
+| `/api/uploads`、`/api/media/:id`、`/api/media/:id/url` | Media |
 | `/api/records` | Record |
 | `/api/creation-kinds`、`/api/creations` | Creation |
 | `/api/creation-proposals` | Proposal |

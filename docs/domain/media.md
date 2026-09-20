@@ -55,4 +55,4 @@ Audio block 在 Record postprocess 中调用 ASR。成功后：
 
 ## 读取
 
-`GET /api/media/:id` 先校验当前用户和 ready 状态，再 302 到短期 OSS 读取地址。业务 API 不直接暴露永久 OSS URL。
+`GET /api/media/:id` 先校验当前用户和 ready 状态，再 302 到短期 OSS 读取地址。`GET /api/media/:id/url` 做同样的归属与 ready 校验，但以 JSON 返回短期 OSS URL，供浏览器 `<img>` / `<audio>` 这类无法附加 `x-user-id` Header 的元素使用。业务 API 不直接暴露永久 OSS URL。
