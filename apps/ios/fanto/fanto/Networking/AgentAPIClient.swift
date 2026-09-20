@@ -58,8 +58,9 @@ struct AgentAPIClient {
         guard let url = components?.url else { throw AgentAPIError.invalidResponse }
         let response: HistoryResponse = try await request(url: url)
         return response.data.compactMap { entry in
-            guard let role = ConversationRole(rawValue: entry.message.role), !entry.message.content.isEmpty else { return nil }
-            return AgentHistoryMessage(id: entry.id, role: role, text: entry.message.content)
+            let text = entry.message.content.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let role = ConversationRole(rawValue: entry.message.role), !text.isEmpty else { return nil }
+            return AgentHistoryMessage(id: entry.id, role: role, text: text)
         }.reversed()
     }
 
@@ -186,7 +187,49 @@ private struct HistoryEntry: Decodable {
 
 private struct HistoryEntryMessage: Decodable {
     let role: String
-    let content: String
+    let content: HistoryMessageContent
+}
+
+private struct HistoryMessageContent: Decodable {
+    let text: String
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(String.self) {
+            text = value
+            return
+        }
+        if let parts = try? container.decode([HistoryContentPart].self) {
+            text = parts.compactMap(\.text).joined()
+            return
+        }
+        if let part = try? container.decode(HistoryContentPart.self) {
+            text = part.text ?? ""
+            return
+        }
+        text = ""
+    }
+}
+
+private struct HistoryContentPart: Decodable {
+    let text: String?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let value = try? container.decode(String.self) {
+            text = value
+            return
+        }
+        guard let keyed = try? decoder.container(keyedBy: CodingKeys.self) else {
+            text = nil
+            return
+        }
+        text = try? keyed.decode(String.self, forKey: .text)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case text
+    }
 }
 
 private struct StreamDelta: Decodable { let text: String }

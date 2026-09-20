@@ -52,7 +52,7 @@ test("loads Fanto prompt file for main while coding remains isolated", () => {
   const definitions = readAgentDefinitions(resolve(appRoot, "agents.yaml"), builtinModels(), skills.ids());
   const main = definitions.find(definition => definition.id === "main");
   const coding = definitions.find(definition => definition.id === "coding");
-  assert.deepEqual(main?.tools, ["record_get", "record_list", "record_search"]);
+  assert.deepEqual(main?.tools, ["record_get", "record_list", "record_search", "present_media"]);
   assert.deepEqual(main?.skills, []);
   assert.match(main?.systemPrompt ?? "", /你是 Fanto/);
   assert.match(main?.systemPrompt ?? "", /record_list/);
@@ -60,8 +60,9 @@ test("loads Fanto prompt file for main while coding remains isolated", () => {
   assert.match(main?.systemPrompt ?? "", /record_get/);
   assert.match(main?.systemPrompt ?? "", /工具调用过程必须对用户隐身/);
   assert.match(main?.systemPrompt ?? "", /不能默认是用户本人/);
-  assert.match(main?.systemPrompt ?? "", /record_search 已返回真实 mediaId 时，可以直接展示/);
-  assert.match(main?.systemPrompt ?? "", /fanto-media/);
+  assert.match(main?.systemPrompt ?? "", /record_search 已返回真实 mediaId 时，可以直接调用 `present_media`/);
+  assert.match(main?.systemPrompt ?? "", /Markdown 只用于最终可见文本/);
+  assert.match(main?.systemPrompt ?? "", /present_media/);
   assert.doesNotMatch((main?.tools ?? []).join(","), /read|write|edit|bash/);
   assert.deepEqual(coding?.tools, ["read", "write", "edit", "bash"]);
 });
@@ -118,7 +119,7 @@ agents:
   }
 });
 
-test("accepts configured Record tool names", () => {
+test("accepts configured Fanto tool names", () => {
   const files = fixture(`version: 1
 defaults:
   provider: deepseek
@@ -127,10 +128,10 @@ defaults:
 agents:
   - id: main
     systemPrompt: Use records carefully.
-    tools: [record_get, record_list, record_search]
+    tools: [record_get, record_list, record_search, present_media]
 `);
   try {
     const definitions = readAgentDefinitions(files.config, builtinModels(), new Set());
-    assert.deepEqual(definitions[0]?.tools, ["record_get", "record_list", "record_search"]);
+    assert.deepEqual(definitions[0]?.tools, ["record_get", "record_list", "record_search", "present_media"]);
   } finally { rmSync(files.root, { recursive: true, force: true }); }
 });

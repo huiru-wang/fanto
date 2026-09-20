@@ -37,7 +37,7 @@ agents:
   - id: main
     description: 认识用户长期记录、在需要时调用个人记忆的中文助手
     systemPromptFile: ./prompts/fanto.md
-    tools: [record_get, record_list, record_search]
+    tools: [record_get, record_list, record_search, present_media]
     skills: []
 
   - id: coding
@@ -49,19 +49,20 @@ agents:
 
 `systemPrompt` 和 `systemPromptFile` 二选一。`systemPromptFile` 必须是相对 `agents.yaml` 的配置目录内路径，运行时会读取文件内容作为最终 `systemPrompt`；Prompt 内容也参与 Agent revision 计算，因此文件内容变化会让已有 Session 在下次运行时应用新的 Agent definition。
 
-可用工具为 `read`、`write`、`edit`、`bash`、`record_get`、`record_list`、`record_search`。每个 Agent 仅获得其配置列出的工具；当前 `main` 只开启三个只读 Record Tool，`coding` 保持文件 / shell 工具，不默认获得个人历史访问能力。`compaction` 会原样传给 Pi；三个字段分别控制是否启用、为摘要保留的 token 以及压缩后保留的最近上下文。它在使用同一 `sessionId` 的多轮对话中生效。
+可用工具为 `read`、`write`、`edit`、`bash`、`record_get`、`record_list`、`record_search`、`present_media`。每个 Agent 仅获得其配置列出的工具；当前 `main` 开启三个只读 Record Tool 与 `present_media`，`coding` 保持文件 / shell 工具，不默认获得个人历史访问能力。`compaction` 会原样传给 Pi；三个字段分别控制是否启用、为摘要保留的 token 以及压缩后保留的最近上下文。它在使用同一 `sessionId` 的多轮对话中生效。
 
 Skill 用 ID 声明在 `skills` 中，文件固定为 `apps/agent/skills/<id>/SKILL.md`；YAML 不能指定任意本地路径。
 
 ## Record Tools
 
-`main` 当前通过 Business Server HTTP 使用三个只读 Record Tool：
+`main` 当前通过 Business Server HTTP 使用三个只读 Record Tool 与一个媒体展示 Tool：
 
 - `record_list(limit?, cursor?)`：按时间浏览最近记录；Agent 侧默认 10 条、最大 20 条，并把每条 Record 压缩成最多约 500 字符的 preview。
 - `record_search(query, limit?)`：按语义搜索历史记录的文本、图片描述和音频转写原子单元；返回 `recordId + sourceType + mediaId + snippet + distance`。
 - `record_get(recordId)`：已有 Record ID 时读取完整 `content.text + content.blocks`；不会把媒体 signed URL 注入模型上下文。
+- `present_media(mediaIds)`：只接受 Record Tool 返回的 mediaId；运行时通过 `GET /api/media/:id/meta` 校验用户归属和 ready 状态，并把稳定的 `mediaType / mimeType / capture` 写入原生 Tool Result `details`。signed URL 不进入 Session。
 
-Record Tool 不直接访问业务 SQLite。调用链为：
+这些 Tool 不直接访问业务 SQLite。调用链为：
 
 ```text
 Agent Tool
@@ -121,7 +122,7 @@ curl -N http://127.0.0.1:3001/api/agent/stream \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"用一句话介绍你自己\"}"
 ```
 
-响应事件顺序如下。`turn_start`、`tool_start` 和 `tool_end` 表示运行阶段；工具事件只公开调用 ID、工具名和执行状态，不公开参数、返回内容、内部错误或 reasoning：
+响应事件顺序如下。`turn_start`、`tool_start` 和 `tool_end` 表示运行阶段；普通工具事件只公开调用 ID、工具名和执行状态，不公开参数、返回内容、内部错误或 reasoning。成功的 `present_media` 是唯一例外，其 `tool_end` 会额外公开经过白名单映射的稳定媒体 metadata：
 
 ```text
 event: start
@@ -135,6 +136,9 @@ data: {"toolCallId":"...","toolName":"record_search"}
 
 event: tool_end
 data: {"toolCallId":"...","toolName":"record_search","status":"succeeded"}
+
+event: tool_end
+data: {"toolCallId":"...","toolName":"present_media","status":"succeeded","result":{"items":[{"mediaId":"...","mediaType":"image","mimeType":"image/jpeg","width":1200,"height":800}]}}
 
 event: delta
 data: {"text":"你好！"}

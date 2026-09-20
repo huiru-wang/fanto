@@ -46,9 +46,19 @@ const recordSearch = z.object({
   }).strict()),
 }).strict();
 
+const mediaMetadata = z.object({
+  mediaId: z.string(),
+  mediaType: z.enum(["image", "audio"]),
+  mimeType: z.string(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+  durationMs: z.number().int().positive().optional(),
+}).strict();
+
 export type FantoRecord = z.infer<typeof record>;
 export type FantoRecordList = z.infer<typeof recordList>;
 export type FantoRecordSearch = z.infer<typeof recordSearch>;
+export type FantoMediaMetadata = z.infer<typeof mediaMetadata>;
 
 export type FantoRequestContext = {
   userId: string;
@@ -101,6 +111,10 @@ export class FantoServerClient {
 
   searchRecords(ctx: FantoRequestContext, input: { query: string; limit: number }): Promise<FantoRecordSearch> {
     return this.request("POST", "/api/records/search", ctx, recordSearch, input);
+  }
+
+  getMediaMetadata(ctx: FantoRequestContext, mediaId: string): Promise<FantoMediaMetadata> {
+    return this.request("GET", `/api/media/${encodeURIComponent(mediaId)}/meta`, ctx, mediaMetadata);
   }
 
   private async request<T>(

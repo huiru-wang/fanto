@@ -59,7 +59,15 @@ async function writeStreamEvent(stream: { writeSSE: (event: { event: string; dat
       await stream.writeSSE({ event: "tool_start", data: JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName }) });
       return;
     case "tool_end":
-      await stream.writeSSE({ event: "tool_end", data: JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName, status: event.status }) });
+      await stream.writeSSE({
+        event: "tool_end",
+        data: JSON.stringify({
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          status: event.status,
+          ...(event.result ? { result: event.result } : {}),
+        }),
+      });
       return;
     case "delta":
       await stream.writeSSE({ event: "delta", data: JSON.stringify({ text: event.text }) });

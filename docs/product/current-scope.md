@@ -24,9 +24,9 @@
 
 当前 iOS 的 Record 读取、Creation / Proposal 与 Agent Client 都已实现 Server 调用链路，但客户端仍硬编码 `creation-demo-user`，而当前 Server / Agent 主运行入口只允许 `default-user`，因此在当前公网部署配置下这些请求会被 401 拒绝。除此之外，“新建记录”仍只写入本地 Store，没有调用 Server 创建接口；媒体上传也没有在 iOS 端形成完整写入链路。
 
-当前 iOS 中间 Fanto Tab 通过 Agent Runtime 的 Session、History 与 SSE Stream 接口支持开发态文本多轮对话。它只恢复最近 10 条历史，在 Keychain 保存一个默认 Session ID，不支持会话切换、新话题、跨设备恢复、Markdown 富文本、媒体、来源引用、Tool 产品效果或正式认证。Agent 网关若将 HTTP 转至 HTTPS，真机联调依赖系统信任该 HTTPS 证书；客户端不接受不受信任的证书。
+当前 iOS 中间 Fanto Tab 通过 Agent Runtime 的 Session、History 与 SSE Stream 接口支持开发态文本多轮对话。它只恢复最近 10 条历史，在 Keychain 保存一个默认 Session ID；历史解码已能容忍 Pi 的结构化 message content，并只提取文本，但当前仍不渲染 `present_media` 媒体展示。它不支持会话切换、新话题、跨设备恢复、Markdown 富文本、媒体、来源引用、Tool 产品效果或正式认证。Agent 网关若将 HTTP 转至 HTTPS，真机联调依赖系统信任该 HTTPS 证书；客户端不接受不受信任的证书。
 
-当前 H5 位于 `apps/h5`，覆盖测试所需的 Record 与 Agent 基础能力：查看 / 创建 / 语义搜索 Record，支持文字、JPEG/PNG/WebP 图片、M4A/MP3/WAV 音频、浏览器录音、发生时间选择，以及时间线图片缩略图和音频播放；同时支持恢复一个默认 Agent Session、兼容字符串或结构化 content 的历史消息、POST SSE 流式多轮对话和新建会话。Assistant 消息使用 Markdown 渲染，并将 `fanto-media://<mediaId>` 图片引用解析为经过 Server 鉴权的短期 OSS 地址。H5 不提供 Creation / Proposal 页面，也不提供正式登录。测试客户端固定使用 `default-user`，Agent Bearer Token 被直接编译进 H5 bundle，因此只适用于受控测试环境。
+当前 H5 位于 `apps/h5`，覆盖测试所需的 Record 与 Agent 基础能力：查看 / 创建 / 语义搜索 Record，支持文字、JPEG/PNG/WebP 图片、M4A/MP3/WAV 音频、浏览器录音、发生时间选择，以及时间线图片缩略图和音频播放；同时支持恢复一个默认 Agent Session、兼容字符串或结构化 content 的历史消息、POST SSE 流式多轮对话和新建会话。Assistant 可见文本继续使用 Markdown；新媒体展示由原生 `present_media` Tool Result 驱动，图片和语音按类型分开渲染，图片使用固定 104×104 单行缩略图并可进入多图 Viewer 查看完整原图。旧 Session 中的 `fanto-media://<mediaId>` 仍保留兼容渲染。H5 会缓存短期媒体 URL、避免已完成历史消息随流式 delta 反复重载，并只在用户接近底部时自动跟随新内容。H5 不提供 Creation / Proposal 页面，也不提供正式登录。测试客户端固定使用 `default-user`，Agent Bearer Token 被直接编译进 H5 bundle，因此只适用于受控测试环境。
 
 ## Memory / Retrieval
 
@@ -36,7 +36,7 @@ Server 已经会为处理完成的 Record 构建向量索引。用户文本、�
 
 `POST /api/records/search` 已注册，可对当前用户 Record 做语义搜索。sqlite-vec 使用 `user_id partition key`，KNN candidate generation 本身限定当前用户，并在读取 metadata 时再次校验用户归属。
 
-Agent Runtime 已通过 Business Server HTTP 接入 `record_get`、`record_list`、`record_search` 三个只读工具；LLM 不传 `userId`，用户身份来自当前 Session 的 Run Context。
+Agent Runtime 已通过 Business Server HTTP 接入 `record_get`、`record_list`、`record_search` 三个只读 Record Tool，并新增 `present_media` 展示 Tool。LLM 不传 `userId`；所有业务读取身份都来自当前 Session 的 Run Context。
 
 ## Creation / Proposal
 
@@ -64,9 +64,10 @@ Agent Runtime 已通过 Business Server HTTP 接入 `record_get`、`record_list`
 - 每个 Session 独立工作区；
 - Pi 内置 `read`、`write`、`edit`、`bash` 工具；
 - `record_get`、`record_list`、`record_search` 三个只读 Record Tool；
+- `present_media` 媒体展示 Tool；
 - Skill 文件加载。
 
-它不直接访问 Fanto 业务数据库；Record Tool 统一通过 `FantoServerClient` 调用 Business Server，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool；`coding` 默认不具备个人历史访问能力。`main` 通过 `apps/agent/prompts/fanto.md` 约束长期记忆真实性、工具隐身、对话语气以及 Markdown / Media 表达。
+它不直接访问 Fanto 业务数据库；Record Tool 与 `present_media` 统一通过 `FantoServerClient` 调用 Business Server，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool 与 `present_media`；`coding` 默认不具备个人历史访问能力。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 通过 `apps/agent/prompts/fanto.md` 约束长期记忆真实性、工具隐身、对话语气以及 Markdown / Media 表达。
 
 ## 当前基础设施边界
 

@@ -171,11 +171,23 @@ test("record HTTP accepts source and requires a valid user header", async () => 
     const asset = await media.findMedia(uploaded.mediaId, "u"); assert.equal(asset?.objectKey, `users/u/media/${uploaded.mediaId}.mp3`); assert.equal(asset?.mimeType, "audio/mpeg"); assert.equal(asset?.mediaType, "audio");
     assert.equal((await app.request("/api/uploads", { method: "POST", headers: { "Content-Type": "application/json", "x-user-id": "u" }, body: JSON.stringify({ mimeType: "audio/aac", bytes: 3 }) })).status, 400);
     assert.equal((await app.request("/api/uploads", { method: "POST", headers: { "Content-Type": "application/json", "x-user-id": "u" }, body: JSON.stringify({ fileName: "memo.mp3", mediaType: "audio", mimeType: "audio/mpeg", bytes: 3 }) })).status, 400);
-    assert.equal((await app.request(`/api/uploads/${uploaded.mediaId}/complete`, { method: "POST", headers: { "Content-Type": "application/json", "x-user-id": "u" }, body: "{}" })).status, 200);
+    assert.equal((await app.request(`/api/uploads/${uploaded.mediaId}/complete`, { method: "POST", headers: { "Content-Type": "application/json", "x-user-id": "u" }, body: JSON.stringify({ capture: { durationMs: 12000 } }) })).status, 200);
     assert.equal((await app.request(`/api/media/${uploaded.mediaId}`, { headers: { "x-user-id": "u" } })).status, 302);
+    const mediaMeta = await app.request(`/api/media/${uploaded.mediaId}/meta`, { headers: { "x-user-id": "u" } });
+    assert.equal(mediaMeta.status, 200);
+    assert.deepEqual(await mediaMeta.json(), {
+      success: true,
+      result: { mediaId: uploaded.mediaId, mediaType: "audio", mimeType: "audio/mpeg", durationMs: 12000 },
+      errorCode: null,
+      errorMsg: null,
+    });
     const mediaUrl = await app.request(`/api/media/${uploaded.mediaId}/url`, { headers: { "x-user-id": "u" } });
     assert.equal(mediaUrl.status, 200);
-    assert.deepEqual(await mediaUrl.json(), { success: true, result: { url: `https://private.example/users/u/media/${uploaded.mediaId}.mp3` }, errorCode: null, errorMsg: null });
+    const mediaUrlBody = await mediaUrl.json() as any;
+    assert.equal(mediaUrlBody.success, true);
+    assert.equal(mediaUrlBody.result.url, `https://private.example/users/u/media/${uploaded.mediaId}.mp3`);
+    assert.ok(Number.isFinite(Date.parse(mediaUrlBody.result.expiresAt)));
+    assert.equal((await app.request(`/api/media/${uploaded.mediaId}/meta`, { headers: { "x-user-id": "other" } })).status, 404);
     assert.equal((await app.request(`/api/media/${uploaded.mediaId}/url`, { headers: { "x-user-id": "other" } })).status, 404);
     assert.equal((await app.request(`/api/media/${uploaded.mediaId}`, { headers: { "x-user-id": "other" } })).status, 404);
     const created = await app.request("/api/records", { method: "POST", headers: { "Content-Type": "application/json", "x-user-id": "u" }, body: JSON.stringify({ text: "with source", media: [], source: "capture", eventAt: "2026-09-17T10:30:00+08:00" }) });

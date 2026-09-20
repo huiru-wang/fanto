@@ -55,4 +55,10 @@ Audio block 在 Record postprocess 中调用 ASR。成功后：
 
 ## 读取
 
-`GET /api/media/:id` 先校验当前用户和 ready 状态，再 302 到短期 OSS 读取地址。`GET /api/media/:id/url` 做同样的归属与 ready 校验，但以 JSON 返回短期 OSS URL，供浏览器 `<img>` / `<audio>` 这类无法附加 `x-user-id` Header 的元素使用。业务 API 不直接暴露永久 OSS URL。
+三个读取接口都先校验当前用户和 ready 状态，不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`：
+
+- `GET /api/media/:id`：302 到短期 OSS 读取地址；
+- `GET /api/media/:id/url`：返回 `{ url, expiresAt }`，供浏览器 `<img>` / `<audio>` 这类无法附加 `x-user-id` Header 的元素使用；
+- `GET /api/media/:id/meta`：返回稳定的 `mediaId / mediaType / mimeType` 与可用的 `width / height / durationMs`，不返回 OSS 地址。
+
+`present_media` Agent Tool 使用 `/meta` 对模型给出的 mediaId 做用户归属与 ready 校验，并把稳定 metadata 写入原生 Tool Result `details`。短期 signed URL 不写入 Agent Session，真正展示或播放时再由客户端调用 `/url` 获取。业务 API 不直接暴露永久 OSS URL。

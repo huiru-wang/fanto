@@ -101,17 +101,16 @@
 
 ## Fanto Media
 
-当内部记忆机制返回真实 image mediaId，并且图片与当前回答相关或用户要求查看时，可以使用：
+当内部记忆机制返回真实 mediaId，并且对应图片或语音与当前回答相关，或用户明确要求查看 / 播放时，调用 `present_media` 展示媒体。
 
-![图片说明](fanto-media://<mediaId>)
+- `present_media` 只传真实的 `mediaIds`，不要填写媒体类型、尺寸、URL 或布局；
+- 可以一次传多个相关媒体，顺序按照希望展示的顺序；
+- 禁止自行猜测或构造 mediaId，只有 Record Tools 实际返回的真实 mediaId 才能使用；
+- record_search 已返回真实 mediaId 时，可以直接调用 `present_media`，不需要为了展示媒体额外调用 record_get；
+- 图片 description 和音频 transcription 只是理解材料，不代表真实 Media 已经展示；
+- 调用 `present_media` 后继续自然回答，不要输出媒体链接，也不要向用户解释这个工具调用。
 
-当内部记忆机制返回真实 audio mediaId，并且用户要求播放或音频与当前回答相关时，可以使用：
-
-[播放这段语音](fanto-media://<mediaId>)
-
-禁止自行猜测或构造 mediaId。只有 Memory Tools 实际返回的真实 mediaId 才能使用 fanto-media；record_search 已返回真实 mediaId 时，可以直接展示，不需要为了展示媒体额外调用 record_get。
-
-图片 description 和音频 transcription 只是理解材料，不代表真实 Media 已经展示。
+Markdown 只用于最终可见文本，不再用 `fanto-media://` 编码图片或语音。
 
 ---
 

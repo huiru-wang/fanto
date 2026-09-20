@@ -45,7 +45,15 @@ test("creates a session before streaming and requires its id", async () => {
       calls.push(message);
       await emit({ type: "turn_start" });
       await emit({ type: "tool_start", toolCallId: "call-1", toolName: "record_search", args: { query: "private" } });
-      await emit({ type: "tool_end", toolCallId: "call-1", toolName: "record_search", status: "succeeded", result: { private: true } });
+      await emit({ type: "tool_end", toolCallId: "call-1", toolName: "record_search", status: "succeeded" });
+      await emit({ type: "tool_start", toolCallId: "call-2", toolName: "present_media" });
+      await emit({
+        type: "tool_end",
+        toolCallId: "call-2",
+        toolName: "present_media",
+        status: "succeeded",
+        result: { items: [{ mediaId: "m1", mediaType: "image", mimeType: "image/jpeg", width: 100, height: 100 }] },
+      });
       await emit({ type: "delta", text: "你好" });
       return "你好";
     },
@@ -67,6 +75,8 @@ test("creates a session before streaming and requires its id", async () => {
   assert.match(text, /"toolCallId":"call-1","toolName":"record_search"/);
   assert.match(text, /event: tool_end/);
   assert.match(text, /"status":"succeeded"/);
+  assert.match(text, /"toolCallId":"call-2","toolName":"present_media"/);
+  assert.match(text, /"result":\{"items":\[\{"mediaId":"m1","mediaType":"image","mimeType":"image\/jpeg","width":100,"height":100\}\]\}/);
   assert.match(text, /event: delta/);
   assert.match(text, /"text":"你好"/);
   assert.doesNotMatch(text, /private/);

@@ -15,7 +15,9 @@ flowchart TD
   PI --> TOOLS[Configured Tools]
   TOOLS --> BUILTIN[read / write / edit / bash]
   TOOLS --> RECORD[record_get / record_list / record_search]
+  TOOLS --> PRESENT[present_media]
   RECORD --> FSC[FantoServerClient]
+  PRESENT --> FSC
   FSC -->|x-user-id / x-trace-id| SERVER[Business Server]
   PI --> SKILLS[Skills]
   SM --> DB[(Agent SQLite)]
@@ -43,9 +45,10 @@ bash
 record_get
 record_list
 record_search
+present_media
 ```
 
-当前 `main` 是 Fanto 面向用户的长期对话 Agent，只开启三个只读 Record Tool；`coding` 只开启 `read / write / edit / bash`。Fanto 的 Prompt 独立位于 `apps/agent/prompts/fanto.md`，通过 `systemPromptFile` 引用；其内容定义长期记忆、对话人格、工具隐身与 Markdown / Media 行为。Tool 权限仍由 Agent definition 显式声明。
+当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool 与一个 `present_media` 展示 Tool；`coding` 只开启 `read / write / edit / bash`。Fanto 的 Prompt 独立位于 `apps/agent/prompts/fanto.md`，通过 `systemPromptFile` 引用；其内容定义长期记忆、对话人格、工具隐身与 Markdown / Media 行为。Tool 权限仍由 Agent definition 显式声明。
 
 `systemPromptFile` 必须是相对 `agents.yaml` 的路径，不能逃逸出配置目录。Loader 会把文件内容解析为最终 `systemPrompt`，并基于解析后的完整 Agent definition 计算 revision，所以只修改 Prompt 文件也会产生新的 revision。
 
@@ -70,7 +73,7 @@ Skill 通过 ID 映射到 `apps/agent/skills/<id>/SKILL.md`。密钥不写入 YA
 
 ### Stream
 
-`POST /api/agent/stream` 使用 POST 响应体 SSE。除 `start`、`delta`、`done` / `error` 外，还会发送 Pi 运行阶段的 `turn_start`、`tool_start` 和 `tool_end`。工具事件只公开 `toolCallId`、`toolName` 与成功/失败状态，供客户端映射无内容的活动提示；不公开工具参数、结果、内部错误或 reasoning。断连会取消执行，单次请求有超时限制。
+`POST /api/agent/stream` 使用 POST 响应体 SSE。除 `start`、`delta`、`done` / `error` 外，还会发送 Pi 运行阶段的 `turn_start`、`tool_start` 和 `tool_end`。普通工具事件只公开 `toolCallId`、`toolName` 与成功/失败状态；唯一例外是成功的 `present_media`，其 `tool_end` 会额外返回经过白名单映射的稳定媒体 metadata，供客户端渲染。Record Tool 参数、结果、内部错误与 reasoning 仍不对客户端公开。断连会取消执行，单次请求有超时限制。
 
 ### Task
 
@@ -94,15 +97,16 @@ Session History 直接读取 Pi Session entry，以 `seq` 倒序分页。内部 
 
 ## 与 Fanto 业务数据的当前关系
 
-Agent Runtime 不连接 Business Server 数据库。当前只读 Record 能力通过 `FantoServerClient` 调用已有 Business Server HTTP API：
+Agent Runtime 不连接 Business Server 数据库。Record 能力与媒体展示校验都通过 `FantoServerClient` 调用 Business Server HTTP API：
 
 ```text
 record_list   → GET  /api/records
 record_get    → GET  /api/records/:id
 record_search → POST /api/records/search
+present_media → GET  /api/media/:id/meta
 ```
 
-每次 prompt 已把 Session owner 的 `userId` 与可选 `traceId` 写入 Pi Run Context。Record Tool 从当前 Tool execution Context 读取这些值，再由 Client 转为 `x-user-id` / `x-trace-id`；LLM Tool schema 不包含 `userId`。
+每次 prompt 已把 Session owner 的 `userId` 与可选 `traceId` 写入 Pi Run Context。Record Tool 与 `present_media` 都从当前 Tool execution Context 读取这些值，再由 Client 转为 `x-user-id` / `x-trace-id`；LLM Tool schema 不包含 `userId`。其中 `present_media` 的 Tool Call 只接受 `mediaIds`，Business Server 返回的真实 `mediaType / mimeType / capture` 被写入原生 Tool Result `details`，不会保存短期 OSS signed URL。
 
 Client 统一负责 Business Server base URL、JSON envelope、15 秒 timeout、运行取消和安全错误映射。当前 Business Server 的 `x-user-id` 仍是开发期用户隔离，不是正式的 service-to-service authentication。
 

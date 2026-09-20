@@ -1,18 +1,25 @@
 import { FANTO_AGENT_ID, FANTO_AGENT_TOKEN, FANTO_USER_ID } from "../config";
 import { ApiError, requestJson } from "./http";
 
+export type PresentedMedia = {
+  mediaId: string;
+  mediaType: "image" | "audio";
+  mimeType: string;
+  width?: number;
+  height?: number;
+  durationMs?: number;
+};
+
 export type AgentHistoryMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
+  media: PresentedMedia[];
 };
 
 type HistoryEntry = {
   id: string;
-  message?: {
-    role?: string;
-    content?: unknown;
-  };
+  message?: unknown;
 };
 
 type HistoryResult = {
@@ -22,6 +29,7 @@ type HistoryResult = {
 export type AgentStreamEvent =
   | { type: "processing" }
   | { type: "delta"; text: string }
+  | { type: "presentation"; items: PresentedMedia[] }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -35,6 +43,14 @@ function agentHeaders(): Headers {
   return headers;
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function positiveInt(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
 export function extractMessageText(content: unknown): string {
   if (typeof content === "string") return content;
 
@@ -42,19 +58,105 @@ export function extractMessageText(content: unknown): string {
     return content
       .map(part => {
         if (typeof part === "string") return part;
-        if (!part || typeof part !== "object") return "";
-        const value = part as { type?: unknown; text?: unknown };
-        return value.type === "text" && typeof value.text === "string" ? value.text : "";
+        const value = record(part);
+        return value?.type === "text" && typeof value.text === "string" ? value.text : "";
       })
       .join("");
   }
 
-  if (content && typeof content === "object") {
-    const text = (content as { text?: unknown }).text;
-    return typeof text === "string" ? text : "";
+  const value = record(content);
+  return typeof value?.text === "string" ? value.text : "";
+}
+
+export function extractPresentedMedia(value: unknown): PresentedMedia[] {
+  const details = record(value);
+  if (!details || !Array.isArray(details.items)) return [];
+
+  return details.items.flatMap((item): PresentedMedia[] => {
+    const media = record(item);
+    if (!media || typeof media.mediaId !== "string" || typeof media.mimeType !== "string") return [];
+    if (media.mediaType !== "image" && media.mediaType !== "audio") return [];
+
+    const output: PresentedMedia = {
+      mediaId: media.mediaId,
+      mediaType: media.mediaType,
+      mimeType: media.mimeType,
+    };
+    const width = positiveInt(media.width);
+    const height = positiveInt(media.height);
+    const durationMs = positiveInt(media.durationMs);
+    if (width) output.width = width;
+    if (height) output.height = height;
+    if (durationMs) output.durationMs = durationMs;
+    return [output];
+  });
+}
+
+export function mergePresentedMedia(current: PresentedMedia[], incoming: PresentedMedia[]): PresentedMedia[] {
+  if (incoming.length === 0) return current;
+  const seen = new Set(current.map(item => item.mediaId));
+  const merged = [...current];
+  for (const item of incoming) {
+    if (seen.has(item.mediaId)) continue;
+    seen.add(item.mediaId);
+    merged.push(item);
+  }
+  return merged;
+}
+
+export function projectAgentHistory(entries: HistoryEntry[]): AgentHistoryMessage[] {
+  const messages: AgentHistoryMessage[] = [];
+  let assistantId: string | null = null;
+  let assistantText = "";
+  let assistantMedia: PresentedMedia[] = [];
+
+  const flushAssistant = () => {
+    const text = assistantText.trim();
+    if (text || assistantMedia.length > 0) {
+      messages.push({
+        id: assistantId ?? `history-assistant-${messages.length}`,
+        role: "assistant",
+        text,
+        media: assistantMedia,
+      });
+    }
+    assistantId = null;
+    assistantText = "";
+    assistantMedia = [];
+  };
+
+  for (const entry of [...entries].reverse()) {
+    const message = record(entry.message);
+    if (!message || typeof message.role !== "string") continue;
+
+    if (message.role === "user") {
+      flushAssistant();
+      const text = extractMessageText(message.content).trim();
+      if (text) messages.push({ id: entry.id, role: "user", text, media: [] });
+      continue;
+    }
+
+    if (message.role === "assistant") {
+      assistantId = entry.id;
+      assistantText += extractMessageText(message.content);
+      continue;
+    }
+
+    if (
+      message.role === "toolResult"
+      && message.toolName === "present_media"
+      && message.isError !== true
+    ) {
+      const items = extractPresentedMedia(message.details);
+      if (items.length > 0) {
+        assistantId ??= entry.id;
+        assistantMedia = mergePresentedMedia(assistantMedia, items);
+      }
+    }
   }
 
-  return "";
+  flushAssistant();
+  return messages;
 }
 
 export async function createAgentSession(): Promise<string> {
@@ -71,15 +173,7 @@ export async function fetchAgentHistory(sessionId: string): Promise<AgentHistory
     `/api/agent/sessions/${encodeURIComponent(sessionId)}/history?limit=100`,
     { headers: agentHeaders() },
   );
-
-  return result.data
-    .flatMap((entry): AgentHistoryMessage[] => {
-      const role = entry.message?.role;
-      const text = extractMessageText(entry.message?.content).trim();
-      if ((role !== "user" && role !== "assistant") || !text) return [];
-      return [{ id: entry.id, role, text }];
-    })
-    .reverse();
+  return projectAgentHistory(result.data);
 }
 
 export async function streamAgentMessage(
@@ -126,6 +220,18 @@ export async function streamAgentMessage(
       case "tool_start":
         onEvent({ type: "processing" });
         break;
+      case "tool_end": {
+        const payload = JSON.parse(rawData) as {
+          toolName?: string;
+          status?: string;
+          result?: unknown;
+        };
+        if (payload.toolName === "present_media" && payload.status === "succeeded") {
+          const items = extractPresentedMedia(payload.result);
+          if (items.length > 0) onEvent({ type: "presentation", items });
+        }
+        break;
+      }
       case "delta": {
         const payload = JSON.parse(rawData) as { text?: string };
         if (payload.text) onEvent({ type: "delta", text: payload.text });

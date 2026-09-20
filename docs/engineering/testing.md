@@ -41,7 +41,8 @@ pnpm --filter @fanto/agent build
 - 配置 reload / revision 行为；
 - HTTP 错误映射；
 - Record Tool 的 Run Context 用户身份、`FantoServerClient` Header / timeout / cancellation / envelope；
-- `record_list / record_search / record_get` 的模型 DTO 投影与 Agent 权限配置。
+- `record_list / record_search / record_get` 的模型 DTO 投影与 Agent 权限配置；
+- `present_media` 的 mediaId-only schema、user-scoped metadata 校验、Tool Result 白名单投影，以及其他 Tool 参数 / 结果不进入 SSE 的边界。
 
 Record Tool 变更除单元测试外，还应至少做一次 Business Server + Agent Runtime 真实 smoke；真实模型的 Tool Selection 不作为 CI 的确定性断言。
 

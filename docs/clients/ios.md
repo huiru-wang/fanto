@@ -35,7 +35,7 @@ Record 首批最多读取 100 条，当前客户端据此生成日历标记和 T
 
 Fanto 位于根导航中间，只使用一个默认长期 Agent Session，不提供会话列表、切换或“开始新话题”。iOS 以开发态用户和 `main` Agent 为键将 Session ID 保存到 Keychain；进入 Fanto 时优先读取最近 10 条历史，仅在本地没有 ID，或服务端明确返回 Session 不存在 / 无权访问时创建新的 Session。
 
-流式回复通过 SSE 增量追加到当前助手消息。界面覆盖加载、等待、统一处理中、流式生成、停止和失败重试；同一 Session 未完成回复时不能并发发送。当前只支持普通文本和换行展示，不包含 Markdown 富文本、媒体消息、来源卡片或 Agent Tool 产品化状态。
+流式回复通过 SSE 增量追加到当前助手消息。界面覆盖加载、等待、统一处理中、流式生成、停止和失败重试；同一 Session 未完成回复时不能并发发送。History decoder 已能容忍 Pi Assistant 的字符串或结构化 content，并只抽取可见 text，因此出现 toolCall block 时不会导致整页历史解码失败。当前 UI 仍只支持普通文本和换行展示，不包含 Markdown 富文本、`present_media` 媒体消息、来源卡片或 Agent Tool 产品化状态。
 
 ## Record UI
 

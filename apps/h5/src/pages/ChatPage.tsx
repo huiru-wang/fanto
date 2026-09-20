@@ -1,19 +1,51 @@
 import { ArrowUp, MessageCircleMore, Plus, RotateCcw, Sparkles, Square } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   createAgentSession,
   fetchAgentHistory,
+  mergePresentedMedia,
   streamAgentMessage,
   type AgentHistoryMessage,
+  type PresentedMedia,
 } from "../api/agent";
 import { ApiError } from "../api/http";
 import { ChatMarkdown } from "../components/ChatMarkdown";
+import { MediaPresentation } from "../components/MediaPresentation";
 import { AGENT_SESSION_KEY } from "../config";
 
 type MessageState = "complete" | "processing" | "streaming" | "stopped" | "failed";
 type ChatMessage = AgentHistoryMessage & { state: MessageState };
 
 const localId = () => `local-${crypto.randomUUID()}`;
+
+const ChatMessageItem = memo(function ChatMessageItem({ message }: { message: ChatMessage }) {
+  const hasContent = Boolean(message.text) || message.media.length > 0;
+
+  return (
+    <article className={`message ${message.role}`}>
+      {message.role === "assistant" && (
+        <span className="message-avatar"><Sparkles size={14} /></span>
+      )}
+      <div className="message-body">
+        {message.text ? (
+          message.role === "assistant"
+            ? <ChatMarkdown text={message.text} />
+            : <p>{message.text}</p>
+        ) : !hasContent ? (
+          <div className="thinking-row">
+            <span className="thinking-dots"><i /><i /><i /></span>
+            <span>正在回想…</span>
+          </div>
+        ) : null}
+        {message.role === "assistant" && message.media.length > 0 && (
+          <MediaPresentation items={message.media} />
+        )}
+        {message.state === "stopped" && <span className="message-state">已停止生成</span>}
+        {message.state === "failed" && <span className="message-state error">回复未完成</span>}
+      </div>
+    </article>
+  );
+});
 
 export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -23,10 +55,19 @@ export function ChatPage() {
   const [responding, setResponding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const endRef = useRef<HTMLDivElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  const isNearEnd = useCallback(() => {
+    const element = scrollRef.current;
+    if (!element) return true;
+    return element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+  }, []);
 
   const scrollToEnd = useCallback(() => {
-    requestAnimationFrame(() => endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" }));
+    requestAnimationFrame(() => {
+      const element = scrollRef.current;
+      if (element) element.scrollTop = element.scrollHeight;
+    });
   }, []);
 
   const createFreshSession = useCallback(async () => {
@@ -88,12 +129,19 @@ export function ChatPage() {
     const text = draft.trim();
     if (!text || !sessionId || responding) return;
 
-    const userMessage: ChatMessage = { id: localId(), role: "user", text, state: "complete" };
+    const userMessage: ChatMessage = {
+      id: localId(),
+      role: "user",
+      text,
+      media: [],
+      state: "complete",
+    };
     const assistantId = localId();
     const assistantMessage: ChatMessage = {
       id: assistantId,
       role: "assistant",
       text: "",
+      media: [],
       state: "processing",
     };
 
@@ -105,6 +153,7 @@ export function ChatPage() {
 
     const controller = new AbortController();
     abortRef.current = controller;
+    let pendingMedia: PresentedMedia[] = [];
 
     try {
       await streamAgentMessage(
@@ -113,21 +162,28 @@ export function ChatPage() {
         event => {
           if (event.type === "processing") {
             setMessages(current => current.map(message =>
-              message.id === assistantId && !message.text
+              message.id === assistantId && !message.text && message.state !== "processing"
                 ? { ...message, state: "processing" }
                 : message,
             ));
+          } else if (event.type === "presentation") {
+            pendingMedia = mergePresentedMedia(pendingMedia, event.items);
           } else if (event.type === "delta") {
+            const follow = isNearEnd();
             setMessages(current => current.map(message =>
               message.id === assistantId
                 ? { ...message, text: message.text + event.text, state: "streaming" }
                 : message,
             ));
-            scrollToEnd();
+            if (follow) scrollToEnd();
           } else if (event.type === "done") {
+            const follow = isNearEnd();
             setMessages(current => current.map(message =>
-              message.id === assistantId ? { ...message, state: "complete" } : message,
+              message.id === assistantId
+                ? { ...message, media: pendingMedia, state: "complete" }
+                : message,
             ));
+            if (follow) scrollToEnd();
           } else if (event.type === "error") {
             setMessages(current => current.map(message =>
               message.id === assistantId ? { ...message, state: "failed" } : message,
@@ -151,7 +207,7 @@ export function ChatPage() {
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
       setResponding(false);
-      scrollToEnd();
+      if (isNearEnd()) scrollToEnd();
     }
   };
 
@@ -175,7 +231,7 @@ export function ChatPage() {
         </button>
       </header>
 
-      <div className="chat-scroll">
+      <div className="chat-scroll" ref={scrollRef}>
         <div className="chat-content">
           {loading ? (
             <div className="empty-state chat-loading">
@@ -204,31 +260,10 @@ export function ChatPage() {
             </div>
           ) : (
             <div className="message-list">
-              {messages.map(message => (
-                <article className={`message ${message.role}`} key={message.id}>
-                  {message.role === "assistant" && (
-                    <span className="message-avatar"><Sparkles size={14} /></span>
-                  )}
-                  <div className="message-body">
-                    {message.text ? (
-                      message.role === "assistant"
-                        ? <ChatMarkdown text={message.text} />
-                        : <p>{message.text}</p>
-                    ) : (
-                      <div className="thinking-row">
-                        <span className="thinking-dots"><i /><i /><i /></span>
-                        <span>正在回想…</span>
-                      </div>
-                    )}
-                    {message.state === "stopped" && <span className="message-state">已停止生成</span>}
-                    {message.state === "failed" && <span className="message-state error">回复未完成</span>}
-                  </div>
-                </article>
-              ))}
+              {messages.map(message => <ChatMessageItem message={message} key={message.id} />)}
               {error && <div className="chat-inline-error">{error}</div>}
             </div>
           )}
-          <div ref={endRef} />
         </div>
       </div>
 

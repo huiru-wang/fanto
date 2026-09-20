@@ -27,6 +27,7 @@ test("sends user and trace headers and maps all Record endpoints", async () => {
   const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
     calls.push({ url: String(input), init });
     const url = String(input);
+    if (url.includes("/api/media/")) return ok({ mediaId: "m1", mediaType: "image", mimeType: "image/jpeg", width: 1200, height: 800 });
     if (url.includes("/search")) return ok({ data: [{ recordId: "r1", sourceType: "image", mediaId: "m1", snippet: "hit", distance: 0.12 }] });
     if (url.includes("?")) return ok({ data: [record], hasMore: true, nextCursor: "next", pageSize: 2 });
     return ok(record);
@@ -37,6 +38,13 @@ test("sends user and trace headers and maps all Record endpoints", async () => {
   assert.equal((await client.getRecord(ctx, "r/1")).id, "r1");
   assert.equal((await client.listRecords(ctx, { limit: 2, cursor: "c+d" })).nextCursor, "next");
   assert.deepEqual((await client.searchRecords(ctx, { query: "AI Coding", limit: 3 })).data, [{ recordId: "r1", sourceType: "image", mediaId: "m1", snippet: "hit", distance: 0.12 }]);
+  assert.deepEqual(await client.getMediaMetadata(ctx, "m/1"), {
+    mediaId: "m1",
+    mediaType: "image",
+    mimeType: "image/jpeg",
+    width: 1200,
+    height: 800,
+  });
 
   assert.match(calls[0]?.url ?? "", /\/api\/records\/r%2F1$/);
   assert.match(calls[1]?.url ?? "", /limit=2/);
@@ -46,6 +54,8 @@ test("sends user and trace headers and maps all Record endpoints", async () => {
   assert.equal(calls[2]?.init?.method, "POST");
   assert.equal(calls[2]?.init?.body, JSON.stringify({ query: "AI Coding", limit: 3 }));
   assert.equal(new Headers(calls[2]?.init?.headers).get("content-type"), "application/json");
+  assert.match(calls[3]?.url ?? "", /\/api\/media\/m%2F1\/meta$/);
+  assert.equal(new Headers(calls[3]?.init?.headers).get("x-user-id"), "u1");
 });
 
 test("omits trace header when no trace id exists", async () => {

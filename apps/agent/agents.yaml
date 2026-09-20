@@ -13,7 +13,7 @@ agents:
   - id: main
     description: Fanto 面向用户的长期记忆对话 Agent
     systemPromptFile: ./prompts/fanto.md
-    tools: [record_get, record_list, record_search]
+    tools: [record_get, record_list, record_search, present_media]
     skills: []
 
   - id: coding

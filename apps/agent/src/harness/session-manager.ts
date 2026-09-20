@@ -7,6 +7,7 @@ import type { AgentDefinition } from "../config/agent-config.js";
 import { HarnessFactory } from "./harness-factory.js";
 import { createRunContext, type RunMetadata } from "./run-context.js";
 import { createWorkspace } from "./workspace.js";
+import { sanitizePresentMediaDetails, type PresentMediaDetails } from "../tools/present-media-tool.js";
 
 const SESSION_OWNER_ENTRY = "fanto.session_owner";
 const validSessionId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -29,7 +30,7 @@ export type ManagedSession = {
 export type AgentStreamEvent =
   | { type: "turn_start" }
   | { type: "tool_start"; toolCallId: string; toolName: string }
-  | { type: "tool_end"; toolCallId: string; toolName: string; status: "succeeded" | "failed" }
+  | { type: "tool_end"; toolCallId: string; toolName: string; status: "succeeded" | "failed"; result?: PresentMediaDetails }
   | { type: "delta"; text: string };
 
 export class AgentSessionManager {
@@ -102,7 +103,17 @@ export class AgentSessionManager {
         if (!signal.aborted) await emit({ type: "tool_start", toolCallId: event.toolCallId, toolName: event.toolName });
       }));
       unsubscribes.push(session.harness.events.on("tool_end", async event => {
-        if (!signal.aborted) await emit({ type: "tool_end", toolCallId: event.toolCallId, toolName: event.toolName, status: event.isError ? "failed" : "succeeded" });
+        if (signal.aborted) return;
+        const result = !event.isError && event.toolName === "present_media"
+          ? sanitizePresentMediaDetails(event.result.details)
+          : undefined;
+        await emit({
+          type: "tool_end",
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          status: event.isError ? "failed" : "succeeded",
+          ...(result ? { result } : {}),
+        });
       }));
       unsubscribes.push(session.harness.events.on("message_update", async ({ event }) => {
         if (event.type !== "text_delta" || signal.aborted) return;

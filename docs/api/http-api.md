@@ -84,11 +84,12 @@
 | POST | `/api/uploads` | 根据 MIME 创建上传凭据，返回直传 URL |
 | POST | `/api/uploads/:mediaId/complete` | 校验对象并将媒体标记 ready |
 | GET | `/api/media/:mediaId` | 已就绪且属于当前用户的媒体重定向到 OSS |
-| GET | `/api/media/:mediaId/url` | 返回已就绪媒体的短期 OSS 签名读取地址 |
+| GET | `/api/media/:mediaId/url` | 返回已就绪媒体的短期 OSS 签名读取地址与过期时间 |
+| GET | `/api/media/:mediaId/meta` | 返回已就绪媒体的稳定类型与 capture metadata |
 
 创建上传体：`{ mimeType, bytes }`。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
 
-`GET /api/media/:mediaId` 与 `GET /api/media/:mediaId/url` 都必须携带 `x-user-id`。不存在、未完成或不属于该用户的媒体统一返回 `404 NOT_FOUND`；前者成功时返回 302 到短期 OSS 签名地址，后者返回 `{ url }` JSON，供不能附加自定义 Header 的浏览器 `<img>` / `<audio>` 元素使用。
+`GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 `x-user-id`。不存在、未完成或不属于该用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，供不能附加自定义 Header 的浏览器 `<img>` / `<audio>` 元素使用；`/:id/meta` 返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`，用于需要稳定媒体 metadata 的服务端 / Agent 路径，不包含 signed URL。
 
 ## 脉络与待确认提案
 
@@ -110,7 +111,7 @@
 
 ## 独立 Agent 服务
 
-Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 可通过 `FantoServerClient` 调用 Business Server 的 `record_list`、`record_search`、`record_get` 三个只读工具；Tool schema 不接受 `userId`，实际用户身份来自 Session Run Context，并由 Client 转成 Business Server 的 `x-user-id`。除 `GET /health` 外，Agent HTTP 接口要求以下 Header，且当前运行入口只允许 `X-User-Id: default-user`：
+Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 可通过 `FantoServerClient` 调用 Business Server 的 `record_list`、`record_search`、`record_get` 三个只读 Record Tool，并通过 `present_media` 调用 `GET /api/media/:id/meta` 校验要展示的媒体。Tool schema 不接受 `userId`，实际用户身份来自 Session Run Context，并由 Client 转成 Business Server 的 `x-user-id`。除 `GET /health` 外，Agent HTTP 接口要求以下 Header，且当前运行入口只允许 `X-User-Id: default-user`：
 
 ```text
 Authorization: Bearer <AGENT_TOKEN>
@@ -151,7 +152,7 @@ curl -N http://127.0.0.1:3001/api/agent/stream \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"你好\"}"
 ```
 
-事件以 `start` 开始，期间可发送 `turn_start`、`tool_start`（`toolCallId`、`toolName`）、`tool_end`（再加 `status: succeeded | failed`）和零到多个 `delta`，最终为 `done` 或 `error`。工具事件只提供客户端状态展示所需的标识与状态，不返回工具参数、工具结果、内部错误或 reasoning。单次请求最长 120 秒；同一 Session 已在运行时返回 `409`。
+事件以 `start` 开始，期间可发送 `turn_start`、`tool_start`（`toolCallId`、`toolName`）、`tool_end`（再加 `status: succeeded | failed`）和零到多个 `delta`，最终为 `done` 或 `error`。普通工具事件只提供客户端状态展示所需的标识与状态，不返回工具参数、工具结果、内部错误或 reasoning。成功的 `present_media` 是唯一例外：其 `tool_end` 会额外携带白名单映射后的 `result.items`，每项包含 `mediaId / mediaType / mimeType` 与可选 `width / height / durationMs`；不会包含 signed URL。单次请求最长 120 秒；同一 Session 已在运行时返回 `409`。
 
 历史接口按 `seq` 从新到旧返回。`cursor` 填上页最后一项的 `seq`；`limit` 默认 50，范围为 1–100。`compaction` 和内部 `fanto.*` 条目不对外返回，敏感字段会被脱敏：
 

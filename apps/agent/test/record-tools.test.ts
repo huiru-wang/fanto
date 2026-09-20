@@ -145,9 +145,13 @@ test("ToolRegistry creates only explicitly declared Record tools", () => {
     getRecord: async () => baseRecord,
     listRecords: async () => ({ data: [], hasMore: false, nextCursor: null, pageSize: 10 }),
     searchRecords: async () => ({ data: [] }),
+    getMediaMetadata: async () => ({ mediaId: "img1", mediaType: "image", mimeType: "image/jpeg" }),
   };
   const registry = new ToolRegistry(client as any);
-  assert.deepEqual(registry.create(["record_list", "record_search"] as any, "/tmp").map(tool => tool.name), ["record_list", "record_search"]);
+  assert.deepEqual(
+    registry.create(["record_list", "record_search", "present_media"] as any, "/tmp").map(tool => tool.name),
+    ["record_list", "record_search", "present_media"],
+  );
   assert.deepEqual(new ToolRegistry().create(["read", "write", "edit", "bash"] as any, "/tmp").map(tool => tool.name), ["read", "write", "edit", "bash"]);
   assert.throws(() => new ToolRegistry().create(["record_get"] as any, "/tmp"), /FantoServerClient is required/);
 });

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import type { OssStorage } from "../infrastructure/clients/oss-client.js";
-import type { SqliteMediaRepository } from "../domain/media/sqlite-repository.js";
+import type { MediaAsset, SqliteMediaRepository } from "../domain/media/sqlite-repository.js";
 import { nowIso } from "../infrastructure/time.js";
 import type { RecordRepository } from "../domain/records/repository.js";
 import { createRecordRoutes } from "../routes/records.js";
@@ -27,6 +27,25 @@ const jsonBody = async (response: Response) => {
   try { return redact(JSON.parse(await response.clone().text())); } catch { return null; }
 };
 
+const MEDIA_READ_TTL_MS = 300_000;
+
+function positiveInt(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+function presentableMediaMetadata(asset: MediaAsset) {
+  const rawCapture = asset.extData.capture;
+  const capture = rawCapture && typeof rawCapture === "object" ? rawCapture as Record<string, unknown> : {};
+  return {
+    mediaId: asset.mediaId,
+    mediaType: asset.mediaType,
+    mimeType: asset.mimeType,
+    ...(positiveInt(capture.width) ? { width: positiveInt(capture.width) } : {}),
+    ...(positiveInt(capture.height) ? { height: positiveInt(capture.height) } : {}),
+    ...(positiveInt(capture.durationMs) ? { durationMs: positiveInt(capture.durationMs) } : {}),
+  };
+}
+
 export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository, memory?: Pick<MemoryService, "searchRecords">, allowedUserIds?: ReadonlySet<string>) {
   const app = new Hono();
   app.onError((error, c) => {
@@ -50,10 +69,24 @@ export function createApp(records: RecordRepository, media: SqliteMediaRepositor
   app.route("/api/records", createRecordRoutes(records, media, queue, memory));
   if (creationRead) app.route("/api", createCreationReadRoutes(creationRead));
   if (creationProposals) app.route("/api", createCreationProposalRoutes(creationProposals));
+  app.get("/api/media/:id/meta", async c => {
+    const asset = await media.findMedia(c.req.param("id"), requireUserId(c.req.raw));
+    return asset?.status === "ready"
+      ? c.json({ success: true, result: presentableMediaMetadata(asset), errorCode: null, errorMsg: null })
+      : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404);
+  });
   app.get("/api/media/:id/url", async c => {
     const asset = await media.findMedia(c.req.param("id"), requireUserId(c.req.raw));
     return asset?.status === "ready"
-      ? c.json({ success: true, result: { url: oss.readUrl(asset.objectKey) }, errorCode: null, errorMsg: null })
+      ? c.json({
+        success: true,
+        result: {
+          url: oss.readUrl(asset.objectKey),
+          expiresAt: new Date(Date.now() + MEDIA_READ_TTL_MS).toISOString(),
+        },
+        errorCode: null,
+        errorMsg: null,
+      })
       : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404);
   });
   app.get("/api/media/:id", async c => { const asset = await media.findMedia(c.req.param("id"), requireUserId(c.req.raw)); return asset?.status === "ready" ? c.redirect(oss.readUrl(asset.objectKey), 302) : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404); });
