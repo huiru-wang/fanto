@@ -90,6 +90,7 @@ export interface VectorItemsTable {
   content_hash: string;
   status: string;
   error_code: string | null;
+  event_at: string;
   indexed_at: string | null;
   created_at: string;
 }

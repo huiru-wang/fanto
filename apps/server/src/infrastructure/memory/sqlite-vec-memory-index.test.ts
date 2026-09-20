@@ -16,6 +16,7 @@ const document = (userId: string, sourceId: string, content: string) => ({
   sourceId,
   recordId: sourceId,
   mediaId: null,
+  eventAt: "2026-09-18T00:00:00.000Z",
   content,
   contentHash: `hash-${userId}-${sourceId}-${content}`,
 });
@@ -46,12 +47,14 @@ test("sqlite memory index replaces, detects current hash, and removes derived da
     const index = new SqliteVecMemoryIndex(db);
     const first = document("u1", "r1", "first");
     await index.replace(first, vector(1, 0));
-    assert.equal(await index.isCurrent(first, first.contentHash), true);
+    assert.equal(await index.isCurrent(first, first.contentHash, first.eventAt), true);
+    assert.equal(await index.isCurrent(first, first.contentHash, "2026-09-19T00:00:00.000Z"), false);
+    assert.equal((await db.selectFrom("vector_items").select("event_at").where("user_id", "=", "u1").executeTakeFirstOrThrow()).event_at, first.eventAt);
 
     const second = document("u1", "r1", "second");
     await index.replace(second, vector(0, 1));
-    assert.equal(await index.isCurrent(first, first.contentHash), false);
-    assert.equal(await index.isCurrent(second, second.contentHash), true);
+    assert.equal(await index.isCurrent(first, first.contentHash, first.eventAt), false);
+    assert.equal(await index.isCurrent(second, second.contentHash, second.eventAt), true);
     assert.equal((await db.selectFrom("vector_items").selectAll().where("user_id", "=", "u1").execute()).length, 1);
 
     await index.remove(second);

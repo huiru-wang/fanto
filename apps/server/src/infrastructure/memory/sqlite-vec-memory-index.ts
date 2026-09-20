@@ -10,7 +10,7 @@ const MEDIA_TYPES: MemorySourceType[] = ["image", "audio"];
 export class SqliteVecMemoryIndex implements MemoryIndex {
   constructor(private readonly db: Kysely<DB>) {}
 
-  async isCurrent(ref: MemoryRef, contentHash: string): Promise<boolean> {
+  async isCurrent(ref: MemoryRef, contentHash: string, eventAt: string): Promise<boolean> {
     const row = await this.db
       .selectFrom("vector_items")
       .select("id")
@@ -18,6 +18,7 @@ export class SqliteVecMemoryIndex implements MemoryIndex {
       .where("type", "=", ref.sourceType)
       .where("outer_id", "=", ref.sourceId)
       .where("content_hash", "=", contentHash)
+      .where("event_at", "=", eventAt)
       .where("status", "=", "indexed")
       .executeTakeFirst();
     return Boolean(row);
@@ -58,6 +59,7 @@ export class SqliteVecMemoryIndex implements MemoryIndex {
         content_hash: document.contentHash,
         status: "indexed",
         error_code: null,
+        event_at: document.eventAt,
         indexed_at: now,
         created_at: now,
       }).execute();
@@ -124,7 +126,7 @@ export class SqliteVecMemoryIndex implements MemoryIndex {
     const ids = candidates.rows.map(row => row.id);
     const rows = await this.db
       .selectFrom("vector_items")
-      .select(["id", "user_id", "type", "outer_id", "content"])
+      .select(["id", "user_id", "type", "outer_id", "event_at", "content"])
       .where("id", "in", ids)
       .where("user_id", "=", input.userId)
       .where("type", "in", input.sourceTypes)
@@ -139,6 +141,7 @@ export class SqliteVecMemoryIndex implements MemoryIndex {
         userId: item.user_id,
         sourceType: item.type as MemorySourceType,
         sourceId: item.outer_id,
+        eventAt: item.event_at,
         content: item.content,
         distance: candidate.distance,
       }];

@@ -49,6 +49,7 @@ export async function up(db: Kysely<any>) {
     .addColumn("content_hash", "text", c => c.notNull())
     .addColumn("status", "text", c => c.notNull())
     .addColumn("error_code", "text")
+    .addColumn("event_at", "text", c => c.notNull())
     .addColumn("indexed_at", "text")
     .addColumn("created_at", "text", c => c.notNull())
     .execute();

@@ -22,7 +22,7 @@ export class MemoryService {
     }
 
     for (const document of documents) {
-      if (await this.index.isCurrent(document, document.contentHash)) continue;
+      if (await this.index.isCurrent(document, document.contentHash, document.eventAt)) continue;
       const embedding = await this.embeddings.embed(document.content);
       await this.index.replace(document, embedding);
     }

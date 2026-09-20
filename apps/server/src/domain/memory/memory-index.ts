@@ -1,7 +1,7 @@
 import type { MemoryDocument, MemoryIndexHit, MemoryRef, MemorySourceType } from "./model.js";
 
 export interface MemoryIndex {
-  isCurrent(ref: MemoryRef, contentHash: string): Promise<boolean>;
+  isCurrent(ref: MemoryRef, contentHash: string, eventAt: string): Promise<boolean>;
   replace(document: MemoryDocument, embedding: number[]): Promise<void>;
   remove(ref: MemoryRef): Promise<void>;
   listRecordRefs(userId: string, recordId: string): Promise<MemoryRef[]>;

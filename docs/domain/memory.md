@@ -62,7 +62,7 @@ flowchart LR
 ```
 
 - `records`：业务事实。
-- `vector_items`：保存 user、原子 source type（`record_text` / `image` / `audio`）、source ID、索引文本、hash 与索引状态。
+- `vector_items`：保存 user、原子 source type（`record_text` / `image` / `audio`）、source ID、原始 Record 的 `event_at`、索引文本、hash 与索引状态。
 - `record_vectors`：768 维 sqlite-vec 向量索引。
 - `record_vectors.rowid = vector_items.id` 用于关联。
 

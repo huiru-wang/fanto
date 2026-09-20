@@ -9,11 +9,13 @@ export type MemoryRef = {
 export type MemoryDocument = MemoryRef & {
   recordId: string;
   mediaId: string | null;
+  eventAt: string;
   content: string;
   contentHash: string;
 };
 
 export type MemoryIndexHit = MemoryRef & {
+  eventAt: string;
   content: string;
   distance: number;
 };

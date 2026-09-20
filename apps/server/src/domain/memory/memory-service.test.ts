@@ -34,6 +34,7 @@ test("record memory builder creates independent text, audio, and image documents
     ["image", "record-1", "image-1", "图片描述：雨衣和登山杖放在玄关。"],
   ]);
   assert.deepEqual(first.map(item => item.contentHash), second.map(item => item.contentHash));
+  assert.equal(first.every(item => item.eventAt === record().eventAt), true);
 });
 
 test("record memory builder ignores blocks without semantic text", () => {
@@ -66,6 +67,7 @@ class FakeIndex implements MemoryIndex {
       userId: input.userId,
       sourceType: "image",
       sourceId: "record-1:image-1",
+      eventAt: "2026-09-18T00:00:00.000Z",
       content: "图片描述：命中内容",
       distance: 0.25,
     }];

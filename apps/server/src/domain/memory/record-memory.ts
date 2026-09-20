@@ -18,6 +18,7 @@ function document(
     sourceId,
     recordId: record.id,
     mediaId,
+    eventAt: record.eventAt,
     content,
     contentHash: hash(content),
   };
