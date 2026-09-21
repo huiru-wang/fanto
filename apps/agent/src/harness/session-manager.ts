@@ -8,6 +8,8 @@ import { HarnessFactory } from "./harness-factory.js";
 import { createRunContext, type RunMetadata } from "./run-context.js";
 import { createWorkspace } from "./workspace.js";
 import { sanitizePresentMediaDetails, type PresentMediaDetails } from "../tools/present-media-tool.js";
+import type { ContextRuntime } from "../context/runtime.js";
+import type { ContextMessage } from "../context/types.js";
 
 const SESSION_OWNER_ENTRY = "fanto.session_owner";
 const validSessionId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -25,6 +27,7 @@ export type ManagedSession = {
   harness: AgentHarness<ExecutionToolContext>;
   lane: AgentLane;
   session: Session;
+  systemPromptTemplate: string;
 };
 
 export type AgentStreamEvent =
@@ -38,7 +41,7 @@ export class AgentSessionManager {
   private readonly sessions = new Map<string, ManagedSession>();
   private readonly running = new Set<string>();
 
-  constructor(private readonly factory: HarnessFactory, private readonly databasePath: string, private readonly workspaceRoot: string) {
+  constructor(private readonly factory: HarnessFactory, private readonly databasePath: string, private readonly workspaceRoot: string, private readonly contextRuntime?: ContextRuntime) {
     mkdirSync(dirname(databasePath), { recursive: true });
     mkdirSync(workspaceRoot, { recursive: true });
     this.repository = new SqliteSessionRepo({
@@ -89,7 +92,7 @@ export class AgentSessionManager {
     return () => this.running.delete(session.id);
   }
 
-  async prompt(session: ManagedSession, message: string, signal: AbortSignal, metadata: Omit<RunMetadata, "userId">, emit: (event: AgentStreamEvent) => Promise<void>): Promise<string> {
+  async prompt(session: ManagedSession, message: string, signal: AbortSignal, metadata: Pick<RunMetadata, "taskId" | "traceId">, emit: (event: AgentStreamEvent) => Promise<void>): Promise<string> {
     const unsubscribes: Array<() => void> = [];
     let output = "";
     const abort = () => { void session.lane.abort(TODO_CONTEXT).catch(() => {}); };
@@ -120,7 +123,30 @@ export class AgentSessionManager {
         output += event.delta;
         await emit({ type: "delta", text: event.delta });
       }));
-      const result = await session.lane.prompt(message, undefined, createRunContext({ userId: session.userId, ...metadata }));
+      const recentMessages = await readRecentMessages(session.lane);
+      const systemPrompt = this.contextRuntime
+        ? await this.contextRuntime.buildPrompt(session.systemPromptTemplate, {
+            userId: session.userId,
+            sessionId: session.id,
+            message,
+            recentMessages,
+            signal,
+            traceId: metadata.traceId,
+          })
+        : session.systemPromptTemplate;
+      signal.throwIfAborted();
+      const runMetadata: RunMetadata = {
+        userId: session.userId,
+        ...metadata,
+        sessionId: session.id,
+        currentMessage: message,
+        systemPrompt,
+      };
+      unsubscribes.push(session.harness.events.on("entry_added", async ({ entry }) => {
+        if (runMetadata.sourceMessageId || entry.type !== "message" || entry.message.role !== "user") return;
+        if (messageText(entry.message) === message) runMetadata.sourceMessageId = entry.id;
+      }));
+      const result = await session.lane.prompt(message, undefined, createRunContext(runMetadata));
       signal.throwIfAborted();
       if (!result.ok || result.value.status !== "completed") throw new Error("Agent run did not complete");
       return output;
@@ -184,7 +210,7 @@ export class AgentSessionManager {
     const runtime = await this.factory.create(session, definition, createWorkspace(this.workspaceRoot, id));
     await runtime.lane.setModel({ provider: definition.provider, modelId: definition.model }, TODO_CONTEXT);
     await runtime.lane.setActiveTools(definition.tools, TODO_CONTEXT);
-    return { id, agentId: definition.id, userId, revision: definition.revision, session, ...runtime };
+    return { id, agentId: definition.id, userId, revision: definition.revision, session, systemPromptTemplate: definition.systemPrompt, ...runtime };
   }
 
   private async writeBinding(session: ManagedSession, definition: AgentDefinition): Promise<void> {
@@ -236,4 +262,24 @@ export class AgentSessionManager {
 
 function isVisibleHistoryEntry(entry: Entry): boolean {
   return entry.type !== "compaction" && !(entry.type === "custom" && entry.customType.startsWith("fanto."));
+}
+
+
+async function readRecentMessages(lane: AgentLane): Promise<ContextMessage[]> {
+  const entries = await lane.findEntries({ type: "message", order: "newestFirst", limit: 12 }, TODO_CONTEXT);
+  return entries.reverse().flatMap(entry => {
+    if (entry.type !== "message" || (entry.message.role !== "user" && entry.message.role !== "assistant")) return [];
+    const text = messageText(entry.message).trim();
+    return text ? [{ role: entry.message.role, text } as ContextMessage] : [];
+  }).slice(-8);
+}
+
+function messageText(message: { content: unknown }): string {
+  if (typeof message.content === "string") return message.content;
+  if (!Array.isArray(message.content)) return "";
+  return message.content.flatMap(block => {
+    if (!block || typeof block !== "object") return [];
+    const value = block as { type?: unknown; text?: unknown };
+    return value.type === "text" && typeof value.text === "string" ? [value.text] : [];
+  }).join("\n");
 }

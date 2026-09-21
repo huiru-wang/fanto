@@ -27,4 +27,5 @@ export type MemorySearchResult = {
   mediaId: string | null;
   snippet: string;
   distance: number;
+  eventAt: string;
 };

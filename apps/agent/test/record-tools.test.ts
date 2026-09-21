@@ -114,7 +114,7 @@ test("record_search returns atomic source metadata and distance", async () => {
     listRecords: async () => ({ data: [], hasMore: false, nextCursor: null, pageSize: 10 }),
     searchRecords: async (ctx: unknown, input: unknown) => {
       calls.push({ ctx, input });
-      return { data: [{ recordId: "r1", sourceType: "image", mediaId: "img1", snippet: "图片描述：AI Coding", distance: 0.18 }] };
+      return { data: [{ recordId: "r1", sourceType: "image", mediaId: "img1", snippet: "图片描述：AI Coding", distance: 0.18, eventAt: "2026-09-18T00:00:00.000Z" }] };
     },
   };
   const result = await execute(createRecordSearchTool(client as any), { query: "  AI Coding  " });
@@ -125,6 +125,7 @@ test("record_search returns atomic source metadata and distance", async () => {
     mediaId: "img1",
     snippet: "图片描述：AI Coding",
     distance: 0.18,
+    eventAt: "2026-09-18T00:00:00.000Z",
   }] });
   assert.doesNotMatch(JSON.stringify(result.details), /userId/);
 });

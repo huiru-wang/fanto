@@ -10,6 +10,12 @@ import { ToolRegistry } from "../tools/registry.js";
 import { AgentTaskRepository } from "../tasks/task-repository.js";
 import { TaskRunner } from "../tasks/task-runner.js";
 import { FantoServerClient } from "../clients/fanto-server-client.js";
+import { ContextBuilder } from "../context/builder.js";
+import { ContextRuntime } from "../context/runtime.js";
+import { CharacterProvider } from "../context/providers/character.js";
+import { PreferenceProvider } from "../context/providers/preference.js";
+import { MemoryProvider } from "../context/providers/memory.js";
+import { PiQueryRewriter } from "../context/query-rewriter.js";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const projectRoot = resolve(appRoot, "../..");
@@ -19,6 +25,11 @@ const fromProjectRoot = (value: string | undefined, fallback: string) => value ?
 const skills = new SkillLoader(resolve(appRoot, "skills"));
 const fantoServer = new FantoServerClient(process.env.FANTO_SERVER_BASE_URL ?? "http://127.0.0.1:3000");
 const factory = new HarnessFactory(new ToolRegistry(fantoServer), skills);
+const contextRuntime = new ContextRuntime(new ContextBuilder([
+  new CharacterProvider(),
+  new PreferenceProvider(fantoServer),
+  new MemoryProvider(fantoServer, new PiQueryRewriter(factory.models)),
+]));
 const registry = new AgentRegistry(resolve(appRoot, "agents.yaml"), factory.models, skills, {
   provider: process.env.PROVIDER,
   model: process.env.MODEL,
@@ -27,6 +38,7 @@ const sessions = new AgentSessionManager(
   factory,
   fromProjectRoot(process.env.AGENT_SESSION_DB, "data/agent-sessions.sqlite"),
   fromProjectRoot(process.env.AGENT_WORKSPACE_ROOT, "data/workspaces"),
+  contextRuntime,
 );
 const tasks = new AgentTaskRepository(fromProjectRoot(process.env.AGENT_SESSION_DB, "data/agent-sessions.sqlite"));
 const runner = new TaskRunner(tasks, sessions, registry);

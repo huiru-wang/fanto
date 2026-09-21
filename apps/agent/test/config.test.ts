@@ -52,7 +52,7 @@ test("loads Fanto prompt file for main while coding remains isolated", () => {
   const definitions = readAgentDefinitions(resolve(appRoot, "agents.yaml"), builtinModels(), skills.ids());
   const main = definitions.find(definition => definition.id === "main");
   const coding = definitions.find(definition => definition.id === "coding");
-  assert.deepEqual(main?.tools, ["record_get", "record_list", "record_search", "present_media"]);
+  assert.deepEqual(main?.tools, ["record_get", "record_list", "record_search", "present_media", "preference_manage"]);
   assert.deepEqual(main?.skills, []);
   assert.match(main?.systemPrompt ?? "", /你是 Fanto/);
   assert.match(main?.systemPrompt ?? "", /record_list/);
@@ -128,10 +128,10 @@ defaults:
 agents:
   - id: main
     systemPrompt: Use records carefully.
-    tools: [record_get, record_list, record_search, present_media]
+    tools: [record_get, record_list, record_search, present_media, preference_manage]
 `);
   try {
     const definitions = readAgentDefinitions(files.config, builtinModels(), new Set());
-    assert.deepEqual(definitions[0]?.tools, ["record_get", "record_list", "record_search", "present_media"]);
+    assert.deepEqual(definitions[0]?.tools, ["record_get", "record_list", "record_search", "present_media", "preference_manage"]);
   } finally { rmSync(files.root, { recursive: true, force: true }); }
 });

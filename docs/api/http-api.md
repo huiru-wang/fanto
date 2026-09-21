@@ -22,7 +22,7 @@
 | PATCH | `/api/records/:id` | 以 expectedVersion 更新内容 |
 | POST | `/api/records/search` | 当前用户 Record 语义搜索 |
 
-`POST /api/records/search` 的每个命中返回 `recordId`、`sourceType` (`record_text` / `image` / `audio`)、可选 `mediaId`、`snippet` 和向量 `distance`；图片和音频命中仍关联回原 Record。
+`POST /api/records/search` 的每个命中返回 `recordId`、`sourceType` (`record_text` / `image` / `audio`)、可选 `mediaId`、`snippet`、原始 Record 的 `eventAt` 和向量 `distance`；图片和音频命中仍关联回原 Record。
 
 创建体：`{ text, media, eventAt, source? }`；更新体：`{ text, media, expectedVersion }`。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。创建或更新完成后，服务端异步处理当前版本的图片理解、音频转写与向量索引；图片 description 写入对应 image block，音频 transcription 写入对应 audio block。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
 
@@ -40,7 +40,7 @@
 - `limit` 默认 10，范围 1–20；
 - 当前用户只来自 `x-user-id`，请求体不能传 `userId`；
 - 搜索通过 Memory 模块在当前用户的 sqlite-vec partition 内执行；
-- 返回 `{ data: [{ recordId, sourceType, mediaId, snippet, distance }] }`；
+- 返回 `{ data: [{ recordId, sourceType, mediaId, snippet, eventAt, distance }] }`；
 - `sourceType` 为 `record_text` / `image` / `audio`，媒体命中通过 `mediaId` 关联具体图片或音频；
 - `distance` 是 sqlite-vec 原始向量距离，仅用于检索相关性判断，不代表已经校准的产品置信度或概率。
 
@@ -77,6 +77,35 @@
 - **新增返回字段**：audio block 的可选 `transcription`。同一文本也会投影为 `media[].asr.transcript`，方便现有媒体展示；其正式存储位置是 Record 的 audio block。
 - **新增更新限制**：Record 为 `processing` 时，`PATCH /api/records/:id` 返回 `409 VERSION_CONFLICT`；读取接口始终可用。
 
+## User Preferences
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/preferences` | 当前用户最多 20 条长期偏好，按最近更新时间倒序 |
+| POST | `/api/preferences` | 创建明确长期偏好；完全相同的 category + content 会复用并刷新来源 |
+| PATCH | `/api/preferences/:id` | 以 expectedVersion 更新偏好 |
+| DELETE | `/api/preferences/:id` | 以 expectedVersion 删除偏好 |
+
+category 取值为 `communication | scenario | lifestyle`。创建体：
+
+```json
+{
+  "category": "communication",
+  "content": "技术方案详细展开，包含流程和实现细节",
+  "source": {
+    "sessionId": "session-id",
+    "messageId": "pi-entry-id",
+    "quote": "以后技术方案详细一点"
+  }
+}
+```
+
+更新体在此基础上增加 `expectedVersion`；删除体为 `{ "expectedVersion": 3 }`。
+
+`preference_id` 是 API / Agent Tool 使用的业务 UUID，数据库自增 `id` 不对外。更新和删除按当前用户、业务 ID 和版本共同校验；不存在返回 `404 NOT_FOUND`，版本过期返回 `409 VERSION_CONFLICT`，创建第 21 条不同 Preference 返回 `409 PREFERENCE_LIMIT_REACHED`。
+
+Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionId / messageId` 来自当前 Run Context，`quote` 必须是当前用户消息中的连续原文。Preference 的 content 和 source quote 会在 Business Server access log 中脱敏。
+
 ## 上传与媒体
 
 | 方法 | 路径 | 说明 |
@@ -111,7 +140,7 @@
 
 ## 独立 Agent 服务
 
-Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 可通过 `FantoServerClient` 调用 Business Server 的 `record_list`、`record_search`、`record_get` 三个只读 Record Tool，并通过 `present_media` 调用 `GET /api/media/:id/meta` 校验要展示的媒体。Tool schema 不接受 `userId`，实际用户身份来自 Session Run Context，并由 Client 转成 Business Server 的 `x-user-id`。除 `GET /health` 外，Agent HTTP 接口要求以下 Header，且当前运行入口只允许 `X-User-Id: default-user`：
+Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 在每次 Run 前通过 Context Runtime 注入 Character、最多 20 条 User Preference 和最多 2 条 Relevant Memory；Agent Loop 内仍可通过 `FantoServerClient` 调用 `record_list`、`record_search`、`record_get` 三个只读 Record Tool，通过 `preference_manage` 管理明确长期偏好，并通过 `present_media` 调用 `GET /api/media/:id/meta` 校验要展示的媒体。Tool schema 不接受 `userId`，实际用户身份来自 Session Run Context，并由 Client 转成 Business Server 的 `x-user-id`。除 `GET /health` 外，Agent HTTP 接口要求以下 Header，且当前运行入口只允许 `X-User-Id: default-user`：
 
 ```text
 Authorization: Bearer <AGENT_TOKEN>

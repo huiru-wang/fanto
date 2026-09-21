@@ -46,6 +46,7 @@ type RecordSearchDetails = {
     mediaId: string | null;
     snippet: string;
     distance: number;
+    eventAt: string;
   }>;
 };
 

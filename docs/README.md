@@ -19,6 +19,7 @@
 - [Record](domain/records.md)：原始记录、状态、版本和时间语义。
 - [Media](domain/media.md)：上传、OSS、图片理解与音频转写。
 - [Memory / Retrieval](domain/memory.md)：Memory 模块、Record 索引、检索与派生数据边界。
+- [User Preferences](domain/preferences.md)：用户明确长期偏好、来源追溯与 Agent 写入边界。
 - [Creation / Proposal](domain/creations.md)：长期脉络、待确认发现和来源关系。
 
 ## 客户端与接口

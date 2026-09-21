@@ -37,7 +37,7 @@ agents:
   - id: main
     description: 认识用户长期记录、在需要时调用个人记忆的中文助手
     systemPromptFile: ./prompts/fanto.md
-    tools: [record_get, record_list, record_search, present_media]
+    tools: [record_get, record_list, record_search, present_media, preference_manage]
     skills: []
 
   - id: coding
@@ -49,18 +49,39 @@ agents:
 
 `systemPrompt` 和 `systemPromptFile` 二选一。`systemPromptFile` 必须是相对 `agents.yaml` 的配置目录内路径，运行时会读取文件内容作为最终 `systemPrompt`；Prompt 内容也参与 Agent revision 计算，因此文件内容变化会让已有 Session 在下次运行时应用新的 Agent definition。
 
-可用工具为 `read`、`write`、`edit`、`bash`、`record_get`、`record_list`、`record_search`、`present_media`。每个 Agent 仅获得其配置列出的工具；当前 `main` 开启三个只读 Record Tool 与 `present_media`，`coding` 保持文件 / shell 工具，不默认获得个人历史访问能力。`compaction` 会原样传给 Pi；三个字段分别控制是否启用、为摘要保留的 token 以及压缩后保留的最近上下文。它在使用同一 `sessionId` 的多轮对话中生效。
+可用工具为 `read`、`write`、`edit`、`bash`、`record_get`、`record_list`、`record_search`、`present_media`、`preference_manage`。每个 Agent 仅获得其配置列出的工具；当前 `main` 开启三个只读 Record Tool、`present_media` 与 `preference_manage`，`coding` 保持文件 / shell 工具，不默认获得个人历史或长期偏好访问能力。`compaction` 会原样传给 Pi；三个字段分别控制是否启用、为摘要保留的 token 以及压缩后保留的最近上下文。它在使用同一 `sessionId` 的多轮对话中生效。
 
 Skill 用 ID 声明在 `skills` 中，文件固定为 `apps/agent/skills/<id>/SKILL.md`；YAML 不能指定任意本地路径。
+
+## Context Runtime
+
+`main` 的 System Prompt 模板仍由 `systemPromptFile: ./prompts/fanto.md` 配置，`agents.yaml` 没有额外 Context 配置。模板包含三个运行时插槽：
+
+```text
+{{character}}
+{{user_preferences}}
+{{relevant_memory}}
+```
+
+每次 stream / task 的 Agent Run 开始前，Session Manager 只执行一次 Context Build：
+
+1. CharacterProvider 返回默认 `natural` 表达风格；
+2. PreferenceProvider 从 Business Server 读取当前用户最多 20 条长期偏好；
+3. MemoryProvider 用 `deepseek-v4-flash` 结合当前消息与最近最多约 4 轮对话重写 0–2 条查询，复用 `POST /api/records/search`，按真实 `recordId` 去重并只保留最相关 2 条；
+4. Context Composer 替换三个插槽，得到本次 Run 固定的 System Prompt；
+5. 进入原有 Pi Agent Loop。
+
+Context Runtime 不参与后续 Model / Tool turn。Pi 的 systemPrompt 回调只从当前 Run Context 读取已经生成的字符串，因此 Tool 调用后不会重新搜索 Memory，也不会因为 `preference_manage` 写入而重建 Prompt。
 
 ## Record Tools
 
 `main` 当前通过 Business Server HTTP 使用三个只读 Record Tool 与一个媒体展示 Tool：
 
 - `record_list(limit?, cursor?)`：按时间浏览最近记录；Agent 侧默认 10 条、最大 20 条，并把每条 Record 压缩成最多约 500 字符的 preview。
-- `record_search(query, limit?)`：按语义搜索历史记录的文本、图片描述和音频转写原子单元；返回 `recordId + sourceType + mediaId + snippet + distance`。
+- `record_search(query, limit?)`：按语义搜索历史记录的文本、图片描述和音频转写原子单元；返回 `recordId + sourceType + mediaId + snippet + eventAt + distance`。
 - `record_get(recordId)`：已有 Record ID 时读取完整 `content.text + content.blocks`；不会把媒体 signed URL 注入模型上下文。
 - `present_media(mediaIds)`：只接受 Record Tool 返回的 mediaId；运行时通过 `GET /api/media/:id/meta` 校验用户归属和 ready 状态，并把稳定的 `mediaType / mimeType / capture` 写入原生 Tool Result `details`。signed URL 不进入 Session。
+- `preference_manage(...)`：只在用户当前消息明确表达长期偏好或管理请求时创建、更新、删除 Preference。模型不能填写 `userId / sessionId / sourceMessageId`，且 `sourceQuote` 必须逐字来自当前用户消息；成功后 Tool Result 返回最新 Preference 列表，但本轮 System Prompt 保持不变。
 
 这些 Tool 不直接访问业务 SQLite。调用链为：
 

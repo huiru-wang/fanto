@@ -50,6 +50,7 @@ export class MemoryService {
         mediaId: source.mediaId,
         snippet: hit.content.slice(0, 1_000),
         distance: hit.distance,
+        eventAt: hit.eventAt,
       };
     });
   }

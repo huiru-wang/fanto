@@ -20,10 +20,10 @@ flowchart LR
 
 Fanto 当前有两个独立后端服务，并有 iOS 与 H5 两类客户端入口：
 
-1. **Business Server**：Record、Media、Memory / Retrieval、Creation / Proposal 的业务运行时。
-2. **Agent Runtime**：Agent 定义、Session、流式执行、异步任务、工作区、Pi 内置工具、只读 Record Tool 与媒体展示 Tool 的独立运行时。
+1. **Business Server**：Record、Media、Memory / Retrieval、User Preference、Creation / Proposal 的业务运行时。
+2. **Agent Runtime**：Agent 定义、Session、Context Runtime、流式执行、异步任务、工作区、Pi 内置工具、Record / Preference Tool 与媒体展示 Tool 的独立运行时。
 
-两个后端服务没有共享数据库。Agent Runtime 当前只通过 `FantoServerClient` 使用 Business Server 的 Record HTTP API 和 user-scoped Media metadata API；业务数据仍由 Business Server 负责用户隔离与访问。H5 生产构建由 Nginx 提供静态文件，并把 `/api/*` 转发到 Business Server、`/api/agent/*` 转发到 Agent Runtime。
+两个后端服务没有共享数据库。Agent Runtime 通过 `FantoServerClient` 使用 Business Server 的 Record Search / Record、User Preference 与 user-scoped Media metadata API；业务数据仍由 Business Server 负责用户隔离与访问。H5 生产构建由 Nginx 提供静态文件，并把 `/api/*` 转发到 Business Server、`/api/agent/*` 转发到 Agent Runtime。
 
 ## 业务数据边界
 
@@ -33,6 +33,7 @@ Business Server 使用一个 SQLite 数据库保存：
 - records；
 - media_assets；
 - vector_items + sqlite-vec `record_vectors`；
+- user_preferences；
 - creation_kinds；
 - creations；
 - creation_proposals；

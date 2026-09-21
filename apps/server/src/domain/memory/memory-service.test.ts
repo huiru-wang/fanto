@@ -138,6 +138,7 @@ test("memory service search exposes source, record association, and distance", a
     mediaId: "image-1",
     snippet: "图片描述：命中内容",
     distance: 0.25,
+    eventAt: "2026-09-18T00:00:00.000Z",
   }]);
   assert.deepEqual(index.searches, [{
     userId: "user-1",

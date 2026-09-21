@@ -14,6 +14,8 @@ import { createCreationReadRoutes } from "../routes/creations.js";
 import { CreationProposalRepository } from "../domain/creations/proposal-repository.js";
 import { createCreationProposalRoutes } from "../routes/proposals.js";
 import type { MemoryService } from "../domain/memory/memory-service.js";
+import type { PreferenceService } from "../domain/preferences/preference-service.js";
+import { createPreferenceRoutes } from "../routes/preferences.js";
 
 const redact = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(redact);
@@ -22,9 +24,19 @@ const redact = (value: unknown): unknown => {
     /authorization|password|secret|token|key/i.test(key) ? [key, "[REDACTED]"] : [key, redact(item)],
   ));
 };
-const jsonBody = async (response: Response) => {
+const redactPreferenceData = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(redactPreferenceData);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) =>
+    /^(content|quote|sourceQuote|source_quote)$/i.test(key) ? [key, "[REDACTED]"] : [key, redactPreferenceData(item)],
+  ));
+};
+export const logSafeBody = (path: string, value: unknown) => path.startsWith("/api/preferences")
+  ? redactPreferenceData(redact(value))
+  : redact(value);
+const jsonBody = async (response: Response, path: string) => {
   if (!response.headers.get("content-type")?.includes("application/json")) return null;
-  try { return redact(JSON.parse(await response.clone().text())); } catch { return null; }
+  try { return logSafeBody(path, JSON.parse(await response.clone().text())); } catch { return null; }
 };
 
 const MEDIA_READ_TTL_MS = 300_000;
@@ -46,7 +58,7 @@ function presentableMediaMetadata(asset: MediaAsset) {
   };
 }
 
-export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository, memory?: Pick<MemoryService, "searchRecords">, allowedUserIds?: ReadonlySet<string>) {
+export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository, memory?: Pick<MemoryService, "searchRecords">, allowedUserIds?: ReadonlySet<string>, preferences?: PreferenceService) {
   const app = new Hono();
   app.onError((error, c) => {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });
@@ -54,9 +66,11 @@ export function createApp(records: RecordRepository, media: SqliteMediaRepositor
   });
   app.use("*", cors());
   app.use("/api/*", async (c, next) => {
-    const requestBody = c.req.header("content-type")?.includes("application/json") ? await c.req.raw.clone().json().then(redact).catch(() => null) : null;
+    const requestBody = c.req.header("content-type")?.includes("application/json")
+      ? await c.req.raw.clone().json().then(value => logSafeBody(c.req.path, value)).catch(() => null)
+      : null;
     await next();
-    logAccess({ method: c.req.method, path: c.req.path, requestBody, responseBody: await jsonBody(c.res), status: c.res.status });
+    logAccess({ method: c.req.method, path: c.req.path, requestBody, responseBody: await jsonBody(c.res, c.req.path), status: c.res.status });
   });
   app.use("/api/*", async (c, next) => {
     if (c.req.method === "OPTIONS") return next();
@@ -67,6 +81,7 @@ export function createApp(records: RecordRepository, media: SqliteMediaRepositor
   app.get("/health", c => c.json({ status: "ok", timestamp: nowIso() }));
   app.route("/api/uploads", createUploadRoutes(media, oss));
   app.route("/api/records", createRecordRoutes(records, media, queue, memory));
+  if (preferences) app.route("/api/preferences", createPreferenceRoutes(preferences));
   if (creationRead) app.route("/api", createCreationReadRoutes(creationRead));
   if (creationProposals) app.route("/api", createCreationProposalRoutes(creationProposals));
   app.get("/api/media/:id/meta", async c => {

@@ -28,7 +28,7 @@ test("sends user and trace headers and maps all Record endpoints", async () => {
     calls.push({ url: String(input), init });
     const url = String(input);
     if (url.includes("/api/media/")) return ok({ mediaId: "m1", mediaType: "image", mimeType: "image/jpeg", width: 1200, height: 800 });
-    if (url.includes("/search")) return ok({ data: [{ recordId: "r1", sourceType: "image", mediaId: "m1", snippet: "hit", distance: 0.12 }] });
+    if (url.includes("/search")) return ok({ data: [{ recordId: "r1", sourceType: "image", mediaId: "m1", snippet: "hit", distance: 0.12, eventAt: "2026-09-18T00:00:00.000Z" }] });
     if (url.includes("?")) return ok({ data: [record], hasMore: true, nextCursor: "next", pageSize: 2 });
     return ok(record);
   }) as typeof fetch;
@@ -37,7 +37,7 @@ test("sends user and trace headers and maps all Record endpoints", async () => {
 
   assert.equal((await client.getRecord(ctx, "r/1")).id, "r1");
   assert.equal((await client.listRecords(ctx, { limit: 2, cursor: "c+d" })).nextCursor, "next");
-  assert.deepEqual((await client.searchRecords(ctx, { query: "AI Coding", limit: 3 })).data, [{ recordId: "r1", sourceType: "image", mediaId: "m1", snippet: "hit", distance: 0.12 }]);
+  assert.deepEqual((await client.searchRecords(ctx, { query: "AI Coding", limit: 3 })).data, [{ recordId: "r1", sourceType: "image", mediaId: "m1", snippet: "hit", distance: 0.12, eventAt: "2026-09-18T00:00:00.000Z" }]);
   assert.deepEqual(await client.getMediaMetadata(ctx, "m/1"), {
     mediaId: "m1",
     mediaType: "image",
@@ -87,7 +87,7 @@ test("maps HTTP failures without leaking raw payloads", async () => {
       && error.kind === "http"
       && error.status === 404
       && error.errorCode === "NOT_FOUND"
-      && error.message === "Record not found or not accessible",
+      && error.message === "Resource not found or not accessible",
   );
 });
 
@@ -152,4 +152,39 @@ test("propagates caller cancellation instead of converting it to a network error
   }, "r1");
   controller.abort(new Error("cancelled by agent run"));
   await assert.rejects(() => request, /cancelled by agent run/);
+});
+
+test("maps Preference endpoints without exposing identity in payloads", async () => {
+  const calls: Array<{ url: string; init?: RequestInit }> = [];
+  const preference = {
+    preferenceId: "p1", userId: "u1", category: "communication", content: "技术方案详细展开",
+    sourceSessionId: "s1", sourceMessageId: "m1", sourceQuote: "以后技术方案详细一点",
+    version: 1, createdAt: "2026-09-21T00:00:00.000Z", updatedAt: "2026-09-21T00:00:00.000Z",
+  };
+  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(input), init });
+    if (init?.method === "POST") return ok({ preference, reused: false }, 201);
+    if (init?.method === "PATCH") return ok({ ...preference, version: 2 });
+    if (init?.method === "DELETE") return ok({ preferenceId: "p1" });
+    return ok({ data: [preference] });
+  }) as typeof fetch;
+  const client = new FantoServerClient("http://server.local", 1_000, fetchImpl);
+  const ctx = { userId: "u1", traceId: "trace-1" };
+  const source = { sessionId: "s1", messageId: "m1", quote: "以后技术方案详细一点" };
+
+  assert.equal((await client.listPreferences(ctx)).data[0]?.preferenceId, "p1");
+  assert.equal((await client.createPreference(ctx, { category: "communication", content: "技术方案详细展开", source })).preference.preferenceId, "p1");
+  assert.equal((await client.updatePreference(ctx, "p/1", { expectedVersion: 1, category: "scenario", content: "技术讨论详细展开", source })).version, 2);
+  assert.deepEqual(await client.deletePreference(ctx, "p/1", 2), { preferenceId: "p1" });
+
+  assert.equal(calls[0]?.init?.method, "GET");
+  assert.equal(calls[1]?.init?.method, "POST");
+  assert.equal(calls[2]?.init?.method, "PATCH");
+  assert.equal(calls[3]?.init?.method, "DELETE");
+  assert.match(calls[2]?.url ?? "", /\/api\/preferences\/p%2F1$/);
+  assert.match(calls[3]?.url ?? "", /\/api\/preferences\/p%2F1$/);
+  assert.equal(calls[1]?.init?.body, JSON.stringify({ category: "communication", content: "技术方案详细展开", source }));
+  assert.equal(calls[3]?.init?.body, JSON.stringify({ expectedVersion: 2 }));
+  assert.equal(new Headers(calls[1]?.init?.headers).get("x-user-id"), "u1");
+  assert.doesNotMatch(String(calls[1]?.init?.body), /userId|traceId/);
 });

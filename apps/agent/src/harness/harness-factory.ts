@@ -7,6 +7,7 @@ import { assertBashRequest } from "../security/sandbox-policy.js";
 import { LocalSandboxAdapter, type SandboxAdapter } from "../security/sandbox.js";
 import { SkillLoader } from "../skills/loader.js";
 import { ToolRegistry } from "../tools/registry.js";
+import { resolveRunSystemPrompt } from "./run-context.js";
 
 export type HarnessRuntime = {
   harness: AgentHarness<ExecutionToolContext>;
@@ -26,7 +27,7 @@ export class HarnessFactory {
       session,
       models: this.models,
       model,
-      systemPrompt: definition.systemPrompt,
+      systemPrompt: (_toolContext, context) => resolveRunSystemPrompt(context, definition.systemPrompt),
       tools,
       activeToolNames: tools.map(tool => tool.name),
       toolContext: { env: this.sandbox.createExecutionEnv(workspace) },

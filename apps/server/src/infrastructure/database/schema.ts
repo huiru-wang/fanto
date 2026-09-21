@@ -81,6 +81,20 @@ export interface MediaAssetsTable {
   updated_at: string;
 }
 
+export interface UserPreferencesTable {
+  id: Generated<number>;
+  preference_id: string;
+  user_id: string;
+  category: string;
+  content: string;
+  source_session_id: string;
+  source_message_id: string;
+  source_quote: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface VectorItemsTable {
   id: Generated<number>;
   user_id: string;
@@ -104,6 +118,7 @@ export interface DB {
   entity_relations: EntityRelationsTable;
   media_assets: MediaAssetsTable;
   vector_items: VectorItemsTable;
+  user_preferences: UserPreferencesTable;
 }
 
 export type User = Selectable<UsersTable>;

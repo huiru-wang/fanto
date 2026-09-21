@@ -41,7 +41,7 @@
 | `AGENT_SESSION_DB` | Agent Session / Task SQLite |
 | `AGENT_WORKSPACE_ROOT` | Session 工作区根目录 |
 
-Agent definition 的 provider、model、tools、skills 与 compaction 由 `apps/agent/agents.yaml` 定义。System Prompt 可以直接写在 `systemPrompt`，也可以通过 `systemPromptFile` 引用相对 `agents.yaml` 的 Prompt 文件；两者不能同时配置。当前 Fanto 使用 `apps/agent/prompts/fanto.md`。Prompt 文件只在 Agent Runtime 启动时读取，内容会参与 Agent revision 计算。密钥只能来自环境变量。
+Agent definition 的 provider、model、tools、skills 与 compaction 由 `apps/agent/agents.yaml` 定义。System Prompt 可以直接写在 `systemPrompt`，也可以通过 `systemPromptFile` 引用相对 `agents.yaml` 的 Prompt 文件；两者不能同时配置。当前 Fanto 使用 `apps/agent/prompts/fanto.md`。Prompt 文件只在 Agent Runtime 启动时读取，内容会参与 Agent revision 计算；`main` 的模板包含 `{{character}}`、`{{user_preferences}}`、`{{relevant_memory}}` 三个插槽，由 Context Runtime 在每次 Agent Run 开始前填充一次。`agents.yaml` 不增加额外 Context 配置。密钥只能来自环境变量。
 
 ## 安全约束
 

@@ -16,6 +16,8 @@ import { MemoryService } from "../domain/memory/memory-service.js";
 import { SqliteVecMemoryIndex } from "../infrastructure/memory/sqlite-vec-memory-index.js";
 import { CreationReadRepository } from "../domain/creations/creation-repository.js";
 import { CreationProposalRepository } from "../domain/creations/proposal-repository.js";
+import { SqlitePreferenceRepository } from "../domain/preferences/sqlite-repository.js";
+import { PreferenceService } from "../domain/preferences/preference-service.js";
 
 loadEnv();
 const config = loadConfig();
@@ -31,6 +33,7 @@ const records = new SqliteRecordRepository(db);
 const media = new SqliteMediaRepository(db);
 const creationRead = new CreationReadRepository(db);
 const creationProposals = new CreationProposalRepository(db);
+const preferences = new PreferenceService(new SqlitePreferenceRepository(db));
 const embeddings = new EmbeddingsClient(
   config.dashscope.apiKey,
   config.dashscope.baseUrl,
@@ -52,7 +55,7 @@ registerRecordPostprocessListener(
 );
 
 const server = serve({
-  fetch: createApp(records, media, queue, oss, creationRead, creationProposals, memory, new Set(["default-user"])).fetch,
+  fetch: createApp(records, media, queue, oss, creationRead, creationProposals, memory, new Set(["default-user"]), preferences).fetch,
   port: config.port,
   hostname: config.host,
 });

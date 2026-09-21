@@ -6,8 +6,8 @@
 
 | 组件 | 当前状态 |
 | --- | --- |
-| Server | 可运行，负责 Record、Media、Memory / Retrieval、Creation / Proposal |
-| Agent Runtime | 可独立运行，负责 Agent Session、流式执行、异步任务与工作区 |
+| Server | 可运行，负责 Record、Media、Memory / Retrieval、User Preference、Creation / Proposal |
+| Agent Runtime | 可独立运行，负责 Context Runtime、Agent Session、流式执行、异步任务与工作区 |
 | iOS | 客户端代码链路已实现；Record 读取、Creation / Proposal 与 Fanto 单 Session 对话均已接 API，但当前硬编码演示用户与 Server / Agent 公网 allowlist 不一致 |
 | H5 | 可运行；提供响应式多模态 Record、语义搜索、Markdown / 媒体消息与 Fanto 多轮对话测试客户端，适配 PC / iPad / 手机 |
 
@@ -36,7 +36,13 @@ Server 已经会为处理完成的 Record 构建向量索引。用户文本、�
 
 `POST /api/records/search` 已注册，可对当前用户 Record 做语义搜索。sqlite-vec 使用 `user_id partition key`，KNN candidate generation 本身限定当前用户，并在读取 metadata 时再次校验用户归属。
 
-Agent Runtime 已通过 Business Server HTTP 接入 `record_get`、`record_list`、`record_search` 三个只读 Record Tool，并新增 `present_media` 展示 Tool。LLM 不传 `userId`；所有业务读取身份都来自当前 Session 的 Run Context。
+Agent Runtime 已通过 Business Server HTTP 接入 `record_get`、`record_list`、`record_search` 三个只读 Record Tool，并新增 `present_media` 展示 Tool。`main` 在每次 Agent Run 前还会执行一次 MemoryProvider：用快速模型结合当前消息与最近对话重写 0–2 条查询，复用 Record Search，跨查询按真实 `recordId` 去重后只注入最相关 2 条 Relevant Memory。LLM 不传 `userId`；所有业务读取身份都来自当前 Session 的 Run Context。
+
+## User Preference
+
+Business Server 已提供独立的 `user_preferences` 领域与 `/api/preferences` CRUD。Preference 只保存用户明确表达、未来仍适用的长期偏好，每个用户最多 20 条，并保存最近一次来源 Session、Pi 用户消息 entry、逐字 source quote 与乐观并发 version。
+
+Fanto `main` 在每次 Run 前由 PreferenceProvider 读取当前用户 Preference 并注入 System Prompt。Agent Loop 内由主模型判断是否需要调用 `preference_manage` 创建、更新或删除 Preference；不存在独立抽取模型或后台扫描。Tool 写入后不会重新构建本轮 Prompt，下一轮自动读取新状态。
 
 ## Creation / Proposal
 
@@ -65,9 +71,11 @@ Agent Runtime 已通过 Business Server HTTP 接入 `record_get`、`record_list`
 - Pi 内置 `read`、`write`、`edit`、`bash` 工具；
 - `record_get`、`record_list`、`record_search` 三个只读 Record Tool；
 - `present_media` 媒体展示 Tool；
+- `preference_manage` 长期偏好管理 Tool；
+- Run 前一次性 Context Runtime（Character / Preference / Relevant Memory）；
 - Skill 文件加载。
 
-它不直接访问 Fanto 业务数据库；Record Tool 与 `present_media` 统一通过 `FantoServerClient` 调用 Business Server，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool 与 `present_media`；`coding` 默认不具备个人历史访问能力。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 通过 `apps/agent/prompts/fanto.md` 约束长期记忆真实性、工具隐身、对话语气以及 Markdown / Media 表达。
+它不直接访问 Fanto 业务数据库；Record Tool、PreferenceProvider / Tool 与 `present_media` 统一通过 `FantoServerClient` 调用 Business Server，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool 与 `present_media`；`coding` 默认不具备个人历史访问能力。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 通过 `apps/agent/prompts/fanto.md` 约束长期记忆真实性、工具隐身、对话语气以及 Markdown / Media 表达。
 
 ## 当前基础设施边界
 

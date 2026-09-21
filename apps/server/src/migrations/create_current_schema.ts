@@ -25,6 +25,22 @@ export async function up(db: Kysely<any>) {
     .execute();
   await db.schema.createIndex("idx_records_user_event").on("records").columns(["user_id", "event_at", "record_id"]).execute();
 
+  await db.schema.createTable("user_preferences")
+    .addColumn("id", "integer", c => c.primaryKey().autoIncrement())
+    .addColumn("preference_id", "text", c => c.notNull().unique())
+    .addColumn("user_id", "text", c => c.notNull())
+    .addColumn("category", "text", c => c.notNull())
+    .addColumn("content", "text", c => c.notNull())
+    .addColumn("source_session_id", "text", c => c.notNull())
+    .addColumn("source_message_id", "text", c => c.notNull())
+    .addColumn("source_quote", "text", c => c.notNull())
+    .addColumn("version", "integer", c => c.notNull())
+    .addColumn("created_at", "text", c => c.notNull())
+    .addColumn("updated_at", "text", c => c.notNull())
+    .execute();
+  await db.schema.createIndex("idx_user_preferences_user_updated").on("user_preferences").columns(["user_id", "updated_at", "preference_id"]).execute();
+  await db.schema.createIndex("idx_user_preferences_user_category_content").on("user_preferences").columns(["user_id", "category", "content"]).execute();
+
   await db.schema.createTable("media_assets")
     .addColumn("id", "integer", c => c.primaryKey().autoIncrement())
     .addColumn("media_id", "text", c => c.notNull().unique())
@@ -119,6 +135,7 @@ export async function up(db: Kysely<any>) {
 }
 
 export async function down(db: Kysely<any>) {
+  await db.schema.dropTable("user_preferences").execute();
   await db.schema.dropTable("entity_relations").execute();
   await db.schema.dropTable("creation_proposals").execute();
   await db.schema.dropTable("creations").execute();

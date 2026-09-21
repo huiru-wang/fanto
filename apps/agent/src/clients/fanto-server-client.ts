@@ -43,8 +43,28 @@ const recordSearch = z.object({
     mediaId: z.string().nullable(),
     snippet: z.string(),
     distance: z.number(),
+    eventAt: z.string(),
   }).strict()),
 }).strict();
+
+
+
+const preferenceCategory = z.enum(["communication", "scenario", "lifestyle"]);
+const preference = z.object({
+  preferenceId: z.string(),
+  userId: z.string(),
+  category: preferenceCategory,
+  content: z.string(),
+  sourceSessionId: z.string(),
+  sourceMessageId: z.string(),
+  sourceQuote: z.string(),
+  version: z.number().int().positive(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+}).strict();
+const preferenceList = z.object({ data: z.array(preference).max(20) }).strict();
+const preferenceCreate = z.object({ preference, reused: z.boolean() }).strict();
+const preferenceDelete = z.object({ preferenceId: z.string() }).strict();
 
 const mediaMetadata = z.object({
   mediaId: z.string(),
@@ -59,6 +79,8 @@ export type FantoRecord = z.infer<typeof record>;
 export type FantoRecordList = z.infer<typeof recordList>;
 export type FantoRecordSearch = z.infer<typeof recordSearch>;
 export type FantoMediaMetadata = z.infer<typeof mediaMetadata>;
+export type FantoPreference = z.infer<typeof preference>;
+export type FantoPreferenceList = z.infer<typeof preferenceList>;
 
 export type FantoRequestContext = {
   userId: string;
@@ -113,12 +135,39 @@ export class FantoServerClient {
     return this.request("POST", "/api/records/search", ctx, recordSearch, input);
   }
 
+
+
+  listPreferences(ctx: FantoRequestContext): Promise<FantoPreferenceList> {
+    return this.request("GET", "/api/preferences", ctx, preferenceList);
+  }
+
+  createPreference(ctx: FantoRequestContext, input: {
+    category: z.infer<typeof preferenceCategory>;
+    content: string;
+    source: { sessionId: string; messageId: string; quote: string };
+  }): Promise<{ preference: FantoPreference; reused: boolean }> {
+    return this.request("POST", "/api/preferences", ctx, preferenceCreate, input);
+  }
+
+  updatePreference(ctx: FantoRequestContext, preferenceId: string, input: {
+    expectedVersion: number;
+    category: z.infer<typeof preferenceCategory>;
+    content: string;
+    source: { sessionId: string; messageId: string; quote: string };
+  }): Promise<FantoPreference> {
+    return this.request("PATCH", `/api/preferences/${encodeURIComponent(preferenceId)}`, ctx, preference, input);
+  }
+
+  deletePreference(ctx: FantoRequestContext, preferenceId: string, expectedVersion: number): Promise<{ preferenceId: string }> {
+    return this.request("DELETE", `/api/preferences/${encodeURIComponent(preferenceId)}`, ctx, preferenceDelete, { expectedVersion });
+  }
+
   getMediaMetadata(ctx: FantoRequestContext, mediaId: string): Promise<FantoMediaMetadata> {
     return this.request("GET", `/api/media/${encodeURIComponent(mediaId)}/meta`, ctx, mediaMetadata);
   }
 
   private async request<T>(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PATCH" | "DELETE",
     path: string,
     ctx: FantoRequestContext,
     resultSchema: z.ZodType<T>,
@@ -158,7 +207,7 @@ export class FantoServerClient {
       const envelope = payload && typeof payload === "object" ? payload as ErrorEnvelope : {};
       const errorCode = typeof envelope.errorCode === "string" ? envelope.errorCode : undefined;
       const message = response.status === 404
-        ? "Record not found or not accessible"
+        ? "Resource not found or not accessible"
         : typeof envelope.errorMsg === "string" && envelope.errorMsg.trim()
           ? envelope.errorMsg
           : `Fanto Server request failed with status ${response.status}`;

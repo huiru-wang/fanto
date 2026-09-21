@@ -4,6 +4,7 @@ import type { AgentDefinition } from "../config/agent-config.js";
 import { prepareBashExecution } from "../security/sandbox-policy.js";
 import { createRecordGetTool, createRecordListTool, createRecordSearchTool } from "./record-tools.js";
 import { createPresentMediaTool } from "./present-media-tool.js";
+import { createPreferenceManageTool } from "./preference-tool.js";
 
 export class ToolRegistry {
   constructor(private readonly fanto?: FantoServerClient) {}
@@ -19,6 +20,7 @@ export class ToolRegistry {
         case "record_list": return createRecordListTool(this.requireFantoClient());
         case "record_search": return createRecordSearchTool(this.requireFantoClient());
         case "present_media": return createPresentMediaTool(this.requireFantoClient());
+        case "preference_manage": return createPreferenceManageTool(this.requireFantoClient());
       }
     });
   }

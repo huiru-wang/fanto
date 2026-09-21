@@ -120,7 +120,36 @@ POST /api/records/search
 
 它调用 `MemoryService.searchRecords`，并从请求 Header 获取当前用户，不接受客户端在请求体传 `userId`。
 
-HTTP 返回 `recordId`、原子 `sourceType`、可选 `mediaId`、`snippet` 与 sqlite-vec `distance`。`distance` 用于 Agent 判断结果相关性，不代表已经校准后的产品置信度。
+HTTP 返回 `recordId`、原子 `sourceType`、可选 `mediaId`、`snippet`、原始 Record 的 `eventAt` 与 sqlite-vec `distance`。`distance` 用于 Agent 判断结果相关性，不代表已经校准后的产品置信度。
+
+## Agent Context Retrieval
+
+Fanto main Agent 在每次 Agent Run 开始前执行一次 MemoryProvider。它不新增 Memory HTTP API，而是复用现有 Record Search：
+
+```text
+current message + recent conversation
+          |
+          v
+Query Rewrite (deepseek-v4-flash)
+          |
+          v
+0-2 semantic queries
+          |
+          v
+POST /api/records/search
+          |
+          v
+dedupe by real recordId
+          |
+          v
+top 2 Relevant Memory
+```
+
+Query Rewrite 只负责把指代和自然对话改写成检索查询；纯知识问答、简单寒暄或不需要过去信息时可以返回空查询。每条查询最多取 4 个原子命中，MemoryProvider 跨查询按真实 Record ID 去重、保留距离更近的命中，最终只向 System Prompt 注入 2 条。
+
+注入内容包含真实 `recordId`、`snippet` 和 `eventAt`，不包含 `mediaId` 或向量 `distance`。主模型需要恢复完整 Record 时可以直接调用 `record_get(recordId)`。
+
+该 Context Build 只在 Run 前执行一次；Agent Loop 中不会再次自动重写或搜索。主模型仍可按需要主动调用 Record Tools。
 
 ## Rebuild
 

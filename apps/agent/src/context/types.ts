@@ -1,12 +1,19 @@
+export type ContextMessage = {
+  role: "user" | "assistant";
+  text: string;
+};
+
 export type ContextInput = {
   userId: string;
   sessionId: string;
   message: string;
-  recentMessages: unknown[];
+  recentMessages: ContextMessage[];
+  signal?: AbortSignal;
+  traceId?: string;
 };
 
 export type ContextFragment = {
-  section: string;
+  section: "Character" | "User Preferences" | "Relevant Memory";
   content: string;
 };
 

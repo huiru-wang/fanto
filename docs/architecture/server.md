@@ -8,7 +8,7 @@
 apps/server/src/
 ├── bootstrap/       # 启动、配置、Hono 装配、迁移命令
 ├── routes/          # HTTP 输入、用户边界、响应映射
-├── domain/          # records / media / memory / creations
+├── domain/          # records / media / memory / preferences / creations
 ├── infrastructure/ # SQLite、Memory adapter、外部 client、queue、logging、time
 ├── listeners/       # 进程内事件处理
 ├── migrations/      # 当前空库 schema 基线
@@ -33,7 +33,8 @@ flowchart LR
 | 路由 | 领域 |
 | --- | --- |
 | `/api/uploads`、`/api/media/:id`、`/api/media/:id/url` | Media |
-| `/api/records` | Record |
+| `/api/records` | Record / Memory Search |
+| `/api/preferences` | User Preference |
 | `/api/creation-kinds`、`/api/creations` | Creation |
 | `/api/creation-proposals` | Proposal |
 
