@@ -8,11 +8,12 @@ LOG_DIR="$ROOT/logs"
 RUN_DIR="$ROOT/run"
 SERVER_DIR="$ROOT/apps/server"
 AGENT_DIR="$ROOT/apps/agent"
+PUBLISH_H5="$ROOT/deploy/manual/publish-h5.sh"
 
 mkdir -p "$LOG_DIR" "$RUN_DIR"
 
 usage() {
-  echo "Usage: $0 [server|agent|all]"
+  echo "Usage: $0 [server|agent|h5|all]"
 }
 
 is_running() {
@@ -84,17 +85,11 @@ start_agent() {
   local env_file="$AGENT_DIR/.env.production"
   require_env agent "$env_file"
 
-  if [[ ! -f "$AGENT_DIR/dist/bootstrap/main.js" ]]; then
-    echo "[ERROR] agent build output not found: $AGENT_DIR/dist/bootstrap/main.js"
-    echo "        Run: pnpm --filter @fanto/agent build"
-    exit 1
-  fi
-
   echo "[START] agent"
 
   (
     cd "$AGENT_DIR"
-    nohup node --env-file=.env.production dist/bootstrap/main.js       >> "$LOG_DIR/agent.log" 2>&1 &
+    nohup node --env-file=.env.production --import tsx src/main.ts >> "$LOG_DIR/agent.log" 2>&1 &
     echo $! > "$RUN_DIR/agent.pid"
   )
 
@@ -112,6 +107,10 @@ start_agent() {
   fi
 }
 
+start_h5() {
+  "$PUBLISH_H5"
+}
+
 case "$TARGET" in
   server)
     start_server
@@ -119,9 +118,13 @@ case "$TARGET" in
   agent)
     start_agent
     ;;
+  h5)
+    start_h5
+    ;;
   all)
     start_server
     start_agent
+    start_h5
     ;;
   *)
     usage

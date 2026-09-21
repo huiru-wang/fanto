@@ -1,23 +1,30 @@
 version: 1
 
-defaults:
-  provider: deepseek
-  model: deepseek-v4-pro
-  tools: []
-  compaction:
-    enabled: true
-    reserveTokens: 16384
-    keepRecentTokens: 20000
+models:
+  - provider: deepseek
+    model: deepseek-v4-pro
 
 agents:
   - id: main
-    description: Personal record-aware assistant
-    systemPrompt: Use Record tools only when the current question benefits from the user's past records.
-    tools: [record_get, record_list, record_search]
+    model_id: deepseek/deepseek-v4-pro
+    description: Fanto 面向用户的长期记忆对话 Agent
+    corePromptFile: ./prompts/core.md
+    systemPromptFile: ./prompts/operational.md
+    tools: [record_get, record_list, record_search, present_media, preference_manage]
     skills: []
+    compaction:
+      enabled: true
+      reserveTokens: 16384
+      keepRecentTokens: 20000
 
   - id: coding
-    description: Coding assistant
-    systemPrompt: Read relevant files first, then make the smallest necessary changes.
+    model_id: deepseek/deepseek-v4-pro
+    description: 在隔离工作区中执行代码任务
+    systemPrompt: |
+      你在隔离工作区中工作。先阅读相关文件，再做最小改动。
     tools: [read, write, edit, bash]
     skills: []
+    compaction:
+      enabled: true
+      reserveTokens: 16384
+      keepRecentTokens: 20000

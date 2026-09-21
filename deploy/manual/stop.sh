@@ -6,7 +6,11 @@ TARGET="${1:-all}"
 RUN_DIR="$ROOT/run"
 
 usage() {
-  echo "Usage: $0 [server|agent|all]"
+  echo "Usage: $0 [server|agent|h5|all]"
+}
+
+stop_h5() {
+  echo "[SKIP] h5 is static content served by Nginx; nothing to stop"
 }
 
 stop_process() {
@@ -52,7 +56,11 @@ case "$TARGET" in
   agent)
     stop_process agent
     ;;
+  h5)
+    stop_h5
+    ;;
   all)
+    stop_h5
     stop_process agent
     stop_process server
     ;;

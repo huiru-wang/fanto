@@ -51,7 +51,7 @@ H5 开发服务器会把 `/api/agent/*` 代理到 `127.0.0.1:3001`，其余 `/ap
 pnpm build:h5
 ```
 
-手工部署环境可运行 `deploy/manual/publish-h5.sh`，将构建产物同步到 `/var/www/fanto-h5`；配套 Nginx 配置会从该目录提供 SPA。
+手工部署环境可运行 `deploy/manual/start.sh h5`（或 `start.sh all`）构建并发布 H5；默认目标为 `/var/www/fanto-h5`，可用 `H5_DEPLOY_DIR` 覆盖。发布会先在暂存目录准备完整构建产物，再替换静态目录；配套 Nginx 配置会从该目录提供 SPA。H5 没有独立常驻进程，因此 `stop.sh h5` 是安全的无操作，`restart.sh h5` 等价于重新构建并发布。
 
 ## 数据文件
 
