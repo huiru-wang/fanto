@@ -32,6 +32,7 @@
 - [本地开发](engineering/local-development.md)
 - [配置](engineering/configuration.md)
 - [测试与验证](engineering/testing.md)
+- [10,000 用户首年容量规划](engineering/cloud-capacity-10000-users.md)
 
 仓库协作规则从根目录 [AGENTS.md](../AGENTS.md) 开始；进入 Server、Agent 或 iOS 时继续读取对应目录的局部 `AGENTS.md`。
 
