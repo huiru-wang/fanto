@@ -7,8 +7,8 @@
 
 ## 当前边界
 
-- `agents.yaml` 是 Agent 定义入口，只在服务启动时加载；可通过 `systemPromptFile` 引用同目录树下的 Prompt 文件，Prompt 同样只在启动时读取。
-- Tool Registry 支持 Pi 内置 `read`、`write`、`edit`、`bash`，只读业务 Tool `record_get`、`record_list`、`record_search`，媒体展示 Tool `present_media`，以及明确长期偏好管理 Tool `preference_manage`。
+- `agents.yaml` 是模型与 Agent 定义入口，只在服务启动时加载；`main` 必须存在，缺失时启动失败；可通过 `systemPromptFile` 引用同目录树下的 Prompt 文件，Prompt 同样只在启动时读取。
+- `tools/index.ts` 直接按 Agent Definition 创建 Pi Tool：支持内置 `read`、`write`、`edit`、`bash`，只读业务 Tool `record_get`、`record_list`、`record_search`，媒体展示 Tool `present_media`，以及明确长期偏好管理 Tool `preference_manage`。
 - Agent Session、任务与业务 Server 使用不同的数据存储；Agent Runtime 不直接访问 Fanto 业务数据库，Record Tool 与 `present_media` 只能通过 `FantoServerClient` 调用 Business Server HTTP API。
 - 每个 Session 固定绑定用户归属与独立工作区，`sessionId` 是运行时、历史与工作区的隔离边界。
 - `userId` 来自 Session → Run Context，不应作为 LLM 可自由填写的工具参数；业务 Tool 必须从当前 Pi Context 读取用户身份。
@@ -21,7 +21,8 @@
 - bash 的路径检查、最小环境和命令限制只是开发期防线；生产环境不能把它们视为宿主机安全隔离。
 - 密钥只通过环境变量注入，不能写入 `agents.yaml`、Skill 或工作区。
 - Business Server HTTP Header、timeout、cancellation 和 envelope/error 统一由 `FantoServerClient` 处理，不在各 Tool 中重复实现。
-- 修改 Agent 定义模型、Session 语义、Tool Registry 或安全边界前，先核对现有测试。
+- `agent/run.ts` 是唯一 Agent 执行入口，也是唯一调用 Pi `lane.prompt()` 的位置；Session 只负责生命周期与持久化，Context Runtime 只负责构建 Context fragments。
+- 修改 Agent 定义模型、Session 语义、Tool 集合或安全边界前，先核对现有测试。
 
 ## 验证
 

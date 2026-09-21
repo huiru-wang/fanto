@@ -11,6 +11,7 @@ export type AgentTask = {
   output: string | null;
   error: string | null;
   traceId: string | null;
+  timeZone: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -24,6 +25,7 @@ type TaskRow = {
   output: string | null;
   error: string | null;
   trace_id: string | null;
+  time_zone: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -44,24 +46,27 @@ export class AgentTaskRepository {
         output TEXT,
         error TEXT,
         trace_id TEXT,
+        time_zone TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS agent_tasks_status_created_at ON agent_tasks(status, created_at);
       CREATE INDEX IF NOT EXISTS agent_tasks_session_id ON agent_tasks(session_id);
     `);
+    const columns = this.database.prepare("PRAGMA table_info(agent_tasks)").all() as Array<{ name: string }>;
+    if (!columns.some(column => column.name === "time_zone")) this.database.exec("ALTER TABLE agent_tasks ADD COLUMN time_zone TEXT");
   }
 
-  create(input: { sessionId: string; agentId: string; message: string; traceId?: string }): AgentTask {
+  create(input: { sessionId: string; agentId: string; message: string; traceId?: string; timeZone?: string }): AgentTask {
     const now = new Date().toISOString();
     const task: AgentTask = {
       id: randomUUID(), sessionId: input.sessionId, agentId: input.agentId, status: "pending", input: input.message,
-      output: null, error: null, traceId: input.traceId ?? null, createdAt: now, updatedAt: now,
+      output: null, error: null, traceId: input.traceId ?? null, timeZone: input.timeZone ?? null, createdAt: now, updatedAt: now,
     };
     this.database.prepare(`INSERT INTO agent_tasks
-      (id, session_id, agent_id, status, input, output, error, trace_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(task.id, task.sessionId, task.agentId, task.status, task.input, task.output, task.error, task.traceId, task.createdAt, task.updatedAt);
+      (id, session_id, agent_id, status, input, output, error, trace_id, time_zone, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(task.id, task.sessionId, task.agentId, task.status, task.input, task.output, task.error, task.traceId, task.timeZone, task.createdAt, task.updatedAt);
     return task;
   }
 
@@ -103,7 +108,7 @@ export class AgentTaskRepository {
     if (!row) return undefined;
     return {
       id: row.id, sessionId: row.session_id, agentId: row.agent_id, status: row.status, input: row.input,
-      output: row.output, error: row.error, traceId: row.trace_id, createdAt: row.created_at, updatedAt: row.updated_at,
+      output: row.output, error: row.error, traceId: row.trace_id, timeZone: row.time_zone, createdAt: row.created_at, updatedAt: row.updated_at,
     };
   }
 }

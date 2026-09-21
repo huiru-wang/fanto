@@ -13,10 +13,10 @@ const compaction = z.object({
 }).strict();
 const partialDefinition = z.object({
   description: z.string().max(500).optional(),
-  provider: z.string().min(1).optional(),
-  model: z.string().min(1).optional(),
+  model_id: z.string().min(3).optional(),
   systemPrompt: z.string().min(1).optional(),
   systemPromptFile: z.string().min(1).optional(),
+  corePromptFile: z.string().min(1).optional(),
   tools: z.array(tool).optional(),
   skills: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)).optional(),
   compaction: compaction.partial().optional(),
@@ -24,14 +24,19 @@ const partialDefinition = z.object({
 const configuredAgent = partialDefinition.extend({
   id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
 }).strict();
+const configuredModel = z.object({
+  provider: z.string().min(1),
+  model: z.string().min(1),
+}).strict();
 const documentSchema = z.object({
   version: z.literal(1),
-  defaults: partialDefinition.default({}),
+  models: z.array(configuredModel).min(1, "models must not be empty"),
   agents: z.array(configuredAgent).min(1, "agents must not be empty"),
 }).strict();
 const definitionSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
   description: z.string().max(500),
+  modelId: z.string().min(3),
   provider: z.string().min(1),
   model: z.string().min(1),
   systemPrompt: z.string().min(1),
@@ -53,22 +58,22 @@ function assertPromptSource(
 
 function readPromptFile(configPath: string, promptFile: string, agentId: string): string {
   if (isAbsolute(promptFile)) {
-    throw new Error(`Invalid agents.yaml agent "${agentId}": systemPromptFile must be relative to agents.yaml`);
+    throw new Error(`Invalid agents.yaml agent "${agentId}": prompt file must be relative to agents.yaml`);
   }
   const root = dirname(resolve(configPath));
   const promptPath = resolve(root, promptFile);
   const pathFromRoot = relative(root, promptPath);
   if (pathFromRoot === ".." || pathFromRoot.startsWith(`..${sep}`)) {
-    throw new Error(`Invalid agents.yaml agent "${agentId}": systemPromptFile must stay inside the config directory`);
+    throw new Error(`Invalid agents.yaml agent "${agentId}": prompt file must stay inside the config directory`);
   }
   let prompt: string;
   try {
     prompt = readFileSync(promptPath, "utf8").trim();
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : String(cause);
-    throw new Error(`Invalid agents.yaml agent "${agentId}": cannot read systemPromptFile "${promptFile}": ${message}`);
+    throw new Error(`Invalid agents.yaml agent "${agentId}": cannot read prompt file "${promptFile}": ${message}`);
   }
-  if (!prompt) throw new Error(`Invalid agents.yaml agent "${agentId}": systemPromptFile must not be empty`);
+  if (!prompt) throw new Error(`Invalid agents.yaml agent "${agentId}": prompt file must not be empty`);
   return prompt;
 }
 
@@ -76,40 +81,47 @@ export function readAgentDefinitions(
   path: string,
   models: Models,
   knownSkills: ReadonlySet<string>,
-  modelDefaults: { provider?: string; model?: string } = {},
 ): AgentDefinition[] {
   const parsed = parseDocument(readFileSync(path, "utf8"), { uniqueKeys: true });
   if (parsed.errors.length > 0) throw new Error(`Invalid agents.yaml: ${parsed.errors.map(error => error.message).join("; ")}`);
   const document = documentSchema.safeParse(parsed.toJS());
   if (!document.success) throw new Error(`Invalid agents.yaml: ${document.error.message}`);
-  assertPromptSource(document.data.defaults, "defaults");
-
   const ids = new Set<string>();
   for (const agent of document.data.agents) {
     if (ids.has(agent.id)) throw new Error(`Duplicate agent id "${agent.id}"`);
     ids.add(agent.id);
     assertPromptSource(agent, `agent "${agent.id}"`);
   }
+  const configuredModels = new Map<string, { provider: string; model: string }>();
+  for (const configured of document.data.models) {
+    const modelId = `${configured.provider}/${configured.model}`;
+    if (configuredModels.has(modelId)) throw new Error(`Duplicate model id "${modelId}"`);
+    if (!models.getModel(configured.provider, configured.model)) {
+      throw new Error(`Model "${modelId}" is not in the Pi model catalog`);
+    }
+    configuredModels.set(modelId, configured);
+  }
 
   return document.data.agents.map(configured => {
-    const { id, systemPrompt, systemPromptFile, ...overrides } = configured;
-    const defaultPrompt = document.data.defaults.systemPrompt;
-    const defaultPromptFile = document.data.defaults.systemPromptFile;
-    const resolvedPrompt = systemPrompt
-      ?? (systemPromptFile ? readPromptFile(path, systemPromptFile, id) : undefined)
-      ?? defaultPrompt
-      ?? (defaultPromptFile ? readPromptFile(path, defaultPromptFile, id) : undefined);
-    const { systemPrompt: _defaultPrompt, systemPromptFile: _defaultPromptFile, ...yamlDefaults } = document.data.defaults;
-    const defaults = { ...yamlDefaults, ...modelDefaults };
+    const { id, model_id, systemPrompt, systemPromptFile, corePromptFile, ...overrides } = configured;
+    if (!model_id) throw new Error(`Invalid agents.yaml agent "${id}": model_id is required`);
+    const configuredModel = configuredModels.get(model_id);
+    if (!configuredModel) throw new Error(`Agent "${id}" references unknown model_id "${model_id}"`);
+    const resolvedPrompt = systemPrompt ?? (systemPromptFile ? readPromptFile(path, systemPromptFile, id) : undefined);
+    const corePrompt = corePromptFile
+      ? readPromptFile(path, corePromptFile, id)
+      : undefined;
     const merged = {
-      ...defaults,
       ...overrides,
       id,
-      description: overrides.description ?? document.data.defaults.description ?? "",
-      systemPrompt: resolvedPrompt,
-      tools: overrides.tools ?? document.data.defaults.tools ?? [],
-      skills: overrides.skills ?? document.data.defaults.skills ?? [],
-      compaction: { ...document.data.defaults.compaction, ...overrides.compaction },
+      modelId: model_id,
+      provider: configuredModel.provider,
+      model: configuredModel.model,
+      description: overrides.description ?? "",
+      systemPrompt: [corePrompt, resolvedPrompt].filter((prompt): prompt is string => Boolean(prompt)).join("\n\n"),
+      tools: overrides.tools ?? [],
+      skills: overrides.skills ?? [],
+      compaction: overrides.compaction,
     };
     const definition = definitionSchema.safeParse(merged);
     if (!definition.success) throw new Error(`Invalid agents.yaml agent "${id}": ${definition.error.message}`);

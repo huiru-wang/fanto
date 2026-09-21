@@ -8,18 +8,30 @@
 flowchart TD
   HTTP[Agent HTTP API] --> REG[Agent Registry]
   HTTP --> SM[Session Manager]
+  HTTP --> RUN[Agent Run]
   HTTP --> TR[Task Runner]
+  TR --> RUN
   REG --> YAML[agents.yaml]
   YAML --> PROMPTS[prompts/*.md]
-  SM --> CR[Context Runtime / once per run]
+
+  SM --> HARNESS[createHarness]
+  HARNESS --> PI[Pi AgentHarness / Lane]
+  SM --> DB[(Agent SQLite)]
+  SM --> WS[Session Workspace]
+
+  RUN --> CR[Context Runtime / once per run]
   CR --> CHAR[CharacterProvider]
   CR --> PREF[PreferenceProvider]
   CR --> MEM[MemoryProvider]
   PREF --> FSC[FantoServerClient]
   MEM --> QR[Query Rewrite / deepseek-v4-flash]
   MEM --> FSC
-  CR --> PI[Pi AgentHarness]
-  PI --> TOOLS[Configured Tools]
+  RUN --> CMP[Context Composer]
+  CR --> CMP
+  CMP --> RUN
+  RUN --> PI
+
+  PI --> TOOLS[Configured Pi Tools]
   TOOLS --> BUILTIN[read / write / edit / bash]
   TOOLS --> RECORD[record_get / record_list / record_search]
   TOOLS --> PM[preference_manage]
@@ -29,20 +41,19 @@ flowchart TD
   PRESENT --> FSC
   FSC -->|x-user-id / x-trace-id| SERVER[Business Server]
   PI --> SKILLS[Skills]
-  SM --> DB[(Agent SQLite)]
-  TR --> DB
-  SM --> WS[Session Workspace]
 ```
 
 ## Agent Definition
 
-`apps/agent/agents.yaml` 是 Agent 定义入口；YAML 及其引用的 Prompt 文件都只在服务启动时读取。定义包含：
+`apps/agent/agents.yaml` 是 Agent 定义入口；YAML 及其引用的 Prompt 文件都只在服务启动时读取。顶层 `models` 定义 Pi `provider` / `model` 组合，Agent 用 `model_id` 引用其中一项。定义包含：
 
-- provider / model；
+- model_id；
 - systemPrompt 或 systemPromptFile；
 - tools；
 - skills；
 - compaction 配置。
+
+`main` 是必需的默认 Agent；配置缺少它时服务启动失败。创建 Session、stream 与 task 请求可省略 `agentId`，此时固定使用 `main`。
 
 当前 Tool schema 接受：
 
@@ -58,15 +69,15 @@ present_media
 preference_manage
 ```
 
-当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media` 与 `preference_manage`；`coding` 只开启 `read / write / edit / bash`。Fanto 的 Prompt 独立位于 `apps/agent/prompts/fanto.md`，通过 `systemPromptFile` 引用。Prompt 文件本身保持 Agent 定义入口不变，同时包含 `{{character}}`、`{{user_preferences}}`、`{{relevant_memory}}` 三个运行时插槽。Tool 权限仍由 Agent definition 显式声明。
+当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media` 与 `preference_manage`；`coding` 只开启 `read / write / edit / bash`。Fanto 的认识与关系 Core 位于 `apps/agent/prompts/core.md`，操作规则与动态插槽位于 `apps/agent/prompts/operational.md`；分别通过 `corePromptFile` 与 `systemPromptFile` 在启动期拼成最终 Prompt。操作模板包含 `{{character}}`、`{{current_time}}`、`{{user_preferences}}`、`{{relevant_memory}}` 四个运行时插槽。Tool 权限仍由 Agent definition 显式声明。
 
-`systemPromptFile` 必须是相对 `agents.yaml` 的路径，不能逃逸出配置目录。Loader 会把文件内容解析为最终 `systemPrompt`，并基于解析后的完整 Agent definition 计算 revision，所以只修改 Prompt 文件也会产生新的 revision。
+`systemPromptFile` 与可选 `corePromptFile` 必须是相对 `agents.yaml` 的路径，不能逃逸出配置目录。Loader 会把文件内容解析为最终 `systemPrompt`，并基于解析后的完整 Agent definition 计算 revision，所以只修改 Prompt 文件也会产生新的 revision。
 
 Skill 通过 ID 映射到 `apps/agent/skills/<id>/SKILL.md`。密钥不写入 YAML。
 
 ## Context Runtime
 
-Context Runtime 是每次 Agent Run 的前置准备阶段，不属于 Pi Agent Loop。Session Manager 在调用 `lane.prompt()` 前执行一次 Context Build：
+Context Runtime 是每次 Agent Run 的前置准备阶段，不属于 Pi Agent Loop。`agent/run.ts` 是唯一执行入口：它在调用 `lane.prompt()` 前构建一次 Context，并由 Composer 将 Context fragments 注入 Prompt 模板：
 
 ```text
 current message + recent conversation
@@ -74,10 +85,16 @@ current message + recent conversation
              v
        Context Runtime
        /      |      \
-Character  Preference  Memory
+Character  Time  Preference  Memory
              |
              v
-   fill fanto.md slots
+      Context Fragments
+             |
+             v
+       Context Composer
+             |
+             v
+ fill operational prompt slots
              |
              v
       one system prompt
@@ -89,11 +106,12 @@ Character  Preference  Memory
 当前只有包含 Context 插槽的 Prompt 才会触发 Provider；因此 `coding` Agent 不会执行用户 Preference / Memory 查询。
 
 - CharacterProvider 返回当前默认 `natural` 表达风格，不使用数据库。
+- CurrentTimeProvider 以请求的 `X-Time-Zone` 生成当前日期、时间和星期；缺失或无效时使用 UTC。
 - PreferenceProvider 读取当前用户最多 20 条已保存 Preference。
 - MemoryProvider 先用 `deepseek-v4-flash` 结合当前消息与最近最多约 4 轮对话重写 0–2 条语义查询，再复用 Business Server 的 `POST /api/records/search`；跨查询按真实 `recordId` 去重并只注入最相关 2 条。
-- Relevant Memory 直接包含真实 `recordId`、片段和 `eventAt`；需要完整内容时主模型可继续调用已有 `record_get`。
+- Relevant Memory 直接包含真实 `recordId`、片段和按该时区格式化的 `eventAt`；命中媒体原子单元时还会提示可能有可展示媒体。需要完整内容或展示媒体时主模型可继续调用已有 `record_get`。
 
-Context Build 失败采用降级策略：单个 Provider 普通失败只使对应区块为空，用户取消则中止 Run。构建出的 System Prompt 写入本次 Run Context；Pi 在后续 Tool / Model turn 中只读取这个已生成字符串，不重新执行 Provider，也不会因为 `preference_manage` 成功而刷新本轮 Prompt。
+Context Build 失败采用降级策略：单个 Provider 普通失败只使对应 fragment 为空，用户取消则中止 Run。Context Runtime 的产物是独立 fragments；Composer 再生成本次 Run 使用的 System Prompt，并写入 Pi Run Context。后续 Tool / Model turn 不重新执行 Provider，也不会因为 `preference_manage` 成功而刷新本轮 Context。
 
 ## Session
 
@@ -108,7 +126,7 @@ Context Build 失败采用降级策略：单个 Provider 普通失败只使对�
 
 绑定信息保存在 Pi Session 的 `fanto.session_owner` custom entry。旧 Session 在下一次执行时可以应用当前 Agent revision；如果调用方指定另一个 Agent，空闲 Session 可以切换 Agent，同时保留历史和工作区。
 
-同一 Session 同时只允许一个运行。
+同一 Session 同时只允许一个运行。Session Manager 不负责执行 Prompt；stream 与 Task 都调用同一个 `runAgent()`。
 
 ## 执行方式
 

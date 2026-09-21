@@ -105,6 +105,44 @@ test("record save links ready media and rejects stale versions", async () => {
   } finally { await db.destroy(); await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true }); }
 });
 
+test("record deletion is versioned, unlinks media, and removes source relations", async () => {
+  const path = `/tmp/fanto-record-delete-${randomUUID()}.sqlite`; const db = createDatabase(path); await runMigrations(db);
+  try {
+    const now = nowIso(); const mediaId = randomUUID(); await db.insertInto("users").values({ user_id: "u", wx_openid: "u", created_at: now }).execute();
+    await db.insertInto("media_assets").values({ media_id: mediaId, user_id: "u", object_key: "private/audio", media_type: "audio", mime_type: "audio/mp4", bytes: 3, status: "ready", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now }).execute();
+    const records = new SqliteRecordRepository(db); const record = await records.create({ userId: "u", eventAt: now, value: { text: "delete me", media: [{ mediaId }] } });
+    assert.notEqual(typeof record, "string"); if (typeof record === "string") return;
+    await db.insertInto("entity_relations").values({ relation_id: randomUUID(), user_id: "u", source_entity_id: record.id, source_entity_type: "record", target_entity_id: "creation-1", target_entity_type: "creation", relation_type: "record_creation", source_created_at: now, created_at: now }).execute();
+    assert.equal(await records.delete(record.id, "u", 2), "conflict");
+    assert.equal(await records.delete(record.id, "other", 1), "not_found");
+    assert.notEqual(typeof await records.delete(record.id, "u", 1), "string");
+    assert.equal(await records.findById(record.id), null);
+    assert.equal((await new SqliteMediaRepository(db).findMedia(mediaId, "u"))?.extData.recordId, null);
+    assert.equal((await db.selectFrom("entity_relations").selectAll().where("source_entity_id", "=", record.id).execute()).length, 0);
+    assert.equal(await records.claimPostprocess({ recordId: record.id, userId: "u", version: 1, runId: randomUUID() }), null);
+  } finally { await db.destroy(); await rm(path, { force: true }); await rm(`${path}-wal`, { force: true }); await rm(`${path}-shm`, { force: true }); }
+});
+
+test("record deletion HTTP removes memory before deleting the record", async () => {
+  const calls: unknown[] = [];
+  const record = { id: "record-1", userId: "u", version: 1, content: { blocks: [] } };
+  const app = createApp({
+    findById: async () => record,
+    delete: async () => record,
+  } as any, {} as any, new RecordPostprocessQueue(), {} as any, undefined, undefined, {
+    searchRecords: async () => [],
+    removeRecord: async (input: unknown) => { calls.push(input); },
+  });
+  const response = await app.request("/api/records/record-1", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json", "x-user-id": "u" },
+    body: JSON.stringify({ expectedVersion: 1 }),
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { success: true, result: { recordId: "record-1" }, errorCode: null, errorMsg: null });
+  assert.deepEqual(calls, [{ userId: "u", recordId: "record-1" }]);
+});
+
 test("record list orders and pages by event time", async () => {
   const path = `/tmp/fanto-record-event-${randomUUID()}.sqlite`; const db = createDatabase(path); await runMigrations(db);
   try {

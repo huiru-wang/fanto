@@ -3,7 +3,7 @@
 配置真实读取逻辑分别位于：
 
 - Business Server：`apps/server/src/bootstrap/config.ts`
-- Agent Runtime：`apps/agent/src/bootstrap/main.ts` 与相关启动代码
+- Agent Runtime：`apps/agent/src/main.ts` 与相关启动代码
 
 `.env.example` 是开发模板；如果模板与实际读取代码不一致，以代码为准。
 
@@ -35,13 +35,12 @@
 | --- | --- |
 | `PORT` | Agent 服务端口，默认 3001 |
 | `AGENT_TOKEN` | HTTP Bearer Token |
-| `PROVIDER` / `MODEL` | 覆盖 `agents.yaml` 中的默认模型配置；未设置时使用 YAML defaults |
 | `DEEPSEEK_API_KEY` 等 | 模型 Provider 所需密钥 |
 | `FANTO_SERVER_BASE_URL` | Record Tool 访问 Business Server 的 base URL，默认 `http://127.0.0.1:3000` |
 | `AGENT_SESSION_DB` | Agent Session / Task SQLite |
 | `AGENT_WORKSPACE_ROOT` | Session 工作区根目录 |
 
-Agent definition 的 provider、model、tools、skills 与 compaction 由 `apps/agent/agents.yaml` 定义。System Prompt 可以直接写在 `systemPrompt`，也可以通过 `systemPromptFile` 引用相对 `agents.yaml` 的 Prompt 文件；两者不能同时配置。当前 Fanto 使用 `apps/agent/prompts/fanto.md`。Prompt 文件只在 Agent Runtime 启动时读取，内容会参与 Agent revision 计算；`main` 的模板包含 `{{character}}`、`{{user_preferences}}`、`{{relevant_memory}}` 三个插槽，由 Context Runtime 在每次 Agent Run 开始前填充一次。`agents.yaml` 不增加额外 Context 配置。密钥只能来自环境变量。
+Agent definition 的 `models` 与 `agents` 由 `apps/agent/agents.yaml` 定义。每个模型项包含 Pi provider 与 model，Agent 通过 `provider/model` 形式的 `model_id` 引用模型项；服务在启动期校验引用和 Pi 内置模型，并要求 `main` Agent 存在。System Prompt 可以直接写在 `systemPrompt`，也可以通过 `systemPromptFile` 引用相对 `agents.yaml` 的 Prompt 文件；两者不能同时配置。可选 `corePromptFile` 会在最终 System Prompt 前拼入，同样只能位于配置目录内。当前 Fanto 使用 `apps/agent/prompts/core.md` 和 `apps/agent/prompts/operational.md`。Prompt 文件只在 Agent Runtime 启动时读取，内容会参与 Agent revision 计算；`main` 的模板包含 `{{character}}`、`{{current_time}}`、`{{user_preferences}}`、`{{relevant_memory}}` 四个插槽，由 Context Runtime 在每次 Agent Run 开始前构建，并由 Context Composer 填充一次。密钥只能来自环境变量。
 
 ## 安全约束
 

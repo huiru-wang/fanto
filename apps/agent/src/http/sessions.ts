@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import type { AgentRegistry } from "../config/agent-registry.js";
-import { AgentSessionManager } from "../harness/session-manager.js";
+import type { AgentRegistry } from "../agent/registry.js";
+import { AgentSessionManager } from "../agent/session.js";
 import { sessionError } from "./errors.js";
 import { createSessionSchema, cursorSchema, limitSchema, sessionParamsSchema, traceIdSchema, userIdSchema } from "./schemas.js";
 

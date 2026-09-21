@@ -62,7 +62,7 @@ Fanto `main` 在每次 Run 前由 PreferenceProvider 读取当前用户 Preferen
 
 独立 Agent 服务当前支持：
 
-- 从 `apps/agent/agents.yaml` 加载 Agent 定义，并支持通过 `systemPromptFile` 加载独立 Prompt 文件；
+- 从 `apps/agent/agents.yaml` 加载模型与 Agent 定义，Agent 通过 `model_id` 引用同级模型项，并支持通过 `systemPromptFile` 加载独立 Prompt 文件；`main` 是必需的默认 Agent；
 - 创建持久 Session；
 - 基于同一 Session 的多轮流式执行；
 - Session 历史分页；
@@ -75,7 +75,7 @@ Fanto `main` 在每次 Run 前由 PreferenceProvider 读取当前用户 Preferen
 - Run 前一次性 Context Runtime（Character / Preference / Relevant Memory）；
 - Skill 文件加载。
 
-它不直接访问 Fanto 业务数据库；Record Tool、PreferenceProvider / Tool 与 `present_media` 统一通过 `FantoServerClient` 调用 Business Server，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool 与 `present_media`；`coding` 默认不具备个人历史访问能力。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 通过 `apps/agent/prompts/fanto.md` 约束长期记忆真实性、工具隐身、对话语气以及 Markdown / Media 表达。
+它不直接访问 Fanto 业务数据库；Record Tool、PreferenceProvider / Tool 与 `present_media` 统一通过 `FantoServerClient` 调用 Business Server，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool 与 `present_media`；`coding` 默认不具备个人历史访问能力。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 的认识与关系原则由 `apps/agent/prompts/core.md` 约束，工具与 Markdown / Media 规则位于 `apps/agent/prompts/operational.md`；每轮还会注入 Character、当前时区下的时间、偏好与相关记忆。
 
 ## 当前基础设施边界
 

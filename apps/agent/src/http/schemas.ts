@@ -5,11 +5,11 @@ export const userIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 export const traceIdSchema = z.string().trim().min(1).max(256).optional();
 
 export const createSessionSchema = z.object({
-  agentId: id,
+  agentId: id.optional(),
 }).strict();
 
 export const streamRequestSchema = z.object({
-  agentId: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/),
+  agentId: id.optional(),
   sessionId: z.string().uuid(),
   message: z.string().trim().min(1).max(16_000),
 }).strict();

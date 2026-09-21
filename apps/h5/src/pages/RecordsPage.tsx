@@ -1,6 +1,6 @@
-import { ArrowDown, Clock3, RefreshCw, Search } from "lucide-react";
+import { ArrowDown, Clock3, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getRecord, listRecords, searchRecords, type RecordItem } from "../api/records";
+import { deleteRecord, getRecord, listRecords, searchRecords, type RecordItem } from "../api/records";
 import { RecordComposer } from "../components/RecordComposer";
 import { RecordMediaList } from "../components/RecordMedia";
 
@@ -31,6 +31,7 @@ export function RecordsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -113,6 +114,21 @@ export function RecordsPage() {
     }
   };
 
+  const remove = async (record: RecordItem) => {
+    if (!window.confirm("删除这条记录？删除后不能恢复。")) return;
+    setDeletingId(record.id);
+    setError(null);
+    try {
+      await deleteRecord(record.id, record.version);
+      setRecords(current => current.filter(item => item.id !== record.id));
+      setSearchResults(current => current?.filter(item => item.id !== record.id) ?? null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "删除没有完成");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <div className="page records-page">
       <header className="page-header">
@@ -164,6 +180,9 @@ export function RecordsPage() {
                       <div className="record-meta">
                         <span className={`record-status ${record.status}`}>{statusText[record.status]}</span>
                         {record.content.blocks.length > 0 && <span>{record.content.blocks.length} 个媒体</span>}
+                        <button className="record-delete" disabled={deletingId === record.id} onClick={() => void remove(record)} aria-label="删除记录" title="删除记录">
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     </div>
                   </article>

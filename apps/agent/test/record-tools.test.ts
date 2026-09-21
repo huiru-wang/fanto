@@ -6,9 +6,9 @@ import {
   createRecordGetTool,
   createRecordListTool,
   createRecordSearchTool,
-} from "../src/tools/record-tools.js";
-import { createRunContext } from "../src/harness/run-context.js";
-import { ToolRegistry } from "../src/tools/registry.js";
+} from "../src/tools/records.js";
+import { createRunContext } from "../src/agent/run-context.js";
+import { createTools } from "../src/tools/index.js";
 
 const baseRecord = {
   id: "r1",
@@ -29,7 +29,7 @@ const baseRecord = {
   media: [{ mediaId: "img1", url: "https://signed.example/secret" }],
 };
 
-async function execute(tool: any, params: unknown, context = createRunContext({ userId: "u1", traceId: "trace-1" })) {
+async function execute(tool: any, params: unknown, context = createRunContext({ userId: "u1", traceId: "trace-1", timeZone: "Asia/Shanghai" })) {
   return tool.execute("call-1", params, () => {}, {} as never, {} as never, context);
 }
 
@@ -43,6 +43,10 @@ test("record tool schemas never expose user identity and cap list/search limits 
   }
   assert.match(JSON.stringify(listTool.parameters), /"maximum":20/);
   assert.match(JSON.stringify(searchTool.parameters), /"maximum":20/);
+  assert.match(getTool.description, /完整的文字、图片描述或音频转写/);
+  assert.match(listTool.description, /按时间梳理/);
+  assert.match(searchTool.description, /回想用户过去/);
+  assert.doesNotMatch(JSON.stringify([getTool, listTool, searchTool]), /Semantic|Opaque|chronological/);
 });
 
 test("record_get uses current Run Context identity and strips media projection", async () => {
@@ -59,7 +63,7 @@ test("record_get uses current Run Context identity and strips media projection",
   }]);
   assert.deepEqual(result.details, {
     recordId: "r1",
-    eventAt: baseRecord.eventAt,
+    eventAt: "2026-09-18 08:00",
     source: "home",
     status: "processed",
     content: baseRecord.content,
@@ -98,6 +102,7 @@ test("record_list defaults to 10, forwards cursor, and returns compact previews"
   assert.match(result.details.data[1].preview, /…$/);
   assert.equal(result.details.hasMore, true);
   assert.equal(result.details.nextCursor, "next");
+  assert.equal(result.details.data[0].eventAt, "2026-09-18 08:00");
 });
 
 test("buildRecordPreview preserves text and media understanding in block order", () => {
@@ -125,7 +130,7 @@ test("record_search returns atomic source metadata and distance", async () => {
     mediaId: "img1",
     snippet: "图片描述：AI Coding",
     distance: 0.18,
-    eventAt: "2026-09-18T00:00:00.000Z",
+    eventAt: "2026-09-18 08:00",
   }] });
   assert.doesNotMatch(JSON.stringify(result.details), /userId/);
 });
@@ -141,18 +146,19 @@ test("record_search rejects whitespace-only query before HTTP", async () => {
   assert.equal(called, false);
 });
 
-test("ToolRegistry creates only explicitly declared Record tools", () => {
+test("createTools returns only explicitly declared Pi tools", () => {
   const client = {
     getRecord: async () => baseRecord,
     listRecords: async () => ({ data: [], hasMore: false, nextCursor: null, pageSize: 10 }),
     searchRecords: async () => ({ data: [] }),
     getMediaMetadata: async () => ({ mediaId: "img1", mediaType: "image", mimeType: "image/jpeg" }),
   };
-  const registry = new ToolRegistry(client as any);
   assert.deepEqual(
-    registry.create(["record_list", "record_search", "present_media"] as any, "/tmp").map(tool => tool.name),
+    createTools(["record_list", "record_search", "present_media"] as any, "/tmp", client as any).map(tool => tool.name),
     ["record_list", "record_search", "present_media"],
   );
-  assert.deepEqual(new ToolRegistry().create(["read", "write", "edit", "bash"] as any, "/tmp").map(tool => tool.name), ["read", "write", "edit", "bash"]);
-  assert.throws(() => new ToolRegistry().create(["record_get"] as any, "/tmp"), /FantoServerClient is required/);
+  assert.deepEqual(
+    createTools(["read", "write", "edit", "bash"] as any, "/tmp", client as any).map(tool => tool.name),
+    ["read", "write", "edit", "bash"],
+  );
 });

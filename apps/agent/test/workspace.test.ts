@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
-import { assertWorkspacePath, createWorkspace } from "../src/harness/workspace.js";
+import { assertWorkspacePath, createWorkspace } from "../src/workspace/paths.js";
 
 test("accepts paths inside a session workspace and rejects escapes", () => {
   const root = mkdtempSync(resolve(tmpdir(), "fanto-workspace-"));

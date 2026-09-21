@@ -70,4 +70,8 @@ Record save
 
 Memory 是派生能力。Record 已经成功变成 `processed` 后，如果 Embedding 或 Memory Index 写入失败，不会把 Record 回滚到 pending；当前没有持久重试，索引可通过 Memory rebuild 恢复。
 
+## 删除
+
+删除使用当前 `version` 进行乐观并发校验，并从主表硬删除 Record。删除会解除关联媒体的 `recordId` 占用标记、移除该 Record 的向量记忆，以及清除其作为来源的创作关联；媒体资产及其 OSS 对象保留，后续可由专门的媒体清理能力处理。已入队或执行中的后置任务只会匹配仍存在的 Record，因此不会写回已删除内容。
+
 Record 的完整 HTTP 投影还会把 block 关联到 Media URL、音频时长和 ASR 元数据，见 [HTTP API](../api/http-api.md)。

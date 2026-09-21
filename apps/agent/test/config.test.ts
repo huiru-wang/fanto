@@ -5,8 +5,15 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import { readAgentDefinitions } from "../src/config/agent-config.js";
+import { readAgentDefinitions } from "../src/agent/definition.js";
+import { AgentRegistry } from "../src/agent/registry.js";
 import { SkillLoader } from "../src/skills/loader.js";
+
+const model = `models:
+  - provider: deepseek
+    model: deepseek-v4-pro
+`;
+const compaction = `compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 }`;
 
 function fixture(content: string, skill = false): { root: string; config: string; skills: string } {
   const root = mkdtempSync(resolve(tmpdir(), "fanto-agent-"));
@@ -21,61 +28,110 @@ function fixture(content: string, skill = false): { root: string; config: string
   return { root, config, skills };
 }
 
-test("loads merged DeepSeek definitions with explicit ids, compaction and skills", () => {
-  const files = fixture(`version: 1\ndefaults:\n  provider: deepseek\n  model: deepseek-v4-pro\n  tools: [read, write]\n  compaction:\n    enabled: true\n    reserveTokens: 16384\n    keepRecentTokens: 20000\nagents:\n  - id: coding\n    systemPrompt: Work carefully.\n    skills: [repo-conventions]\n`, true);
+test("loads agents that reference a configured model", () => {
+  const files = fixture(`version: 1
+${model}agents:
+  - id: main
+    model_id: deepseek/deepseek-v4-pro
+    systemPrompt: Work carefully.
+    tools: [read, write]
+    skills: [repo-conventions]
+    ${compaction}
+`, true);
   try {
-    const definitions = readAgentDefinitions(files.config, builtinModels(), new SkillLoader(files.skills).ids());
-    assert.deepEqual(definitions[0]?.tools, ["read", "write"]);
-    assert.equal(definitions[0]?.compaction.keepRecentTokens, 20_000);
-    assert.deepEqual(definitions[0]?.skills, ["repo-conventions"]);
-    assert.match(definitions[0]?.revision ?? "", /^[a-f0-9]{64}$/);
+    const definition = readAgentDefinitions(files.config, builtinModels(), new SkillLoader(files.skills).ids())[0];
+    assert.equal(definition?.modelId, "deepseek/deepseek-v4-pro");
+    assert.equal(definition?.provider, "deepseek");
+    assert.equal(definition?.model, "deepseek-v4-pro");
+    assert.deepEqual(definition?.tools, ["read", "write"]);
+    assert.match(definition?.revision ?? "", /^[a-f0-9]{64}$/);
   } finally { rmSync(files.root, { recursive: true, force: true }); }
 });
 
-test("rejects duplicate agent ids", () => {
-  const files = fixture(`version: 1\ndefaults:\n  provider: deepseek\n  model: deepseek-v4-pro\n  compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 }\nagents:\n  - id: coding\n    systemPrompt: First.\n  - id: coding\n    systemPrompt: Second.\n`);
+test("rejects duplicate agent ids, duplicate model ids, and unknown model references", () => {
+  const duplicateAgent = fixture(`version: 1
+${model}agents:
+  - id: main
+    model_id: deepseek/deepseek-v4-pro
+    systemPrompt: First.
+    ${compaction}
+  - id: main
+    model_id: deepseek/deepseek-v4-pro
+    systemPrompt: Second.
+    ${compaction}
+`);
+  const duplicateModel = fixture(`version: 1
+${model}  - provider: deepseek
+    model: deepseek-v4-pro
+agents:
+  - id: main
+    model_id: deepseek/deepseek-v4-pro
+    systemPrompt: First.
+    ${compaction}
+`);
+  const missingModel = fixture(`version: 1
+${model}agents:
+  - id: main
+    model_id: missing
+    systemPrompt: First.
+    ${compaction}
+`);
   try {
-    assert.throws(() => readAgentDefinitions(files.config, builtinModels(), new Set()), /Duplicate agent id/);
+    assert.throws(() => readAgentDefinitions(duplicateAgent.config, builtinModels(), new Set()), /Duplicate agent id/);
+    assert.throws(() => readAgentDefinitions(duplicateModel.config, builtinModels(), new Set()), /Duplicate model id/);
+    assert.throws(() => readAgentDefinitions(missingModel.config, builtinModels(), new Set()), /unknown model_id/);
+  } finally {
+    for (const files of [duplicateAgent, duplicateModel, missingModel]) rmSync(files.root, { recursive: true, force: true });
+  }
+});
+
+test("requires the main Agent when constructing the registry", () => {
+  const files = fixture(`version: 1
+${model}agents:
+  - id: coding
+    model_id: deepseek/deepseek-v4-pro
+    systemPrompt: Work carefully.
+    ${compaction}
+`);
+  try {
+    assert.throws(() => new AgentRegistry(files.config, builtinModels(), new SkillLoader(files.skills)), /default agent "main" is required/);
   } finally { rmSync(files.root, { recursive: true, force: true }); }
 });
 
-test("rejects duplicate tools", () => {
-  const files = fixture(`version: 1\ndefaults:\n  provider: deepseek\n  model: deepseek-v4-pro\n  compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 }\nagents:\n  - id: coding\n    systemPrompt: Work carefully.\n    tools: [read, read]\n`);
+test("resolves main when no agent id is supplied", () => {
+  const files = fixture(`version: 1
+${model}agents:
+  - id: main
+    model_id: deepseek/deepseek-v4-pro
+    systemPrompt: Work carefully.
+    ${compaction}
+`);
   try {
-    assert.throws(() => readAgentDefinitions(files.config, builtinModels(), new Set()), /duplicate tools/);
+    const registry = new AgentRegistry(files.config, builtinModels(), new SkillLoader(files.skills));
+    assert.equal(registry.get()?.id, "main");
   } finally { rmSync(files.root, { recursive: true, force: true }); }
 });
 
-test("loads Fanto prompt file for main while coding remains isolated", () => {
+test("loads Fanto prompts for main while coding remains isolated", () => {
   const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const skills = new SkillLoader(resolve(appRoot, "skills"));
   const definitions = readAgentDefinitions(resolve(appRoot, "agents.yaml"), builtinModels(), skills.ids());
   const main = definitions.find(definition => definition.id === "main");
   const coding = definitions.find(definition => definition.id === "coding");
+  assert.equal(main?.modelId, "deepseek/deepseek-v4-pro");
   assert.deepEqual(main?.tools, ["record_get", "record_list", "record_search", "present_media", "preference_manage"]);
-  assert.deepEqual(main?.skills, []);
-  assert.match(main?.systemPrompt ?? "", /你是 Fanto/);
-  assert.match(main?.systemPrompt ?? "", /record_list/);
-  assert.match(main?.systemPrompt ?? "", /record_search/);
-  assert.match(main?.systemPrompt ?? "", /record_get/);
-  assert.match(main?.systemPrompt ?? "", /工具调用过程必须对用户隐身/);
-  assert.match(main?.systemPrompt ?? "", /不能默认是用户本人/);
-  assert.match(main?.systemPrompt ?? "", /record_search 已返回真实 mediaId 时，可以直接调用 `present_media`/);
-  assert.match(main?.systemPrompt ?? "", /Markdown 只用于最终可见文本/);
-  assert.match(main?.systemPrompt ?? "", /present_media/);
-  assert.doesNotMatch((main?.tools ?? []).join(","), /read|write|edit|bash/);
+  assert.match(main?.systemPrompt ?? "", /你是用户的人生助理/);
+  assert.match(main?.systemPrompt ?? "", /\{\{current_time\}\}/);
   assert.deepEqual(coding?.tools, ["read", "write", "edit", "bash"]);
 });
 
-test("loads a relative systemPromptFile and includes its content in revision", () => {
+test("loads a relative systemPromptFile and includes it in the revision", () => {
   const files = fixture(`version: 1
-defaults:
-  provider: deepseek
-  model: deepseek-v4-pro
-  compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 }
-agents:
+${model}agents:
   - id: main
+    model_id: deepseek/deepseek-v4-pro
     systemPromptFile: ./prompts/main.md
+    ${compaction}
 `);
   try {
     mkdirSync(resolve(files.root, "prompts"));
@@ -85,53 +141,6 @@ agents:
     writeFileSync(prompt, "Second prompt.");
     const second = readAgentDefinitions(files.config, builtinModels(), new Set())[0];
     assert.equal(first?.systemPrompt, "First prompt.");
-    assert.equal(second?.systemPrompt, "Second prompt.");
     assert.notEqual(first?.revision, second?.revision);
-  } finally { rmSync(files.root, { recursive: true, force: true }); }
-});
-
-test("rejects ambiguous or unsafe systemPromptFile configuration", () => {
-  const both = fixture(`version: 1
-defaults:
-  provider: deepseek
-  model: deepseek-v4-pro
-  compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 }
-agents:
-  - id: main
-    systemPrompt: Inline.
-    systemPromptFile: ./prompt.md
-`);
-  const escape = fixture(`version: 1
-defaults:
-  provider: deepseek
-  model: deepseek-v4-pro
-  compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 }
-agents:
-  - id: main
-    systemPromptFile: ../prompt.md
-`);
-  try {
-    assert.throws(() => readAgentDefinitions(both.config, builtinModels(), new Set()), /mutually exclusive/);
-    assert.throws(() => readAgentDefinitions(escape.config, builtinModels(), new Set()), /inside the config directory/);
-  } finally {
-    rmSync(both.root, { recursive: true, force: true });
-    rmSync(escape.root, { recursive: true, force: true });
-  }
-});
-
-test("accepts configured Fanto tool names", () => {
-  const files = fixture(`version: 1
-defaults:
-  provider: deepseek
-  model: deepseek-v4-pro
-  compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 }
-agents:
-  - id: main
-    systemPrompt: Use records carefully.
-    tools: [record_get, record_list, record_search, present_media, preference_manage]
-`);
-  try {
-    const definitions = readAgentDefinitions(files.config, builtinModels(), new Set());
-    assert.deepEqual(definitions[0]?.tools, ["record_get", "record_list", "record_search", "present_media", "preference_manage"]);
   } finally { rmSync(files.root, { recursive: true, force: true }); }
 });

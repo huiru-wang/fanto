@@ -10,10 +10,11 @@ export type ContextInput = {
   recentMessages: ContextMessage[];
   signal?: AbortSignal;
   traceId?: string;
+  timeZone?: string;
 };
 
 export type ContextFragment = {
-  section: "Character" | "User Preferences" | "Relevant Memory";
+  section: "Character" | "Current Time" | "User Preferences" | "Relevant Memory";
   content: string;
 };
 

@@ -1,86 +1,31 @@
 import { z } from "zod";
+import {
+  mediaMetadataSchema,
+  preferenceCreateSchema,
+  preferenceDeleteSchema,
+  preferenceListSchema,
+  preferenceSchema,
+  recordListSchema,
+  recordSchema,
+  recordSearchSchema,
+  type FantoMediaMetadata,
+  type FantoPreference,
+  type FantoPreferenceCategory,
+  type FantoPreferenceList,
+  type FantoRecord,
+  type FantoRecordList,
+  type FantoRecordSearch,
+} from "./schemas.js";
 
-const imageBlock = z.object({
-  type: z.literal("image"),
-  mediaId: z.string(),
-  description: z.string().optional(),
-}).strict();
-
-const audioBlock = z.object({
-  type: z.literal("audio"),
-  mediaId: z.string(),
-  transcription: z.string().optional(),
-}).strict();
-
-const recordContent = z.object({
-  text: z.string(),
-  blocks: z.array(z.union([imageBlock, audioBlock])),
-}).strict();
-
-const record = z.object({
-  id: z.string(),
-  userId: z.string(),
-  source: z.string(),
-  content: recordContent,
-  version: z.number().int(),
-  status: z.enum(["pending", "updated", "processing", "processed"]),
-  eventAt: z.string(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-}).passthrough();
-
-const recordList = z.object({
-  data: z.array(record),
-  hasMore: z.boolean(),
-  nextCursor: z.string().nullable(),
-  pageSize: z.number().int(),
-}).strict();
-
-const recordSearch = z.object({
-  data: z.array(z.object({
-    recordId: z.string(),
-    sourceType: z.enum(["record_text", "image", "audio"]),
-    mediaId: z.string().nullable(),
-    snippet: z.string(),
-    distance: z.number(),
-    eventAt: z.string(),
-  }).strict()),
-}).strict();
-
-
-
-const preferenceCategory = z.enum(["communication", "scenario", "lifestyle"]);
-const preference = z.object({
-  preferenceId: z.string(),
-  userId: z.string(),
-  category: preferenceCategory,
-  content: z.string(),
-  sourceSessionId: z.string(),
-  sourceMessageId: z.string(),
-  sourceQuote: z.string(),
-  version: z.number().int().positive(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-}).strict();
-const preferenceList = z.object({ data: z.array(preference).max(20) }).strict();
-const preferenceCreate = z.object({ preference, reused: z.boolean() }).strict();
-const preferenceDelete = z.object({ preferenceId: z.string() }).strict();
-
-const mediaMetadata = z.object({
-  mediaId: z.string(),
-  mediaType: z.enum(["image", "audio"]),
-  mimeType: z.string(),
-  width: z.number().int().positive().optional(),
-  height: z.number().int().positive().optional(),
-  durationMs: z.number().int().positive().optional(),
-}).strict();
-
-export type FantoRecord = z.infer<typeof record>;
-export type FantoRecordList = z.infer<typeof recordList>;
-export type FantoRecordSearch = z.infer<typeof recordSearch>;
-export type FantoMediaMetadata = z.infer<typeof mediaMetadata>;
-export type FantoPreference = z.infer<typeof preference>;
-export type FantoPreferenceList = z.infer<typeof preferenceList>;
+export type {
+  FantoMediaMetadata,
+  FantoPreference,
+  FantoPreferenceCategory,
+  FantoPreferenceList,
+  FantoRecord,
+  FantoRecordList,
+  FantoRecordSearch,
+} from "./schemas.js";
 
 export type FantoRequestContext = {
   userId: string;
@@ -122,48 +67,48 @@ export class FantoServerClient {
   }
 
   getRecord(ctx: FantoRequestContext, recordId: string): Promise<FantoRecord> {
-    return this.request("GET", `/api/records/${encodeURIComponent(recordId)}`, ctx, record);
+    return this.request("GET", `/api/records/${encodeURIComponent(recordId)}`, ctx, recordSchema);
   }
 
   listRecords(ctx: FantoRequestContext, input: { limit: number; cursor?: string }): Promise<FantoRecordList> {
     const query = new URLSearchParams({ limit: String(input.limit) });
     if (input.cursor) query.set("cursor", input.cursor);
-    return this.request("GET", `/api/records?${query}`, ctx, recordList);
+    return this.request("GET", `/api/records?${query}`, ctx, recordListSchema);
   }
 
   searchRecords(ctx: FantoRequestContext, input: { query: string; limit: number }): Promise<FantoRecordSearch> {
-    return this.request("POST", "/api/records/search", ctx, recordSearch, input);
+    return this.request("POST", "/api/records/search", ctx, recordSearchSchema, input);
   }
 
 
 
   listPreferences(ctx: FantoRequestContext): Promise<FantoPreferenceList> {
-    return this.request("GET", "/api/preferences", ctx, preferenceList);
+    return this.request("GET", "/api/preferences", ctx, preferenceListSchema);
   }
 
   createPreference(ctx: FantoRequestContext, input: {
-    category: z.infer<typeof preferenceCategory>;
+    category: FantoPreferenceCategory;
     content: string;
     source: { sessionId: string; messageId: string; quote: string };
   }): Promise<{ preference: FantoPreference; reused: boolean }> {
-    return this.request("POST", "/api/preferences", ctx, preferenceCreate, input);
+    return this.request("POST", "/api/preferences", ctx, preferenceCreateSchema, input);
   }
 
   updatePreference(ctx: FantoRequestContext, preferenceId: string, input: {
     expectedVersion: number;
-    category: z.infer<typeof preferenceCategory>;
+    category: FantoPreferenceCategory;
     content: string;
     source: { sessionId: string; messageId: string; quote: string };
   }): Promise<FantoPreference> {
-    return this.request("PATCH", `/api/preferences/${encodeURIComponent(preferenceId)}`, ctx, preference, input);
+    return this.request("PATCH", `/api/preferences/${encodeURIComponent(preferenceId)}`, ctx, preferenceSchema, input);
   }
 
   deletePreference(ctx: FantoRequestContext, preferenceId: string, expectedVersion: number): Promise<{ preferenceId: string }> {
-    return this.request("DELETE", `/api/preferences/${encodeURIComponent(preferenceId)}`, ctx, preferenceDelete, { expectedVersion });
+    return this.request("DELETE", `/api/preferences/${encodeURIComponent(preferenceId)}`, ctx, preferenceDeleteSchema, { expectedVersion });
   }
 
   getMediaMetadata(ctx: FantoRequestContext, mediaId: string): Promise<FantoMediaMetadata> {
-    return this.request("GET", `/api/media/${encodeURIComponent(mediaId)}/meta`, ctx, mediaMetadata);
+    return this.request("GET", `/api/media/${encodeURIComponent(mediaId)}/meta`, ctx, mediaMetadataSchema);
   }
 
   private async request<T>(

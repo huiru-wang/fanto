@@ -1,4 +1,4 @@
-import type { FantoServerClient } from "../../clients/fanto-server-client.js";
+import type { FantoServerClient } from "../../fanto/client.js";
 import type { ContextFragment, ContextInput, ContextProvider } from "../types.js";
 
 type PreferenceClient = Pick<FantoServerClient, "listPreferences">;

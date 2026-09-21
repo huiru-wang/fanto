@@ -20,11 +20,12 @@
 | GET | `/api/records?limit=20&cursor=` | 倒序分页读取，limit 为 1–100 |
 | GET | `/api/records/:id` | 单条记录 |
 | PATCH | `/api/records/:id` | 以 expectedVersion 更新内容 |
+| DELETE | `/api/records/:id` | 以 expectedVersion 硬删除记录 |
 | POST | `/api/records/search` | 当前用户 Record 语义搜索 |
 
 `POST /api/records/search` 的每个命中返回 `recordId`、`sourceType` (`record_text` / `image` / `audio`)、可选 `mediaId`、`snippet`、原始 Record 的 `eventAt` 和向量 `distance`；图片和音频命中仍关联回原 Record。
 
-创建体：`{ text, media, eventAt, source? }`；更新体：`{ text, media, expectedVersion }`。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。创建或更新完成后，服务端异步处理当前版本的图片理解、音频转写与向量索引；图片 description 写入对应 image block，音频 transcription 写入对应 audio block。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
+创建体：`{ text, media, eventAt, source? }`；更新体：`{ text, media, expectedVersion }`；删除体：`{ expectedVersion }`。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。创建或更新完成后，服务端异步处理当前版本的图片理解、音频转写与向量索引；图片 description 写入对应 image block，音频 transcription 写入对应 audio block。删除会解除媒体的 Record 绑定、移除 Record 的向量记忆与来源关联，但不会删除媒体文件本身；已排队的后置任务因找不到 Record 而失效。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
 
 列表结果：`{ data, hasMore, nextCursor, pageSize }`。`nextCursor` 只应在 `hasMore=true` 时使用。
 
@@ -140,23 +141,24 @@ Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionI
 
 ## 独立 Agent 服务
 
-Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 在每次 Run 前通过 Context Runtime 注入 Character、最多 20 条 User Preference 和最多 2 条 Relevant Memory；Agent Loop 内仍可通过 `FantoServerClient` 调用 `record_list`、`record_search`、`record_get` 三个只读 Record Tool，通过 `preference_manage` 管理明确长期偏好，并通过 `present_media` 调用 `GET /api/media/:id/meta` 校验要展示的媒体。Tool schema 不接受 `userId`，实际用户身份来自 Session Run Context，并由 Client 转成 Business Server 的 `x-user-id`。除 `GET /health` 外，Agent HTTP 接口要求以下 Header，且当前运行入口只允许 `X-User-Id: default-user`：
+Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference 和最多 2 条 Relevant Memory，再由 Context Composer 注入 Prompt；Relevant Memory 的 `eventAt` 按请求时区展示。Agent Loop 内仍可通过 `FantoServerClient` 调用 `record_list`、`record_search`、`record_get` 三个只读 Record Tool，通过 `preference_manage` 管理明确长期偏好，并通过 `present_media` 调用 `GET /api/media/:id/meta` 校验要展示的媒体。Tool schema 不接受 `userId`，实际用户身份来自 Session Run Context，并由 Client 转成 Business Server 的 `x-user-id`。除 `GET /health` 外，Agent HTTP 接口要求以下 Header，且当前运行入口只允许 `X-User-Id: default-user`：
 
 ```text
 Authorization: Bearer <AGENT_TOKEN>
 X-User-Id: <用户 ID>
 X-Trace-Id: <可选链路 ID，可省略>
+X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC>
 ```
 
 | 方法 | 路径 | 请求 | 成功响应 |
 | --- | --- | --- | --- |
-| POST | `/api/agent/sessions` | `{ agentId }` | `201`，返回 `sessionId` 与 `agentId` |
-| POST | `/api/agent/stream` | `{ agentId, sessionId, message }` | `200`，SSE 事件流 |
+| POST | `/api/agent/sessions` | `{ agentId? }` | `201`，返回 `sessionId` 与 `agentId` |
+| POST | `/api/agent/stream` | `{ agentId?, sessionId, message }` | `200`，SSE 事件流 |
 | GET | `/api/agent/sessions/:sessionId/history?cursor=&limit=` | 无请求体 | `200`，倒序历史页 |
-| POST | `/api/agent/tasks` | `{ agentId, sessionId, message }` | `202`，任务元数据 |
+| POST | `/api/agent/tasks` | `{ agentId?, sessionId, message }` | `202`，任务元数据 |
 | GET | `/api/agent/tasks/:taskId` | 无请求体 | `200`，任务状态与结果 |
 
-先创建 Session；`stream` 和 `tasks` 必须使用该 `sessionId`。Session 固定绑定 `userId` 和工作区；请求的 `agentId` 是本次执行目标，服务会在 Session 空闲时自动应用或切换到该 Agent。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<sessionId>`。
+先创建 Session；`stream` 和 `tasks` 必须使用该 `sessionId`。`agentId` 可省略，省略时固定使用 `main`。Session 固定绑定 `userId` 和工作区；请求的 `agentId` 是本次执行目标，服务会在 Session 空闲时自动应用或切换到该 Agent。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<sessionId>`。
 
 ```sh
 export AGENT_TOKEN='替换为服务端 AGENT_TOKEN'

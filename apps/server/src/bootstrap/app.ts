@@ -58,7 +58,7 @@ function presentableMediaMetadata(asset: MediaAsset) {
   };
 }
 
-export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository, memory?: Pick<MemoryService, "searchRecords">, allowedUserIds?: ReadonlySet<string>, preferences?: PreferenceService) {
+export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository, memory?: Pick<MemoryService, "searchRecords" | "removeRecord">, allowedUserIds?: ReadonlySet<string>, preferences?: PreferenceService) {
   const app = new Hono();
   app.onError((error, c) => {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });

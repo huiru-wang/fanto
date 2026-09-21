@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { TODO_CONTEXT } from "@earendil-works/pi-agent-core";
-import { createRunContext } from "../src/harness/run-context.js";
+import { createRunContext } from "../src/agent/run-context.js";
 import {
   createPresentMediaTool,
   sanitizePresentMediaDetails,
-} from "../src/tools/present-media-tool.js";
+} from "../src/tools/media.js";
 
 async function execute(tool: any, params: unknown, context = createRunContext({ userId: "u1", traceId: "trace-1" })) {
   return tool.execute("call-1", params, () => {}, {} as never, {} as never, context);

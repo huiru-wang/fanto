@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createRunContext } from "../src/harness/run-context.js";
-import { createPreferenceManageTool } from "../src/tools/preference-tool.js";
+import { createRunContext } from "../src/agent/run-context.js";
+import { createPreferenceManageTool } from "../src/tools/preferences.js";
 
 const preference = {
   preferenceId: "p1", userId: "u1", category: "communication" as const, content: "技术方案详细展开",

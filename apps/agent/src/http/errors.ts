@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { SessionBusyError, SessionNotFoundError, SessionOwnershipError } from "../harness/session-manager.js";
+import { SessionBusyError, SessionNotFoundError, SessionOwnershipError } from "../agent/session.js";
 
 export function sessionError(c: Context, cause: unknown): Response {
   if (cause instanceof SessionNotFoundError) return c.json({ error: "Session not found" }, 404);

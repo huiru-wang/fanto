@@ -18,6 +18,7 @@ export class ContextBuilder {
 
 function sectionFor(name: string): ContextFragment["section"] {
   if (name === "character") return "Character";
+  if (name === "current_time") return "Current Time";
   if (name === "preference") return "User Preferences";
   return "Relevant Memory";
 }

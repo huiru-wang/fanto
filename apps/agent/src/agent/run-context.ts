@@ -4,6 +4,7 @@ export type RunMetadata = {
   userId: string;
   taskId?: string;
   traceId?: string;
+  timeZone?: string;
   sessionId?: string;
   currentMessage?: string;
   sourceMessageId?: string;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createApp } from "../src/bootstrap/app.js";
+import { createApp } from "../src/app.js";
 
 test("runtime user allowlist only permits default-user", async () => {
   const app = createApp(

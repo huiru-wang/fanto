@@ -2,6 +2,7 @@ import type { ContextFragment } from "./types.js";
 
 const slots = {
   Character: "{{character}}",
+  "Current Time": "{{current_time}}",
   "User Preferences": "{{user_preferences}}",
   "Relevant Memory": "{{relevant_memory}}",
 } as const;

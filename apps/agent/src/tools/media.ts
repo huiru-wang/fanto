@@ -1,12 +1,12 @@
 import { Type } from "typebox";
 import type { AgentHarnessTool, Context, ExecutionToolContext } from "@earendil-works/pi-agent-core";
-import type { FantoMediaMetadata, FantoServerClient } from "../clients/fanto-server-client.js";
-import { requireRunMetadata } from "../harness/run-context.js";
+import type { FantoMediaMetadata, FantoServerClient } from "../fanto/client.js";
+import { requireRunMetadata } from "../agent/run-context.js";
 
 const presentMediaSchema = Type.Object({
   mediaIds: Type.Array(
-    Type.String({ minLength: 1, description: "Media ID returned by Fanto Record tools." }),
-    { minItems: 1, maxItems: 20, description: "Media items to present in display order." },
+    Type.String({ minLength: 1, description: "其他记录能力实际返回的媒体标识。" }),
+    { minItems: 1, maxItems: 20, description: "想展示的媒体，按希望呈现的顺序排列。" },
   ),
 }, { additionalProperties: false });
 
@@ -55,8 +55,8 @@ export function createPresentMediaTool(
 ): AgentHarnessTool<ExecutionToolContext, typeof presentMediaSchema, PresentMediaDetails> {
   return {
     name: "present_media",
-    label: "Present Media",
-    description: "Present image or audio media that was returned by Fanto Record tools. Only pass real media IDs from tool results. The system validates ownership and media type before presentation.",
+    label: "展示相关媒体",
+    description: "当图片或音频能让当前回答更具体、更有感受，或本身就是用户正在谈论的事时使用；可以主动展示，不必等待用户点播。只有高度相关且不突兀、不重复时才使用。只能展示其他记录能力实际返回的媒体。",
     parameters: presentMediaSchema,
     executionMode: "parallel",
     replay: "safe",

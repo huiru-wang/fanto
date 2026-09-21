@@ -68,6 +68,13 @@ export async function getRecord(id: string): Promise<RecordItem> {
   return requestJson<RecordItem>(`/api/records/${encodeURIComponent(id)}`);
 }
 
+export async function deleteRecord(id: string, expectedVersion: number): Promise<{ recordId: string }> {
+  return requestJson<{ recordId: string }>(`/api/records/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    body: JSON.stringify({ expectedVersion }),
+  });
+}
+
 export async function searchRecords(query: string): Promise<RecordSearchHit[]> {
   const result = await requestJson<{ data: RecordSearchHit[] }>("/api/records/search", {
     method: "POST",

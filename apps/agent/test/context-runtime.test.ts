@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ContextBuilder } from "../src/context/builder.js";
-import { ContextRuntime } from "../src/context/runtime.js";
+import { composePrompt } from "../src/context/composer.js";
 import { CharacterProvider } from "../src/context/providers/character.js";
+import { MemoryProvider, dedupeRecords, parseRewriteResult } from "../src/context/providers/memory.js";
 import { PreferenceProvider } from "../src/context/providers/preference.js";
-import { MemoryProvider, dedupeRecords } from "../src/context/providers/memory.js";
-import { parseRewriteResult } from "../src/context/query-rewriter.js";
+import { formatEventTime, formatLunarDate, resolveTimeZone } from "../src/context/providers/time.js";
+import { ContextRuntime } from "../src/context/runtime.js";
 
-const template = `# Fanto\n\n## Character\n{{character}}\n\n## User Preferences\n{{user_preferences}}\n\n## Relevant Memory\n{{relevant_memory}}`;
+const template = "# Fanto\n\n## Character\n{{character}}\n\n## User Preferences\n{{user_preferences}}\n\n## Relevant Memory\n{{relevant_memory}}";
 
-test("context runtime fills all slots once with preferences and top-2 deduplicated memories", async () => {
+test("context runtime builds provider fragments that compose into the run prompt", async () => {
   const preferenceCalls: unknown[] = [];
   const searchCalls: unknown[] = [];
   const preferences = {
@@ -39,9 +40,14 @@ test("context runtime fills all slots once with preferences and top-2 deduplicat
     new PreferenceProvider(preferences as any),
     new MemoryProvider(memory as any, rewriter),
   ]));
-  const prompt = await runtime.buildPrompt(template, {
-    userId: "u1", sessionId: "s1", message: "继续聊那个方案", recentMessages: [{ role: "user", text: "我们在聊架构" }], traceId: "trace-1",
+  const fragments = await runtime.build({
+    userId: "u1",
+    sessionId: "s1",
+    message: "继续聊那个方案",
+    recentMessages: [{ role: "user", text: "我们在聊架构" }],
+    traceId: "trace-1",
   });
+  const prompt = composePrompt(template, fragments);
   assert.doesNotMatch(prompt, /{{character}}|{{user_preferences}}|{{relevant_memory}}/);
   assert.match(prompt, /natural/);
   assert.match(prompt, /preferenceId: p1 \| version: 2/);
@@ -54,11 +60,21 @@ test("context runtime fills all slots once with preferences and top-2 deduplicat
   assert.deepEqual(searchCalls.map((call: any) => call.input), [{ query: "q1", limit: 4 }, { query: "q2", limit: 4 }]);
 });
 
-test("context runtime skips providers when a prompt has no slots", async () => {
-  let called = false;
-  const runtime = new ContextRuntime(new ContextBuilder([{ name: "memory", build: async () => { called = true; throw new Error("no"); } }]));
-  assert.equal(await runtime.buildPrompt("static prompt", { userId: "u", sessionId: "s", message: "m", recentMessages: [] }), "static prompt");
-  assert.equal(called, false);
+test("context runtime is independently buildable from prompt composition", async () => {
+  const runtime = new ContextRuntime(new ContextBuilder([{
+    name: "memory",
+    build: async () => ({ section: "Relevant Memory" as const, content: "memory" }),
+  }]));
+  assert.deepEqual(
+    await runtime.build({ userId: "u", sessionId: "s", message: "m", recentMessages: [] }),
+    [{ section: "Relevant Memory", content: "memory" }],
+  );
+});
+
+test("context time uses the Run timezone and falls back safely", () => {
+  assert.equal(formatEventTime("2026-09-25T14:18:00.000Z", "Asia/Shanghai"), "2026-09-25 22:18");
+  assert.equal(formatLunarDate("2026-09-25T14:18:00.000Z", "Asia/Shanghai"), "农历：丙午年八月十五");
+  assert.equal(resolveTimeZone("not-a-timezone"), "UTC");
 });
 
 test("query rewrite parser accepts strict JSON and enforces at most two unique queries", () => {

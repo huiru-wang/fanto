@@ -1,8 +1,9 @@
 import { Hono } from "hono";
-import type { AgentRegistry } from "../config/agent-registry.js";
-import { AgentSessionManager } from "../harness/session-manager.js";
-import { AgentTaskRepository } from "../tasks/task-repository.js";
-import { TaskRunner } from "../tasks/task-runner.js";
+import type { AgentRegistry } from "../agent/registry.js";
+import { AgentSessionManager } from "../agent/session.js";
+import { resolveTimeZone } from "../context/providers/time.js";
+import { AgentTaskRepository } from "../tasks/repository.js";
+import { TaskRunner } from "../tasks/runner.js";
 import { sessionError } from "./errors.js";
 import { taskParamsSchema, taskRequestSchema, traceIdSchema, userIdSchema } from "./schemas.js";
 
@@ -12,6 +13,7 @@ export function createTaskRoutes(registry: AgentRegistry, sessions: AgentSession
     const body = taskRequestSchema.safeParse(await c.req.json().catch(() => null));
     const userId = userIdSchema.safeParse(c.req.header("x-user-id"));
     const traceId = traceIdSchema.safeParse(c.req.header("x-trace-id"));
+    const timeZone = resolveTimeZone(c.req.header("x-time-zone")?.trim());
     if (!body.success || !userId.success || !traceId.success) return c.json({ error: "agentId, sessionId, message, x-user-id, or x-trace-id is invalid" }, 400);
     const definition = registry.get(body.data.agentId);
     if (!definition) return c.json({ error: "Agent not found" }, 404);
@@ -20,7 +22,7 @@ export function createTaskRoutes(registry: AgentRegistry, sessions: AgentSession
     } catch (cause) {
       return sessionError(c, cause);
     }
-    const task = tasks.create({ sessionId: body.data.sessionId, agentId: body.data.agentId, message: body.data.message, traceId: traceId.data });
+    const task = tasks.create({ sessionId: body.data.sessionId, agentId: definition.id, message: body.data.message, traceId: traceId.data, timeZone });
     runner.wake();
     return c.json({ success: true, result: taskMetadata(task) }, 202);
   });

@@ -486,6 +486,26 @@ input:focus-visible {
   background: #738a73;
 }
 
+.record-delete {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted-2);
+  background: transparent;
+  cursor: pointer;
+}
+
+.record-delete:hover:not(:disabled) {
+  color: var(--danger);
+  background: rgba(154, 93, 88, 0.1);
+}
+
+.record-delete:disabled { cursor: wait; }
+
 .load-more {
   height: 40px;
   display: flex;

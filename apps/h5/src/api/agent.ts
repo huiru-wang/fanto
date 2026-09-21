@@ -40,6 +40,7 @@ function agentHeaders(): Headers {
   headers.set("Accept", "application/json");
   headers.set("X-User-Id", FANTO_USER_ID);
   headers.set("X-Trace-Id", crypto.randomUUID());
+  headers.set("X-Time-Zone", Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   return headers;
 }
 

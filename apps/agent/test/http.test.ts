@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createApp } from "../src/bootstrap/app.js";
+import { createApp } from "../src/app.js";
 
 const sessionId = "8c52e2fc-1741-42b3-8973-cfae75ff3f63";
 const taskId = "8c52e2fc-1741-42b3-8973-cfae75ff3f64";
@@ -13,7 +13,58 @@ const request = (url: string, body?: unknown) => new Request(`http://localhost${
   headers: { Authorization: "Bearer test-token", "Content-Type": "application/json", "X-User-Id": "user_1", "X-Trace-Id": "trace_1" },
   body: body === undefined ? undefined : JSON.stringify(body),
 });
-const registry = { get: (id: string) => id === "coding" ? definition : undefined } as never;
+const registry = { get: (id?: string) => id === undefined || id === "coding" ? definition : undefined } as never;
+
+function fakeRunSession(calls: string[]) {
+  const listeners = new Map<string, Array<(payload: any) => Promise<void> | void>>();
+  const events = {
+    on(name: string, listener: (payload: any) => Promise<void> | void) {
+      const current = listeners.get(name) ?? [];
+      current.push(listener);
+      listeners.set(name, current);
+      return () => listeners.set(name, (listeners.get(name) ?? []).filter(item => item !== listener));
+    },
+  };
+  const emit = async (name: string, payload: any) => {
+    for (const listener of listeners.get(name) ?? []) await listener(payload);
+  };
+  return {
+    id: sessionId,
+    agentId: "coding",
+    userId: "user_1",
+    revision: "test",
+    systemPromptTemplate: "test",
+    harness: { events },
+    lane: {
+      findEntries: async () => [],
+      abort: async () => {},
+      prompt: async (message: string) => {
+        calls.push(message);
+        await emit("turn_start", {});
+        await emit("tool_start", { toolCallId: "call-1", toolName: "record_search" });
+        await emit("tool_end", {
+          toolCallId: "call-1",
+          toolName: "record_search",
+          isError: false,
+          result: { details: { private: true } },
+        });
+        await emit("tool_start", { toolCallId: "call-2", toolName: "present_media" });
+        await emit("tool_end", {
+          toolCallId: "call-2",
+          toolName: "present_media",
+          isError: false,
+          result: {
+            details: {
+              items: [{ mediaId: "m1", mediaType: "image", mimeType: "image/jpeg", width: 100, height: 100 }],
+            },
+          },
+        });
+        await emit("message_update", { event: { type: "text_delta", delta: "你好" } });
+        return { ok: true, value: { status: "completed" } };
+      },
+    },
+  };
+}
 
 
 test("allows browser CORS preflight for Agent APIs", async () => {
@@ -23,7 +74,7 @@ test("allows browser CORS preflight for Agent APIs", async () => {
     headers: {
       Origin: "http://127.0.0.1:8099",
       "Access-Control-Request-Method": "POST",
-      "Access-Control-Request-Headers": "authorization,content-type,x-user-id",
+      "Access-Control-Request-Headers": "authorization,content-type,x-user-id,x-time-zone",
     },
   }));
   assert.equal(response.status, 204);
@@ -33,30 +84,15 @@ test("allows browser CORS preflight for Agent APIs", async () => {
   assert.match(headers, /authorization/);
   assert.match(headers, /content-type/);
   assert.match(headers, /x-user-id/);
+  assert.match(headers, /x-time-zone/);
 });
 
 test("creates a session before streaming and requires its id", async () => {
   const calls: string[] = [];
   const sessions = {
     create: async () => ({ id: sessionId, agentId: "coding" }),
-    acquire: async () => ({ id: sessionId, agentId: "coding", userId: "user_1" }),
+    acquire: async () => fakeRunSession(calls),
     reserve: () => () => {},
-    prompt: async (_session: unknown, message: string, _signal: AbortSignal, _metadata: unknown, emit: (event: { type: string; [key: string]: unknown }) => Promise<void>) => {
-      calls.push(message);
-      await emit({ type: "turn_start" });
-      await emit({ type: "tool_start", toolCallId: "call-1", toolName: "record_search", args: { query: "private" } });
-      await emit({ type: "tool_end", toolCallId: "call-1", toolName: "record_search", status: "succeeded" });
-      await emit({ type: "tool_start", toolCallId: "call-2", toolName: "present_media" });
-      await emit({
-        type: "tool_end",
-        toolCallId: "call-2",
-        toolName: "present_media",
-        status: "succeeded",
-        result: { items: [{ mediaId: "m1", mediaType: "image", mimeType: "image/jpeg", width: 100, height: 100 }] },
-      });
-      await emit({ type: "delta", text: "你好" });
-      return "你好";
-    },
     history: async () => ({ agentId: "coding", entries: [], hasMore: false, nextCursor: null }),
   };
   const app = createApp("test-token", registry, sessions as never, { create: () => undefined, get: () => undefined } as never, { wake: () => {} } as never);
@@ -82,6 +118,18 @@ test("creates a session before streaming and requires its id", async () => {
   assert.doesNotMatch(text, /private/);
   assert.match(text, /event: done/);
   assert.deepEqual(calls, ["hello"]);
+});
+
+test("uses the registry default when session creation omits agentId", async () => {
+  const sessions = {
+    create: async () => ({ id: sessionId, agentId: "coding" }),
+    acquire: async () => fakeRunSession([]),
+    reserve: () => () => {},
+    history: async () => ({ agentId: "coding", entries: [], hasMore: false, nextCursor: null }),
+  };
+  const app = createApp("test-token", registry, sessions as never, { create: () => undefined, get: () => undefined } as never, { wake: () => {} } as never);
+  const response = await app.request(request("/api/agent/sessions", {}));
+  assert.equal(response.status, 201);
 });
 
 test("rejects an unknown agent", async () => {

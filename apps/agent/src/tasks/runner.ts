@@ -1,12 +1,19 @@
-import type { AgentRegistry } from "../config/agent-registry.js";
-import { AgentSessionManager, SessionBusyError } from "../harness/session-manager.js";
-import { AgentTaskRepository } from "./task-repository.js";
+import type { AgentRegistry } from "../agent/registry.js";
+import { runAgent } from "../agent/run.js";
+import { AgentSessionManager, SessionBusyError } from "../agent/session.js";
+import type { ContextRuntime } from "../context/runtime.js";
+import { AgentTaskRepository } from "./repository.js";
 
 export class TaskRunner {
   private draining = false;
   private timer: ReturnType<typeof setInterval> | undefined;
 
-  constructor(private readonly tasks: AgentTaskRepository, private readonly sessions: AgentSessionManager, private readonly registry: AgentRegistry) {}
+  constructor(
+    private readonly tasks: AgentTaskRepository,
+    private readonly sessions: AgentSessionManager,
+    private readonly registry: AgentRegistry,
+    private readonly contextRuntime?: ContextRuntime,
+  ) {}
 
   start(): void {
     this.tasks.recoverInterrupted();
@@ -34,6 +41,7 @@ export class TaskRunner {
           this.tasks.fail(task.id, "Agent configuration no longer exists");
           continue;
         }
+
         try {
           const session = await this.sessions.acquire(definition, task.sessionId);
           let release: (() => void) | undefined;
@@ -46,8 +54,16 @@ export class TaskRunner {
             }
             throw cause;
           }
+
           try {
-            const output = await this.sessions.prompt(session, task.input, new AbortController().signal, { taskId: task.id, traceId: task.traceId ?? undefined }, async () => {});
+            const output = await runAgent(
+              session,
+              task.input,
+              new AbortController().signal,
+              { taskId: task.id, traceId: task.traceId ?? undefined, timeZone: task.timeZone ?? undefined },
+              this.contextRuntime,
+              async () => {},
+            );
             this.tasks.complete(task.id, output);
           } finally {
             release();

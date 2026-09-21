@@ -1,34 +1,22 @@
 import { Type } from "typebox";
 import type { AgentHarnessTool, Context, ExecutionToolContext } from "@earendil-works/pi-agent-core";
-import type { FantoPreference, FantoServerClient } from "../clients/fanto-server-client.js";
-import { requireRunMetadata } from "../harness/run-context.js";
+import type { FantoPreference, FantoServerClient } from "../fanto/client.js";
+import { requireRunMetadata } from "../agent/run-context.js";
 
 type PreferenceClient = Pick<FantoServerClient, "listPreferences" | "createPreference" | "updatePreference" | "deletePreference">;
 
 const category = Type.Union([Type.Literal("communication"), Type.Literal("scenario"), Type.Literal("lifestyle")]);
-const sourceQuote = Type.String({ minLength: 1, maxLength: 1000, description: "A continuous exact quote from the current user message that explicitly supports this preference change." });
-const schema = Type.Union([
-  Type.Object({
-    action: Type.Literal("create"),
-    category,
-    content: Type.String({ minLength: 1, maxLength: 2000 }),
-    sourceQuote,
-  }, { additionalProperties: false }),
-  Type.Object({
-    action: Type.Literal("update"),
-    preferenceId: Type.String({ minLength: 1 }),
-    expectedVersion: Type.Integer({ minimum: 1 }),
-    category,
-    content: Type.String({ minLength: 1, maxLength: 2000 }),
-    sourceQuote,
-  }, { additionalProperties: false }),
-  Type.Object({
-    action: Type.Literal("delete"),
-    preferenceId: Type.String({ minLength: 1 }),
-    expectedVersion: Type.Integer({ minimum: 1 }),
-    sourceQuote,
-  }, { additionalProperties: false }),
-]);
+const sourceQuote = Type.String({ minLength: 1, maxLength: 1000, description: "当前用户消息中，明确支持这次偏好变更的一段连续原话。" });
+// Keep the tool schema as a single object. Some OpenAI-compatible providers
+// reject TypeBox unions (anyOf) when converting tools to function schemas.
+const schema = Type.Object({
+  action: Type.Union([Type.Literal("create"), Type.Literal("update"), Type.Literal("delete")]),
+  category: Type.Optional(category),
+  content: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
+  preferenceId: Type.Optional(Type.String({ minLength: 1 })),
+  expectedVersion: Type.Optional(Type.Integer({ minimum: 1 })),
+  sourceQuote,
+}, { additionalProperties: false });
 
 type PreferenceDetails = {
   action: "create" | "update" | "delete";
@@ -59,8 +47,8 @@ const asResult = (details: PreferenceDetails) => ({
 export function createPreferenceManageTool(client: PreferenceClient): AgentHarnessTool<ExecutionToolContext, typeof schema, PreferenceDetails> {
   return {
     name: "preference_manage",
-    label: "Manage User Preference",
-    description: "Create, update, or delete a long-term user preference only when the current user explicitly expresses a durable preference or asks to manage one. Do not save temporary instructions, inferred traits, record content, role-play text, or third-party statements. sourceQuote must be copied exactly from the current user message.",
+    label: "管理长期偏好",
+    description: "仅当用户明确表达希望长期延续的偏好，或明确要求修改、删除偏好时使用。不要保存临时要求、推测出的特质、记录内容、角色扮演或第三方的话。sourceQuote 必须逐字来自当前用户消息。",
     parameters: schema,
     executionMode: "sequential",
     replay: "never",
@@ -68,16 +56,25 @@ export function createPreferenceManageTool(client: PreferenceClient): AgentHarne
       const provenance = source(context, params.sourceQuote);
       let changedPreferenceId: string;
       if (params.action === "create") {
+        if (!params.category || !params.content) {
+          throw new Error("create preference requires category and content");
+        }
         const result = await client.createPreference(provenance.request, {
           category: params.category, content: params.content.trim(), source: provenance.source,
         });
         changedPreferenceId = result.preference.preferenceId;
       } else if (params.action === "update") {
+        if (!params.preferenceId || !params.expectedVersion || !params.category || !params.content) {
+          throw new Error("update preference requires preferenceId, expectedVersion, category and content");
+        }
         const result = await client.updatePreference(provenance.request, params.preferenceId, {
           expectedVersion: params.expectedVersion, category: params.category, content: params.content.trim(), source: provenance.source,
         });
         changedPreferenceId = result.preferenceId;
       } else {
+        if (!params.preferenceId || !params.expectedVersion) {
+          throw new Error("delete preference requires preferenceId and expectedVersion");
+        }
         const result = await client.deletePreference(provenance.request, params.preferenceId, params.expectedVersion);
         changedPreferenceId = result.preferenceId;
       }

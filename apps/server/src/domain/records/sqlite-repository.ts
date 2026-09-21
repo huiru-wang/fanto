@@ -55,6 +55,20 @@ export class SqliteRecordRepository implements RecordRepository {
     });
   }
 
+  async delete(id: string, userId: string, expectedVersion: number): Promise<Record | "not_found" | "conflict"> {
+    return this.db.transaction().execute(async trx => {
+      const row = await trx.selectFrom("records").selectAll().where("record_id", "=", id).where("user_id", "=", userId).executeTakeFirst();
+      if (!row) return "not_found";
+      if (row.version !== expectedVersion) return "conflict";
+      const record = this.toEntity(row);
+      const now = nowIso();
+      for (const block of record.content.blocks) await this.unlink(trx, userId, block.mediaId, now);
+      await trx.deleteFrom("entity_relations").where("user_id", "=", userId).where("source_entity_id", "=", id).where("source_entity_type", "=", "record").execute();
+      await trx.deleteFrom("records").where("record_id", "=", id).where("user_id", "=", userId).where("version", "=", expectedVersion).execute();
+      return record;
+    });
+  }
+
   async claimPostprocess(input: { recordId: string; userId: string; version: number; runId: string }) {
     const row = await this.db.updateTable("records").set({ status: "processing", task_id: input.runId, updated_at: nowIso() }).where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "in", ["pending", "updated"]).returningAll().executeTakeFirst();
     return row ? this.toEntity(row) : null;

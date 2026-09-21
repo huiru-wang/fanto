@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { FantoServerClient, FantoServerClientError } from "../src/clients/fanto-server-client.js";
+import { FantoServerClient, FantoServerClientError } from "../src/fanto/client.js";
 
 const record = {
   id: "r1",
