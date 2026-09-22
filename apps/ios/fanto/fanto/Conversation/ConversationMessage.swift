@@ -18,6 +18,7 @@ struct ConversationMessage: Identifiable, Equatable {
     let id: String
     let role: ConversationRole
     var text: String
+    var media: [PresentedMedia] = []
     var state: ConversationMessageState
 
     static func user(id: String, text: String) -> Self {

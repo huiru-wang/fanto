@@ -49,7 +49,7 @@ test("context runtime builds provider fragments that compose into the run prompt
   });
   const prompt = composePrompt(template, fragments);
   assert.doesNotMatch(prompt, /{{character}}|{{user_preferences}}|{{relevant_memory}}/);
-  assert.match(prompt, /natural/);
+  assert.match(prompt, /表达自然、成熟/);
   assert.match(prompt, /preferenceId: p1 \| version: 2/);
   assert.match(prompt, /recordId：r1/);
   assert.match(prompt, /第一条更相关片段/);

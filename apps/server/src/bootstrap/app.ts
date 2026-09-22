@@ -33,6 +33,8 @@ const redactPreferenceData = (value: unknown): unknown => {
 };
 export const logSafeBody = (path: string, value: unknown) => path.startsWith("/api/preferences")
   ? redactPreferenceData(redact(value))
+  : /^\/api\/media\/[^/]+\/url$/.test(path)
+    ? "[REDACTED]"
   : redact(value);
 const jsonBody = async (response: Response, path: string) => {
   if (!response.headers.get("content-type")?.includes("application/json")) return null;

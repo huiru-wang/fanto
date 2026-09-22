@@ -7,6 +7,7 @@ struct RecordCalendarView: View {
     @State private var weekAnchor: Date
     @State private var monthAnchor: Date
     @State private var presentation: CalendarPresentation = .week
+    @State private var showingMonthYearPicker = false
     @Namespace private var calendarNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -23,9 +24,19 @@ struct RecordCalendarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center) {
-                Text(ChineseDateText.monthYear(displayAnchor))
-                    .font(.largeTitle)
-                    .bold()
+                Button {
+                    showingMonthYearPicker = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(ChineseDateText.monthYear(displayAnchor))
+                        Image(systemName: "chevron.down")
+                            .font(.title3.weight(.semibold))
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.largeTitle.bold())
+                .accessibilityLabel("选择年月")
+                .accessibilityValue(ChineseDateText.monthYear(displayAnchor))
                 Spacer()
                 HStack(spacing: 8) {
                     CalendarActionButton(
@@ -36,16 +47,6 @@ struct RecordCalendarView: View {
                     CalendarActionButton(title: "新建记录", systemImage: "square.and.pencil", action: addRecord)
                 }
             }
-
-            HStack {
-                Spacer()
-                Button(previousButtonTitle, systemImage: "chevron.left", action: previousPage)
-                    .labelStyle(.iconOnly)
-                Button(nextButtonTitle, systemImage: "chevron.right", action: nextPage)
-                    .labelStyle(.iconOnly)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
 
             ZStack(alignment: .top) {
                 if presentation == .week {
@@ -71,10 +72,26 @@ struct RecordCalendarView: View {
             }
             .frame(maxWidth: .infinity, alignment: .top)
             .clipped()
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 18)
+                    .onEnded(handleCalendarSwipe)
+            )
+            .accessibilityHint("向左或向右轻扫可切换\(presentation == .week ? "周" : "月")")
+            .accessibilityAction(named: previousButtonTitle, previousPage)
+            .accessibilityAction(named: nextButtonTitle, nextPage)
             .animation(calendarAnimation, value: presentation)
+            .animation(calendarAnimation, value: displayAnchor)
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .contain)
+        .sheet(isPresented: $showingMonthYearPicker) {
+            MonthYearPickerSheet(date: displayAnchor) { year, month in
+                select(year: year, month: month)
+            }
+            .presentationDetents([.height(340)])
+            .presentationDragIndicator(.visible)
+        }
     }
 
     private var displayAnchor: Date {
@@ -108,6 +125,18 @@ struct RecordCalendarView: View {
         }
     }
 
+    private func select(year: Int, month: Int) {
+        let currentDay = calendar.component(.day, from: selectedDate)
+        var components = DateComponents(year: year, month: month, day: 1)
+        guard let firstDay = calendar.date(from: components),
+              let dayRange = calendar.range(of: .day, in: .month, for: firstDay)
+        else { return }
+
+        components.day = min(currentDay, dayRange.count)
+        guard let date = calendar.date(from: components) else { return }
+        select(date)
+    }
+
     private func togglePresentation() {
         withAnimation(calendarAnimation) {
             if presentation == .week {
@@ -121,21 +150,26 @@ struct RecordCalendarView: View {
     }
 
     private func previousPage() {
-        withAnimation(calendarAnimation) {
-            if presentation == .week {
-                weekAnchor = calendar.date(byAdding: .day, value: -7, to: weekAnchor) ?? weekAnchor
-            } else {
-                monthAnchor = calendar.date(byAdding: .month, value: -1, to: monthAnchor) ?? monthAnchor
-            }
-        }
+        changePage(by: -1)
     }
 
     private func nextPage() {
+        changePage(by: 1)
+    }
+
+    private func handleCalendarSwipe(_ value: DragGesture.Value) {
+        let horizontal = value.translation.width
+        let vertical = value.translation.height
+        guard abs(horizontal) >= 44, abs(horizontal) > abs(vertical) else { return }
+        changePage(by: horizontal < 0 ? 1 : -1)
+    }
+
+    private func changePage(by amount: Int) {
         withAnimation(calendarAnimation) {
             if presentation == .week {
-                weekAnchor = calendar.date(byAdding: .day, value: 7, to: weekAnchor) ?? weekAnchor
+                weekAnchor = calendar.date(byAdding: .day, value: 7 * amount, to: weekAnchor) ?? weekAnchor
             } else {
-                monthAnchor = calendar.date(byAdding: .month, value: 1, to: monthAnchor) ?? monthAnchor
+                monthAnchor = calendar.date(byAdding: .month, value: amount, to: monthAnchor) ?? monthAnchor
             }
         }
     }

@@ -24,15 +24,39 @@ enum AgentAPIError: LocalizedError {
     }
 }
 
+enum PresentedMediaType: String, Decodable, Hashable {
+    case image
+    case audio
+}
+
+struct PresentedMedia: Identifiable, Decodable, Hashable {
+    let mediaID: String
+    let mediaType: PresentedMediaType
+    let mimeType: String
+    let width: Int?
+    let height: Int?
+    let durationMS: Int?
+
+    var id: String { mediaID }
+
+    enum CodingKeys: String, CodingKey {
+        case mediaID = "mediaId"
+        case mediaType, mimeType, width, height
+        case durationMS = "durationMs"
+    }
+}
+
 struct AgentHistoryMessage: Identifiable {
     let id: String
     let role: ConversationRole
     let text: String
+    let media: [PresentedMedia]
 }
 
 enum AgentStreamEvent {
     case processing
     case delta(String)
+    case presentation([PresentedMedia])
     case done
     case failure(String)
 }
@@ -43,7 +67,7 @@ struct AgentAPIClient {
     let userID = "user001"
     let agentID = "main"
 
-    private let baseURL = URL(string: "http://47.118.26.9")!
+    private let baseURL = URL(string: "https://fanto.robinverse.me")!
     private let agentToken = "a3f2b8c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9"
 
     func createSession() async throws -> String {
@@ -57,11 +81,7 @@ struct AgentAPIClient {
         components?.queryItems = [URLQueryItem(name: "limit", value: "10")]
         guard let url = components?.url else { throw AgentAPIError.invalidResponse }
         let response: HistoryResponse = try await request(url: url)
-        return response.data.compactMap { entry in
-            let text = entry.message.content.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let role = ConversationRole(rawValue: entry.message.role), !text.isEmpty else { return nil }
-            return AgentHistoryMessage(id: entry.id, role: role, text: text)
-        }.reversed()
+        return projectHistory(response.data)
     }
 
     func stream(sessionID: String, message: String, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
@@ -75,8 +95,9 @@ struct AgentAPIClient {
 
         var eventName: String?
         var dataLines: [String] = []
-        for try await line in bytes.lines {
-            try Task.checkCancellation()
+        var lineBytes: [UInt8] = []
+
+        func consume(line: String) {
             if line.isEmpty {
                 deliver(eventName: eventName, data: dataLines.joined(separator: "\n"), onEvent: onEvent)
                 eventName = nil
@@ -88,6 +109,21 @@ struct AgentAPIClient {
             }
         }
 
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            if byte == 0x0A {
+                var line = String(decoding: lineBytes, as: UTF8.self)
+                if line.last == "\r" { line.removeLast() }
+                consume(line: line)
+                lineBytes.removeAll(keepingCapacity: true)
+            } else {
+                lineBytes.append(byte)
+            }
+        }
+
+        if !lineBytes.isEmpty {
+            consume(line: String(decoding: lineBytes, as: UTF8.self))
+        }
         deliver(eventName: eventName, data: dataLines.joined(separator: "\n"), onEvent: onEvent)
     }
 
@@ -98,6 +134,14 @@ struct AgentAPIClient {
         case "delta":
             guard let payload = try? JSONDecoder().decode(StreamDelta.self, from: Data(data.utf8)) else { return }
             onEvent(.delta(payload.text))
+        case "tool_end":
+            guard let payload = try? JSONDecoder().decode(StreamToolEnd.self, from: Data(data.utf8)),
+                  payload.toolName == "present_media",
+                  payload.status == "succeeded",
+                  let items = payload.result?.items,
+                  !items.isEmpty
+            else { return }
+            onEvent(.presentation(items))
         case "done":
             onEvent(.done)
         case "error":
@@ -188,10 +232,30 @@ private struct HistoryEntry: Decodable {
 private struct HistoryEntryMessage: Decodable {
     let role: String
     let content: HistoryMessageContent
+    let toolName: String?
+    let isError: Bool?
+    let details: PresentedMediaDetails?
+
+    private enum CodingKeys: String, CodingKey {
+        case role, content, toolName, isError, details
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        role = try container.decode(String.self, forKey: .role)
+        content = (try? container.decode(HistoryMessageContent.self, forKey: .content)) ?? .init(text: "")
+        toolName = try? container.decode(String.self, forKey: .toolName)
+        isError = try? container.decode(Bool.self, forKey: .isError)
+        details = try? container.decode(PresentedMediaDetails.self, forKey: .details)
+    }
 }
 
 private struct HistoryMessageContent: Decodable {
     let text: String
+
+    init(text: String) {
+        self.text = text
+    }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -232,5 +296,69 @@ private struct HistoryContentPart: Decodable {
     }
 }
 
+private struct PresentedMediaDetails: Decodable {
+    let items: [PresentedMedia]
+}
+
 private struct StreamDelta: Decodable { let text: String }
+private struct StreamToolEnd: Decodable {
+    let toolName: String
+    let status: String
+    let result: PresentedMediaDetails?
+}
 private struct StreamFailure: Decodable { let error: String }
+
+private func projectHistory(_ entries: [HistoryEntry]) -> [AgentHistoryMessage] {
+    var messages: [AgentHistoryMessage] = []
+    var assistantID: String?
+    var assistantText = ""
+    var assistantMedia: [PresentedMedia] = []
+
+    func flushAssistant() {
+        let text = assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty || !assistantMedia.isEmpty {
+            messages.append(AgentHistoryMessage(
+                id: assistantID ?? "history-assistant-\(messages.count)",
+                role: .assistant,
+                text: text,
+                media: assistantMedia
+            ))
+        }
+        assistantID = nil
+        assistantText = ""
+        assistantMedia = []
+    }
+
+    for entry in entries.reversed() {
+        let message = entry.message
+        switch message.role {
+        case "user":
+            flushAssistant()
+            let text = message.content.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !text.isEmpty {
+                messages.append(AgentHistoryMessage(id: entry.id, role: .user, text: text, media: []))
+            }
+        case "assistant":
+            assistantID = entry.id
+            assistantText.append(message.content.text)
+        case "toolResult" where message.toolName == "present_media" && message.isError != true:
+            assistantID = assistantID ?? entry.id
+            assistantMedia = mergePresentedMedia(assistantMedia, message.details?.items ?? [])
+        default:
+            break
+        }
+    }
+
+    flushAssistant()
+    return messages
+}
+
+func mergePresentedMedia(_ current: [PresentedMedia], _ incoming: [PresentedMedia]) -> [PresentedMedia] {
+    guard !incoming.isEmpty else { return current }
+    var seen = Set(current.map(\.mediaID))
+    var merged = current
+    for item in incoming where seen.insert(item.mediaID).inserted {
+        merged.append(item)
+    }
+    return merged
+}

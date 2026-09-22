@@ -23,6 +23,9 @@ struct AppRootView: View {
             }
         }
         .tint(FantoTheme.accent)
+        .task {
+            await conversationStore.load()
+        }
     }
 }
 

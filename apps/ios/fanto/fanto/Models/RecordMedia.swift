@@ -1,6 +1,10 @@
 import Foundation
 
+struct RecordPhoto: Identifiable, Hashable {
+    let id: String
+}
+
 enum RecordMedia: Hashable {
-    case photos(count: Int)
+    case photos([RecordPhoto])
     case audio(duration: TimeInterval)
 }

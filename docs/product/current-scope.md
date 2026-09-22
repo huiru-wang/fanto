@@ -24,7 +24,7 @@
 
 当前 iOS 的 Record 读取、Creation / Proposal 与 Agent Client 都已实现 Server 调用链路，客户端与当前 Server / Agent 主运行入口均使用测试用户 `user001`。除此之外，“新建记录”仍只写入本地 Store，没有调用 Server 创建接口；媒体上传也没有在 iOS 端形成完整写入链路。
 
-当前 iOS 中间 Fanto Tab 通过 Agent Runtime 的 Session、History 与 SSE Stream 接口支持开发态文本多轮对话。它只恢复最近 10 条历史，在 Keychain 保存一个默认 Session ID；历史解码已能容忍 Pi 的结构化 message content，并只提取文本，但当前仍不渲染 `present_media` 媒体展示。它不支持会话切换、新话题、跨设备恢复、Markdown 富文本、媒体、来源引用、Tool 产品效果或正式认证。Agent 网关若将 HTTP 转至 HTTPS，真机联调依赖系统信任该 HTTPS 证书；客户端不接受不受信任的证书。
+当前 iOS 中间 Fanto Tab 通过 Agent Runtime 的 Session、History 与 SSE Stream 接口支持开发态多轮对话。它只恢复最近 10 条历史，在 Keychain 保存一个默认 Session ID；历史解码已能容忍 Pi 的结构化 message content，并重建可见文本及成功 `present_media` 的白名单媒体 metadata，同时兼容旧正文中的 `fanto-media://<mediaId>`。Assistant 文本使用原生 Markdown 渲染；图片以横向缩略图呈现并可全屏分页查看，语音可在会话中播放。iOS 只保存稳定媒体 metadata，实际展示时才读取短期签名地址。它不支持会话切换、新话题、跨设备恢复、来源引用、其他 Tool 产品效果或正式认证。Agent 网关若将 HTTP 转至 HTTPS，真机联调依赖系统信任该 HTTPS 证书；客户端不接受不受信任的证书。
 
 当前 H5 位于 `apps/h5`，覆盖测试所需的 Record 与 Agent 基础能力：查看 / 创建 / 语义搜索 Record，支持文字、JPEG/PNG/WebP 图片、M4A/MP3/WAV 音频、浏览器录音、发生时间选择，以及时间线图片缩略图和音频播放；同时支持恢复一个默认 Agent Session、兼容字符串或结构化 content 的历史消息、POST SSE 流式多轮对话和新建会话。Assistant 可见文本继续使用 Markdown；新媒体展示由原生 `present_media` Tool Result 驱动，图片和语音按类型分开渲染，图片使用固定 104×104 单行缩略图并可进入多图 Viewer 查看完整原图。旧 Session 中的 `fanto-media://<mediaId>` 仍保留兼容渲染。H5 会缓存短期媒体 URL、避免已完成历史消息随流式 delta 反复重载，并只在用户接近底部时自动跟随新内容。H5 不提供 Creation / Proposal 页面，也不提供正式登录。测试客户端固定使用 `user001`，Agent Bearer Token 被直接编译进 H5 bundle，因此只适用于受控测试环境。
 

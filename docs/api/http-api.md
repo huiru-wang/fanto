@@ -119,7 +119,7 @@ Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionI
 
 创建上传体：`{ mimeType, bytes }`。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
 
-`GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 `x-user-id`。不存在、未完成或不属于该用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，供不能附加自定义 Header 的浏览器 `<img>` / `<audio>` 元素使用；`/:id/meta` 返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`，用于需要稳定媒体 metadata 的服务端 / Agent 路径，不包含 signed URL。
+`GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 `x-user-id`。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，供不能附加自定义 Header 的浏览器 `<img>` / `<audio>` 元素使用。读取签名有效期为五分钟，客户端不应持久化，并应在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`，用于需要稳定媒体 metadata 的服务端 / Agent 路径，不包含 signed URL。
 
 ## 脉络与待确认提案
 

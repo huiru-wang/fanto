@@ -43,4 +43,8 @@ test("preference access logging redacts preference content and source quotes", (
     result: { sourceQuote: "[REDACTED]", category: "communication" },
   });
   assert.deepEqual(logSafeBody("/api/records", { content: "普通记录" }), { content: "普通记录" });
+  assert.equal(
+    logSafeBody("/api/media/550e8400-e29b-41d4-a716-446655440000/url", { url: "https://oss.example?signature=secret" }),
+    "[REDACTED]",
+  );
 });

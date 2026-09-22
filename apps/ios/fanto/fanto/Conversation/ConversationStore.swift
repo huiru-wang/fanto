@@ -21,6 +21,7 @@ final class ConversationStore {
     private var sessionID: String?
     private var activeAssistantMessageID: String?
     private var activePrompt: String?
+    private var pendingPresentedMedia: [PresentedMedia] = []
     private var runTask: Task<Void, Never>?
     private var localMessageSequence = 0
 
@@ -44,7 +45,7 @@ final class ConversationStore {
             if let storedID = try persistence.load(userID: client.userID, agentID: client.agentID) {
                 do {
                     messages = try await client.fetchHistory(sessionID: storedID).map {
-                        ConversationMessage(id: $0.id, role: $0.role, text: $0.text, state: .complete)
+                        ConversationMessage(id: $0.id, role: $0.role, text: $0.text, media: $0.media, state: .complete)
                     }
                     sessionID = storedID
                 } catch let error as AgentAPIError where error.invalidatesSession {
@@ -76,17 +77,25 @@ final class ConversationStore {
         messages.append(assistant)
         activeAssistantMessageID = assistant.id
         activePrompt = prompt
+        pendingPresentedMedia = []
         scrollAnchorID = assistant.id
 
         runTask = Task { [weak self, client] in
             guard let self else { return }
+            defer {
+                if self.activeAssistantMessageID == assistant.id {
+                    self.failActiveMessage("回复意外中断，请重新发送。")
+                }
+            }
+
             do {
                 try await client.stream(sessionID: sessionID, message: prompt) { [weak self] event in
                     self?.receive(event)
                 }
                 if !Task.isCancelled { self.completeActiveMessage() }
             } catch is CancellationError {
-                // stop() already sets the visible terminal state.
+                // stop() already sets the visible terminal state. Other cancellation paths
+                // are converted to a retryable failure by the deferred terminal-state guard.
             } catch {
                 self.failActiveMessage(self.userVisibleError(for: error))
             }
@@ -98,6 +107,7 @@ final class ConversationStore {
         updateMessage(id: id) { $0.state = .stopped }
         activeAssistantMessageID = nil
         activePrompt = nil
+        pendingPresentedMedia = []
         runTask?.cancel()
         runTask = nil
     }
@@ -127,6 +137,8 @@ final class ConversationStore {
                 $0.state = .streaming
             }
             scrollAnchorID = id
+        case let .presentation(items):
+            pendingPresentedMedia = mergePresentedMedia(pendingPresentedMedia, items)
         case .done:
             completeActiveMessage()
         case .failure:
@@ -136,16 +148,28 @@ final class ConversationStore {
 
     private func completeActiveMessage() {
         guard let id = activeAssistantMessageID else { return }
-        updateMessage(id: id) { $0.state = .complete }
+        guard let message = messages.first(where: { $0.id == id }),
+              !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingPresentedMedia.isEmpty
+        else {
+            failActiveMessage("这次回复没有返回内容，请重新发送。")
+            return
+        }
+        updateMessage(id: id) {
+            $0.media = pendingPresentedMedia
+            $0.state = .complete
+        }
         activeAssistantMessageID = nil
         activePrompt = nil
+        pendingPresentedMedia = []
         runTask = nil
+        scrollAnchorID = id
     }
 
     private func failActiveMessage(_ message: String) {
         guard let id = activeAssistantMessageID else { return }
         updateMessage(id: id) { $0.state = .failed(message) }
         activeAssistantMessageID = nil
+        pendingPresentedMedia = []
         runTask = nil
     }
 

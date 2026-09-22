@@ -42,7 +42,7 @@ struct CreationAPIClient {
 
     private let userID = "user001"
 
-    private let baseURL = URL(string: "http://47.118.26.9")!
+    private let baseURL = URL(string: "https://fanto.robinverse.me")!
 
     func fetchOverview() async throws -> CreationOverview {
         let response: OverviewPayload = try await request(path: "api/creations/overview")
@@ -62,6 +62,12 @@ struct CreationAPIClient {
             hasMore: response.hasMore,
             nextCursor: response.nextCursor
         )
+    }
+
+    func fetchMediaReadURL(id: String) async throws -> URL {
+        let response: MediaReadURLPayload = try await request(path: "api/media/\(id)/url")
+        guard let url = URL(string: response.url) else { throw CreationAPIError.invalidResponse }
+        return url
     }
 
     func fetchCreation(id: String) async throws -> Creation {
@@ -420,18 +426,31 @@ private struct RecordPayload: Decodable {
 }
 
 private struct RecordMediaPayload: Decodable {
+    let mediaID: String
     let type: String
     let durationMs: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case mediaID = "mediaId"
+        case type
+        case durationMs
+    }
+}
+
+private struct MediaReadURLPayload: Decodable {
+    let url: String
 }
 
 private extension Record {
     init(_ payload: RecordPayload) {
-        let images = payload.media.filter { $0.type == "image" }.count
+        let images = payload.media
+            .filter { $0.type == "image" }
+            .map { RecordPhoto(id: $0.mediaID) }
         let audio = payload.media.first { $0.type == "audio" }
         let media: RecordMedia? = if let audio {
             RecordMedia.audio(duration: TimeInterval(audio.durationMs ?? 0) / 1_000)
-        } else if images > 0 {
-            RecordMedia.photos(count: images)
+        } else if !images.isEmpty {
+            RecordMedia.photos(images)
         } else {
             nil
         }

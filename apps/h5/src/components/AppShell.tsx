@@ -1,10 +1,11 @@
-import { MessageCircle, NotebookPen, Sparkles } from "lucide-react";
+import { MessageCircle, NotebookPen, Settings, Sparkles } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 
 const navigation = [
   { to: "/records", label: "记录", icon: NotebookPen },
   { to: "/chat", label: "Fanto", icon: MessageCircle },
+  { to: "/settings", label: "设置", icon: Settings },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {

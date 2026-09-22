@@ -97,12 +97,23 @@ private struct ConversationMessageBubble: View {
     let message: ConversationMessage
     let retry: () -> Void
 
+    private var legacyMedia: LegacyConversationMedia {
+        LegacyConversationMedia.extract(from: message.text)
+    }
+
+    private var displayedMedia: [PresentedMedia] {
+        mergePresentedMedia(message.media, legacyMedia.items)
+    }
+
     var body: some View {
         HStack {
             if message.role == .user { Spacer(minLength: 54) }
 
             VStack(alignment: .leading, spacing: 8) {
                 messageText
+                if message.role == .assistant {
+                    ConversationMediaPresentation(items: displayedMedia)
+                }
                 stateText
             }
             .padding(14)
@@ -117,30 +128,27 @@ private struct ConversationMessageBubble: View {
 
     @ViewBuilder
     private var messageText: some View {
-        if message.text.isEmpty, message.role == .assistant {
-            HStack(spacing: 8) {
-                ProgressView()
-                Text("正在想…")
-                    .foregroundStyle(.secondary)
+        if message.role == .assistant {
+            if legacyMedia.markdown.isEmpty,
+               message.state == .waiting || message.state == .processing || message.state == .streaming {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("正在回想…")
+                        .foregroundStyle(.secondary)
+                }
+            } else if !legacyMedia.markdown.isEmpty {
+                MarkdownContentView(markdown: legacyMedia.markdown, leadingTitleToOmit: nil)
             }
         } else {
             Text(message.text)
                 .textSelection(.enabled)
-                .foregroundStyle(message.role == .user ? .white : .primary)
+                .foregroundStyle(.white)
         }
     }
 
     @ViewBuilder
     private var stateText: some View {
         switch message.state {
-        case .processing:
-            Label("处理中", systemImage: "ellipsis")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        case .streaming:
-            Text("正在回复")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         case .stopped:
             Text("已停止生成")
                 .font(.caption)
@@ -153,7 +161,7 @@ private struct ConversationMessageBubble: View {
                 Button("重新发送", action: retry)
                     .font(.caption.weight(.semibold))
             }
-        case .complete, .waiting:
+        case .complete, .waiting, .processing, .streaming:
             EmptyView()
         }
     }
