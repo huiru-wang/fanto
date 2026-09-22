@@ -3,8 +3,8 @@ import { loadConfig, loadEnv } from "../bootstrap/config.js";
 import { createDatabase } from "../infrastructure/database/database.js";
 
 loadEnv();
-const db = createDatabase(loadConfig().sqlitePath);
-const userId = "creation-demo-user";
+const db = createDatabase(loadConfig().databaseUrl);
+const userId = "user001";
 const now = "2026-09-14T09:00:00.000Z";
 const notes = [
   "晨会前把方案的问题写成三句，客户第一次没有追问我们在解决什么。", "下午砍掉两页解释，反而让设计和业务开始讨论同一个取舍。", "连续会议后去楼下绕一圈，回来才发现刚才漏掉了一个关键假设。", "今天没有急着给答案，先问每个人最担心什么，会议比往常安静也更有效。", "给明天留了一张空白便签，只写最重要的一件沟通。", "拒绝了一个临时需求后，团队终于有时间把原来的交付做完整。", "复盘里把失败写成选择链路，而不是归因给某个人。", "下班前合上电脑，没有再开新标签页，心里第一次有了收尾感。", "把模糊反馈画成关系图，发现真正冲突的是目标而不是方案。", "客户说这次终于听懂了，提醒我讲清楚比讲很多更难。",
@@ -43,4 +43,4 @@ await db.transaction().execute(async trx => {
   for (const [index, [title, kind_id, summary, content]] of proposals.entries()) { const proposalId = randomUUID(); await trx.insertInto("creation_proposals").values({ proposal_id: proposalId, user_id: userId, creation_id: null, base_creation_version: null, operation: "create", session_id: "showcase", title, kind_id, summary, content, ext_data: JSON.stringify({ schemaVersion: 1 }), status: "pending_confirmation", error: null, created_at: now, updated_at: now }).execute(); for (const record of records.slice(35 + index * 5, 40 + index * 5)) await trx.insertInto("entity_relations").values({ relation_id: randomUUID(), user_id: userId, source_entity_id: record.record_id, source_entity_type: "record", target_entity_id: proposalId, target_entity_type: "creation_proposal", relation_type: "record_creation_proposal", source_created_at: record.created_at, created_at: now }).execute(); }
 });
 await db.destroy();
-console.log("Seeded 50 records, 5 creations, and 3 proposals for creation-demo-user");
+console.log("Seeded 50 records, 5 creations, and 3 proposals for user001");

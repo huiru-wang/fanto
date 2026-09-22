@@ -1,33 +1,20 @@
 /**
- * SQLite 数据库初始化 — better-sqlite3 + WAL + Kysely。
+ * PostgreSQL 数据库初始化 — pg Pool + Kysely。
  */
 
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
-import { Kysely, SqliteDialect, Migrator, type MigrationProvider, type Migration } from "kysely";
+import { Kysely, PostgresDialect, Migrator, type MigrationProvider, type Migration } from "kysely";
+import { Pool } from "pg";
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { DB } from "./schema.js";
-import { logError, logInfo, logWarn } from "../logging/logger.js";
+import { logError, logInfo } from "../logging/logger.js";
 
-export function createDatabase(sqlitePath: string): Kysely<DB> {
-  const db = new Database(sqlitePath);
-
-  db.pragma("journal_mode = WAL");
-  db.pragma("busy_timeout = 5000");
-
-  try {
-    sqliteVec.load(db);
-    const version = db.prepare("select vec_version() as version").get() as { version: string };
-    logInfo("database", "sqlite-vec loaded", { version: version.version });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "unknown error";
-    logWarn("database", "sqlite-vec unavailable", { message });
-  }
-
+export function createDatabase(databaseUrl: string): Kysely<DB> {
   return new Kysely<DB>({
-    dialect: new SqliteDialect({ database: db }),
+    dialect: new PostgresDialect({
+      pool: new Pool({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } }),
+    }),
   });
 }
 

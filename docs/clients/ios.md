@@ -12,20 +12,20 @@
 
 ## 当前页面与数据来源
 
-下表中的“已接”表示客户端代码已实现对应 API 调用，不表示当前公网部署一定可调用；当前硬编码的 `creation-demo-user` 与 Server / Agent 的 `default-user` allowlist 不一致，相关公网请求会返回 401。
+下表中的“已接”表示客户端代码已实现对应 API 调用，不表示当前公网部署一定可调用；当前硬编码测试用户为 `user001`，与 Server / Agent allowlist 一致。
 
 | 能力 | 数据来源 | 当前状态 |
 | --- | --- | --- |
-| Record 列表 / 日历 / Timeline | `GET /api/records?limit=100` | Client 已接；当前演示 userId 与公网 allowlist 不一致 |
+| Record 列表 / 日历 / Timeline | `GET /api/records?limit=100` | Client 已接 |
 | 新建 Record | 本地 `FantoStore.addRecord` | 仅本地，不持久化到 Server |
 | 媒体写入 | UI / model 占位 | 未形成 Server 上传链路 |
-| Creation 概览 | `GET /api/creations/overview` | Client 已接；当前演示 userId 与公网 allowlist 不一致 |
+| Creation 概览 | `GET /api/creations/overview` | Client 已接 |
 | 按类型 Creation 列表 | `GET /api/creations?kindId=` | 已接 |
 | Creation 详情 | `GET /api/creations/:id` | 已接 |
 | Creation 来源 Record | `GET /api/creations/:id/records` | 已接分页 |
 | Proposal 列表 / 详情 | `/api/creation-proposals` | 已接 |
 | Proposal confirm / reject | 对应 POST 接口 | 已接 |
-| Fanto 默认长期会话 | `POST /api/agent/sessions` | Client 已接；当前演示 userId 与公网 allowlist 不一致 |
+| Fanto 默认长期会话 | `POST /api/agent/sessions` | Client 已接 |
 | Fanto 最近历史 | `GET /api/agent/sessions/:id/history?limit=10` | 已接 iOS 客户端流程 |
 | Fanto 文本流式回复 | `POST /api/agent/stream` | 已接 iOS 客户端流程 |
 
@@ -49,10 +49,10 @@ Record 日历以周日为一周起点，周视图 / 月视图共享同一日期�
 
 ```text
 baseURL = http://47.118.26.9
-userID  = creation-demo-user
+userID  = user001
 ```
 
-当前 Server / Agent 主运行入口只允许 `default-user`，因此这组 `creation-demo-user` 请求在当前公网部署下会返回 401。Debug 对当前 HTTP 服务配置 ATS 例外；正式上线前需要：
+当前 Server / Agent 主运行入口只允许 `user001`，与 iOS 测试用户一致。Debug 对当前 HTTP 服务配置 ATS 例外；正式上线前需要：
 
 - HTTPS；
 - 服务地址配置化；

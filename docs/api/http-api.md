@@ -6,7 +6,7 @@
 { "success": true, "result": {}, "errorCode": null, "errorMsg": null }
 ```
 
-除 `GET /health` 外，请求必须带 `x-user-id`。当前运行入口只允许 `default-user`；其他 user-id 即使格式合法也返回 `401 UNAUTHORIZED`。这仍是测试期访问边界，不是正式认证。
+除 `GET /health` 外，请求必须带 `x-user-id`。当前运行入口只允许 `user001`；其他 user-id 即使格式合法也返回 `401 UNAUTHORIZED`。这仍是测试期访问边界，不是正式认证。
 
 ## 健康检查
 
@@ -40,10 +40,10 @@
 - `query` trim 后不能为空；
 - `limit` 默认 10，范围 1–20；
 - 当前用户只来自 `x-user-id`，请求体不能传 `userId`；
-- 搜索通过 Memory 模块在当前用户的 sqlite-vec partition 内执行；
+- 搜索通过 Memory 模块在当前用户范围内执行 pgvector 查询；
 - 返回 `{ data: [{ recordId, sourceType, mediaId, snippet, eventAt, distance }] }`；
 - `sourceType` 为 `record_text` / `image` / `audio`，媒体命中通过 `mediaId` 关联具体图片或音频；
-- `distance` 是 sqlite-vec 原始向量距离，仅用于检索相关性判断，不代表已经校准的产品置信度或概率。
+- `distance` 是 pgvector 原始向量距离，仅用于检索相关性判断，不代表已经校准的产品置信度或概率。
 
 ### Record 后置处理与返回字段
 
@@ -70,7 +70,7 @@
 
 `status` 取值为：`pending`（已保存，等待处理）、`updated`（内容已更新，等待处理）、`processing`（正在进行图片/音频理解）和 `processed`（当前版本处理完成）。音频完成后，`media[].asr` 同步返回转写文本、模型、情绪 `emotion` 与语种 `language`；情绪与语种由 ASR 服务的 `audio_info` 注解提供，缺失时为 `null`。单个媒体失败不会阻断其他媒体处理；失败音频的 `media[].asr.status` 为 `failed`，其 `transcript` 为 `null`；图片失败时对应 block 不含 `description`。Record 完成当前版本的 postprocess 后才更新 Memory；后续 Embedding / Memory Index 失败不会把已经 `processed` 的 Record 回滚。
 
-`eventAt` 是 Record 的业务发生时间；`createdAt`、`updatedAt` 仅表示服务端保存与变更时间。当前 schema 只支持空 SQLite 数据库初始化；已有数据库需要重建后才包含 `event_at` 列与对应索引。
+`eventAt` 是 Record 的业务发生时间；`createdAt`、`updatedAt` 仅表示服务端保存与变更时间。当前 schema 只支持空 PostgreSQL 数据库初始化；已有 SQLite 数据库不提供原地升级。
 
 ### 本次接口变更
 
@@ -141,7 +141,7 @@ Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionI
 
 ## 独立 Agent 服务
 
-Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference 和最多 2 条 Relevant Memory，再由 Context Composer 注入 Prompt；Relevant Memory 的 `eventAt` 按请求时区展示。Agent Loop 内仍可通过 `FantoServerClient` 调用 `record_list`、`record_search`、`record_get` 三个只读 Record Tool，通过 `preference_manage` 管理明确长期偏好，并通过 `present_media` 调用 `GET /api/media/:id/meta` 校验要展示的媒体。Tool schema 不接受 `userId`，实际用户身份来自 Session Run Context，并由 Client 转成 Business Server 的 `x-user-id`。除 `GET /health` 外，Agent HTTP 接口要求以下 Header，且当前运行入口只允许 `X-User-Id: default-user`：
+Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference 和最多 2 条 Relevant Memory，再由 Context Composer 注入 Prompt；Relevant Memory 的 `eventAt` 按请求时区展示。Agent Loop 内仍可通过 `FantoServerClient` 调用 `record_list`、`record_search`、`record_get` 三个只读 Record Tool，通过 `preference_manage` 管理明确长期偏好，并通过 `present_media` 调用 `GET /api/media/:id/meta` 校验要展示的媒体。Tool schema 不接受 `userId`，实际用户身份来自 Session Run Context，并由 Client 转成 Business Server 的 `x-user-id`。除 `GET /health` 外，Agent HTTP 接口要求以下 Header，且当前运行入口只允许 `X-User-Id: user001`：
 
 ```text
 Authorization: Bearer <AGENT_TOKEN>
@@ -165,7 +165,7 @@ export AGENT_TOKEN='替换为服务端 AGENT_TOKEN'
 
 SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
   -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: default-user' \
+  -H 'X-User-Id: user001' \
   -H 'X-Trace-Id: trace_001' \
   -H 'Content-Type: application/json' \
   -d '{"agentId":"main"}' \
@@ -177,7 +177,7 @@ SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
 ```sh
 curl -N http://127.0.0.1:3001/api/agent/stream \
   -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: default-user' \
+  -H 'X-User-Id: user001' \
   -H 'X-Trace-Id: trace_002' \
   -H 'Content-Type: application/json' \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"你好\"}"
@@ -205,7 +205,7 @@ curl -N http://127.0.0.1:3001/api/agent/stream \
 ```sh
 curl -sS http://127.0.0.1:3001/api/agent/tasks \
   -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: default-user' \
+  -H 'X-User-Id: user001' \
   -H 'X-Trace-Id: trace_003' \
   -H 'Content-Type: application/json' \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"列出工作区文件\"}"

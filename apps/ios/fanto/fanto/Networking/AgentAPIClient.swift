@@ -40,7 +40,7 @@ enum AgentStreamEvent {
 struct AgentAPIClient {
     static let shared = AgentAPIClient()
 
-    let userID = "creation-demo-user"
+    let userID = "user001"
     let agentID = "main"
 
     private let baseURL = URL(string: "http://47.118.26.9")!

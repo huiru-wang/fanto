@@ -13,7 +13,7 @@
 
 | 变量 | 说明 |
 | --- | --- |
-| `SQLITE_PATH` | 业务 SQLite 路径，默认 `../../data/fanto.sqlite` |
+| `DATABASE_URL` | Server 的 Supabase PostgreSQL 连接串；必须启用 TLS。使用 Supabase Pooler 时附加 `sslmode=require&uselibpqcompat=true` |
 | `PORT` / `HOST` | 默认 `3000` / `0.0.0.0` |
 | `OSS_REGION` | OSS Region |
 | `OSS_ENDPOINT` | 可选公开 Endpoint；拒绝 `-internal` 地址 |

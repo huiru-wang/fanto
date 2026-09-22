@@ -2,13 +2,13 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { mediaMime, mediaObjectKey, normalizeMimeType } from "../domain/media/mime.js";
 import type { OssStorage } from "../infrastructure/clients/oss-client.js";
-import type { SqliteMediaRepository } from "../domain/media/sqlite-repository.js";
+import type { PostgresMediaRepository } from "../domain/media/postgres-repository.js";
 import { requireUserId } from "./request-user.js";
 
 const createInput = z.object({ mimeType: z.string().min(1).max(200), bytes: z.number().int().positive().max(50_000_000) }).strict();
 const capture = z.object({ width: z.number().int().positive().optional(), height: z.number().int().positive().optional(), durationMs: z.number().int().positive().optional() }).strict().optional();
 
-export function createUploadRoutes(media: SqliteMediaRepository, oss: OssStorage) {
+export function createUploadRoutes(media: PostgresMediaRepository, oss: OssStorage) {
   const app = new Hono();
   app.post("/", async c => {
     const input = createInput.safeParse(await c.req.json().catch(() => null));

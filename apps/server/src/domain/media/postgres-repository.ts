@@ -7,7 +7,7 @@ export type AudioAsr = { status: "running" | "succeeded" | "failed"; model?: str
 const json = (value: string | null): Record<string, unknown> => value ? JSON.parse(value) : {};
 const asset = (row: any): MediaAsset => ({ mediaId: row.media_id, userId: row.user_id, objectKey: row.object_key, mediaType: row.media_type, mimeType: row.mime_type, bytes: row.bytes, status: row.status, extData: json(row.ext_data), createdAt: row.created_at, updatedAt: row.updated_at });
 
-export class SqliteMediaRepository {
+export class PostgresMediaRepository {
   constructor(private db: Kysely<DB>) {}
 
   async create(input: { mediaId: string; userId: string; objectKey: string; mediaType: "image" | "audio"; mimeType: string; bytes: number }) {

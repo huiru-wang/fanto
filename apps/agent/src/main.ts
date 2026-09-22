@@ -55,7 +55,7 @@ const app = createApp(
   sessions,
   tasks,
   runner,
-  new Set(["default-user"]),
+  new Set(["user001"]),
   contextRuntime,
 );
 const server = serve({ fetch: app.fetch, hostname: "0.0.0.0", port }, info => {

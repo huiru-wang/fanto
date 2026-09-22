@@ -107,6 +107,7 @@ export interface VectorItemsTable {
   event_at: string;
   indexed_at: string | null;
   created_at: string;
+  embedding: unknown;
 }
 
 export interface DB {

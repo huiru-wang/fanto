@@ -3,7 +3,7 @@ import test from "node:test";
 import { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import { createApp, logSafeBody } from "./app.js";
 
-test("runtime user allowlist only permits default-user", async () => {
+test("runtime user allowlist only permits user001", async () => {
   const app = createApp(
     {} as never,
     {} as never,
@@ -12,7 +12,7 @@ test("runtime user allowlist only permits default-user", async () => {
     undefined,
     undefined,
     undefined,
-    new Set(["default-user"]),
+    new Set(["user001"]),
   );
 
   const denied = await app.request("/api/not-found", {
@@ -26,7 +26,7 @@ test("runtime user allowlist only permits default-user", async () => {
   });
 
   const allowed = await app.request("/api/not-found", {
-    headers: { "x-user-id": "default-user" },
+    headers: { "x-user-id": "user001" },
   });
   assert.equal(allowed.status, 404);
 });

@@ -5,6 +5,7 @@
 - Node.js；Agent package 要求 Node.js 22.19+。
 - pnpm 10.11.0。
 - 需要媒体理解、转写或向量索引时，准备 OSS、DashScope 与 Embedding 凭据。
+- Business Server 还需要可创建 `vector` extension 的 Supabase PostgreSQL 数据库及 `DATABASE_URL`。
 - iOS 客户端使用 Xcode / SwiftUI。
 - H5 使用 React + Vite。
 
@@ -25,7 +26,7 @@ pnpm dev:server
 curl http://127.0.0.1:3000/health
 ```
 
-启动时 Server 也会执行当前 migration 基线，并确保存在 `default-user`。
+启动时 Server 也会执行当前 migration 基线，并确保存在 `user001`。
 
 ## Agent Runtime
 
@@ -55,20 +56,19 @@ pnpm build:h5
 
 ## 数据文件
 
-默认开发数据位于根目录 `data/`：
+Agent 开发数据位于根目录 `data/`：
 
 ```text
 data/
-├── fanto.sqlite
 ├── agent-sessions.sqlite
 └── workspaces/
 ```
 
-Business Server 与 Agent Runtime 是两个独立运行时，不共享 Session 数据库。
+Business Server 使用 Supabase PostgreSQL；Agent Runtime 保持 SQLite，不共享业务数据库。
 
 ## Schema 重置
 
-Server migration 当前只支持空库基线，不是历史 upgrade chain。需要使用新 schema 重建本地业务库时，应停止服务并明确确认数据可丢弃后，再删除 `SQLITE_PATH` 对应 SQLite 及其 `-wal` / `-shm` 文件并重新执行 migration。
+Server migration 当前只支持空 PostgreSQL schema 基线，不是历史 upgrade chain。需要使用新 schema 重建目标数据库时，应停止 Server、确认目标库数据可丢弃后重建目标 schema，再执行 migration。
 
 不要因为 migration 是“当前基线”就自动删除用户真实数据库。
 

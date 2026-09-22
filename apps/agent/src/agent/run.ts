@@ -29,7 +29,7 @@ export async function runAgent(
 ): Promise<string> {
   const unsubscribes: Array<() => void> = [];
   let output = "";
-  const abort = () => { void session.lane.abort(TODO_CONTEXT).catch(() => {}); };
+  const abort = () => { void session.lane.abort(TODO_CONTEXT).catch(() => { }); };
 
   try {
     signal.addEventListener("abort", abort, { once: true });
@@ -77,8 +77,8 @@ export async function runAgent(
       ? composePrompt(session.systemPromptTemplate, fragments)
       : session.systemPromptTemplate;
     if (fragments) {
-      console.log("[context] dynamic fragments", fragments);
-      console.log("[context] composed system prompt\n%s", systemPrompt);
+      // console.log("[context] dynamic fragments", fragments);
+      // console.log("[context] composed system prompt\n%s", systemPrompt);
     }
 
     signal.throwIfAborted();

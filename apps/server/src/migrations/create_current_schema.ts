@@ -1,148 +1,33 @@
 import { sql, type Kysely } from "kysely";
 
-/** Creates the only supported, current SQLite schema on an empty database. */
+/** Creates the only supported, current PostgreSQL schema on an empty database. */
 export async function up(db: Kysely<any>) {
-  await db.schema.createTable("users")
-    .addColumn("id", "integer", c => c.primaryKey().autoIncrement())
-    .addColumn("user_id", "text", c => c.notNull().unique())
-    .addColumn("wx_openid", "text", c => c.notNull().unique())
-    .addColumn("created_at", "text", c => c.notNull())
-    .execute();
-
-  await db.schema.createTable("records")
-    .addColumn("id", "integer", c => c.primaryKey().autoIncrement())
-    .addColumn("record_id", "text", c => c.notNull().unique())
-    .addColumn("user_id", "text", c => c.notNull())
-    .addColumn("source", "text", c => c.notNull())
-    .addColumn("content", "text", c => c.notNull())
-    .addColumn("ext_data", "text")
-    .addColumn("version", "integer", c => c.notNull())
-    .addColumn("status", "text", c => c.notNull())
-    .addColumn("task_id", "text")
-    .addColumn("event_at", "text", c => c.notNull())
-    .addColumn("created_at", "text", c => c.notNull())
-    .addColumn("updated_at", "text", c => c.notNull())
-    .execute();
-  await db.schema.createIndex("idx_records_user_event").on("records").columns(["user_id", "event_at", "record_id"]).execute();
-
-  await db.schema.createTable("user_preferences")
-    .addColumn("id", "integer", c => c.primaryKey().autoIncrement())
-    .addColumn("preference_id", "text", c => c.notNull().unique())
-    .addColumn("user_id", "text", c => c.notNull())
-    .addColumn("category", "text", c => c.notNull())
-    .addColumn("content", "text", c => c.notNull())
-    .addColumn("source_session_id", "text", c => c.notNull())
-    .addColumn("source_message_id", "text", c => c.notNull())
-    .addColumn("source_quote", "text", c => c.notNull())
-    .addColumn("version", "integer", c => c.notNull())
-    .addColumn("created_at", "text", c => c.notNull())
-    .addColumn("updated_at", "text", c => c.notNull())
-    .execute();
-  await db.schema.createIndex("idx_user_preferences_user_updated").on("user_preferences").columns(["user_id", "updated_at", "preference_id"]).execute();
-  await db.schema.createIndex("idx_user_preferences_user_category_content").on("user_preferences").columns(["user_id", "category", "content"]).execute();
-
-  await db.schema.createTable("media_assets")
-    .addColumn("id", "integer", c => c.primaryKey().autoIncrement())
-    .addColumn("media_id", "text", c => c.notNull().unique())
-    .addColumn("user_id", "text", c => c.notNull())
-    .addColumn("object_key", "text", c => c.notNull().unique())
-    .addColumn("media_type", "text", c => c.notNull())
-    .addColumn("mime_type", "text", c => c.notNull())
-    .addColumn("bytes", "integer", c => c.notNull())
-    .addColumn("status", "text", c => c.notNull())
-    .addColumn("ext_data", "text")
-    .addColumn("created_at", "text", c => c.notNull())
-    .addColumn("updated_at", "text", c => c.notNull())
-    .execute();
-  await db.schema.createIndex("idx_media_assets_user_created").on("media_assets").columns(["user_id", "created_at"]).execute();
-
-  await db.schema.createTable("vector_items")
-    .addColumn("id", "integer", c => c.primaryKey().autoIncrement())
-    .addColumn("user_id", "text", c => c.notNull())
-    .addColumn("type", "text", c => c.notNull())
-    .addColumn("outer_id", "text", c => c.notNull())
-    .addColumn("content", "text", c => c.notNull())
-    .addColumn("content_hash", "text", c => c.notNull())
-    .addColumn("status", "text", c => c.notNull())
-    .addColumn("error_code", "text")
-    .addColumn("event_at", "text", c => c.notNull())
-    .addColumn("indexed_at", "text")
-    .addColumn("created_at", "text", c => c.notNull())
-    .execute();
-  await db.schema.createIndex("idx_vector_items_lookup").on("vector_items").columns(["user_id", "type", "outer_id", "status"]).execute();
-  await sql`CREATE VIRTUAL TABLE record_vectors USING vec0(user_id text partition key, embedding float[768])`.execute(db);
-
-  await db.schema.createTable("creation_kinds")
-    .addColumn("kind_id", "text", c => c.primaryKey())
-    .addColumn("owner_user_id", "text")
-    .addColumn("name", "text", c => c.notNull())
-    .addColumn("title", "text", c => c.notNull())
-    .addColumn("created_at", "text", c => c.notNull())
-    .addColumn("updated_at", "text", c => c.notNull())
-    .execute();
-  await db.schema.createTable("creations")
-    .addColumn("id", "integer", c => c.primaryKey().autoIncrement())
-    .addColumn("creation_id", "text", c => c.notNull().unique())
-    .addColumn("user_id", "text", c => c.notNull())
-    .addColumn("title", "text", c => c.notNull())
-    .addColumn("kind_id", "text", c => c.notNull())
-    .addColumn("session_id", "text", c => c.notNull())
-    .addColumn("summary", "text", c => c.notNull())
-    .addColumn("content", "text", c => c.notNull())
-    .addColumn("status", "text", c => c.notNull())
-    .addColumn("version", "integer", c => c.notNull())
-    .addColumn("created_at", "text", c => c.notNull())
-    .addColumn("updated_at", "text", c => c.notNull())
-    .execute();
-  await db.schema.createTable("creation_proposals")
-    .addColumn("id", "integer", c => c.primaryKey().autoIncrement())
-    .addColumn("proposal_id", "text", c => c.notNull().unique())
-    .addColumn("user_id", "text", c => c.notNull())
-    .addColumn("creation_id", "text")
-    .addColumn("base_creation_version", "integer")
-    .addColumn("operation", "text", c => c.notNull())
-    .addColumn("session_id", "text", c => c.notNull())
-    .addColumn("title", "text")
-    .addColumn("kind_id", "text")
-    .addColumn("summary", "text")
-    .addColumn("content", "text")
-    .addColumn("ext_data", "text")
-    .addColumn("status", "text", c => c.notNull())
-    .addColumn("error", "text")
-    .addColumn("created_at", "text", c => c.notNull())
-    .addColumn("updated_at", "text", c => c.notNull())
-    .execute();
-  await db.schema.createTable("entity_relations")
-    .addColumn("relation_id", "text", c => c.primaryKey())
-    .addColumn("user_id", "text", c => c.notNull())
-    .addColumn("source_entity_id", "text", c => c.notNull())
-    .addColumn("source_entity_type", "text", c => c.notNull())
-    .addColumn("target_entity_id", "text", c => c.notNull())
-    .addColumn("target_entity_type", "text", c => c.notNull())
-    .addColumn("relation_type", "text", c => c.notNull())
-    .addColumn("source_created_at", "text", c => c.notNull())
-    .addColumn("created_at", "text", c => c.notNull())
-    .addUniqueConstraint("entity_relations_unique", ["user_id", "source_entity_id", "target_entity_id", "relation_type"])
-    .execute();
-
-  await sql`CREATE INDEX idx_entity_relations_target_records ON entity_relations(user_id,target_entity_type,target_entity_id,relation_type,source_created_at DESC,source_entity_id DESC)`.execute(db);
-  await sql`CREATE INDEX idx_entity_relations_source ON entity_relations(user_id,source_entity_type,source_entity_id,relation_type,target_entity_type,target_entity_id)`.execute(db);
-  await sql`CREATE INDEX idx_creations_user_status_updated ON creations(user_id,status,updated_at DESC,creation_id DESC)`.execute(db);
-  await sql`CREATE INDEX idx_creations_user_kind_status_updated ON creations(user_id,kind_id,status,updated_at DESC,creation_id DESC)`.execute(db);
-  await sql`CREATE INDEX idx_creation_proposals_user_status_updated ON creation_proposals(user_id,status,updated_at DESC,proposal_id DESC)`.execute(db);
-  await sql`CREATE UNIQUE INDEX idx_creation_kinds_system_name ON creation_kinds(name) WHERE owner_user_id IS NULL`.execute(db);
-  await sql`CREATE UNIQUE INDEX idx_creation_kinds_user_name ON creation_kinds(owner_user_id,name) WHERE owner_user_id IS NOT NULL`.execute(db);
+  await sql`
+    CREATE EXTENSION IF NOT EXISTS vector;
+    CREATE TABLE users (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL UNIQUE, wx_openid TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
+    CREATE TABLE records (id SERIAL PRIMARY KEY, record_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL, source TEXT NOT NULL, content TEXT NOT NULL, ext_data TEXT, version INTEGER NOT NULL, status TEXT NOT NULL, task_id TEXT, event_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE INDEX idx_records_user_event ON records(user_id, event_at, record_id);
+    CREATE TABLE user_preferences (id SERIAL PRIMARY KEY, preference_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL, category TEXT NOT NULL, content TEXT NOT NULL, source_session_id TEXT NOT NULL, source_message_id TEXT NOT NULL, source_quote TEXT NOT NULL, version INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE INDEX idx_user_preferences_user_updated ON user_preferences(user_id, updated_at, preference_id);
+    CREATE INDEX idx_user_preferences_user_category_content ON user_preferences(user_id, category, content);
+    CREATE TABLE media_assets (id SERIAL PRIMARY KEY, media_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL, object_key TEXT NOT NULL UNIQUE, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, status TEXT NOT NULL, ext_data TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE INDEX idx_media_assets_user_created ON media_assets(user_id, created_at);
+    CREATE TABLE vector_items (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL, type TEXT NOT NULL, outer_id TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, status TEXT NOT NULL, error_code TEXT, event_at TEXT NOT NULL, indexed_at TEXT, created_at TEXT NOT NULL, embedding vector(768) NOT NULL);
+    CREATE INDEX idx_vector_items_lookup ON vector_items(user_id, type, outer_id, status);
+    CREATE TABLE creation_kinds (kind_id TEXT PRIMARY KEY, owner_user_id TEXT, name TEXT NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE creations (id SERIAL PRIMARY KEY, creation_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL, title TEXT NOT NULL, kind_id TEXT NOT NULL, session_id TEXT NOT NULL, summary TEXT NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL, version INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE creation_proposals (id SERIAL PRIMARY KEY, proposal_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL, creation_id TEXT, base_creation_version INTEGER, operation TEXT NOT NULL, session_id TEXT NOT NULL, title TEXT, kind_id TEXT, summary TEXT, content TEXT, ext_data TEXT, status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE entity_relations (relation_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, source_entity_id TEXT NOT NULL, source_entity_type TEXT NOT NULL, target_entity_id TEXT NOT NULL, target_entity_type TEXT NOT NULL, relation_type TEXT NOT NULL, source_created_at TEXT NOT NULL, created_at TEXT NOT NULL, CONSTRAINT entity_relations_unique UNIQUE(user_id, source_entity_id, target_entity_id, relation_type));
+    CREATE INDEX idx_entity_relations_target_records ON entity_relations(user_id, target_entity_type, target_entity_id, relation_type, source_created_at DESC, source_entity_id DESC);
+    CREATE INDEX idx_entity_relations_source ON entity_relations(user_id, source_entity_type, source_entity_id, relation_type, target_entity_type, target_entity_id);
+    CREATE INDEX idx_creations_user_status_updated ON creations(user_id, status, updated_at DESC, creation_id DESC);
+    CREATE INDEX idx_creations_user_kind_status_updated ON creations(user_id, kind_id, status, updated_at DESC, creation_id DESC);
+    CREATE INDEX idx_creation_proposals_user_status_updated ON creation_proposals(user_id, status, updated_at DESC, proposal_id DESC);
+    CREATE UNIQUE INDEX idx_creation_kinds_system_name ON creation_kinds(name) WHERE owner_user_id IS NULL;
+    CREATE UNIQUE INDEX idx_creation_kinds_user_name ON creation_kinds(owner_user_id, name) WHERE owner_user_id IS NOT NULL;
+  `.execute(db);
 }
 
 export async function down(db: Kysely<any>) {
-  await db.schema.dropTable("user_preferences").execute();
-  await db.schema.dropTable("entity_relations").execute();
-  await db.schema.dropTable("creation_proposals").execute();
-  await db.schema.dropTable("creations").execute();
-  await db.schema.dropTable("creation_kinds").execute();
-  await sql`DROP TABLE record_vectors`.execute(db);
-  await db.schema.dropTable("vector_items").execute();
-  await db.schema.dropTable("media_assets").execute();
-  await db.schema.dropTable("records").execute();
-  await db.schema.dropTable("users").execute();
+  await sql`DROP TABLE IF EXISTS entity_relations; DROP TABLE IF EXISTS creation_proposals; DROP TABLE IF EXISTS creations; DROP TABLE IF EXISTS creation_kinds; DROP TABLE IF EXISTS vector_items; DROP TABLE IF EXISTS media_assets; DROP TABLE IF EXISTS user_preferences; DROP TABLE IF EXISTS records; DROP TABLE IF EXISTS users;`.execute(db);
 }

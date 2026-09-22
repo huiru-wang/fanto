@@ -9,13 +9,13 @@ apps/server/src/
 ├── bootstrap/       # 启动、配置、Hono 装配、迁移命令
 ├── routes/          # HTTP 输入、用户边界、响应映射
 ├── domain/          # records / media / memory / preferences / creations
-├── infrastructure/ # SQLite、Memory adapter、外部 client、queue、logging、time
+├── infrastructure/ # PostgreSQL、Memory adapter、外部 client、queue、logging、time
 ├── listeners/       # 进程内事件处理
 ├── migrations/      # 当前空库 schema 基线
 └── scripts/         # 演示数据等运维脚本
 ```
 
-普通 CRUD Route 直接调用相应 Repository。Memory 通过 Domain 内的 `MemoryService + MemoryIndex / EmbeddingProvider` 边界编排，当前 sqlite-vec 实现位于 `infrastructure/memory/`。外部 OSS、图片理解、音频转写与 Embedding 通过 infrastructure adapter 适配。
+普通 CRUD Route 直接调用相应 Repository。Memory 通过 Domain 内的 `MemoryService + MemoryIndex / EmbeddingProvider` 边界编排，当前 pgvector 实现位于 `infrastructure/memory/`。外部 OSS、图片理解、音频转写与 Embedding 通过 infrastructure adapter 适配。
 
 ## HTTP 请求路径
 
@@ -25,7 +25,7 @@ flowchart LR
   H --> U[x-user-id validation]
   U --> R[Route]
   R --> D[Domain / Repository]
-  D --> DB[(SQLite)]
+  D --> DB[(Supabase PostgreSQL)]
 ```
 
 当前注册模块：
@@ -72,8 +72,8 @@ Record 已成功变成 `processed` 后，Memory / Embedding 失败只记录错�
 
 ## 数据库与 migration
 
-启动时创建 SQLite 连接、加载 sqlite-vec，并执行 `create_current_schema.ts`。
+启动时建立 Supabase PostgreSQL 连接、启用 `vector` extension，并执行 `create_current_schema.ts`。
 
 当前 migration 策略是：**只维护一个面向空数据库的当前 schema 基线**。它不是历史数据库升级系统。已有旧 schema 文件不能假设可以直接原地升级。
 
-SQLite 开启 WAL，并设置 busy timeout。向量索引存储在同一业务数据库，但属于派生数据；`record_vectors.user_id` 是 sqlite-vec partition key，Record KNN 从 candidate generation 阶段就限定当前用户。
+向量索引存储在同一业务数据库，但属于派生数据；`vector_items.embedding` 是 768 维 pgvector，查询从 SQL 层按 `user_id` 限定当前用户。

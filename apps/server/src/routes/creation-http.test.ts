@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
-import test from "node:test";
+import nodeTest from "node:test";
 import { createApp } from "../bootstrap/app.js";
 import { CreationProposalRepository } from "../domain/creations/proposal-repository.js";
 import { CreationReadRepository } from "../domain/creations/creation-repository.js";
-import { SqliteMediaRepository } from "../domain/media/sqlite-repository.js";
-import { SqliteRecordRepository } from "../domain/records/sqlite-repository.js";
+import { PostgresMediaRepository } from "../domain/media/postgres-repository.js";
+import { PostgresRecordRepository } from "../domain/records/postgres-repository.js";
 import { createDatabase, runMigrations } from "../infrastructure/database/database.js";
 import { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import { nowIso } from "../infrastructure/time.js";
+
+const test = process.env.TEST_DATABASE_URL ? nodeTest : nodeTest.skip;
 
 test("creation and proposal HTTP routes preserve the public read and decision contract", async () => {
   const path = `/tmp/fanto-creation-http-${randomUUID()}.sqlite`;
@@ -32,7 +34,7 @@ test("creation and proposal HTTP routes preserve the public read and decision co
     }
     await db.insertInto("entity_relations").values({ relation_id: randomUUID(), user_id: userId, source_entity_id: recordId, source_entity_type: "record", target_entity_id: proposalId, target_entity_type: "creation_proposal", relation_type: "record_creation_proposal", source_created_at: now, created_at: now }).execute();
 
-    const app = createApp(new SqliteRecordRepository(db), new SqliteMediaRepository(db), new RecordPostprocessQueue(), { readUrl: () => "https://private.example", putUrl: () => "https://upload.example" } as any, new CreationReadRepository(db), new CreationProposalRepository(db));
+    const app = createApp(new PostgresRecordRepository(db), new PostgresMediaRepository(db), new RecordPostprocessQueue(), { readUrl: () => "https://private.example", putUrl: () => "https://upload.example" } as any, new CreationReadRepository(db), new CreationProposalRepository(db));
     const auth = { "x-user-id": userId };
     assert.equal((await app.request("/health")).status, 200);
     assert.equal((await app.request("/api/creation-kinds", { headers: auth })).status, 200);

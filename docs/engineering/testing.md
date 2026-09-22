@@ -16,12 +16,12 @@ pnpm --filter @fanto/server typecheck
 pnpm --filter @fanto/server test
 ```
 
-当前测试重点覆盖 Record Repository / HTTP、Memory Core、sqlite-vec MemoryIndex、Creation HTTP、配置、MIME 与部分外部 Client 行为。
+当前测试重点覆盖 Record Repository / HTTP、Memory Core、pgvector MemoryIndex、Creation HTTP、配置、MIME 与部分外部 Client 行为。需要数据库的集成测试仅在明确设置隔离的 `TEST_DATABASE_URL` 时运行。
 
 涉及以下内容时还需要针对性验证：
 
 - schema 变化：空库 migration；
-- Memory：Record document 构建、user-scoped sqlite-vec 检索、Record 接入、Search HTTP，以及必要时 `pnpm memory:rebuild`；
+- Memory：Record document 构建、user-scoped pgvector 检索、Record 接入、Search HTTP，以及必要时 `pnpm memory:rebuild`；
 - OSS：signed PUT、complete、媒体读取；
 - Vision / ASR / Embedding：真实凭据下的最小 smoke test。
 

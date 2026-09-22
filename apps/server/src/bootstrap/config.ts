@@ -2,11 +2,10 @@
  * .env 加载与应用配置。
  */
 
-import { readFileSync, mkdirSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { readFileSync } from "node:fs";
 
 export interface AppConfig {
-  sqlitePath: string;
+  databaseUrl: string;
   port: number;
   host: string;
   oss: { region: string; endpoint?: string; bucket: string; accessKeyId: string; accessKeySecret: string };
@@ -30,16 +29,16 @@ export function loadEnv(path = ".env") {
 }
 
 export function loadConfig(): AppConfig {
-  const sqlitePath = resolve(process.env.SQLITE_PATH ?? "../../data/fanto.sqlite");
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (!databaseUrl) throw new Error("DATABASE_URL is required");
   const embeddingDimension = parseInt(process.env.DASHSCOPE_EMBEDDING_DIMENSION ?? "768", 10);
-  mkdirSync(dirname(sqlitePath), { recursive: true });
   if (embeddingDimension !== 768) throw new Error("DASHSCOPE_EMBEDDING_DIMENSION must be 768");
   const endpoint = process.env.OSS_ENDPOINT?.trim();
   const ossEndpoint = endpoint ? (endpoint.startsWith("http://") || endpoint.startsWith("https://") ? endpoint : `https://${endpoint}`) : undefined;
   if (ossEndpoint?.includes("-internal.")) throw new Error("OSS_ENDPOINT must be publicly reachable");
 
   return {
-    sqlitePath,
+    databaseUrl,
     port: parseInt(process.env.PORT ?? "3000", 10),
     host: process.env.HOST ?? "0.0.0.0",
     oss: {

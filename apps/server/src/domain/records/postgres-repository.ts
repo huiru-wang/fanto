@@ -11,7 +11,7 @@ import { decodeRecordCursor } from "./cursor.js";
 type ExtData = { recordId?: string | null; capture?: { width?: number | null; height?: number | null; durationMs?: number | null } };
 const ext = (value: string | null): ExtData => value ? JSON.parse(value) as ExtData : {};
 
-export class SqliteRecordRepository implements RecordRepository {
+export class PostgresRecordRepository implements RecordRepository {
   constructor(private db: Kysely<DB>) {}
 
   async create(input: { userId: string; source?: string; eventAt: string; value: SaveRecordContent }): Promise<Record | "invalid_media" | "invalid_content"> {

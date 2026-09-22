@@ -40,7 +40,7 @@ enum CreationAPIError: LocalizedError {
 struct CreationAPIClient {
     static let shared = CreationAPIClient()
 
-    private let userID = "creation-demo-user"
+    private let userID = "user001"
 
     private let baseURL = URL(string: "http://47.118.26.9")!
 

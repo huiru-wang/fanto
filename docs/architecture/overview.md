@@ -7,7 +7,7 @@ flowchart LR
   IOS[iOS / SwiftUI] -->|HTTP| S[Business Server / Hono]
   H5[H5 / React + Vite] -->|HTTPS / Nginx| S
   H5 -->|HTTPS / Nginx| AR[Agent Runtime / Hono + Pi]
-  S --> DB[(fanto.sqlite)]
+  S --> DB[(Supabase PostgreSQL)]
   S --> OSS[Aliyun OSS]
   S --> VL[Vision Model]
   S --> ASR[ASR Model]
@@ -27,12 +27,12 @@ Fanto 当前有两个独立后端服务，并有 iOS 与 H5 两类客户端入�
 
 ## 业务数据边界
 
-Business Server 使用一个 SQLite 数据库保存：
+Business Server 使用 Supabase PostgreSQL 保存：
 
 - users；
 - records；
 - media_assets；
-- vector_items + sqlite-vec `record_vectors`；
+- vector_items + pgvector embedding；
 - user_preferences；
 - creation_kinds；
 - creations；
@@ -54,4 +54,4 @@ Agent Runtime 除健康检查外使用 Bearer Token，并要求 `X-User-Id`；Se
 - Business Server 的 Record 后置任务通过进程内 EventEmitter 触发，不持久化、不自动重试。
 - Agent 异步任务有 SQLite 状态，但 Runner 当前按单实例设计；服务重启时遗留的 running task 会失败而不是自动重放。
 - iOS 当前访问固定 HTTP ECS 地址且仍使用演示用户；该用户与当前公网 allowlist 不一致，尚未形成可直接使用的公网链路，也未具备正式认证和生产级服务发现。
-- H5 当前固定使用 `default-user` 并内置测试 Agent Token，只适用于受控测试环境。
+- H5 当前固定使用 `user001` 并内置测试 Agent Token，只适用于受控测试环境。

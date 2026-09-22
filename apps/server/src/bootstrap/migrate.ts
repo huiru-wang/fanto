@@ -8,7 +8,7 @@ import { logInfo } from "../infrastructure/logging/logger.js";
 
 loadEnv();
 const config = loadConfig();
-const db = createDatabase(config.sqlitePath);
+const db = createDatabase(config.databaseUrl);
 
 logInfo("migrate", "Running migrations");
 await runMigrations(db);

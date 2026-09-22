@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import type { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import type { OssStorage } from "../infrastructure/clients/oss-client.js";
-import type { MediaAsset, SqliteMediaRepository } from "../domain/media/sqlite-repository.js";
+import type { MediaAsset, PostgresMediaRepository } from "../domain/media/postgres-repository.js";
 import { nowIso } from "../infrastructure/time.js";
 import type { RecordRepository } from "../domain/records/repository.js";
 import { createRecordRoutes } from "../routes/records.js";
@@ -58,7 +58,7 @@ function presentableMediaMetadata(asset: MediaAsset) {
   };
 }
 
-export function createApp(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository, memory?: Pick<MemoryService, "searchRecords" | "removeRecord">, allowedUserIds?: ReadonlySet<string>, preferences?: PreferenceService) {
+export function createApp(records: RecordRepository, media: PostgresMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository, memory?: Pick<MemoryService, "searchRecords" | "removeRecord">, allowedUserIds?: ReadonlySet<string>, preferences?: PreferenceService) {
   const app = new Hono();
   app.onError((error, c) => {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });

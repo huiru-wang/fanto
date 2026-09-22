@@ -22,19 +22,19 @@
 - 图片描述和音频转写写回 Record content block；
 - 按用户读取媒体，并通过短期 OSS 地址返回内容。
 
-当前 iOS 的 Record 读取、Creation / Proposal 与 Agent Client 都已实现 Server 调用链路，但客户端仍硬编码 `creation-demo-user`，而当前 Server / Agent 主运行入口只允许 `default-user`，因此在当前公网部署配置下这些请求会被 401 拒绝。除此之外，“新建记录”仍只写入本地 Store，没有调用 Server 创建接口；媒体上传也没有在 iOS 端形成完整写入链路。
+当前 iOS 的 Record 读取、Creation / Proposal 与 Agent Client 都已实现 Server 调用链路，客户端与当前 Server / Agent 主运行入口均使用测试用户 `user001`。除此之外，“新建记录”仍只写入本地 Store，没有调用 Server 创建接口；媒体上传也没有在 iOS 端形成完整写入链路。
 
 当前 iOS 中间 Fanto Tab 通过 Agent Runtime 的 Session、History 与 SSE Stream 接口支持开发态文本多轮对话。它只恢复最近 10 条历史，在 Keychain 保存一个默认 Session ID；历史解码已能容忍 Pi 的结构化 message content，并只提取文本，但当前仍不渲染 `present_media` 媒体展示。它不支持会话切换、新话题、跨设备恢复、Markdown 富文本、媒体、来源引用、Tool 产品效果或正式认证。Agent 网关若将 HTTP 转至 HTTPS，真机联调依赖系统信任该 HTTPS 证书；客户端不接受不受信任的证书。
 
-当前 H5 位于 `apps/h5`，覆盖测试所需的 Record 与 Agent 基础能力：查看 / 创建 / 语义搜索 Record，支持文字、JPEG/PNG/WebP 图片、M4A/MP3/WAV 音频、浏览器录音、发生时间选择，以及时间线图片缩略图和音频播放；同时支持恢复一个默认 Agent Session、兼容字符串或结构化 content 的历史消息、POST SSE 流式多轮对话和新建会话。Assistant 可见文本继续使用 Markdown；新媒体展示由原生 `present_media` Tool Result 驱动，图片和语音按类型分开渲染，图片使用固定 104×104 单行缩略图并可进入多图 Viewer 查看完整原图。旧 Session 中的 `fanto-media://<mediaId>` 仍保留兼容渲染。H5 会缓存短期媒体 URL、避免已完成历史消息随流式 delta 反复重载，并只在用户接近底部时自动跟随新内容。H5 不提供 Creation / Proposal 页面，也不提供正式登录。测试客户端固定使用 `default-user`，Agent Bearer Token 被直接编译进 H5 bundle，因此只适用于受控测试环境。
+当前 H5 位于 `apps/h5`，覆盖测试所需的 Record 与 Agent 基础能力：查看 / 创建 / 语义搜索 Record，支持文字、JPEG/PNG/WebP 图片、M4A/MP3/WAV 音频、浏览器录音、发生时间选择，以及时间线图片缩略图和音频播放；同时支持恢复一个默认 Agent Session、兼容字符串或结构化 content 的历史消息、POST SSE 流式多轮对话和新建会话。Assistant 可见文本继续使用 Markdown；新媒体展示由原生 `present_media` Tool Result 驱动，图片和语音按类型分开渲染，图片使用固定 104×104 单行缩略图并可进入多图 Viewer 查看完整原图。旧 Session 中的 `fanto-media://<mediaId>` 仍保留兼容渲染。H5 会缓存短期媒体 URL、避免已完成历史消息随流式 delta 反复重载，并只在用户接近底部时自动跟随新内容。H5 不提供 Creation / Proposal 页面，也不提供正式登录。测试客户端固定使用 `user001`，Agent Bearer Token 被直接编译进 H5 bundle，因此只适用于受控测试环境。
 
 ## Memory / Retrieval
 
 Server 已经会为处理完成的 Record 构建向量索引。用户文本、图片描述和音频转写不会再拼成一个 embedding，而是分别作为 `record_text`、`image`、`audio` 原子单元独立索引；媒体单元仍保留与原 Record / mediaId 的关联。
 
-当前 Server 已形成独立的 Memory Domain 边界：Record postprocess 成功后把最终 processed Record 交给 `MemoryService`，sqlite-vec 通过 `MemoryIndex` adapter 提供派生索引。
+当前 Server 已形成独立的 Memory Domain 边界：Record postprocess 成功后把最终 processed Record 交给 `MemoryService`，pgvector 通过 `MemoryIndex` adapter 提供派生索引。
 
-`POST /api/records/search` 已注册，可对当前用户 Record 做语义搜索。sqlite-vec 使用 `user_id partition key`，KNN candidate generation 本身限定当前用户，并在读取 metadata 时再次校验用户归属。
+`POST /api/records/search` 已注册，可对当前用户 Record 做语义搜索。pgvector 查询在 SQL 层按 `user_id` 限定当前用户，并在读取 metadata 时保持用户归属校验。
 
 Agent Runtime 已通过 Business Server HTTP 接入 `record_get`、`record_list`、`record_search` 三个只读 Record Tool，并新增 `present_media` 展示 Tool。`main` 在每次 Agent Run 前还会执行一次 MemoryProvider：用快速模型结合当前消息与最近对话重写 0–2 条查询，复用 Record Search，跨查询按真实 `recordId` 去重后只注入最相关 2 条 Relevant Memory。LLM 不传 `userId`；所有业务读取身份都来自当前 Session 的 Run Context。
 
@@ -79,9 +79,9 @@ Fanto `main` 在每次 Run 前由 PreferenceProvider 读取当前用户 Preferen
 
 ## 当前基础设施边界
 
-- 业务数据库使用 SQLite；向量索引使用同一数据库中的 sqlite-vec。
+- 业务数据库使用 Supabase PostgreSQL；向量索引使用同一数据库中的 pgvector。
 - Server 的 Record postprocess queue 是进程内机制，不持久化、不重试、不支持多实例恢复。
-- Server 的 `x-user-id` 仍不是正式认证；当前运行入口额外只允许 `default-user`，用于公网测试期收紧访问范围。
-- iOS 当前仍硬编码 HTTP ECS 地址和 `creation-demo-user`；该用户与当前公网 Server / Agent 的 `default-user` allowlist 不一致，尚不能直接用于当前公网链路。
-- H5 固定使用 `default-user` 并内置测试 Agent Token；Token 对能访问前端 bundle 的用户可见，因此该方式只用于测试。
-- Agent Runtime 使用 Bearer Token + `X-User-Id`，当前运行入口同样只允许 `default-user`；bash 的宿主机执行仍只适合开发环境，生产环境需要真正的容器或微虚拟机隔离。
+- Server 的 `x-user-id` 仍不是正式认证；当前运行入口额外只允许 `user001`，用于公网测试期收紧访问范围。
+- iOS 当前仍硬编码 HTTP ECS 地址和测试用户 `user001`；该用户与当前公网 Server / Agent allowlist 一致。
+- H5 固定使用 `user001` 并内置测试 Agent Token；Token 对能访问前端 bundle 的用户可见，因此该方式只用于测试。
+- Agent Runtime 使用 Bearer Token + `X-User-Id`，当前运行入口同样只允许 `user001`；bash 的宿主机执行仍只适合开发环境，生产环境需要真正的容器或微虚拟机隔离。

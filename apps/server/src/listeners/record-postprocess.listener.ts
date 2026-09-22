@@ -4,7 +4,7 @@ import type { ImageUnderstanding } from "../infrastructure/clients/image-client.
 import type { OssStorage } from "../infrastructure/clients/oss-client.js";
 import type { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import type { MemoryService } from "../domain/memory/memory-service.js";
-import type { SqliteMediaRepository } from "../domain/media/sqlite-repository.js";
+import type { PostgresMediaRepository } from "../domain/media/postgres-repository.js";
 import type { RecordRepository } from "../domain/records/repository.js";
 import { logError } from "../infrastructure/logging/logger.js";
 
@@ -13,7 +13,7 @@ type RecordMemory = Pick<MemoryService, "replaceRecord">;
 export function registerRecordPostprocessListener(
   queue: RecordPostprocessQueue,
   records: RecordRepository,
-  media: SqliteMediaRepository,
+  media: PostgresMediaRepository,
   oss: OssStorage,
   image: ImageUnderstanding,
   audio: AudioTranscriptionClient,

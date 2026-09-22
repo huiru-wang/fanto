@@ -29,7 +29,7 @@ const toPreference = (row: {
   updatedAt: row.updated_at,
 });
 
-export class SqlitePreferenceRepository implements PreferenceRepository {
+export class PostgresPreferenceRepository implements PreferenceRepository {
   constructor(private readonly db: Kysely<DB>) {}
 
   async listByUser(userId: string, limit: number): Promise<UserPreference[]> {

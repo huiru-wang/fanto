@@ -9,7 +9,7 @@
 - 优先使用系统导航、Sheet、语义颜色与原生交互，不用自定义覆盖层替代系统组件。
 - 运行态数据应以 Server API 为准；Preview 可以使用样例数据，但不能把 Preview / 本地样例包装成已经接入的真实能力。
 - 当前“新建记录”仍只写入本地 `FantoStore`；除非同时完成真实 API 接入，不要把它描述成服务端持久化。
-- 当前 API Client 仍硬编码 HTTP ECS 地址和 `creation-demo-user`；当前 Server / Agent 公网运行入口只允许 `default-user`，因此该客户端在当前部署配置下会被拒绝。正式上线前需要 HTTPS、配置化服务地址与正式认证。
+- 当前 API Client 仍硬编码 HTTP ECS 地址和测试用户 `user001`；当前 Server / Agent 公网运行入口同样只允许该用户。正式上线前需要 HTTPS、配置化服务地址与正式认证。
 
 ## UI / 状态约束
 

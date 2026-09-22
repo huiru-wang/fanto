@@ -15,16 +15,16 @@ domain/memory/
 └── memory-service.ts
 
 infrastructure/memory/
-├── sqlite-vec-memory-index.ts
+├── postgres-memory-index.ts
 └── rebuild-memory-index.ts
 ```
 
 - `MemoryService`：编排 Record 索引、删除与搜索，不直接访问 SQLite。
 - `EmbeddingProvider`：Embedding 能力契约；当前由 `EmbeddingsClient` 实现。
-- `MemoryIndex`：派生索引契约；当前由 `SqliteVecMemoryIndex` 实现。
+- `MemoryIndex`：派生索引契约；当前由 `PostgresMemoryIndex` 实现。
 - `record-memory.ts`：把 processed Record 拆成稳定的原子索引文档并生成 `contentHash`。
 
-因此 sqlite-vec 是当前 Memory 的基础设施实现，不是 Domain API。
+因此 pgvector 是当前 Memory 的基础设施实现，不是 Domain API。
 
 ## Record 接入
 
@@ -57,40 +57,38 @@ flowchart LR
   R[processed Record] --> M[MemoryService]
   M --> E[EmbeddingProvider]
   M --> P[MemoryIndex]
-  P --> VI[(vector_items)]
-  P --> RV[(record_vectors / sqlite-vec)]
+  P --> VI[(vector_items / pgvector embedding)]
 ```
 
 - `records`：业务事实。
 - `vector_items`：保存 user、原子 source type（`record_text` / `image` / `audio`）、source ID、原始 Record 的 `event_at`、索引文本、hash 与索引状态。
-- `record_vectors`：768 维 sqlite-vec 向量索引。
-- `record_vectors.rowid = vector_items.id` 用于关联。
+- `vector_items.embedding`：与元数据同表保存的 768 维 pgvector 向量。
 
 向量索引可以 reset / rebuild，不替代 Record。
 
 ## 用户隔离与检索
 
-`record_vectors` 当前 schema：
+Supabase 中不再使用 SQLite 的 `record_vectors` 虚拟表；向量直接保存在 `vector_items.embedding`：
 
 ```sql
-CREATE VIRTUAL TABLE record_vectors USING vec0(
-  user_id text partition key,
-  embedding float[768]
+CREATE TABLE vector_items (
+  -- 其他索引元数据
+  embedding vector(768) NOT NULL
 );
 ```
 
-Record Search 先把 query 转成 embedding，然后直接在当前用户 partition 中执行 KNN：
+Record Search 先把 query 转成 embedding，再以当前用户为查询边界执行 pgvector KNN：
 
 ```sql
-SELECT rowid AS id, distance
-FROM record_vectors
-WHERE embedding MATCH ?
-  AND user_id = ?
-  AND k = ?
-ORDER BY distance
+SELECT type, outer_id, content, embedding <-> $1::vector AS distance
+FROM vector_items
+WHERE user_id = $2
+  AND status = 'indexed'
+ORDER BY embedding <-> $1::vector
+LIMIT $3
 ```
 
-因此 candidate generation 本身就是 user-scoped，不再使用“全局 KNN + limit * N + 用户过滤”的补偿逻辑。
+因此 candidate generation 本身就是 user-scoped。
 
 读取 `vector_items` 时仍再次校验：
 
@@ -120,7 +118,7 @@ POST /api/records/search
 
 它调用 `MemoryService.searchRecords`，并从请求 Header 获取当前用户，不接受客户端在请求体传 `userId`。
 
-HTTP 返回 `recordId`、原子 `sourceType`、可选 `mediaId`、`snippet`、原始 Record 的 `eventAt` 与 sqlite-vec `distance`。`distance` 用于 Agent 判断结果相关性，不代表已经校准后的产品置信度。
+HTTP 返回 `recordId`、原子 `sourceType`、可选 `mediaId`、`snippet`、原始 Record 的 `eventAt` 与 pgvector `distance`。`distance` 用于 Agent 判断结果相关性，不代表已经校准后的产品置信度。
 
 ## Agent Context Retrieval
 
@@ -163,7 +161,7 @@ pnpm memory:rebuild
 
 Rebuild 会：
 
-1. reset `vector_items` 与 `record_vectors` 派生索引；
+1. reset `vector_items` 派生索引；
 2. 按批次扫描所有用户的 `processed` Records；
 3. 对每条 Record 复用 `MemoryService.replaceRecord`；
 4. 输出累计 Record 数与用户数。

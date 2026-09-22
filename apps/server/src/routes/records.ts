@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { parseSaveRecord } from "../domain/records/content.js";
 import type { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
-import type { SqliteMediaRepository } from "../domain/media/sqlite-repository.js";
+import type { PostgresMediaRepository } from "../domain/media/postgres-repository.js";
 import { decodeRecordCursor, encodeRecordCursor } from "../domain/records/cursor.js";
 import type { RecordRepository } from "../domain/records/repository.js";
 import type { MemoryService } from "../domain/memory/memory-service.js";
@@ -15,7 +15,7 @@ const deleteInput = z.object({ expectedVersion: z.number().int().positive() }).s
 const searchInput = z.object({ query: z.string().trim().min(1), limit: z.number().int().min(1).max(20).optional().default(10) }).strict();
 const saveValue = (body: { text: string; media: unknown[] }) => parseSaveRecord({ text: body.text, media: body.media });
 
-async function view(record: any, media: SqliteMediaRepository) {
+async function view(record: any, media: PostgresMediaRepository) {
   const assets = await media.findMediaByIds(record.content.blocks.map((block: any) => block.mediaId), record.userId); const byId = new Map(assets.map(asset => [asset.mediaId, asset]));
   const { taskId: _taskId, ...safeRecord } = record;
   return { ...safeRecord, media: record.content.blocks.flatMap((block: any) => { const asset = byId.get(block.mediaId); if (!asset) return []; const capture = asset.extData.capture as { durationMs?: number | null } | undefined; const asr = asset.extData.asr as { status?: string; model?: string; emotion?: string; language?: string; completedAt?: string; errorCode?: string } | undefined; return [block.type === "image" ? { mediaId: asset.mediaId, type: "image", url: `/api/media/${asset.mediaId}`, description: block.description ?? null } : { mediaId: asset.mediaId, type: "audio", url: `/api/media/${asset.mediaId}`, durationMs: capture?.durationMs ?? null, asr: asr ? { status: asr.status ?? "failed", transcript: block.transcription ?? null, model: asr.model ?? null, emotion: asr.emotion ?? null, language: asr.language ?? null, completedAt: asr.completedAt ?? null, errorCode: asr.errorCode ?? null } : null }]; }) };
@@ -24,7 +24,7 @@ function error(c: any, value: string, current?: unknown) { if (value === "not_fo
 
 type RecordMemory = Pick<MemoryService, "searchRecords" | "removeRecord">;
 
-export function createRecordRoutes(records: RecordRepository, media: SqliteMediaRepository, queue: RecordPostprocessQueue, memory?: RecordMemory) {
+export function createRecordRoutes(records: RecordRepository, media: PostgresMediaRepository, queue: RecordPostprocessQueue, memory?: RecordMemory) {
   const app = new Hono();
   app.post("/", async c => { const body = createInput.safeParse(await c.req.json().catch(() => null)); if (!body.success) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: body.error.message }, 400); try { const record = await records.create({ userId: requireUserId(c.req.raw), source: body.data.source, eventAt: new Date(body.data.eventAt).toISOString(), value: saveValue(body.data) }); if (typeof record === "string") return error(c, record); queue.publish({ userId: record.userId, recordId: record.id, version: record.version }); return c.json({ success: true, result: await view(record, media), errorCode: null, errorMsg: null }, 201); } catch (cause) { return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: cause instanceof Error ? cause.message : "Invalid record" }, 400); } });
   app.patch("/:id", async c => { const body = updateInput.safeParse(await c.req.json().catch(() => null)); if (!body.success) return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: body.error.message }, 400); const currentUser = requireUserId(c.req.raw); try { const record = await records.updateContent(c.req.param("id"), currentUser, { value: saveValue(body.data), expectedVersion: body.data.expectedVersion }); if (record === "conflict") { const current = await records.findById(c.req.param("id")); return error(c, record, current?.userId === currentUser ? await view(current, media) : null); } if (typeof record === "string") return error(c, record); queue.publish({ userId: record.userId, recordId: record.id, version: record.version }); return c.json({ success: true, result: await view(record, media), errorCode: null, errorMsg: null }); } catch (cause) { return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: cause instanceof Error ? cause.message : "Invalid record" }, 400); } });
