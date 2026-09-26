@@ -6,7 +6,8 @@ import type { AgentSessionManager } from "../agent/session.js";
 import type { ContextRuntime } from "../context/runtime.js";
 import { resolveTimeZone } from "../context/providers/time.js";
 import { sessionError } from "./errors.js";
-import { streamRequestSchema, traceIdSchema, userIdSchema } from "./schemas.js";
+import { streamRequestSchema, traceIdSchema } from "./schemas.js";
+import { requireAgentPrincipal } from "../auth/access.js";
 
 export function createAgentRoutes(
   registry: AgentRegistry,
@@ -16,11 +17,11 @@ export function createAgentRoutes(
   const app = new Hono();
   app.post("/stream", async c => {
     const body = streamRequestSchema.safeParse(await c.req.json().catch(() => null));
-    const userId = userIdSchema.safeParse(c.req.header("x-user-id"));
+    const principal = requireAgentPrincipal(c.req.raw);
     const traceId = traceIdSchema.safeParse(c.req.header("x-trace-id"));
     const timeZone = resolveTimeZone(c.req.header("x-time-zone")?.trim());
-    if (!body.success || !userId.success || !traceId.success) {
-      return c.json({ error: "agentId, sessionId, message, x-user-id, or x-trace-id is invalid" }, 400);
+    if (!body.success || !traceId.success) {
+      return c.json({ error: "agentId, sessionId, message, or x-trace-id is invalid" }, 400);
     }
     const definition = registry.get(body.data.agentId);
     if (!definition) return c.json({ error: "Agent not found" }, 404);
@@ -28,7 +29,7 @@ export function createAgentRoutes(
     let session;
     let release: (() => void) | undefined;
     try {
-      session = await sessions.acquire(definition, body.data.sessionId, userId.data);
+      session = await sessions.acquire(definition, body.data.sessionId, principal.userId);
       release = sessions.reserve(session);
     } catch (cause) {
       return sessionError(c, cause);
@@ -52,7 +53,7 @@ export function createAgentRoutes(
           session,
           body.data.message,
           controller.signal,
-          { traceId: traceId.data, timeZone },
+          { traceId: traceId.data, timeZone, accessToken: principal.token },
           contextRuntime,
           event => writeStreamEvent(stream, event),
         );

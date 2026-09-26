@@ -34,7 +34,7 @@ function source(context: Context, quote: string) {
     throw new Error("sourceQuote must be a continuous exact quote from the current user message");
   }
   return {
-    request: { userId: metadata.userId, traceId: metadata.traceId, signal: context.abortSignal },
+    request: { accessToken: metadata.accessToken, traceId: metadata.traceId, signal: context.abortSignal },
     source: { sessionId: metadata.sessionId, messageId: metadata.sourceMessageId, quote: normalized },
   };
 }

@@ -16,7 +16,7 @@ export type PresentMediaDetails = { items: PresentedMedia[] };
 function requestContext(context: Context) {
   const metadata = requireRunMetadata(context);
   return {
-    userId: metadata.userId,
+    accessToken: metadata.accessToken,
     traceId: metadata.traceId,
     signal: context.abortSignal,
   };

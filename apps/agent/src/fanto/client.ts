@@ -28,7 +28,7 @@ export type {
 } from "./schemas.js";
 
 export type FantoRequestContext = {
-  userId: string;
+  accessToken: string;
   traceId?: string;
   signal?: AbortSignal;
 };
@@ -120,7 +120,7 @@ export class FantoServerClient {
   ): Promise<T> {
     const timeout = AbortSignal.timeout(this.timeoutMs);
     const signal = ctx.signal ? AbortSignal.any([ctx.signal, timeout]) : timeout;
-    const headers = new Headers({ "x-user-id": ctx.userId });
+    const headers = new Headers({ Authorization: "Bearer " + ctx.accessToken });
     if (ctx.traceId) headers.set("x-trace-id", ctx.traceId);
     if (body !== undefined) headers.set("content-type", "application/json");
 

@@ -64,11 +64,10 @@ enum AgentStreamEvent {
 struct AgentAPIClient {
     static let shared = AgentAPIClient()
 
-    let userID = "user001"
+    var userID: String { AuthCredentialStore().currentUserID() ?? "signed-out" }
     let agentID = "main"
 
     private let baseURL = URL(string: "https://fanto.robinverse.me")!
-    private let agentToken = "a3f2b8c1d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9"
 
     func createSession() async throws -> String {
         let body = CreateSessionRequest(agentID: agentID)
@@ -86,7 +85,7 @@ struct AgentAPIClient {
 
     func stream(sessionID: String, message: String, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
         let body = StreamRequest(agentID: agentID, sessionID: sessionID, message: message)
-        var request = try makeRequest(path: "api/agent/stream", method: "POST", body: body)
+        var request = try await makeRequest(path: "api/agent/stream", method: "POST", body: body)
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
 
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
@@ -161,7 +160,7 @@ struct AgentAPIClient {
     }
 
     private func request<Response: Decodable, Body: Encodable>(url: URL, method: String, body: Body?) async throws -> Response {
-        let request = try makeRequest(url: url, method: method, body: body)
+        let request = try await makeRequest(url: url, method: method, body: body)
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw AgentAPIError.invalidResponse }
         guard (200 ... 299).contains(http.statusCode) else { throw AgentAPIError.httpStatus(http.statusCode) }
@@ -172,15 +171,15 @@ struct AgentAPIClient {
         return result
     }
 
-    private func makeRequest<Body: Encodable>(path: String, method: String, body: Body) throws -> URLRequest {
-        try makeRequest(url: baseURL.appending(path: path), method: method, body: body)
+    private func makeRequest<Body: Encodable>(path: String, method: String, body: Body) async throws -> URLRequest {
+        try await makeRequest(url: baseURL.appending(path: path), method: method, body: body)
     }
 
-    private func makeRequest<Body: Encodable>(url: URL, method: String, body: Body?) throws -> URLRequest {
+    private func makeRequest<Body: Encodable>(url: URL, method: String, body: Body?) async throws -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.setValue("Bearer \(agentToken)", forHTTPHeaderField: "Authorization")
-        request.setValue(userID, forHTTPHeaderField: "X-User-Id")
+        let token = try await AuthSession.shared.accessToken()
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Trace-Id")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let body {

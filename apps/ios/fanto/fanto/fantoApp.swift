@@ -5,6 +5,7 @@
 //  Created by Robin on 2026/9/13.
 //
 
+import GoogleSignIn
 import SwiftUI
 
 @main
@@ -13,12 +14,10 @@ struct FantoApp: App {
 
     var body: some Scene {
         WindowGroup {
-            AppRootView()
+            AuthenticationGateView()
                 .environment(store)
-                .task {
-                    async let records: Void = store.loadRecords()
-                    async let creations: Void = store.loadCreations()
-                    _ = await (records, creations)
+                .onOpenURL { url in
+                    _ = GIDSignIn.sharedInstance.handle(url)
                 }
         }
     }

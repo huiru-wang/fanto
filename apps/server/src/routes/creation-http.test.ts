@@ -17,14 +17,14 @@ test("creation and proposal HTTP routes preserve the public read and decision co
   const path = `/tmp/fanto-creation-http-${randomUUID()}.sqlite`;
   const db = createDatabase(path);
   await runMigrations(db);
-  const userId = "creation-http-user";
+  const userId = randomUUID();
   const creationId = randomUUID();
   const proposalId = randomUUID();
   const rejectedProposalId = randomUUID();
   const recordId = randomUUID();
   const now = nowIso();
   try {
-    await db.insertInto("users").values({ user_id: userId, wx_openid: userId, created_at: now }).execute();
+    await db.insertInto("users").values({ user_id: userId, status: "active", created_at: new Date(now), updated_at: new Date(now), disabled_at: null }).execute();
     await db.insertInto("creation_kinds").values({ kind_id: "kind-thread", owner_user_id: null, name: "thread", title: "持续线索", created_at: now, updated_at: now }).execute();
     await db.insertInto("records").values({ record_id: recordId, user_id: userId, source: "test", content: JSON.stringify({ text: "一条关联记录", blocks: [] }), version: 1, status: "pending", task_id: null, event_at: now, created_at: now, updated_at: now }).execute();
     await db.insertInto("creations").values({ creation_id: creationId, user_id: userId, title: "正在验证的脉络", kind_id: "kind-thread", session_id: "test", summary: "可被前端直接展示的摘要", content: "## 正文\n\n保留 Markdown 内容。", status: "active", version: 1, created_at: now, updated_at: now }).execute();
@@ -34,8 +34,12 @@ test("creation and proposal HTTP routes preserve the public read and decision co
     }
     await db.insertInto("entity_relations").values({ relation_id: randomUUID(), user_id: userId, source_entity_id: recordId, source_entity_type: "record", target_entity_id: proposalId, target_entity_type: "creation_proposal", relation_type: "record_creation_proposal", source_created_at: now, created_at: now }).execute();
 
-    const app = createApp(new PostgresRecordRepository(db), new PostgresMediaRepository(db), new RecordPostprocessQueue(), { readUrl: () => "https://private.example", putUrl: () => "https://upload.example" } as any, new CreationReadRepository(db), new CreationProposalRepository(db));
-    const auth = { "x-user-id": userId };
+    const authDeps = {
+      tokens: { verifyAccess: async () => ({ userId, tokenId: "test-token-id" }) },
+      service: { assertActiveUser: async () => ({ user_id: userId, status: "active" }) },
+    };
+    const app = createApp(new PostgresRecordRepository(db), new PostgresMediaRepository(db), new RecordPostprocessQueue(), { readUrl: () => "https://private.example", putUrl: () => "https://upload.example" } as any, new CreationReadRepository(db), new CreationProposalRepository(db), undefined, undefined, authDeps as never);
+    const auth = { Authorization: "Bearer test-access-token" };
     assert.equal((await app.request("/health")).status, 200);
     assert.equal((await app.request("/api/creation-kinds", { headers: auth })).status, 200);
     const overview = await app.request("/api/creations/overview", { headers: auth });

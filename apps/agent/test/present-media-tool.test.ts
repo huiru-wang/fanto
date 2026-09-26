@@ -7,7 +7,7 @@ import {
   sanitizePresentMediaDetails,
 } from "../src/tools/media.js";
 
-async function execute(tool: any, params: unknown, context = createRunContext({ userId: "u1", traceId: "trace-1" })) {
+async function execute(tool: any, params: unknown, context = createRunContext({ userId: "u1", accessToken: "access-token", traceId: "trace-1" })) {
   return tool.execute("call-1", params, () => {}, {} as never, {} as never, context);
 }
 
@@ -21,10 +21,10 @@ test("present_media exposes only mediaIds in its schema", () => {
 });
 
 test("present_media validates media through the current Run Context and keeps display order", async () => {
-  const calls: Array<{ userId: string; traceId?: string; mediaId: string }> = [];
+  const calls: Array<{ accessToken: string; traceId?: string; mediaId: string }> = [];
   const client = {
-    getMediaMetadata: async (ctx: { userId: string; traceId?: string }, mediaId: string) => {
-      calls.push({ userId: ctx.userId, traceId: ctx.traceId, mediaId });
+    getMediaMetadata: async (ctx: { accessToken: string; traceId?: string }, mediaId: string) => {
+      calls.push({ accessToken: ctx.accessToken, traceId: ctx.traceId, mediaId });
       return mediaId === "image-1"
         ? { mediaId, mediaType: "image" as const, mimeType: "image/jpeg", width: 1200, height: 800 }
         : { mediaId, mediaType: "audio" as const, mimeType: "audio/mp4", durationMs: 18_300 };
@@ -35,8 +35,8 @@ test("present_media validates media through the current Run Context and keeps di
   });
 
   assert.deepEqual(calls, [
-    { userId: "u1", traceId: "trace-1", mediaId: "image-1" },
-    { userId: "u1", traceId: "trace-1", mediaId: "audio-1" },
+    { accessToken: "access-token", traceId: "trace-1", mediaId: "image-1" },
+    { accessToken: "access-token", traceId: "trace-1", mediaId: "audio-1" },
   ]);
   assert.deepEqual(result.details, {
     items: [

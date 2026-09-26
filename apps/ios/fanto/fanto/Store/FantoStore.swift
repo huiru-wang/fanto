@@ -111,6 +111,17 @@ final class FantoStore {
         records.append(Record(text: text, eventAt: eventAt, location: location))
         records.sort { $0.eventAt > $1.eventAt }
     }
+
+    func resetUserData() {
+        records = []
+        proposals = []
+        creations = []
+        creationKinds = []
+        recordLoadState = .idle
+        creationLoadState = .idle
+        proposalLoadState = .idle
+        proposalActionError = nil
+    }
 }
 
 extension FantoStore {

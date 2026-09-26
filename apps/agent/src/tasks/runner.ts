@@ -6,6 +6,7 @@ import { AgentTaskRepository } from "./repository.js";
 
 export class TaskRunner {
   private draining = false;
+  private readonly accessTokens = new Map<string, string>();
   private timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
@@ -19,6 +20,10 @@ export class TaskRunner {
     this.tasks.recoverInterrupted();
     this.timer = setInterval(() => { void this.drain(); }, 250);
     void this.drain();
+  }
+
+  registerAccessToken(taskId: string, token: string): void {
+    this.accessTokens.set(taskId, token);
   }
 
   wake(): void {
@@ -43,6 +48,11 @@ export class TaskRunner {
         }
 
         try {
+          const accessToken = this.accessTokens.get(task.id);
+          if (!accessToken) {
+            this.tasks.fail(task.id, "Authentication context is no longer available");
+            continue;
+          }
           const session = await this.sessions.acquire(definition, task.sessionId);
           let release: (() => void) | undefined;
           try {
@@ -60,16 +70,18 @@ export class TaskRunner {
               session,
               task.input,
               new AbortController().signal,
-              { taskId: task.id, traceId: task.traceId ?? undefined, timeZone: task.timeZone ?? undefined },
+              { taskId: task.id, traceId: task.traceId ?? undefined, timeZone: task.timeZone ?? undefined, accessToken },
               this.contextRuntime,
               async () => {},
             );
             this.tasks.complete(task.id, output);
+            this.accessTokens.delete(task.id);
           } finally {
             release();
           }
         } catch (cause) {
           this.tasks.fail(task.id, cause instanceof Error ? cause.message : "Agent task failed");
+          this.accessTokens.delete(task.id);
         }
       }
     } finally {

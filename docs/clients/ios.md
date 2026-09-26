@@ -12,7 +12,7 @@
 
 ## 当前页面与数据来源
 
-下表中的“已接”表示客户端代码已实现对应 API 调用，不表示当前公网部署一定可调用；当前硬编码测试用户为 `user001`，与 Server / Agent allowlist 一致。
+下表中的“已接”表示客户端代码已实现对应 API 调用，不表示当前公网部署一定可调用。iOS 运行态业务请求统一携带 Fanto access JWT，用户身份只由服务端验证后的 `sub` 决定。
 
 | 能力 | 数据来源 | 当前状态 |
 | --- | --- | --- |
@@ -31,9 +31,32 @@
 
 Record 首批最多读取 100 条，当前客户端据此生成日历标记和 Timeline；尚未实现继续加载整个 Record 历史。
 
+
+## Google 登录与账号状态
+
+App 启动后先进入认证 Gate：
+
+- Keychain 中存在仍有效的 Fanto access token 时直接进入主界面；
+- access token 临近过期时，使用 Keychain 中的 refresh token 调用 `POST /api/auth/tokens/refresh`，成功后原子替换整对 token；
+- refresh token 过期、无效或用户被禁用时清理本地认证状态并回到登录页；
+- access / refresh token 均保存在 Keychain，业务 token 不写入 `UserDefaults`；
+- 当前没有“我的”、设置或退出登录入口；认证失效时会清除本地认证状态并回到欢迎页。
+
+欢迎页先提供“创建 Fanto 账号”和“已有账号？登录”两个入口；两者进入独立的注册或登录页，并使用 Google 官方 `GoogleSignInSwift` 按钮，保持 Server register / login challenge 的确定语义。完整链路为：先请求 `/api/auth/intents`（`purpose=register|login, provider=google`）获得一次性 challenge nonce，再把 nonce 传入 Google Sign-In，客户端通过 `/api/auth/registrations` 或 `/api/auth/logins` 的通用 `proof` 字段把 Google ID token 发送给 Fanto Server；Server 验证签名、audience、expiry 与 nonce 后，按 Google `sub` 查找或创建 `user_id`，再签发 Fanto access / refresh JWT。认证成功后进入“记录”Tab。
+
+Google 配置位于 `Supporting/Info-Debug.plist` 与 `Supporting/Info-Release.plist`：
+
+- `GIDClientID`：Google Cloud iOS OAuth Client ID；
+- `GIDServerClientID`：后端验证使用的 Web / Server OAuth Client ID，同时需要加入 Server 的 `GOOGLE_ALLOWED_CLIENT_IDS`；
+- `CFBundleURLTypes`：iOS Client ID 对应的 reversed client ID URL scheme。
+
+仓库当前保留 `REPLACE_WITH_*` 占位值，不包含生产 OAuth 配置。未替换时登录页会给出配置错误，不会尝试启动无效 OAuth。
+
+认证成功后才创建业务根视图；认证失效时会先清空当前 `FantoStore` 的 Records / Creations / Proposals 运行态数据，再回到欢迎页。Agent Session 的 Keychain key 继续包含真实 `user_id + agent_id`，因此不同账号不会复用同一个长期会话。
+
 ## Fanto 对话
 
-Fanto 位于根导航中间，只使用一个默认长期 Agent Session，不提供会话列表、切换或“开始新话题”。iOS 以开发态用户和 `main` Agent 为键将 Session ID 保存到 Keychain；App 根导航出现后即开始预加载 Fanto Session 与最近 10 条历史，切入 Fanto 时若尚未完成才显示加载态。仅在本地没有 ID，或服务端明确返回 Session 不存在 / 无权访问时创建新的 Session。
+Fanto 位于根导航中间，只使用一个默认长期 Agent Session，不提供会话列表、切换或“开始新话题”。iOS 以当前认证用户的 `user_id` 和 `main` Agent 为键将 Session ID 保存到 Keychain；App 根导航出现后即开始预加载 Fanto Session 与最近 10 条历史，切入 Fanto 时若尚未完成才显示加载态。仅在本地没有 ID，或服务端明确返回 Session 不存在 / 无权访问时创建新的 Session。
 
 流式回复通过 SSE 增量追加到当前助手消息。客户端按 SSE 原始字节流保留事件分隔，避免丢失连续的 `delta`；`turn_start` 与 `tool_start` 都映射为处理态，在尚无文字时显示“正在回想…”，开始收到 `delta` 后直接呈现正文。成功的 `present_media` Tool Result 会暂存至本轮 `done`，再合并进助手消息；历史恢复也会从同类 `toolResult` 重建媒体。旧会话正文中的 `fanto-media://<mediaId>` 图片和链接也会兼容投影为同类媒体。图片和语音分组呈现：图片使用横向缩略图，轻点后全屏分页查看；语音可在会话中播放。客户端只保存稳定的媒体 metadata，展示时才通过媒体读取接口取得短期签名地址，并在资源加载失败后刷新一次。界面覆盖加载、等待、流式生成、停止和失败重试；发送任务无论正常结束、失败或被意外取消，都会将占位消息收敛到明确终态，避免停留在等待状态。空回复也会明确失败并提供重试。同一 Session 未完成回复时不能并发发送。History decoder 已能容忍 Pi Assistant 的字符串或结构化 content，并只抽取可见 text，因此出现 toolCall block 时不会导致整页历史解码失败。助手消息复用 Creation 页面共用的原生 Markdown 视图渲染标题、段落与内联 Markdown；当前不包含来源卡片或其他 Agent Tool 产品化状态。
 
@@ -45,20 +68,9 @@ Record 日历以周日为一周起点，周视图 / 月视图共享同一日期�
 
 ## 网络边界
 
-`CreationAPIClient` 当前固定：
+`CreationAPIClient` 与 `AgentAPIClient` 当前都指向 `https://fanto.robinverse.me`。所有受保护 Server API 和 Agent API 都使用 `Authorization: Bearer <Fanto access JWT>`；iOS 不再发送 `x-user-id`，也不再内置 Agent 静态 token。Agent Session persistence 仅使用当前已认证 `user_id` 作为 Keychain namespace 的一部分。
 
-```text
-baseURL = https://fanto.robinverse.me
-userID  = user001
-```
-
-当前 Server / Agent 主运行入口只允许 `user001`，与 iOS 测试用户一致。正式上线前仍需要：
-
-- 服务地址配置化；
-- 正式认证 / 用户身份；
-- 去除演示用户硬编码。
-
-Agent Client 目前也指向同一域名下的 `/api/agent/*` 路径，并附带开发期测试凭据。客户端不会绕过 TLS 证书校验；HTTPS 证书必须被 iOS 系统信任，否则 Fanto 会显示网络失败状态，不能视为真机联调完成。
+客户端不会绕过 TLS 证书校验；HTTPS 证书必须被 iOS 系统信任。服务地址仍为代码内固定值，后续如需 staging / production 切换再单独配置化。
 
 ## Preview
 

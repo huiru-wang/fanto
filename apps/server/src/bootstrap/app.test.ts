@@ -3,7 +3,11 @@ import test from "node:test";
 import { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import { createApp, logSafeBody } from "./app.js";
 
-test("runtime user allowlist only permits user001", async () => {
+test("protected API requires a verified access token", async () => {
+  const auth = {
+    tokens: { verifyAccess: async (token: string) => ({ userId: "550e8400-e29b-41d4-a716-446655440000", tokenId: token }) },
+    service: { assertActiveUser: async () => ({ status: "active" }) },
+  };
   const app = createApp(
     {} as never,
     {} as never,
@@ -12,21 +16,18 @@ test("runtime user allowlist only permits user001", async () => {
     undefined,
     undefined,
     undefined,
-    new Set(["user001"]),
+    undefined,
+    auth as never,
   );
 
   const denied = await app.request("/api/not-found", {
-    headers: { "x-user-id": "other-user" },
+    headers: { "x-user-id": "forged-user" },
   });
   assert.equal(denied.status, 401);
-  assert.deepEqual(await denied.json(), {
-    success: false,
-    errorCode: "UNAUTHORIZED",
-    errorMsg: "Unauthorized",
-  });
+  assert.equal((await denied.json() as { errorCode: string }).errorCode, "UNAUTHENTICATED");
 
   const allowed = await app.request("/api/not-found", {
-    headers: { "x-user-id": "user001" },
+    headers: { Authorization: "Bearer signed-access-token", "x-user-id": "forged-user" },
   });
   assert.equal(allowed.status, 404);
 });

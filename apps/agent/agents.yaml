@@ -3,10 +3,12 @@ version: 1
 models:
   - provider: deepseek
     model: deepseek-v4-pro
+  - provider: deepseek
+    model: deepseek-v4-flash
 
 agents:
   - id: main
-    model_id: deepseek/deepseek-v4-pro
+    model_id: deepseek/deepseek-v4-flash
     description: Fanto 面向用户的长期记忆对话 Agent
     corePromptFile: ./prompts/core.md
     systemPromptFile: ./prompts/operational.md
@@ -18,7 +20,7 @@ agents:
       keepRecentTokens: 20000
 
   - id: coding
-    model_id: deepseek/deepseek-v4-pro
+    model_id: deepseek/deepseek-v4-flash
     description: 在隔离工作区中执行代码任务
     systemPrompt: |
       你在隔离工作区中工作。先阅读相关文件，再做最小改动。

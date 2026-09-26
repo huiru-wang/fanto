@@ -7,10 +7,38 @@ import type { Generated, Insertable, Selectable, Updateable } from "kysely";
 // ─── users ──────────────────────────────────────────────────────
 
 export interface UsersTable {
-  id: Generated<number>;
   user_id: string;
-  wx_openid: string;
-  created_at: string;
+  status: "active" | "disabled";
+  created_at: Date;
+  updated_at: Date;
+  disabled_at: Date | null;
+}
+
+export interface UserLoginIdentitiesTable {
+  identity_id: string;
+  user_id: string;
+  provider: string;
+  provider_subject: string;
+  display_hint: string | null;
+  verified_at: Date;
+  last_used_at: Date | null;
+  revoked_at: Date | null;
+  created_at: Date;
+}
+
+export interface AuthChallengesTable {
+  challenge_id: string;
+  purpose: "register" | "login" | "bind" | "reauth";
+  provider: string;
+  user_id: string | null;
+  target_hash: string | null;
+  nonce_hash: string | null;
+  state_hash: string | null;
+  verification_hash: string | null;
+  context: unknown;
+  expires_at: Date;
+  consumed_at: Date | null;
+  created_at: Date;
 }
 
 // ─── records ────────────────────────────────────────────────────
@@ -112,6 +140,8 @@ export interface VectorItemsTable {
 
 export interface DB {
   users: UsersTable;
+  user_login_identities: UserLoginIdentitiesTable;
+  auth_challenges: AuthChallengesTable;
   records: RecordsTable;
   creations: CreationsTable;
   creation_proposals: CreationProposalsTable;

@@ -26,13 +26,13 @@ pnpm dev:server
 curl http://127.0.0.1:3000/health
 ```
 
-启动时 Server 也会执行当前 migration 基线，并确保存在 `user001`。
+启动时 Server 会执行当前空库 migration 基线。用户通过正式注册流程创建，不再自动创建演示用户。
 
 ## Agent Runtime
 
 ```bash
 cp apps/agent/.env.example apps/agent/.env
-# 配置 AGENT_TOKEN 与模型密钥
+# 配置 AUTH_JWT_PUBLIC_KEYS、AUTH_JWT_ISSUER 与模型密钥
 pnpm --filter @fanto/agent dev
 ```
 

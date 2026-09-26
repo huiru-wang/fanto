@@ -118,7 +118,7 @@ test("loads Fanto prompts for main while coding remains isolated", () => {
   const definitions = readAgentDefinitions(resolve(appRoot, "agents.yaml"), builtinModels(), skills.ids());
   const main = definitions.find(definition => definition.id === "main");
   const coding = definitions.find(definition => definition.id === "coding");
-  assert.equal(main?.modelId, "deepseek/deepseek-v4-pro");
+  assert.equal(main?.modelId, "deepseek/deepseek-v4-flash");
   assert.deepEqual(main?.tools, ["record_get", "record_list", "record_search", "present_media", "preference_manage"]);
   assert.match(main?.systemPrompt ?? "", /你是用户的人生助理/);
   assert.match(main?.systemPrompt ?? "", /\{\{current_time\}\}/);

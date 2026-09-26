@@ -5,11 +5,12 @@
 ## 当前约束
 
 - 使用 SwiftUI，当前最低部署目标为 iOS 26.5。
-- 根导航使用系统 `TabView`，当前为“记录 / Fanto / 脉络”三个 Tab。
+- 根导航使用系统 `TabView`，当前为“记录 / Fanto / 脉络”三个 Tab；认证页不属于 Tab 导航。
 - 优先使用系统导航、Sheet、语义颜色与原生交互，不用自定义覆盖层替代系统组件。
 - 运行态数据应以 Server API 为准；Preview 可以使用样例数据，但不能把 Preview / 本地样例包装成已经接入的真实能力。
 - 当前“新建记录”仍只写入本地 `FantoStore`；除非同时完成真实 API 接入，不要把它描述成服务端持久化。
-- 当前 API Client 固定使用 HTTPS 公网域名和测试用户 `user001`；当前 Server / Agent 公网运行入口同样只允许该用户。正式上线前仍需配置化服务地址与正式认证。
+- API Client 使用 HTTPS 公网域名；正式运行态身份统一来自 Fanto access JWT，不再允许客户端通过 `x-user-id` 或固定测试 token 指定用户。
+- Google 登录依赖 `Supporting/Info-*.plist` 中的 iOS Client ID、Server Client ID 与 reversed URL scheme；占位值只能用于未配置构建，真机登录前必须替换。
 
 ## UI / 状态约束
 

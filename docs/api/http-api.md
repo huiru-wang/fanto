@@ -6,11 +6,30 @@
 { "success": true, "result": {}, "errorCode": null, "errorMsg": null }
 ```
 
-除 `GET /health` 外，请求必须带 `x-user-id`。当前运行入口只允许 `user001`；其他 user-id 即使格式合法也返回 `401 UNAUTHORIZED`。这仍是测试期访问边界，不是正式认证。
+除健康检查、Google 注册/登录 intent、Google 注册/登录和 Refresh 外，所有 API 都要求 `Authorization: Bearer <access token>`。Access Token 有效期 30 分钟；Refresh Token 有效期 30 天并采用滑动续期。用户身份只来自服务端验证后的 JWT `sub`。
 
 ## 健康检查
 
 `GET /health` → `{ status: "ok", timestamp }`
+
+## 认证
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/auth/intents` | 为 Google 注册或登录创建一次性 challenge |
+| POST | `/api/auth/registrations` | 使用 Google proof 创建 Fanto 用户 |
+| POST | `/api/auth/logins` | 使用 Google proof 登录已有 Fanto 用户 |
+| POST | `/api/auth/tokens/refresh` | 用 refresh token 换取新的 access / refresh token 对 |
+
+创建 intent：
+
+```json
+{ "purpose": "register", "provider": "google" }
+```
+
+`purpose` 也可为 `login`。成功响应的 `result` 包含 `intentId`、`provider`、`expiresAt` 和 `challenge.nonce`。iOS 必须将 nonce 传给 Google Sign-In；随后以 `{ "intentId": "...", "proof": { "idToken": "..." } }` 调用注册或登录接口。Server 验证 Google token 的签名、issuer、audience、expiry、sub 和 nonce，并只签发 Fanto JWT；Google ID token 不可用于其他业务接口。
+
+认证成功结果为 `{ user, accessToken, accessTokenExpiresAt, refreshToken, refreshTokenExpiresAt }`，其中 `user` 为 `{ userId, status }`。Access Token 有效期 30 分钟，Refresh Token 有效期 30 天。常见认证错误包括：`IDENTITY_NOT_REGISTERED`、`IDENTITY_ALREADY_REGISTERED`、`CHALLENGE_INVALID`、`INVALID_PROVIDER_PROOF`、`USER_DISABLED`、`REFRESH_TOKEN_INVALID` 和 `RATE_LIMITED`。
 
 ## 记录
 
@@ -39,7 +58,7 @@
 
 - `query` trim 后不能为空；
 - `limit` 默认 10，范围 1–20；
-- 当前用户只来自 `x-user-id`，请求体不能传 `userId`；
+- 当前用户只来自验证后的 Access JWT `sub`，请求体不能传 `userId`；
 - 搜索通过 Memory 模块在当前用户范围内执行 pgvector 查询；
 - 返回 `{ data: [{ recordId, sourceType, mediaId, snippet, eventAt, distance }] }`；
 - `sourceType` 为 `record_text` / `image` / `audio`，媒体命中通过 `mediaId` 关联具体图片或音频；
@@ -119,7 +138,7 @@ Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionI
 
 创建上传体：`{ mimeType, bytes }`。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
 
-`GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 `x-user-id`。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，供不能附加自定义 Header 的浏览器 `<img>` / `<audio>` 元素使用。读取签名有效期为五分钟，客户端不应持久化，并应在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`，用于需要稳定媒体 metadata 的服务端 / Agent 路径，不包含 signed URL。
+`GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Access JWT。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，供不能附加自定义 Header 的浏览器 `<img>` / `<audio>` 元素使用。读取签名有效期为五分钟，客户端不应持久化，并应在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`，用于需要稳定媒体 metadata 的服务端 / Agent 路径，不包含 signed URL。
 
 ## 脉络与待确认提案
 
@@ -141,11 +160,10 @@ Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionI
 
 ## 独立 Agent 服务
 
-Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference 和最多 2 条 Relevant Memory，再由 Context Composer 注入 Prompt；Relevant Memory 的 `eventAt` 按请求时区展示。Agent Loop 内仍可通过 `FantoServerClient` 调用 `record_list`、`record_search`、`record_get` 三个只读 Record Tool，通过 `preference_manage` 管理明确长期偏好，并通过 `present_media` 调用 `GET /api/media/:id/meta` 校验要展示的媒体。Tool schema 不接受 `userId`，实际用户身份来自 Session Run Context，并由 Client 转成 Business Server 的 `x-user-id`。除 `GET /health` 外，Agent HTTP 接口要求以下 Header，且当前运行入口只允许 `X-User-Id: user001`：
+Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference 和最多 2 条 Relevant Memory，再由 Context Composer 注入 Prompt；Relevant Memory 的 `eventAt` 按请求时区展示。Agent Loop 内仍可通过 `FantoServerClient` 调用 `record_list`、`record_search`、`record_get` 三个只读 Record Tool，通过 `preference_manage` 管理明确长期偏好，并通过 `present_media` 调用 `GET /api/media/:id/meta` 校验要展示的媒体。Tool schema 不接受 `userId`，实际用户身份来自已验证 Access JWT 的 `sub`；Agent 调用 Business Server 时原样转发同一个 Authorization。除 `GET /health` 外，Agent HTTP 接口统一要求同一份 Fanto Access JWT：
 
 ```text
-Authorization: Bearer <AGENT_TOKEN>
-X-User-Id: <用户 ID>
+Authorization: Bearer <ACCESS_TOKEN>
 X-Trace-Id: <可选链路 ID，可省略>
 X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC>
 ```
@@ -161,11 +179,10 @@ X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC
 先创建 Session；`stream` 和 `tasks` 必须使用该 `sessionId`。`agentId` 可省略，省略时固定使用 `main`。Session 固定绑定 `userId` 和工作区；请求的 `agentId` 是本次执行目标，服务会在 Session 空闲时自动应用或切换到该 Agent。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<sessionId>`。
 
 ```sh
-export AGENT_TOKEN='替换为服务端 AGENT_TOKEN'
+export ACCESS_TOKEN='替换为服务端 ACCESS_TOKEN'
 
 SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
-  -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user001' \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'X-Trace-Id: trace_001' \
   -H 'Content-Type: application/json' \
   -d '{"agentId":"main"}' \
@@ -176,8 +193,7 @@ SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
 
 ```sh
 curl -N http://127.0.0.1:3001/api/agent/stream \
-  -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user001' \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'X-Trace-Id: trace_002' \
   -H 'Content-Type: application/json' \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"你好\"}"
@@ -204,8 +220,7 @@ curl -N http://127.0.0.1:3001/api/agent/stream \
 
 ```sh
 curl -sS http://127.0.0.1:3001/api/agent/tasks \
-  -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user001' \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'X-Trace-Id: trace_003' \
   -H 'Content-Type: application/json' \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"列出工作区文件\"}"

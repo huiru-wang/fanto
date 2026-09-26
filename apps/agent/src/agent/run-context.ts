@@ -2,6 +2,7 @@ import { createContextKey, TODO_CONTEXT, type Context, withContextValue } from "
 
 export type RunMetadata = {
   userId: string;
+  accessToken: string;
   taskId?: string;
   traceId?: string;
   timeZone?: string;
@@ -29,7 +30,7 @@ export function requireRunMetadata(context: Context): RunMetadata {
   if (metadata?.userId) return metadata;
   const userId = context.value(userIdContextKey);
   if (!userId) throw new Error("Agent run is missing user context");
-  return { userId, taskId: context.value(taskIdContextKey), traceId: context.value(traceIdContextKey) };
+  throw new Error("Agent run is missing access token context");
 }
 
 export function resolveRunSystemPrompt(context: Context, fallback: string): string {

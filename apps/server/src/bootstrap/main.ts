@@ -8,8 +8,7 @@ import { RecordPostprocessQueue } from "../infrastructure/queue/record-postproce
 import { OssStorage } from "../infrastructure/clients/oss-client.js";
 import { PostgresMediaRepository } from "../domain/media/postgres-repository.js";
 import { PostgresRecordRepository } from "../domain/records/postgres-repository.js";
-import { nowIso } from "../infrastructure/time.js";
-import { registerRecordPostprocessListener } from "../listeners/record-postprocess.listener.js";
+ import { registerRecordPostprocessListener } from "../listeners/record-postprocess.listener.js";
 import { createApp } from "./app.js";
 import { logInfo } from "../infrastructure/logging/logger.js";
 import { MemoryService } from "../domain/memory/memory-service.js";
@@ -18,16 +17,21 @@ import { CreationReadRepository } from "../domain/creations/creation-repository.
 import { CreationProposalRepository } from "../domain/creations/proposal-repository.js";
 import { PostgresPreferenceRepository } from "../domain/preferences/postgres-repository.js";
 import { PreferenceService } from "../domain/preferences/preference-service.js";
+import { JwtTokenService } from "../infrastructure/auth/jwt-token-service.js";
+import { GoogleIdentityProvider } from "../infrastructure/auth/providers/google-identity-provider.js";
+import { IdentityProviderRegistry } from "../domain/auth/identity-provider.js";
+import { AuthService } from "../domain/auth/service.js";
 
 loadEnv();
 const config = loadConfig();
 const db = createDatabase(config.databaseUrl);
 await runMigrations(db);
 
-if (!(await db.selectFrom("users").select("id").where("user_id", "=", "user001").executeTakeFirst())) {
-  await db.insertInto("users").values({ user_id: "user001", wx_openid: "user001", created_at: nowIso() }).execute();
-}
-
+const authTokens = await JwtTokenService.create(config.auth);
+const identityProviders = new IdentityProviderRegistry([
+  new GoogleIdentityProvider(config.auth.googleAllowedClientIds),
+]);
+const auth = new AuthService(db, identityProviders, authTokens);
 const oss = new OssStorage(config.oss);
 const records = new PostgresRecordRepository(db);
 const media = new PostgresMediaRepository(db);
@@ -55,7 +59,7 @@ registerRecordPostprocessListener(
 );
 
 const server = serve({
-  fetch: createApp(records, media, queue, oss, creationRead, creationProposals, memory, new Set(["user001"]), preferences).fetch,
+  fetch: createApp(records, media, queue, oss, creationRead, creationProposals, memory, preferences, { tokens: authTokens, service: auth }).fetch,
   port: config.port,
   hostname: config.host,
 });

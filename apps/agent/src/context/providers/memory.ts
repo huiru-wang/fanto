@@ -55,7 +55,7 @@ export class MemoryProvider implements ContextProvider {
     const queries = await this.rewriter.rewrite(input);
     if (queries.length === 0) return { section: "Relevant Memory", content: "" };
     const searches = await Promise.all(queries.map(query => this.client.searchRecords(
-      { userId: input.userId, traceId: input.traceId, signal: input.signal },
+      { accessToken: input.accessToken, traceId: input.traceId, signal: input.signal },
       { query, limit: 4 },
     )));
     const records = dedupeRecords(searches.flatMap(result => result.data)).slice(0, 2);

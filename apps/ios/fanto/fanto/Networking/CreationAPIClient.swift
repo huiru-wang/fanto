@@ -40,8 +40,6 @@ enum CreationAPIError: LocalizedError {
 struct CreationAPIClient {
     static let shared = CreationAPIClient()
 
-    private let userID = "user001"
-
     private let baseURL = URL(string: "https://fanto.robinverse.me")!
 
     func fetchOverview() async throws -> CreationOverview {
@@ -127,7 +125,8 @@ struct CreationAPIClient {
     private func request<Response: Decodable>(url: URL, method: String = "GET") async throws -> Response {
         var request = URLRequest(url: url)
         request.httpMethod = method
-        request.setValue(userID, forHTTPHeaderField: "x-user-id")
+        let token = try await AuthSession.shared.accessToken()
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw CreationAPIError.invalidResponse }
         let decoded = try decoder.decode(APIEnvelope<Response>.self, from: data)

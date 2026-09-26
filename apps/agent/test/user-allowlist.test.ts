@@ -2,30 +2,28 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createApp } from "../src/app.js";
 
-test("runtime user allowlist only permits user001", async () => {
+test("runtime identity comes only from verified access token", async () => {
+  const verifier = {
+    verify: async (token: string) => {
+      if (token !== "valid-token") throw new Error("invalid token");
+      return { userId: "550e8400-e29b-41d4-a716-446655440000" };
+    },
+  };
   const app = createApp(
-    "test-token",
+    verifier,
     {} as never,
     {} as never,
     {} as never,
     {} as never,
-    new Set(["user001"]),
   );
 
   const denied = await app.request(new Request("http://localhost/api/agent/unknown", {
-    headers: {
-      Authorization: "Bearer test-token",
-      "X-User-Id": "other-user",
-    },
+    headers: { Authorization: "Bearer invalid-token", "X-User-Id": "forged-user" },
   }));
   assert.equal(denied.status, 401);
-  assert.deepEqual(await denied.json(), { error: "Unauthorized" });
 
   const allowed = await app.request(new Request("http://localhost/api/agent/unknown", {
-    headers: {
-      Authorization: "Bearer test-token",
-      "X-User-Id": "user001",
-    },
+    headers: { Authorization: "Bearer valid-token", "X-User-Id": "forged-user" },
   }));
   assert.equal(allowed.status, 404);
 });

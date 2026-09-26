@@ -15,6 +15,7 @@ import { FantoServerClient } from "./fanto/client.js";
 import { SkillLoader } from "./skills/loader.js";
 import { AgentTaskRepository } from "./tasks/repository.js";
 import { TaskRunner } from "./tasks/runner.js";
+import { JwtAccessTokenVerifier } from "./auth/access.js";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const projectRoot = resolve(appRoot, "../..");
@@ -49,13 +50,13 @@ const tasks = new AgentTaskRepository(
 const runner = new TaskRunner(tasks, sessions, registry, contextRuntime);
 runner.start();
 
+const accessVerifier = await JwtAccessTokenVerifier.fromEnvironment();
 const app = createApp(
-  process.env.AGENT_TOKEN ?? "",
+  accessVerifier,
   registry,
   sessions,
   tasks,
   runner,
-  new Set(["user001"]),
   contextRuntime,
 );
 const server = serve({ fetch: app.fetch, hostname: "0.0.0.0", port }, info => {

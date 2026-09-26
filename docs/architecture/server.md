@@ -22,8 +22,9 @@ apps/server/src/
 ```mermaid
 flowchart LR
   C[Client] --> H[Hono]
-  H --> U[x-user-id validation]
-  U --> R[Route]
+  H --> U[Bearer access JWT validation]
+  U --> P[Authenticated principal from JWT sub]
+  P --> R[Route]
   R --> D[Domain / Repository]
   D --> DB[(Supabase PostgreSQL)]
 ```

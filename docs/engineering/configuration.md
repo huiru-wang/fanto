@@ -15,6 +15,11 @@
 | --- | --- |
 | `DATABASE_URL` | Server 的 Supabase PostgreSQL 连接串；必须启用 TLS。使用 Supabase Pooler 时附加 `sslmode=require&uselibpqcompat=true` |
 | `PORT` / `HOST` | 默认 `3000` / `0.0.0.0` |
+| `AUTH_JWT_ACTIVE_KID` | 当前 EdDSA 签名密钥 ID |
+| `AUTH_JWT_PRIVATE_KEY` | Ed25519 PKCS#8 私钥，仅 Business Server 持有 |
+| `AUTH_JWT_PUBLIC_KEYS` | `kid -> Ed25519 public key` JSON，用于验签与密钥轮换 |
+| `AUTH_JWT_ISSUER` | JWT issuer，默认 `fanto` |
+| `GOOGLE_ALLOWED_CLIENT_IDS` | 允许的 Google OAuth Client ID，多个值用逗号分隔 |
 | `OSS_REGION` | OSS Region |
 | `OSS_ENDPOINT` | 可选公开 Endpoint；拒绝 `-internal` 地址 |
 | `OSS_BUCKET` | OSS Bucket |
@@ -34,7 +39,8 @@
 | 变量 | 说明 |
 | --- | --- |
 | `PORT` | Agent 服务端口，默认 3001 |
-| `AGENT_TOKEN` | HTTP Bearer Token |
+| `AUTH_JWT_PUBLIC_KEYS` | 与 Business Server 相同的 Ed25519 公钥集合；Agent 只验签、不持有私钥 |
+| `AUTH_JWT_ISSUER` | 与 Business Server 相同的 issuer，默认 `fanto` |
 | `DEEPSEEK_API_KEY` 等 | 模型 Provider 所需密钥 |
 | `FANTO_SERVER_BASE_URL` | Record Tool 访问 Business Server 的 base URL，默认 `http://127.0.0.1:3000` |
 | `AGENT_SESSION_DB` | Agent Session / Task SQLite |

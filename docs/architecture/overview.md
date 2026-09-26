@@ -45,13 +45,13 @@ Agent Runtime 使用独立 SQLite 保存 Pi Session 与 Agent Task，并在 `AGE
 
 ## 用户边界
 
-Business Server 除 `GET /health` 外要求 `x-user-id`，当前它只承担开发阶段的用户隔离，不是正式认证。
+Business Server 的公开入口只有健康检查与 Google 注册 / 登录 / Refresh。其余业务 API 统一验证 EdDSA Access JWT，并只从经过验证的 `sub` 生成 `principal.userId`；客户端提交的用户 ID 不参与授权。
 
-Agent Runtime 除健康检查外使用 Bearer Token，并要求 `X-User-Id`；Session 归属会持久化在 Pi Session custom entry 中。
+Agent Runtime 使用同一 Access JWT，验证 `fanto-agent` audience 后以 `sub` 绑定 Session 归属。Agent 调用 Business Server 时原样转发 Authorization，Business Server 再独立验证 `fanto-api` audience。Access Token 有效期 30 分钟，Refresh Token 为 30 天滑动有效期。
 
 ## 当前可靠性边界
 
 - Business Server 的 Record 后置任务通过进程内 EventEmitter 触发，不持久化、不自动重试。
 - Agent 异步任务有 SQLite 状态，但 Runner 当前按单实例设计；服务重启时遗留的 running task 会失败而不是自动重放。
 - iOS 当前访问固定 HTTP ECS 地址且仍使用演示用户；该用户与当前公网 allowlist 不一致，尚未形成可直接使用的公网链路，也未具备正式认证和生产级服务发现。
-- H5 当前固定使用 `user001` 并内置测试 Agent Token，只适用于受控测试环境。
+- H5 当前客户端仍是旧测试身份实现；后端已不再接受该身份方式，H5 需要后续接入新的 Google + Access/Refresh Token 登录流程。

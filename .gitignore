@@ -16,3 +16,5 @@ workspaces/
 .swc/
 test-results/
 playwright-report/
+*.tmp
+**/xcuserdata/

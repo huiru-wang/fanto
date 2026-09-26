@@ -26,7 +26,7 @@ Node.js 22.19+。在仓库根目录执行：
 ```sh
 pnpm install
 cp apps/agent/.env.example apps/agent/.env
-# 编辑 .env，设置 AGENT_TOKEN 和 DEEPSEEK_API_KEY
+# 编辑 .env，设置 ACCESS_TOKEN 和 DEEPSEEK_API_KEY
 # FANTO_SERVER_BASE_URL 默认 http://127.0.0.1:3000
 pnpm --filter @fanto/agent dev
 ```
@@ -111,33 +111,31 @@ Agent Tool
 → Business Server HTTP
 ```
 
-`userId` 不存在于 Tool 参数中，只能来自 Session 对应的 Run Context。Business Server 地址由 `FANTO_SERVER_BASE_URL` 配置，默认 `http://127.0.0.1:3000`。Client 统一处理 `x-user-id`、可选 `x-trace-id`、15 秒 timeout、运行取消和 Fanto JSON envelope。
+`userId` 不存在于 Tool 参数中，只能来自 Session 对应的 Run Context。Business Server 地址由 `FANTO_SERVER_BASE_URL` 配置，默认 `http://127.0.0.1:3000`。Client 统一透传当前 Run 的 Access Token，并处理可选 `x-trace-id`、15 秒 timeout、运行取消和 Fanto JSON envelope。
 
 ## HTTP / SSE
 
 除 `GET /health` 外，接口都需要：
 
 ```text
-Authorization: Bearer <AGENT_TOKEN>
-X-User-Id: <用户 ID>
+Authorization: Bearer <ACCESS_TOKEN>
 X-Trace-Id: <可选链路 ID，可省略>
 X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC>
 ```
 
 ### 创建 Session
 
-先调用 `POST /api/agent/sessions` 创建 Session。请求体的 `agentId` 可省略，省略时使用 `main`；服务从 `x-user-id` 读取用户归属并写入 Pi Session，同时创建 `data/workspaces/<sessionId>` 工作区。`traceId` 只从 `x-trace-id` 读取。
+先调用 `POST /api/agent/sessions` 创建 Session。请求体的 `agentId` 可省略，省略时使用 `main`；服务从验证后的 Access JWT `sub` 读取用户归属并写入 Pi Session，同时创建 `data/workspaces/<sessionId>` 工作区。`traceId` 只从 `x-trace-id` 读取。
 
 ```json
 { "agentId": "main" }
 ```
 
 ```sh
-export AGENT_TOKEN='替换为服务端 AGENT_TOKEN'
+export ACCESS_TOKEN='替换为服务端 ACCESS_TOKEN'
 
 SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
-  -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user001' \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'X-Trace-Id: trace_001' \
   -H 'Content-Type: application/json' \
   -d '{"agentId":"main"}' \
@@ -156,8 +154,7 @@ SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
 
 ```sh
 curl -N http://127.0.0.1:3001/api/agent/stream \
-  -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user001' \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'X-Trace-Id: trace_002' \
   -H 'Content-Type: application/json' \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"用一句话介绍你自己\"}"
@@ -196,8 +193,7 @@ data: {}
 
 ```sh
 curl "http://127.0.0.1:3001/api/agent/sessions/$SESSION_ID/history?limit=50" \
-  -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user001'
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
 ```
 
 返回格式：
@@ -221,16 +217,14 @@ curl "http://127.0.0.1:3001/api/agent/sessions/$SESSION_ID/history?limit=50" \
 
 ```sh
 TASK_ID=$(curl -sS http://127.0.0.1:3001/api/agent/tasks \
-  -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user001' \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'X-Trace-Id: trace_003' \
   -H 'Content-Type: application/json' \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"列出当前工作区的文件\"}" \
   | node -pe 'JSON.parse(require("fs").readFileSync(0, "utf8")).result.id')
 
 curl "http://127.0.0.1:3001/api/agent/tasks/$TASK_ID" \
-  -H "Authorization: Bearer $AGENT_TOKEN" \
-  -H 'X-User-Id: user001'
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
 ```
 
 异步任务持久化在 `agent_tasks`，与 Pi Session 共用 Agent 专用 SQLite。当前 Runner 仅适用于单实例服务；服务重启时遗留的 `running` 任务会标记为 `failed`，避免重复执行带写操作的任务。
