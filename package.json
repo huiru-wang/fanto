@@ -9,6 +9,8 @@
     "dev:frontend": "pnpm dev:h5",
     "dev:h5": "pnpm --filter @fanto/h5 dev",
     "build:h5": "pnpm --filter @fanto/h5 build",
+    "deploy": "bash deploy/manual/deploy.sh",
+    "deploy:nginx": "bash deploy/manual/deploy.sh --nginx",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
     "db:migrate": "pnpm --filter @fanto/server db:migrate",

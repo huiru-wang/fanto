@@ -52,7 +52,7 @@ H5 开发服务器会把 `/api/agent/*` 代理到 `127.0.0.1:3001`，其余 `/ap
 pnpm build:h5
 ```
 
-手工部署环境可运行 `deploy/manual/start.sh h5`（或 `start.sh all`）构建并发布 H5；默认目标为 `/var/www/fanto-h5`，可用 `H5_DEPLOY_DIR` 覆盖。发布会先在暂存目录准备完整构建产物，再替换静态目录；配套 Nginx 配置会从该目录提供 SPA。H5 没有独立常驻进程，因此 `stop.sh h5` 是安全的无操作，`restart.sh h5` 等价于重新构建并发布。
+生产部署统一使用 `pnpm deploy`。脚本会校验 `.env.production`、安装依赖、预构建 H5、使用 Server 的 `.env.production` 执行 PostgreSQL migration、重启 Server/Agent、发布 H5，并检查 3000/3001 的 `/health`。日常发布不会修改 Nginx；只有首次部署或 Nginx 配置发生变化时使用 `pnpm deploy:nginx`，它会在校验通过后覆盖 `/etc/nginx/nginx.conf` 并 reload。H5 默认发布到 `/var/www/fanto-h5`，可用 `H5_DEPLOY_DIR` 覆盖。底层 `start.sh` / `stop.sh` / `restart.sh` 仍保留用于单服务运维。
 
 ## 数据文件
 

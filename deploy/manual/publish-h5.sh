@@ -6,7 +6,9 @@ DIST="$ROOT/apps/h5/dist"
 TARGET="${H5_DEPLOY_DIR:-/var/www/fanto-h5}"
 
 cd "$ROOT"
-pnpm build:h5
+if [[ "${FANTO_SKIP_H5_BUILD:-0}" != "1" ]]; then
+  pnpm build:h5
+fi
 
 if [[ ! -f "$DIST/index.html" ]]; then
   echo "[ERROR] H5 build did not produce $DIST/index.html"
