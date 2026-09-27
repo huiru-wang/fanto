@@ -115,7 +115,7 @@ Context Build 失败采用降级策略：单个 Provider 普通失败只使对�
 
 ## Session
 
-调用方必须先通过 `POST /api/agent/sessions` 创建 Session，再用同一 `sessionId` 发起 stream 或 task。
+调用方必须先通过 `POST /api/agent/sessions` 创建 Session，再用同一 `sessionId` 发起 stream。
 
 每个 Session 绑定：
 
@@ -126,23 +126,13 @@ Context Build 失败采用降级策略：单个 Provider 普通失败只使对�
 
 绑定信息保存在 Pi Session 的 `fanto.session_owner` custom entry。旧 Session 在下一次执行时可以应用当前 Agent revision；如果调用方指定另一个 Agent，空闲 Session 可以切换 Agent，同时保留历史和工作区。
 
-同一 Session 同时只允许一个运行。Session Manager 不负责执行 Prompt；stream 与 Task 都调用同一个 `runAgent()`。
+同一 Session 同时只允许一个运行。Session Manager 不负责执行 Prompt；`agent/run.ts` 是唯一执行入口。
 
 ## 执行方式
 
 ### Stream
 
 `POST /api/agent/stream` 使用 POST 响应体 SSE。除 `start`、`delta`、`done` / `error` 外，还会发送 Pi 运行阶段的 `turn_start`、`tool_start` 和 `tool_end`。普通工具事件只公开 `toolCallId`、`toolName` 与成功/失败状态；唯一例外是成功的 `present_media`，其 `tool_end` 会额外返回经过白名单映射的稳定媒体 metadata，供客户端渲染。Record Tool 参数、结果、内部错误与 reasoning 仍不对客户端公开。断连会取消执行，单次请求有超时限制。
-
-### Task
-
-`POST /api/agent/tasks` 创建异步任务，任务状态持久化在 Agent SQLite：
-
-```text
-pending -> running -> completed | failed
-```
-
-当前 Runner 只适合单实例。进程重启后遗留的 running task 会标记失败，不自动重放。
 
 ## 历史
 

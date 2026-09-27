@@ -3,7 +3,6 @@ import { createContextKey, TODO_CONTEXT, type Context, withContextValue } from "
 export type RunMetadata = {
   userId: string;
   accessToken: string;
-  taskId?: string;
   traceId?: string;
   timeZone?: string;
   sessionId?: string;
@@ -13,14 +12,12 @@ export type RunMetadata = {
 };
 
 export const userIdContextKey = createContextKey<string>("fanto.agent.userId");
-export const taskIdContextKey = createContextKey<string>("fanto.agent.taskId");
 export const traceIdContextKey = createContextKey<string>("fanto.agent.traceId");
 export const runMetadataContextKey = createContextKey<RunMetadata>("fanto.agent.runMetadata");
 
 export function createRunContext(metadata: RunMetadata): Context {
   let context = withContextValue(runMetadataContextKey, metadata, TODO_CONTEXT);
   context = withContextValue(userIdContextKey, metadata.userId, context);
-  if (metadata.taskId) context = withContextValue(taskIdContextKey, metadata.taskId, context);
   if (metadata.traceId) context = withContextValue(traceIdContextKey, metadata.traceId, context);
   return context;
 }

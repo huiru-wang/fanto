@@ -6,7 +6,7 @@
 { "success": true, "result": {}, "errorCode": null, "errorMsg": null }
 ```
 
-除健康检查、Google 认证 intent、Google 认证、兼容的注册/登录接口和 Refresh 外，所有 API 都要求 `Authorization: Bearer <access token>`。Access Token 有效期 30 分钟；Refresh Token 有效期 30 天并采用滑动续期。用户身份只来自服务端验证后的 JWT `sub`。
+除健康检查、第三方认证 intent、第三方认证、兼容的注册/登录接口和 Refresh 外，所有 API 都要求 `Authorization: Bearer <access token>`。Access Token 有效期 30 分钟；Refresh Token 有效期 30 天并采用滑动续期。用户身份只来自服务端验证后的 JWT `sub`。
 
 ## 健康检查
 
@@ -16,8 +16,8 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/auth/intents` | 为 Google 认证创建一次性 challenge |
-| POST | `/api/auth/authentications` | 用 Google proof 登录；新身份会自动创建 Fanto 用户 |
+| POST | `/api/auth/intents` | 为 Google 或 Apple 认证创建一次性 challenge |
+| POST | `/api/auth/authentications` | 用第三方 proof 登录；新身份会自动创建 Fanto 用户 |
 | POST | `/api/auth/registrations` | 使用 Google proof 创建 Fanto 用户 |
 | POST | `/api/auth/logins` | 使用 Google proof 登录已有 Fanto 用户 |
 | POST | `/api/auth/tokens/refresh` | 用 refresh token 换取新的 access / refresh token 对 |
@@ -28,7 +28,7 @@
 { "purpose": "authenticate", "provider": "google" }
 ```
 
-客户端登录应创建 `purpose=authenticate` 的 intent。成功响应的 `result` 包含 `intentId`、`provider`、`expiresAt` 和 `challenge.nonce`；iOS 将 nonce 传给 Google Sign-In，随后以 `{ "intentId": "...", "proof": { "idToken": "..." } }` 调用 `/api/auth/authentications`。Server 验证 Google token 的签名、issuer、audience、expiry、sub 和 nonce，在同一事务中按 Google `sub` 登录已有用户或创建新用户，再签发 Fanto JWT。Google ID token 不可用于其他业务接口。`register` 与 `login` purpose 以及对应 endpoints 仍保留给兼容调用方，但 iOS 不使用它们。
+客户端登录应创建 `purpose=authenticate` 的 intent，`provider` 可为 `google` 或 `apple`。成功响应的 `result` 包含 `intentId`、`provider`、`expiresAt` 和 `challenge.nonce`；iOS 将 nonce 传给对应的原生身份 SDK，随后以 `{ "intentId": "...", "proof": { "idToken": "..." } }` 调用 `/api/auth/authentications`。Server 验证 provider token 的签名、issuer、audience、expiry、sub 和 nonce，在同一事务中按 `(provider, sub)` 登录已有用户或创建新用户，再签发 Fanto JWT。第三方 ID token 不可用于其他业务接口。`register` 与 `login` purpose 以及对应 endpoints 仍保留给兼容调用方，但 iOS 不使用它们。
 
 认证成功结果为 `{ user, accessToken, accessTokenExpiresAt, refreshToken, refreshTokenExpiresAt }`，其中 `user` 为 `{ userId, status }`。Access Token 有效期 30 分钟，Refresh Token 有效期 30 天。常见认证错误包括：`IDENTITY_NOT_REGISTERED`、`IDENTITY_ALREADY_REGISTERED`、`CHALLENGE_INVALID`、`INVALID_PROVIDER_PROOF`、`USER_DISABLED`、`REFRESH_TOKEN_INVALID` 和 `RATE_LIMITED`。
 
@@ -176,10 +176,8 @@ X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC
 | POST | `/api/agent/sessions` | `{ agentId? }` | `201`，返回 `sessionId` 与 `agentId` |
 | POST | `/api/agent/stream` | `{ agentId?, sessionId, message }` | `200`，SSE 事件流 |
 | GET | `/api/agent/sessions/:sessionId/history?cursor=&limit=` | 无请求体 | `200`，倒序历史页 |
-| POST | `/api/agent/tasks` | `{ agentId?, sessionId, message }` | `202`，任务元数据 |
-| GET | `/api/agent/tasks/:taskId` | 无请求体 | `200`，任务状态与结果 |
 
-先创建 Session；`stream` 和 `tasks` 必须使用该 `sessionId`。`agentId` 可省略，省略时固定使用 `main`。Session 固定绑定 `userId` 和工作区；请求的 `agentId` 是本次执行目标，服务会在 Session 空闲时自动应用或切换到该 Agent。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<sessionId>`。
+先创建 Session；`stream` 必须使用该 `sessionId`。`agentId` 可省略，省略时固定使用 `main`。Session 固定绑定 `userId` 和工作区；请求的 `agentId` 是本次执行目标，服务会在 Session 空闲时自动应用或切换到该 Agent。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<sessionId>`。
 
 ```sh
 export ACCESS_TOKEN='替换为服务端 ACCESS_TOKEN'
@@ -219,16 +217,4 @@ curl -N http://127.0.0.1:3001/api/agent/stream \
 }
 ```
 
-异步任务创建后立即返回 `pending` 元数据。任务状态为 `pending`、`running`、`completed` 或 `failed`；完成时 `output` 有值，失败时 `error` 有值：
-
-```sh
-curl -sS http://127.0.0.1:3001/api/agent/tasks \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H 'X-Trace-Id: trace_003' \
-  -H 'Content-Type: application/json' \
-  -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"列出工作区文件\"}"
-```
-
-`agent_tasks` 与 Pi Session 共用 Agent 专用 SQLite。当前后台 Runner 只支持单实例部署；服务中断时遗留的 `running` 任务会标记为 `failed`，不自动重跑。完整配置与更多示例见 [Agent 服务说明](../../apps/agent/README.md)。
-
-`apps/agent/agents.yaml` 及其通过 `systemPromptFile` 引用的 Prompt 文件仅在服务启动时加载，不做运行时热更新。变更 YAML 或 Prompt 后需要重启服务；已有 Session 在下一次 stream 或 task 执行时会自动升级，无需额外状态查询或配置更新接口。
+`apps/agent/agents.yaml` 及其通过 `systemPromptFile` 引用的 Prompt 文件仅在服务启动时加载，不做运行时热更新。变更 YAML 或 Prompt 后需要重启服务；已有 Session 在下一次 stream 执行时会自动升级，无需额外状态查询或配置更新接口。

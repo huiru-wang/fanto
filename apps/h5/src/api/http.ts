@@ -1,4 +1,4 @@
-import { FANTO_USER_ID } from "../config";
+import { authorizedFetch } from "../auth/test-session";
 
 export class ApiError extends Error {
   constructor(
@@ -11,10 +11,9 @@ export class ApiError extends Error {
 
 export async function requestJson<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  headers.set("X-User-Id", FANTO_USER_ID);
   if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
 
-  const response = await fetch(path, { ...init, headers });
+  const response = await authorizedFetch(path, { ...init, headers });
   const payload = await response.json().catch(() => null) as {
     success?: boolean;
     result?: T;

@@ -13,8 +13,6 @@ import { CurrentTimeProvider } from "./context/providers/time.js";
 import { ContextRuntime } from "./context/runtime.js";
 import { FantoServerClient } from "./fanto/client.js";
 import { SkillLoader } from "./skills/loader.js";
-import { AgentTaskRepository } from "./tasks/repository.js";
-import { TaskRunner } from "./tasks/runner.js";
 import { JwtAccessTokenVerifier } from "./auth/access.js";
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -44,19 +42,11 @@ const sessions = new AgentSessionManager(
   fromProjectRoot(process.env.AGENT_SESSION_DB, "data/agent-sessions.sqlite"),
   fromProjectRoot(process.env.AGENT_WORKSPACE_ROOT, "data/workspaces"),
 );
-const tasks = new AgentTaskRepository(
-  fromProjectRoot(process.env.AGENT_SESSION_DB, "data/agent-sessions.sqlite"),
-);
-const runner = new TaskRunner(tasks, sessions, registry, contextRuntime);
-runner.start();
-
 const accessVerifier = await JwtAccessTokenVerifier.fromEnvironment();
 const app = createApp(
   accessVerifier,
   registry,
   sessions,
-  tasks,
-  runner,
   contextRuntime,
 );
 const server = serve({ fetch: app.fetch, hostname: "0.0.0.0", port }, info => {
@@ -66,8 +56,6 @@ const server = serve({ fetch: app.fetch, hostname: "0.0.0.0", port }, info => {
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, () => {
     server.close(() => {
-      runner.stop();
-      tasks.close();
       void sessions.close().finally(() => process.exit(0));
     });
     setTimeout(() => process.exit(1), 10_000).unref();

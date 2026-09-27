@@ -10,8 +10,7 @@ src/
 ├── context/     # runtime / builder / composer / providers
 ├── tools/       # Pi Tool 扩展
 ├── fanto/       # Business Server client + schemas
-├── http/        # stream / sessions / tasks
-├── tasks/       # async task repository + runner
+├── http/        # stream / sessions
 ├── workspace/   # path / bash policy
 ├── app.ts
 └── main.ts
@@ -211,25 +210,7 @@ curl "http://127.0.0.1:3001/api/agent/sessions/$SESSION_ID/history?limit=50" \
 }
 ```
 
-### 异步任务
-
-`POST /api/agent/tasks` 立即返回 `202` 与任务元数据。任务在后台使用既有 Session 执行，状态依次为 `pending`、`running`、`completed` 或 `failed`。查询使用 `GET /api/agent/tasks/:taskId`。
-
-```sh
-TASK_ID=$(curl -sS http://127.0.0.1:3001/api/agent/tasks \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H 'X-Trace-Id: trace_003' \
-  -H 'Content-Type: application/json' \
-  -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"列出当前工作区的文件\"}" \
-  | node -pe 'JSON.parse(require("fs").readFileSync(0, "utf8")).result.id')
-
-curl "http://127.0.0.1:3001/api/agent/tasks/$TASK_ID" \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-```
-
-异步任务持久化在 `agent_tasks`，与 Pi Session 共用 Agent 专用 SQLite。当前 Runner 仅适用于单实例服务；服务重启时遗留的 `running` 任务会标记为 `failed`，避免重复执行带写操作的任务。
-
-`agents.yaml` 与 `systemPromptFile` 引用的 Prompt 都不做运行时热更新。修改 `apps/agent/agents.yaml` 或 Prompt 文件后重启 Agent 服务；无需调用 Session 状态或配置更新接口，下一次 stream 或 task 执行会自动升级旧 Session 的配置。
+`agents.yaml` 与 `systemPromptFile` 引用的 Prompt 都不做运行时热更新。修改 `apps/agent/agents.yaml` 或 Prompt 文件后重启 Agent 服务；无需调用 Session 状态或配置更新接口，下一次 stream 执行会自动升级旧 Session 的配置。
 
 ## 工具隔离
 

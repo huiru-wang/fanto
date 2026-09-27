@@ -6,17 +6,12 @@ import type { AgentSessionManager } from "./agent/session.js";
 import type { ContextRuntime } from "./context/runtime.js";
 import { createSessionRoutes } from "./http/sessions.js";
 import { createAgentRoutes } from "./http/stream.js";
-import { createTaskRoutes } from "./http/tasks.js";
-import type { AgentTaskRepository } from "./tasks/repository.js";
-import type { TaskRunner } from "./tasks/runner.js";
 import { bearerToken, runWithAgentPrincipal, type AccessTokenVerifier } from "./auth/access.js";
 
 export function createApp(
   verifier: AccessTokenVerifier,
   registry: AgentRegistry,
   sessions: AgentSessionManager,
-  tasks: AgentTaskRepository,
-  runner: TaskRunner,
   contextRuntime?: ContextRuntime,
 ): Hono {
   const app = new Hono();
@@ -42,6 +37,5 @@ export function createApp(
 
   app.route("/api/agent", createSessionRoutes(registry, sessions));
   app.route("/api/agent", createAgentRoutes(registry, sessions, contextRuntime));
-  app.route("/api/agent", createTaskRoutes(registry, sessions, tasks, runner));
   return app;
 }

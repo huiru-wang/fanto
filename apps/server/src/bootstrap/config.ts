@@ -18,6 +18,7 @@ export interface AppConfig {
     accessTtlSeconds: number;
     refreshTtlSeconds: number;
     googleAllowedClientIds: string[];
+    appleAllowedClientIds: string[];
   };
   oss: { region: string; endpoint?: string; bucket: string; accessKeyId: string; accessKeySecret: string };
   dashscope: { apiKey: string; baseUrl: string; embeddingModel: string; embeddingDimension: number; visionModel: string; asrModel: string };
@@ -54,6 +55,8 @@ export function loadConfig(): AppConfig {
   if (!publicKeys[activeKid]) throw new Error("AUTH_JWT_PUBLIC_KEYS must contain AUTH_JWT_ACTIVE_KID");
   const googleAllowedClientIds = required("GOOGLE_ALLOWED_CLIENT_IDS").split(",").map(value => value.trim()).filter(Boolean);
   if (googleAllowedClientIds.length === 0) throw new Error("GOOGLE_ALLOWED_CLIENT_IDS is required");
+  const appleAllowedClientIds = required("APPLE_ALLOWED_CLIENT_IDS").split(",").map(value => value.trim()).filter(Boolean);
+  if (appleAllowedClientIds.length === 0) throw new Error("APPLE_ALLOWED_CLIENT_IDS is required");
 
   return {
     databaseUrl,
@@ -69,6 +72,7 @@ export function loadConfig(): AppConfig {
       accessTtlSeconds: 30 * 60,
       refreshTtlSeconds: 30 * 24 * 60 * 60,
       googleAllowedClientIds,
+      appleAllowedClientIds,
     },
     oss: {
       region: process.env.OSS_REGION ?? "oss-rg-china-mainland",

@@ -20,6 +20,7 @@
 | `AUTH_JWT_PUBLIC_KEYS` | `kid -> Ed25519 public key` JSON，用于验签与密钥轮换 |
 | `AUTH_JWT_ISSUER` | JWT issuer，默认 `fanto` |
 | `GOOGLE_ALLOWED_CLIENT_IDS` | 允许的 Google OAuth Client ID，多个值用逗号分隔 |
+| `APPLE_ALLOWED_CLIENT_IDS` | 允许的 Apple 原生 App ID / Bundle ID，多个值用逗号分隔 |
 | `OSS_REGION` | OSS Region |
 | `OSS_ENDPOINT` | 可选公开 Endpoint；拒绝 `-internal` 地址 |
 | `OSS_BUCKET` | OSS Bucket |
@@ -47,6 +48,17 @@
 | `AGENT_WORKSPACE_ROOT` | Session 工作区根目录 |
 
 Agent definition 的 `models` 与 `agents` 由 `apps/agent/agents.yaml` 定义。每个模型项包含 Pi provider 与 model，Agent 通过 `provider/model` 形式的 `model_id` 引用模型项；服务在启动期校验引用和 Pi 内置模型，并要求 `main` Agent 存在。System Prompt 可以直接写在 `systemPrompt`，也可以通过 `systemPromptFile` 引用相对 `agents.yaml` 的 Prompt 文件；两者不能同时配置。可选 `corePromptFile` 会在最终 System Prompt 前拼入，同样只能位于配置目录内。当前 Fanto 使用 `apps/agent/prompts/core.md` 和 `apps/agent/prompts/operational.md`。Prompt 文件只在 Agent Runtime 启动时读取，内容会参与 Agent revision 计算；`main` 的模板包含 `{{character}}`、`{{current_time}}`、`{{user_preferences}}`、`{{relevant_memory}}` 四个插槽，由 Context Runtime 在每次 Agent Run 开始前构建，并由 Context Composer 填充一次。密钥只能来自环境变量。
+
+## H5 线上测试认证
+
+线上 H5 可通过 `apps/h5/.env.production` 的以下构建时变量，以预置 refresh token 建立测试用户会话：
+
+| 变量 | 说明 |
+| --- | --- |
+| `VITE_H5_TEST_AUTH` | 必须为 `true`，否则 H5 不进入测试会话 |
+| `VITE_H5_TEST_REFRESH_TOKEN` | 由 Business Server 为测试用户签发的 refresh token |
+
+H5 启动时调用现有 `/api/auth/tokens/refresh`，在 `sessionStorage` 保存返回的 Token 对，并将 access token 用于 Business Server 与 Agent Runtime 请求。测试用户必须在 `users` 表中存在且为 `active`；不需要登录 identity 或 auth challenge。H5 不再以 `X-User-Id` 传递用户身份。
 
 ## 安全约束
 

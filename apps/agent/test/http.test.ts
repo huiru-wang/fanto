@@ -3,7 +3,6 @@ import test from "node:test";
 import { createApp } from "../src/app.js";
 
 const sessionId = "8c52e2fc-1741-42b3-8973-cfae75ff3f63";
-const taskId = "8c52e2fc-1741-42b3-8973-cfae75ff3f64";
 const definition = {
   id: "coding", description: "", provider: "deepseek", model: "deepseek-v4-pro", systemPrompt: "test",
   tools: [], skills: [], compaction: { enabled: false, reserveTokens: 0, keepRecentTokens: 0 },
@@ -72,7 +71,7 @@ function fakeRunSession(calls: string[]) {
 
 
 test("allows browser CORS preflight for Agent APIs", async () => {
-  const app = createApp(verifier, registry, {} as never, {} as never, {} as never);
+  const app = createApp(verifier, registry, {} as never);
   const response = await app.request(new Request("http://localhost/api/agent/stream", {
     method: "OPTIONS",
     headers: {
@@ -98,7 +97,7 @@ test("creates a session before streaming and requires its id", async () => {
     reserve: () => () => {},
     history: async () => ({ agentId: "coding", entries: [], hasMore: false, nextCursor: null }),
   };
-  const app = createApp(verifier, registry, sessions as never, { create: () => undefined, get: () => undefined } as never, { wake: () => {} } as never);
+  const app = createApp(verifier, registry, sessions as never);
   const created = await app.request(request("/api/agent/sessions", { agentId: "coding" }));
   const payload = await created.json() as { result: { sessionId: string } };
   assert.equal(created.status, 201);
@@ -130,14 +129,14 @@ test("uses the registry default when session creation omits agentId", async () =
     reserve: () => () => {},
     history: async () => ({ agentId: "coding", entries: [], hasMore: false, nextCursor: null }),
   };
-  const app = createApp(verifier, registry, sessions as never, { create: () => undefined, get: () => undefined } as never, { wake: () => {} } as never);
+  const app = createApp(verifier, registry, sessions as never);
   const response = await app.request(request("/api/agent/sessions", {}));
   assert.equal(response.status, 201);
 });
 
 test("rejects an unknown agent", async () => {
   const sessions = { create: async () => ({ id: sessionId, agentId: "coding" }), acquire: async () => ({ id: sessionId, agentId: "coding" }), reserve: () => () => {}, prompt: async () => "", history: async () => ({ agentId: "coding", entries: [], hasMore: false, nextCursor: null }) };
-  const app = createApp(verifier, registry, sessions as never, {} as never, {} as never);
+  const app = createApp(verifier, registry, sessions as never);
   assert.equal((await app.request(request("/api/agent/stream", { agentId: "missing", sessionId, message: "hello" }))).status, 404);
 });
 
@@ -146,26 +145,11 @@ test("reads reverse history without compaction entries", async () => {
     create: async () => ({ id: sessionId, agentId: "coding" }), acquire: async () => ({ id: sessionId, agentId: "coding" }), reserve: () => () => {}, prompt: async () => "",
     history: async () => ({ agentId: "coding", entries: [{ type: "message", id: "b", parentId: null, seq: 8, timestamp: 2, message: { role: "user", content: "hello", timestamp: 2 } }], hasMore: true, nextCursor: 8 }),
   };
-  const app = createApp(verifier, registry, sessions as never, {} as never, {} as never);
+  const app = createApp(verifier, registry, sessions as never);
   const response = await app.request(request(`/api/agent/sessions/${sessionId}/history?limit=1`));
   const payload = await response.json() as { result: { data: Array<{ seq: number }>; hasMore: boolean; nextCursor: number } };
   assert.equal(response.status, 200);
   assert.deepEqual(payload.result.data.map(entry => entry.seq), [8]);
   assert.equal(payload.result.hasMore, true);
   assert.equal(payload.result.nextCursor, 8);
-});
-
-test("queues and reads an asynchronous task", async () => {
-  const calls: string[] = [];
-  const task = { id: taskId, sessionId, agentId: "coding", status: "pending", input: "hello", output: null, error: null, traceId: "trace_1", createdAt: "2026-09-16T00:00:00.000Z", updatedAt: "2026-09-16T00:00:00.000Z" };
-  const sessions = { create: async () => ({ id: sessionId, agentId: "coding" }), acquire: async () => ({ id: sessionId, agentId: "coding" }), assertOwnership: async () => {}, reserve: () => () => {}, prompt: async () => "", history: async () => ({ agentId: "coding", entries: [], hasMore: false, nextCursor: null }) };
-  const tasks = { create: (input: { message: string }) => { calls.push(input.message); return task; }, get: (id: string) => id === taskId ? task : undefined };
-  const runner = { registerAccessToken: () => {}, wake: () => calls.push("wake") };
-  const app = createApp(verifier, registry, sessions as never, tasks as never, runner as never);
-  const created = await app.request(request("/api/agent/tasks", { agentId: "coding", sessionId, message: "hello" }));
-  assert.equal(created.status, 202);
-  assert.deepEqual(calls, ["hello", "wake"]);
-  const result = await app.request(request(`/api/agent/tasks/${taskId}`));
-  assert.equal(result.status, 200);
-  assert.equal((await result.json() as { result: { id: string } }).result.id, taskId);
 });

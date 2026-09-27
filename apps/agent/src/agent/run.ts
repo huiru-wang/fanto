@@ -23,7 +23,7 @@ export async function runAgent(
   session: RunSession,
   message: string,
   signal: AbortSignal,
-  metadata: Pick<RunMetadata, "taskId" | "traceId" | "timeZone" | "accessToken">,
+  metadata: Pick<RunMetadata, "traceId" | "timeZone" | "accessToken">,
   contextRuntime: ContextRuntime | undefined,
   emit: (event: AgentStreamEvent) => Promise<void>,
 ): Promise<string> {

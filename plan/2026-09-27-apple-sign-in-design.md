@@ -71,7 +71,7 @@ Apple 的 JWKS 可由 `jose` 的 remote JWK set 缓存；不得固定公钥、�
 
 使用系统 `AuthenticationServices`，不添加第三方 SDK。Provider 封装负责：将 Server 原始 nonce 放入 `ASAuthorizationAppleIDRequest.nonce`、请求 `.fullName` / `.email`、保留 `ASAuthorizationController` 生命周期、将 `identityToken` 以 UTF-8 转为 String，并把用户取消与系统错误映射为既有 `AuthenticationError`。
 
-`AuthenticationStore` 统一编排 intent → provider token → `/auth/authentications` → 安装 Fanto session；Google 与 Apple 只在创建 intent 的 provider 值和获取 ID Token 的步骤不同。登录页使用系统 `SignInWithAppleButton`，与 Google 按钮使用同一提交中状态，避免并发认证。
+`AuthenticationStore` 统一编排 intent → provider token → `/auth/authentications` → 安装 Fanto session；Google 与 Apple 只在创建 intent 的 provider 值和获取 ID Token 的步骤不同。登录页使用系统 `ASAuthorizationAppleIDButton`（通过 SwiftUI 包装）；这样点击后能先异步取得 Server nonce，再启动原生授权控制器，并与 Google 按钮共享同一提交中状态。
 
 ### 配置与平台前置条件
 
@@ -96,4 +96,3 @@ Apple Developer 后台须启用 `com.robinverse.fanto` 的 Sign in with Apple（
 - `pnpm --filter @fanto/server typecheck` 与 `pnpm --filter @fanto/server test` 均通过。
 - Xcode 成功构建，真机验证首次授权、取消、再次登录及 Apple “隐藏我的邮箱”。
 - 生产部署前后从同一 Node 运行时验证 `https://appleid.apple.com/auth/keys` 返回 200，随后使用测试 Apple ID 完成端到端登录。
-

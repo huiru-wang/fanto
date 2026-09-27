@@ -13,8 +13,6 @@ export const streamRequestSchema = z.object({
   sessionId: z.string().uuid(),
   message: z.string().trim().min(1).max(16_000),
 }).strict();
-export const taskRequestSchema = streamRequestSchema;
-export const taskParamsSchema = z.object({ taskId: z.string().uuid() });
 export const sessionParamsSchema = z.object({ sessionId: z.string().uuid() });
 export const cursorSchema = z.coerce.number().int().positive().optional();
 export const limitSchema = z.coerce.number().int().min(1).max(100).default(50);

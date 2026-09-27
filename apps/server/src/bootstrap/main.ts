@@ -19,6 +19,7 @@ import { PostgresPreferenceRepository } from "../domain/preferences/postgres-rep
 import { PreferenceService } from "../domain/preferences/preference-service.js";
 import { JwtTokenService } from "../infrastructure/auth/jwt-token-service.js";
 import { GoogleIdentityProvider } from "../infrastructure/auth/providers/google-identity-provider.js";
+import { AppleIdentityProvider } from "../infrastructure/auth/providers/apple-identity-provider.js";
 import { IdentityProviderRegistry } from "../domain/auth/identity-provider.js";
 import { AuthService } from "../domain/auth/service.js";
 
@@ -30,6 +31,7 @@ await runMigrations(db);
 const authTokens = await JwtTokenService.create(config.auth);
 const identityProviders = new IdentityProviderRegistry([
   new GoogleIdentityProvider(config.auth.googleAllowedClientIds),
+  new AppleIdentityProvider(config.auth.appleAllowedClientIds),
 ]);
 const auth = new AuthService(db, identityProviders, authTokens);
 const oss = new OssStorage(config.oss);

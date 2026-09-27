@@ -41,12 +41,9 @@ struct AuthenticationEntryView: View {
                     AuthenticationProviderButton(
                         title: "通过 Apple 继续",
                         systemIcon: "apple.logo",
-                        availability: "即将支持",
-                        isEnabled: false,
                         action: {}
                     )
                     .padding(.top, 12)
-                    .accessibilityHint("Apple 登录即将支持")
 
                     if let error = auth.error {
                         Label(error.localizedDescription, systemImage: "exclamationmark.circle")

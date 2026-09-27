@@ -1,4 +1,5 @@
-import { FANTO_AGENT_ID, FANTO_AGENT_TOKEN, FANTO_USER_ID } from "../config";
+import { FANTO_AGENT_ID } from "../config";
+import { authorizedFetch } from "../auth/test-session";
 import { ApiError, requestJson } from "./http";
 
 export type PresentedMedia = {
@@ -35,10 +36,8 @@ export type AgentStreamEvent =
 
 function agentHeaders(): Headers {
   const headers = new Headers();
-  headers.set("Authorization", `Bearer ${FANTO_AGENT_TOKEN}`);
   headers.set("Content-Type", "application/json");
   headers.set("Accept", "application/json");
-  headers.set("X-User-Id", FANTO_USER_ID);
   headers.set("X-Trace-Id", crypto.randomUUID());
   headers.set("X-Time-Zone", Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   return headers;
@@ -186,7 +185,7 @@ export async function streamAgentMessage(
   const headers = agentHeaders();
   headers.set("Accept", "text/event-stream");
 
-  const response = await fetch("/api/agent/stream", {
+  const response = await authorizedFetch("/api/agent/stream", {
     method: "POST",
     headers,
     body: JSON.stringify({

@@ -13,8 +13,6 @@ test("runtime identity comes only from verified access token", async () => {
     verifier,
     {} as never,
     {} as never,
-    {} as never,
-    {} as never,
   );
 
   const denied = await app.request(new Request("http://localhost/api/agent/unknown", {

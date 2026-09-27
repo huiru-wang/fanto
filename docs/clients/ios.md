@@ -42,7 +42,7 @@ App 启动后先进入认证 Gate：
 - access / refresh token 均保存在 Keychain，业务 token 不写入 `UserDefaults`；
 - 当前没有“我的”、设置或退出登录入口；认证失效时会清除本地认证状态并回到登录页。
 
-认证 Gate 直接展示包含 Fanto IP 与 “Pieces become something.” 的登录页，仅提供带 Google 官方 G 标识的 Google 继续按钮。完整链路为：iOS 请求 `/api/auth/intents`（`purpose=authenticate, provider=google`）获得一次性 challenge nonce，再把 nonce 传入 Google Sign-In，并通过 `/api/auth/authentications` 的通用 `proof` 字段把 Google ID token 发送给 Fanto Server；Server 验证签名、audience、expiry 与 nonce 后，按 Google `sub` 登录已有用户或原子创建新用户，随后签发 Fanto access / refresh JWT。认证成功后进入“记录”Tab；客户端不展示也不判断注册状态。
+认证 Gate 直接展示包含 Fanto IP 与 “Pieces become something.” 的登录页，提供 Google 与 Apple 的原生继续按钮。完整链路为：iOS 请求 `/api/auth/intents`（`purpose=authenticate, provider=google|apple`）获得一次性 challenge nonce，再将 nonce 传给对应的原生身份 SDK，并通过 `/api/auth/authentications` 的通用 `proof` 字段把 ID token 发送给 Fanto Server；Server 验证签名、audience、expiry 与 nonce 后，按 `(provider, sub)` 登录已有用户或原子创建新用户，随后签发 Fanto access / refresh JWT。认证成功后进入“记录”Tab；客户端不展示也不判断注册状态。
 
 Google 配置位于 `Supporting/Info-Debug.plist` 与 `Supporting/Info-Release.plist`：
 
@@ -51,6 +51,8 @@ Google 配置位于 `Supporting/Info-Debug.plist` 与 `Supporting/Info-Release.p
 - `CFBundleURLTypes`：iOS Client ID 对应的 reversed client ID URL scheme。
 
 Debug 与 Release 均配置 iOS OAuth Client ID、Server OAuth Client ID 和对应 reversed URL scheme。Server OAuth Client ID 同时必须位于 Server 的 `GOOGLE_ALLOWED_CLIENT_IDS`；iOS 客户端不保存也不使用 Web Client Secret。
+
+Apple 登录使用系统 `AuthenticationServices`，并要求 Xcode target 启用 Sign in with Apple capability；Server 的 `APPLE_ALLOWED_CLIENT_IDS` 必须包含原生 iOS Bundle ID `com.robinverse.fanto`。iOS 将 Server intent nonce 传给 `ASAuthorizationAppleIDRequest`，只提交 Apple `identityToken` 给 Server；不使用 Services ID、网页回调 URI 或 Apple client secret。
 
 认证成功后才创建业务根视图；认证失效时会先清空当前 `FantoStore` 的 Records / Creations / Proposals 运行态数据，再回到登录页。Agent Session 的 Keychain key 继续包含真实 `user_id + agent_id`，因此不同账号不会复用同一个长期会话。
 
