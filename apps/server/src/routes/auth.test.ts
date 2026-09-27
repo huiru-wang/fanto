@@ -12,6 +12,7 @@ test("auth routes use provider-neutral contracts", async () => {
     },
     register: async (...args: unknown[]) => { calls.push({ method: "register", args }); return {}; },
     login: async (...args: unknown[]) => { calls.push({ method: "login", args }); return {}; },
+    authenticate: async (...args: unknown[]) => { calls.push({ method: "authenticate", args }); return {}; },
     refresh: async () => ({}),
   } as unknown as AuthService;
   const app = createAuthRoutes(service);
@@ -22,6 +23,9 @@ test("auth routes use provider-neutral contracts", async () => {
   const login = await app.request("/auth/logins", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(proof) });
   assert.equal(login.status, 200);
   assert.deepEqual(calls[1], { method: "login", args: [proof.intentId, proof.proof] });
+  const authentication = await app.request("/auth/authentications", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(proof) });
+  assert.equal(authentication.status, 200);
+  assert.deepEqual(calls[2], { method: "authenticate", args: [proof.intentId, proof.proof] });
   const legacy = await app.request("/auth/logins/google", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(proof) });
   assert.equal(legacy.status, 404);
 });

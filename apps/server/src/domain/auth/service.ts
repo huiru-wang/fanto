@@ -116,6 +116,57 @@ export class AuthService {
     return this.authResult(userId);
   }
 
+  async authenticate(intentId: string, proofInput: unknown) {
+    const initial = await this.readChallenge(intentId, "authenticate");
+    const verifiedIdentity = await this.verifyIdentity(proofInput, initial);
+    const userId = await this.db.transaction().execute(async trx => {
+      const challenge = await this.lockChallenge(trx, intentId, "authenticate");
+      this.assertVerifiedMatchesChallenge(verifiedIdentity, challenge);
+      const existing = await trx.selectFrom("user_login_identities")
+        .select(["identity_id", "user_id", "revoked_at"])
+        .where("provider", "=", verifiedIdentity.provider)
+        .where("provider_subject", "=", verifiedIdentity.subject)
+        .forUpdate()
+        .executeTakeFirst();
+      const timestamp = now();
+
+      if (existing?.revoked_at === null) {
+        await this.assertActiveUserIn(trx, existing.user_id);
+        await trx.updateTable("user_login_identities")
+          .set({ last_used_at: timestamp, display_hint: verifiedIdentity.displayHint ?? null })
+          .where("identity_id", "=", existing.identity_id)
+          .execute();
+        await this.consumeChallenge(trx, intentId);
+        return existing.user_id;
+      }
+
+      if (existing) throw new AuthError(404, "IDENTITY_NOT_REGISTERED", "Identity is not registered");
+
+      const id = randomUUID();
+      await trx.insertInto("users").values({
+        user_id: id,
+        status: "active",
+        created_at: timestamp,
+        updated_at: timestamp,
+        disabled_at: null,
+      }).execute();
+      await trx.insertInto("user_login_identities").values({
+        identity_id: randomUUID(),
+        user_id: id,
+        provider: verifiedIdentity.provider,
+        provider_subject: verifiedIdentity.subject,
+        display_hint: verifiedIdentity.displayHint ?? null,
+        verified_at: timestamp,
+        last_used_at: timestamp,
+        revoked_at: null,
+        created_at: timestamp,
+      }).execute();
+      await this.consumeChallenge(trx, intentId);
+      return id;
+    });
+    return this.authResult(userId);
+  }
+
   async refresh(refreshToken: string) {
     const verified = await this.tokens.verifyRefresh(refreshToken);
     await this.assertActiveUser(verified.userId);

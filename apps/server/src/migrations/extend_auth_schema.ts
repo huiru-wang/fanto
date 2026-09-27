@@ -36,7 +36,7 @@ export async function up(db: Kysely<any>) {
 
     CREATE TABLE IF NOT EXISTS auth_challenges (
       challenge_id UUID PRIMARY KEY,
-      purpose TEXT NOT NULL CHECK (purpose IN ('register','login','bind','reauth')),
+      purpose TEXT NOT NULL CHECK (purpose IN ('authenticate','register','login','bind','reauth')),
       provider TEXT NOT NULL,
       user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE,
       target_hash TEXT,

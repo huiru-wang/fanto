@@ -84,6 +84,7 @@ export function createApp(records: RecordRepository, media: PostgresMediaReposit
     if (c.req.method === "OPTIONS") return next();
     const publicAuth = new Set([
       "/api/auth/intents",
+      "/api/auth/authentications",
       "/api/auth/registrations",
       "/api/auth/logins",
       "/api/auth/tokens/refresh",

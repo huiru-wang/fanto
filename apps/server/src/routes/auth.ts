@@ -7,7 +7,7 @@ import { requireUserId } from "./request-user.js";
 
 const providerSchema = z.enum(["google", "apple", "phone"]);
 const publicIntentSchema = z.object({
-  purpose: z.enum(["register", "login"]),
+  purpose: z.enum(["authenticate", "register", "login"]),
   provider: providerSchema,
 }).strict();
 const identityIntentSchema = z.object({ provider: providerSchema }).strict();
@@ -80,6 +80,16 @@ export function createAuthRoutes(service: AuthService): Hono {
     if (!body.success) return c.json(fail(new AuthError(400, "INVALID_INPUT", "Invalid request")), 400);
     try {
       return c.json(ok(await service.login(body.data.intentId, body.data.proof)));
+    } catch (cause) {
+      return authFailure(c, cause);
+    }
+  });
+
+  app.post("/auth/authentications", async c => {
+    const body = proofSchema.safeParse(await c.req.json().catch(() => null));
+    if (!body.success) return c.json(fail(new AuthError(400, "INVALID_INPUT", "Invalid request")), 400);
+    try {
+      return c.json(ok(await service.authenticate(body.data.intentId, body.data.proof)));
     } catch (cause) {
       return authFailure(c, cause);
     }

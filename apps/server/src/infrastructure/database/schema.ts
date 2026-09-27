@@ -28,7 +28,7 @@ export interface UserLoginIdentitiesTable {
 
 export interface AuthChallengesTable {
   challenge_id: string;
-  purpose: "register" | "login" | "bind" | "reauth";
+  purpose: "authenticate" | "register" | "login" | "bind" | "reauth";
   provider: string;
   user_id: string | null;
   target_hash: string | null;

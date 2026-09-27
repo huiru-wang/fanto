@@ -1,6 +1,6 @@
 import { AuthError } from "./errors.js";
 
-export type ChallengePurpose = "register" | "login" | "bind" | "reauth";
+export type ChallengePurpose = "authenticate" | "register" | "login" | "bind" | "reauth";
 export type IdentityProviderName = "google" | "apple" | "phone";
 
 export type ProviderChallenge = {
