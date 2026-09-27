@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import type { AgentHarnessTool, Context, ExecutionToolContext } from "@earendil-works/pi-agent-core";
-import type { FantoMediaMetadata, FantoServerClient } from "../fanto/client.js";
+import type { FantoMediaMetadata, FantoServerClient } from "../clients/server-client.js";
 import { requireRunMetadata } from "../agent/run-context.js";
 
 const presentMediaSchema = Type.Object({
@@ -16,7 +16,7 @@ export type PresentMediaDetails = { items: PresentedMedia[] };
 function requestContext(context: Context) {
   const metadata = requireRunMetadata(context);
   return {
-    accessToken: metadata.accessToken,
+    userId: metadata.userId,
     traceId: metadata.traceId,
     signal: context.abortSignal,
   };

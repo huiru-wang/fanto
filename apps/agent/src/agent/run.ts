@@ -23,7 +23,7 @@ export async function runAgent(
   session: RunSession,
   message: string,
   signal: AbortSignal,
-  metadata: Pick<RunMetadata, "traceId" | "timeZone" | "accessToken">,
+  metadata: Pick<RunMetadata, "traceId" | "timeZone">,
   contextRuntime: ContextRuntime | undefined,
   emit: (event: AgentStreamEvent) => Promise<void>,
 ): Promise<string> {
@@ -63,7 +63,6 @@ export async function runAgent(
     const recentMessages = await readRecentMessages(session.lane);
     const contextInput = {
       userId: session.userId,
-      accessToken: metadata.accessToken,
       sessionId: session.id,
       message,
       recentMessages,

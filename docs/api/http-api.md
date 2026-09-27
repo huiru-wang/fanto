@@ -163,7 +163,7 @@ Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionI
 
 ## 独立 Agent 服务
 
-Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference 和最多 2 条 Relevant Memory，再由 Context Composer 注入 Prompt；Relevant Memory 的 `eventAt` 按请求时区展示。Agent Loop 内仍可通过 `FantoServerClient` 调用 `record_list`、`record_search`、`record_get` 三个只读 Record Tool，通过 `preference_manage` 管理明确长期偏好，并通过 `present_media` 调用 `GET /api/media/:id/meta` 校验要展示的媒体。Tool schema 不接受 `userId`，实际用户身份来自已验证 Access JWT 的 `sub`；Agent 调用 Business Server 时原样转发同一个 Authorization。除 `GET /health` 外，Agent HTTP 接口统一要求同一份 Fanto Access JWT：
+Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference 和最多 2 条 Relevant Memory，再由 Context Composer 注入 Prompt；Relevant Memory 的 `eventAt` 按请求时区展示。Agent Loop 内通过 `src/clients/server-client.ts` 的 `FantoServerClient` 调用 `record_list`、`record_search`、`record_get` 三个只读 Record Tool，通过 `preference_manage` 管理明确长期偏好，并通过 `present_media` 调用 `GET /api/media/:id/meta` 校验要展示的媒体。Tool schema 不接受 `userId`，实际用户身份来自已验证 Access JWT 的 `sub`；该 JWT 只用于客户端进入 Agent 服务的鉴权，不进入 Run Context。Agent 调用 Business Server 使用内部 `X-API-Token` 与 `X-User-Id`，并受 Server 白名单限制。除 `GET /health` 外，Agent HTTP 接口统一要求同一份 Fanto Access JWT：
 
 ```text
 Authorization: Bearer <ACCESS_TOKEN>

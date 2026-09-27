@@ -1,4 +1,4 @@
-import type { FantoServerClient } from "../../fanto/client.js";
+import type { FantoServerClient } from "../../clients/server-client.js";
 import type { ContextFragment, ContextInput, ContextProvider } from "../types.js";
 
 type PreferenceClient = Pick<FantoServerClient, "listPreferences">;
@@ -9,7 +9,7 @@ export class PreferenceProvider implements ContextProvider {
   constructor(private readonly client: PreferenceClient) {}
 
   async build(input: ContextInput): Promise<ContextFragment> {
-    const result = await this.client.listPreferences({ accessToken: input.accessToken, traceId: input.traceId, signal: input.signal });
+    const result = await this.client.listPreferences({ userId: input.userId, traceId: input.traceId, signal: input.signal });
     const content = result.data.map((item, index) =>
       `${index + 1}. preferenceId: ${item.preferenceId} | version: ${item.version} | category: ${item.category}\n   ${item.content}`
     ).join("\n");

@@ -53,7 +53,7 @@ export function createAgentRoutes(
           session,
           body.data.message,
           controller.signal,
-          { traceId: traceId.data, timeZone, accessToken: principal.token },
+          { traceId: traceId.data, timeZone },
           contextRuntime,
           event => writeStreamEvent(stream, event),
         );

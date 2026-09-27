@@ -3,7 +3,7 @@ import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { Models } from "@earendil-works/pi-ai";
 import type { AgentDefinition } from "./definition.js";
 import { resolveRunSystemPrompt } from "./run-context.js";
-import type { FantoServerClient } from "../fanto/client.js";
+import type { FantoServerClient } from "../clients/server-client.js";
 import type { SkillLoader } from "../skills/loader.js";
 import { createTools } from "../tools/index.js";
 import { assertBashRequest } from "../workspace/bash.js";

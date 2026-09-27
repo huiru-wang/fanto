@@ -7,7 +7,7 @@ import { TODO_CONTEXT } from "@earendil-works/pi-agent-core";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { AgentDefinition } from "../src/agent/definition.js";
 import { AgentSessionManager, SessionOwnershipError } from "../src/agent/session.js";
-import { FantoServerClient } from "../src/fanto/client.js";
+import { FantoServerClient } from "../src/clients/server-client.js";
 import { SkillLoader } from "../src/skills/loader.js";
 
 const definition: AgentDefinition = {
@@ -25,7 +25,7 @@ const definition: AgentDefinition = {
 function createManager(root: string, database: string, workspaces: string): AgentSessionManager {
   return new AgentSessionManager(
     builtinModels(),
-    new FantoServerClient("http://127.0.0.1:3000"),
+    new FantoServerClient("http://127.0.0.1:3000", "agent-api-token"),
     new SkillLoader(resolve(root, "skills")),
     database,
     workspaces,

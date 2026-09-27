@@ -7,7 +7,7 @@ import {
   type ExecutionToolContext,
 } from "@earendil-works/pi-agent-core";
 import type { AgentDefinition } from "../agent/definition.js";
-import type { FantoServerClient } from "../fanto/client.js";
+import type { FantoServerClient } from "../clients/server-client.js";
 import { prepareBashExecution } from "../workspace/bash.js";
 import { createPresentMediaTool } from "./media.js";
 import { createPreferenceManageTool } from "./preferences.js";

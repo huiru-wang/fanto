@@ -71,6 +71,7 @@ for key in \
   AUTH_JWT_ACTIVE_KID \
   AUTH_JWT_PRIVATE_KEY \
   AUTH_JWT_PUBLIC_KEYS \
+  AGENT_API_TOKEN \
   GOOGLE_ALLOWED_CLIENT_IDS \
   APPLE_ALLOWED_CLIENT_IDS; do
   require_env_key "$SERVER_ENV" "$key"
@@ -78,7 +79,8 @@ done
 
 for key in \
   AUTH_JWT_PUBLIC_KEYS \
-  FANTO_SERVER_BASE_URL; do
+  FANTO_SERVER_BASE_URL \
+  FANTO_SERVER_API_TOKEN; do
   require_env_key "$AGENT_ENV" "$key"
 done
 

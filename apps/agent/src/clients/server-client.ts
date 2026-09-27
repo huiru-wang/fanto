@@ -15,7 +15,7 @@ import {
   type FantoRecord,
   type FantoRecordList,
   type FantoRecordSearch,
-} from "./schemas.js";
+} from "./server-schemas.js";
 
 export type {
   FantoMediaMetadata,
@@ -25,10 +25,10 @@ export type {
   FantoRecord,
   FantoRecordList,
   FantoRecordSearch,
-} from "./schemas.js";
+} from "./server-schemas.js";
 
 export type FantoRequestContext = {
-  accessToken: string;
+  userId: string;
   traceId?: string;
   signal?: AbortSignal;
 };
@@ -53,6 +53,7 @@ export class FantoServerClient {
 
   constructor(
     baseUrl: string,
+    private readonly apiToken: string,
     private readonly timeoutMs = 15_000,
     private readonly fetchImpl: FetchLike = fetch,
   ) {
@@ -63,6 +64,7 @@ export class FantoServerClient {
       throw new Error("FANTO_SERVER_BASE_URL must be a valid URL");
     }
     if (!["http:", "https:"].includes(parsed.protocol)) throw new Error("FANTO_SERVER_BASE_URL must use http or https");
+    if (!apiToken.trim()) throw new Error("FANTO_SERVER_API_TOKEN is required");
     this.baseUrl = parsed;
   }
 
@@ -120,7 +122,10 @@ export class FantoServerClient {
   ): Promise<T> {
     const timeout = AbortSignal.timeout(this.timeoutMs);
     const signal = ctx.signal ? AbortSignal.any([ctx.signal, timeout]) : timeout;
-    const headers = new Headers({ Authorization: "Bearer " + ctx.accessToken });
+    const headers = new Headers({
+      "x-api-token": this.apiToken,
+      "x-user-id": ctx.userId,
+    });
     if (ctx.traceId) headers.set("x-trace-id", ctx.traceId);
     if (body !== undefined) headers.set("content-type", "application/json");
 

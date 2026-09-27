@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import type { AgentHarnessTool, ExecutionToolContext, Context } from "@earendil-works/pi-agent-core";
-import type { FantoRecord, FantoServerClient } from "../fanto/client.js";
+import type { FantoRecord, FantoServerClient } from "../clients/server-client.js";
 import { requireRunMetadata } from "../agent/run-context.js";
 import { formatEventTime } from "../context/providers/time.js";
 
@@ -54,7 +54,7 @@ type RecordSearchDetails = {
 function requestContext(context: Context) {
   const metadata = requireRunMetadata(context);
   return {
-    accessToken: metadata.accessToken,
+    userId: metadata.userId,
     traceId: metadata.traceId,
     signal: context.abortSignal,
   };

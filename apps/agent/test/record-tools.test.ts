@@ -29,7 +29,7 @@ const baseRecord = {
   media: [{ mediaId: "img1", url: "https://signed.example/secret" }],
 };
 
-async function execute(tool: any, params: unknown, context = createRunContext({ userId: "u1", accessToken: "access-token", traceId: "trace-1", timeZone: "Asia/Shanghai" })) {
+async function execute(tool: any, params: unknown, context = createRunContext({ userId: "u1", traceId: "trace-1", timeZone: "Asia/Shanghai" })) {
   return tool.execute("call-1", params, () => {}, {} as never, {} as never, context);
 }
 
@@ -58,7 +58,7 @@ test("record_get uses current Run Context identity and strips media projection",
   };
   const result = await execute(createRecordGetTool(client as any), { recordId: "r1" });
   assert.deepEqual(calls, [{
-    ctx: { accessToken: "access-token", traceId: "trace-1", signal: undefined },
+    ctx: { userId: "u1", traceId: "trace-1", signal: undefined },
     recordId: "r1",
   }]);
   assert.deepEqual(result.details, {

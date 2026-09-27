@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 
 export interface AppConfig {
   databaseUrl: string;
+  agentApiToken: string;
   port: number;
   host: string;
   auth: {
@@ -43,6 +44,7 @@ export function loadEnv(path = ".env") {
 export function loadConfig(): AppConfig {
   const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
+  const agentApiToken = required("AGENT_API_TOKEN");
   const embeddingDimension = parseInt(process.env.DASHSCOPE_EMBEDDING_DIMENSION ?? "768", 10);
   if (embeddingDimension !== 768) throw new Error("DASHSCOPE_EMBEDDING_DIMENSION must be 768");
   const endpoint = process.env.OSS_ENDPOINT?.trim();
@@ -60,6 +62,7 @@ export function loadConfig(): AppConfig {
 
   return {
     databaseUrl,
+    agentApiToken,
     port: parseInt(process.env.PORT ?? "3000", 10),
     host: process.env.HOST ?? "0.0.0.0",
     auth: {

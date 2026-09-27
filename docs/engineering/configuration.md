@@ -21,6 +21,7 @@
 | `AUTH_JWT_ISSUER` | JWT issuer，默认 `fanto` |
 | `GOOGLE_ALLOWED_CLIENT_IDS` | 允许的 Google OAuth Client ID，多个值用逗号分隔 |
 | `APPLE_ALLOWED_CLIENT_IDS` | 允许的 Apple 原生 App ID / Bundle ID，多个值用逗号分隔 |
+| `AGENT_API_TOKEN` | 仅与 Agent Runtime 共享的内部 API Token；Business Server 以此识别 Agent→Server 调用 |
 | `OSS_REGION` | OSS Region |
 | `OSS_ENDPOINT` | 可选公开 Endpoint；拒绝 `-internal` 地址 |
 | `OSS_BUCKET` | OSS Bucket |
@@ -44,6 +45,7 @@
 | `AUTH_JWT_ISSUER` | 与 Business Server 相同的 issuer，默认 `fanto` |
 | `DEEPSEEK_API_KEY` 等 | 模型 Provider 所需密钥 |
 | `FANTO_SERVER_BASE_URL` | Record Tool 访问 Business Server 的 base URL，默认 `http://127.0.0.1:3000` |
+| `FANTO_SERVER_API_TOKEN` | 必填；必须与 Business Server 的 `AGENT_API_TOKEN` 相同，只用于 Agent→Server 内部调用 |
 | `AGENT_SESSION_DB` | Agent Session / Task SQLite |
 | `AGENT_WORKSPACE_ROOT` | Session 工作区根目录 |
 

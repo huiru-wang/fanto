@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 
 export type AuthenticatedPrincipal = {
   userId: string;
-  token: string;
+  source: "user" | "agent";
 };
 
 const principalStorage = new AsyncLocalStorage<AuthenticatedPrincipal>();

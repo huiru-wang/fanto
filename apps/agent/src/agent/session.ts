@@ -6,7 +6,7 @@ import type { Models } from "@earendil-works/pi-ai";
 import { createNodeSqliteFactory, SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlite-node";
 import type { AgentDefinition } from "./definition.js";
 import { createHarness } from "./harness.js";
-import type { FantoServerClient } from "../fanto/client.js";
+import type { FantoServerClient } from "../clients/server-client.js";
 import type { SkillLoader } from "../skills/loader.js";
 import { createWorkspace } from "../workspace/paths.js";
 

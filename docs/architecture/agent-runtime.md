@@ -39,7 +39,7 @@ flowchart TD
   RECORD --> FSC
   PM --> FSC
   PRESENT --> FSC
-  FSC -->|Authorization / x-trace-id| SERVER[Business Server]
+  FSC -->|X-API-Token / X-User-Id / x-trace-id| SERVER[Business Server]
   PI --> SKILLS[Skills]
 ```
 
@@ -156,8 +156,8 @@ preference_manage → GET/POST/PATCH/DELETE /api/preferences
 present_media      → GET    /api/media/:id/meta
 ```
 
-每次 prompt 已把 Session owner 的 `userId` 与可选 `traceId` 写入 Pi Run Context。Record Tool、`present_media` 与 `preference_manage` 都从当前 Tool execution Context 读取这些值，再由 Client 转为 `Authorization` / `x-trace-id`；LLM Tool schema 不包含 `userId`。Preference Tool 的 `sessionId` / `sourceMessageId` 同样来自当前 Run Context，模型只提供动作、业务 ID/version、偏好内容与当前用户消息中的逐字 `sourceQuote`。其中 `present_media` 的 Tool Call 只接受 `mediaIds`，Business Server 返回的真实 `mediaType / mimeType / capture` 被写入原生 Tool Result `details`，不会保存短期 OSS signed URL。
+每次 prompt 已把 Session owner 的 `userId` 与可选 `traceId` 写入 Pi Run Context。Record Tool、`present_media` 与 `preference_manage` 都从当前 Tool execution Context 读取这些值；LLM Tool schema 不包含 `userId`。`FantoServerClient` 使用受控的内部 API Token，并发送 `X-User-Id` / `x-trace-id`。Preference Tool 的 `sessionId` / `sourceMessageId` 同样来自当前 Run Context，模型只提供动作、业务 ID/version、偏好内容与当前用户消息中的逐字 `sourceQuote`。其中 `present_media` 的 Tool Call 只接受 `mediaIds`，Business Server 返回的真实 `mediaType / mimeType / capture` 被写入原生 Tool Result `details`，不会保存短期 OSS signed URL。
 
-Client 统一负责 Business Server base URL、JSON envelope、15 秒 timeout、运行取消和安全错误映射，并原样转发当前 Run 的 Access Token。Business Server 会再次独立验证 `fanto-api` audience，不信任 Agent 提供的用户 ID。
+用户 Access Token 仅用于客户端进入 Agent Runtime 的 HTTP 鉴权，不进入 Run Context，也不在 Agent 与 Business Server 之间透传。Client 统一负责 Business Server base URL、内部身份 Header、JSON envelope、15 秒 timeout、运行取消和安全错误映射。Business Server 对内部 Token 强制要求 `X-User-Id`，并仅允许预定义白名单路由。
 
 接口和运行示例见 [apps/agent/README.md](../../apps/agent/README.md)。

@@ -28,7 +28,7 @@ export function createApp(
     if (!token) return c.json({ error: "Unauthorized" }, 401);
     try {
       const verified = await verifier.verify(token);
-      await runWithAgentPrincipal({ userId: verified.userId, token }, next);
+      await runWithAgentPrincipal({ userId: verified.userId }, next);
     } catch {
       return c.json({ error: "Unauthorized" }, 401);
     }

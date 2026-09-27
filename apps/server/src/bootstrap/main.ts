@@ -61,7 +61,7 @@ registerRecordPostprocessListener(
 );
 
 const server = serve({
-  fetch: createApp(records, media, queue, oss, creationRead, creationProposals, memory, preferences, { tokens: authTokens, service: auth }).fetch,
+  fetch: createApp(records, media, queue, oss, creationRead, creationProposals, memory, preferences, { tokens: authTokens, service: auth }, config.agentApiToken).fetch,
   port: config.port,
   hostname: config.host,
 });

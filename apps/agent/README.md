@@ -25,7 +25,7 @@ Node.js 22.19+。在仓库根目录执行：
 ```sh
 pnpm install
 cp apps/agent/.env.example apps/agent/.env
-# 编辑 .env，设置 ACCESS_TOKEN 和 DEEPSEEK_API_KEY
+# 编辑 .env，设置 DEEPSEEK_API_KEY 和 FANTO_SERVER_API_TOKEN
 # FANTO_SERVER_BASE_URL 默认 http://127.0.0.1:3000
 pnpm --filter @fanto/agent dev
 ```
@@ -110,7 +110,7 @@ Agent Tool
 → Business Server HTTP
 ```
 
-`userId` 不存在于 Tool 参数中，只能来自 Session 对应的 Run Context。Business Server 地址由 `FANTO_SERVER_BASE_URL` 配置，默认 `http://127.0.0.1:3000`。Client 统一透传当前 Run 的 Access Token，并处理可选 `x-trace-id`、15 秒 timeout、运行取消和 Fanto JSON envelope。
+`userId` 不存在于 Tool 参数中，只能来自 Session 对应的 Run Context。Business Server 地址由 `FANTO_SERVER_BASE_URL` 配置，默认 `http://127.0.0.1:3000`。Client 使用 `FANTO_SERVER_API_TOKEN`，并发送 `X-User-Id`、可选 `x-trace-id`、15 秒 timeout、运行取消和 Fanto JSON envelope；用户 Access Token 不进入 Agent Run Context，也不会向 Business Server 透传。
 
 ## HTTP / SSE
 

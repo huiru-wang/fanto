@@ -32,6 +32,40 @@ test("protected API requires a verified access token", async () => {
   assert.equal(allowed.status, 404);
 });
 
+test("internal Agent API token requires a user context and is limited to allowlisted routes", async () => {
+  const users: string[] = [];
+  const auth = {
+    tokens: { verifyAccess: async () => ({ userId: "ignored", tokenId: "ignored" }) },
+    service: { assertActiveUser: async (userId: string) => { users.push(userId); return { status: "active" }; } },
+  };
+  const app = createApp(
+    { findByUserId: async () => [] } as never,
+    {} as never,
+    new RecordPostprocessQueue(),
+    {} as never,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    auth as never,
+    "agent-api-token",
+  );
+
+  const missingUser = await app.request("/api/records?limit=1", { headers: { "x-api-token": "agent-api-token" } });
+  assert.equal(missingUser.status, 401);
+
+  const allowed = await app.request("/api/records?limit=1", {
+    headers: { "x-api-token": "agent-api-token", "x-user-id": "user-1" },
+  });
+  assert.equal(allowed.status, 200);
+  assert.deepEqual(users, ["user-1"]);
+
+  const forbidden = await app.request("/api/auth/me", {
+    headers: { "x-api-token": "agent-api-token", "x-user-id": "user-1" },
+  });
+  assert.equal(forbidden.status, 403);
+});
+
 
 test("preference access logging redacts preference content and source quotes", () => {
   assert.deepEqual(logSafeBody("/api/preferences", {

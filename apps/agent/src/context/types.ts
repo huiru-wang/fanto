@@ -5,7 +5,6 @@ export type ContextMessage = {
 
 export type ContextInput = {
   userId: string;
-  accessToken: string;
   sessionId: string;
   message: string;
   recentMessages: ContextMessage[];

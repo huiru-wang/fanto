@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import type { AgentHarnessTool, Context, ExecutionToolContext } from "@earendil-works/pi-agent-core";
-import type { FantoPreference, FantoServerClient } from "../fanto/client.js";
+import type { FantoPreference, FantoServerClient } from "../clients/server-client.js";
 import { requireRunMetadata } from "../agent/run-context.js";
 
 type PreferenceClient = Pick<FantoServerClient, "listPreferences" | "createPreference" | "updatePreference" | "deletePreference">;
@@ -34,7 +34,7 @@ function source(context: Context, quote: string) {
     throw new Error("sourceQuote must be a continuous exact quote from the current user message");
   }
   return {
-    request: { accessToken: metadata.accessToken, traceId: metadata.traceId, signal: context.abortSignal },
+    request: { userId: metadata.userId, traceId: metadata.traceId, signal: context.abortSignal },
     source: { sessionId: metadata.sessionId, messageId: metadata.sourceMessageId, quote: normalized },
   };
 }

@@ -42,7 +42,6 @@ test("context runtime builds provider fragments that compose into the run prompt
   ]));
   const fragments = await runtime.build({
     userId: "u1",
-    accessToken: "access-token",
     sessionId: "s1",
     message: "继续聊那个方案",
     recentMessages: [{ role: "user", text: "我们在聊架构" }],
@@ -67,7 +66,7 @@ test("context runtime is independently buildable from prompt composition", async
     build: async () => ({ section: "Relevant Memory" as const, content: "memory" }),
   }]));
   assert.deepEqual(
-    await runtime.build({ userId: "u", accessToken: "access-token", sessionId: "s", message: "m", recentMessages: [] }),
+    await runtime.build({ userId: "u", sessionId: "s", message: "m", recentMessages: [] }),
     [{ section: "Relevant Memory", content: "memory" }],
   );
 });

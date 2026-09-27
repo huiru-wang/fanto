@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { timingSafeEqual } from "node:crypto";
 import type { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import type { OssStorage } from "../infrastructure/clients/oss-client.js";
 import type { MediaAsset, PostgresMediaRepository } from "../domain/media/postgres-repository.js";
@@ -66,13 +67,13 @@ function presentableMediaMetadata(asset: MediaAsset) {
 
 export type AuthAppDependencies = { tokens: JwtTokenService; service: AuthService };
 
-export function createApp(records: RecordRepository, media: PostgresMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository, memory?: Pick<MemoryService, "searchRecords" | "removeRecord">, preferences?: PreferenceService, auth?: AuthAppDependencies) {
+export function createApp(records: RecordRepository, media: PostgresMediaRepository, queue: RecordPostprocessQueue, oss: OssStorage, creationRead?: CreationReadRepository, creationProposals?: CreationProposalRepository, memory?: Pick<MemoryService, "searchRecords" | "removeRecord">, preferences?: PreferenceService, auth?: AuthAppDependencies, agentApiToken?: string) {
   const app = new Hono();
   app.onError((error, c) => {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });
     return c.json({ success: false, errorCode: "INTERNAL_ERROR", errorMsg: "Internal server error" }, 500);
   });
-  app.use("*", cors({ origin: "*", allowHeaders: ["Authorization", "Content-Type", "X-Client-Fingerprint", "X-Trace-Id"], allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] }));
+  app.use("*", cors({ origin: "*", allowHeaders: ["Authorization", "Content-Type", "X-Client-Fingerprint", "X-Trace-Id", "X-API-Token", "X-User-Id"], allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] }));
   app.use("/api/*", async (c, next) => {
     const requestBody = c.req.header("content-type")?.includes("application/json")
       ? await c.req.raw.clone().json().then(value => logSafeBody(c.req.path, value)).catch(() => null)
@@ -91,12 +92,32 @@ export function createApp(records: RecordRepository, media: PostgresMediaReposit
     ]);
     if (publicAuth.has(c.req.path)) return next();
     if (!auth) return c.json({ success: false, result: null, errorCode: "UNAUTHENTICATED", errorMsg: "Authentication is not configured" }, 401);
+    const apiToken = c.req.header("x-api-token")?.trim();
+    if (apiToken) {
+      if (!agentApiToken || !sameToken(apiToken, agentApiToken)) {
+        return c.json({ success: false, result: null, errorCode: "UNAUTHENTICATED", errorMsg: "Invalid internal API token" }, 401);
+      }
+      const userId = c.req.header("x-user-id")?.trim();
+      if (!userId) return c.json({ success: false, result: null, errorCode: "UNAUTHENTICATED", errorMsg: "Missing internal user context" }, 401);
+      if (!isAgentAllowedRoute(c.req.method, c.req.path)) {
+        return c.json({ success: false, result: null, errorCode: "FORBIDDEN", errorMsg: "Internal API token is not allowed for this route" }, 403);
+      }
+      try {
+        await auth.service.assertActiveUser(userId);
+        return await runWithRequestPrincipal({ userId, source: "agent" }, next);
+      } catch (cause) {
+        if (cause instanceof AuthError) {
+          return c.json({ success: false, result: null, errorCode: cause.code, errorMsg: cause.message }, cause.status);
+        }
+        throw cause;
+      }
+    }
     const token = bearerToken(c.req.raw);
     if (!token) return c.json({ success: false, result: null, errorCode: "UNAUTHENTICATED", errorMsg: "Missing access token" }, 401);
     try {
       const principal = await auth.tokens.verifyAccess(token, "fanto-api");
       await auth.service.assertActiveUser(principal.userId);
-      await runWithRequestPrincipal({ userId: principal.userId, token }, next);
+      await runWithRequestPrincipal({ userId: principal.userId, source: "user" }, next);
     } catch (cause) {
       if (cause instanceof AuthError) {
         return c.json({ success: false, result: null, errorCode: cause.code, errorMsg: cause.message }, cause.status);
@@ -133,4 +154,16 @@ export function createApp(records: RecordRepository, media: PostgresMediaReposit
   });
   app.get("/api/media/:id", async c => { const asset = await media.findMedia(c.req.param("id"), requireUserId(c.req.raw)); return asset?.status === "ready" ? c.redirect(oss.readUrl(asset.objectKey), 302) : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404); });
   return app;
+}
+
+function sameToken(actual: string, expected: string): boolean {
+  const actualBytes = Buffer.from(actual);
+  const expectedBytes = Buffer.from(expected);
+  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
+}
+
+function isAgentAllowedRoute(method: string, path: string): boolean {
+  if (method === "GET" && (/^\/api\/records(?:\/[^/]+)?$/.test(path) || /^\/api\/media\/[^/]+\/meta$/.test(path) || path === "/api/preferences")) return true;
+  if (method === "POST" && (path === "/api/records/search" || path === "/api/preferences")) return true;
+  return (method === "PATCH" || method === "DELETE") && /^\/api\/preferences\/[^/]+$/.test(path);
 }

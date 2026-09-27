@@ -5,7 +5,6 @@ type JoseKey = Awaited<ReturnType<typeof importSPKI>>;
 
 export type AgentPrincipal = {
   userId: string;
-  token: string;
 };
 
 export interface AccessTokenVerifier {

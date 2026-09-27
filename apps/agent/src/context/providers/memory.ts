@@ -1,6 +1,6 @@
 import type { Models } from "@earendil-works/pi-ai";
 import { z } from "zod";
-import type { FantoRecordSearch, FantoServerClient } from "../../fanto/client.js";
+import type { FantoRecordSearch, FantoServerClient } from "../../clients/server-client.js";
 import type { ContextFragment, ContextInput, ContextProvider } from "../types.js";
 import { formatEventTime } from "./time.js";
 
@@ -55,7 +55,7 @@ export class MemoryProvider implements ContextProvider {
     const queries = await this.rewriter.rewrite(input);
     if (queries.length === 0) return { section: "Relevant Memory", content: "" };
     const searches = await Promise.all(queries.map(query => this.client.searchRecords(
-      { accessToken: input.accessToken, traceId: input.traceId, signal: input.signal },
+      { userId: input.userId, traceId: input.traceId, signal: input.signal },
       { query, limit: 4 },
     )));
     const records = dedupeRecords(searches.flatMap(result => result.data)).slice(0, 2);

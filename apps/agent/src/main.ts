@@ -11,7 +11,7 @@ import { MemoryProvider, PiQueryRewriter } from "./context/providers/memory.js";
 import { PreferenceProvider } from "./context/providers/preference.js";
 import { CurrentTimeProvider } from "./context/providers/time.js";
 import { ContextRuntime } from "./context/runtime.js";
-import { FantoServerClient } from "./fanto/client.js";
+import { FantoServerClient } from "./clients/server-client.js";
 import { SkillLoader } from "./skills/loader.js";
 import { JwtAccessTokenVerifier } from "./auth/access.js";
 
@@ -27,7 +27,12 @@ const fromProjectRoot = (value: string | undefined, fallback: string) =>
 
 const models = builtinModels();
 const skills = new SkillLoader(resolve(appRoot, "skills"));
-const fantoServer = new FantoServerClient(process.env.FANTO_SERVER_BASE_URL ?? "http://127.0.0.1:3000");
+const fantoServerApiToken = process.env.FANTO_SERVER_API_TOKEN?.trim();
+if (!fantoServerApiToken) throw new Error("FANTO_SERVER_API_TOKEN is required");
+const fantoServer = new FantoServerClient(
+  process.env.FANTO_SERVER_BASE_URL ?? "http://127.0.0.1:3000",
+  fantoServerApiToken,
+);
 const contextRuntime = new ContextRuntime(new ContextBuilder([
   new CharacterProvider(),
   new CurrentTimeProvider(),
