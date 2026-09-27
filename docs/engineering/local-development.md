@@ -48,13 +48,13 @@ pnpm dev:h5
 
 H5 开发服务器会把 `/api/agent/*` 代理到 `127.0.0.1:3001`，其余 `/api/*` 代理到 `127.0.0.1:3000`。图片和音频上传仍走 Server 返回的 OSS 签名 URL，由浏览器直接 PUT；用于 H5 的 OSS Bucket CORS 需要允许当前 H5 Origin、`PUT` 方法和 `Content-Type` Header。生产构建：
 
-线上 H5 测试认证使用 `apps/h5/.env.production` 中的 `VITE_H5_TEST_AUTH=true` 与 `VITE_H5_TEST_REFRESH_TOKEN`；可从 `apps/h5/.env.example` 复制模板。该 refresh token 必须由 Server 为 active 测试用户签发，且不得提交到 Git。
+线上 H5 测试认证使用 `apps/h5/.env` 中的 `VITE_H5_TEST_AUTH=true` 与 `VITE_H5_TEST_REFRESH_TOKEN`；可从 `apps/h5/.env.example` 复制模板。该 refresh token 必须由 Server 为 active 测试用户签发，且不得提交到 Git。
 
 ```bash
 pnpm build:h5
 ```
 
-生产部署统一使用 `pnpm deploy`。脚本会校验 `.env.production`、安装依赖、预构建 H5、使用 Server 的 `.env.production` 执行 PostgreSQL migration、重启 Server/Agent、发布 H5，并检查 3000/3001 的 `/health`。日常发布不会修改 Nginx；只有首次部署或 Nginx 配置发生变化时使用 `pnpm deploy:nginx`，它会在校验通过后覆盖 `/etc/nginx/nginx.conf` 并 reload。H5 默认发布到 `/var/www/fanto-h5`，可用 `H5_DEPLOY_DIR` 覆盖。底层 `start.sh` / `stop.sh` / `restart.sh` 仍保留用于单服务运维。
+生产部署统一使用 `pnpm deploy`。脚本会校验 Server 与 Agent 的 `.env`、安装依赖、预构建 H5、使用 Server 的 `.env` 执行 PostgreSQL migration、重启 Server/Agent、发布 H5，并检查 3000/3001 的 `/health`。日常发布不会修改 Nginx；只有首次部署或 Nginx 配置发生变化时使用 `pnpm deploy:nginx`，它会在校验通过后覆盖 `/etc/nginx/nginx.conf` 并 reload。H5 默认发布到 `/var/www/fanto-h5`，可用 `H5_DEPLOY_DIR` 覆盖。底层 `start.sh` / `stop.sh` / `restart.sh` 仍保留用于单服务运维。
 
 ## 数据文件
 

@@ -51,7 +51,7 @@ Agent definition 的 `models` 与 `agents` 由 `apps/agent/agents.yaml` 定义�
 
 ## H5 线上测试认证
 
-线上 H5 可通过 `apps/h5/.env.production` 的以下构建时变量，以预置 refresh token 建立测试用户会话：
+线上 H5 可通过 `apps/h5/.env` 的以下构建时变量，以预置 refresh token 建立测试用户会话：
 
 | 变量 | 说明 |
 | --- | --- |

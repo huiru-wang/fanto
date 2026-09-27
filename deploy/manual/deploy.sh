@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 SERVER_DIR="$ROOT/apps/server"
 AGENT_DIR="$ROOT/apps/agent"
-SERVER_ENV="$SERVER_DIR/.env.production"
-AGENT_ENV="$AGENT_DIR/.env.production"
+SERVER_ENV="$SERVER_DIR/.env"
+AGENT_ENV="$AGENT_DIR/.env"
 NGINX_SOURCE="$ROOT/deploy/manual/nginx/fanto-ssl.conf"
 NGINX_TARGET="${FANTO_NGINX_CONFIG:-/etc/nginx/nginx.conf}"
 INSTALL_NGINX="${FANTO_DEPLOY_NGINX:-0}"
@@ -71,7 +71,8 @@ for key in \
   AUTH_JWT_ACTIVE_KID \
   AUTH_JWT_PRIVATE_KEY \
   AUTH_JWT_PUBLIC_KEYS \
-  GOOGLE_ALLOWED_CLIENT_IDS; do
+  GOOGLE_ALLOWED_CLIENT_IDS \
+  APPLE_ALLOWED_CLIENT_IDS; do
   require_env_key "$SERVER_ENV" "$key"
 done
 
@@ -91,7 +92,7 @@ pnpm build:h5
 echo "[3/7] Running database migrations"
 (
   cd "$SERVER_DIR"
-  node --env-file=.env.production --import tsx src/bootstrap/migrate.ts
+  node --env-file=.env --import tsx src/bootstrap/migrate.ts
 )
 
 echo "[4/7] Restarting Server and Agent"

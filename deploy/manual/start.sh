@@ -51,14 +51,14 @@ start_server() {
     return
   fi
 
-  local env_file="$SERVER_DIR/.env.production"
+  local env_file="$SERVER_DIR/.env"
   require_env server "$env_file"
 
   echo "[START] server"
 
   (
     cd "$SERVER_DIR"
-    nohup node --env-file=.env.production --import tsx src/bootstrap/main.ts       >> "$LOG_DIR/server.log" 2>&1 &
+    nohup node --env-file=.env --import tsx src/bootstrap/main.ts       >> "$LOG_DIR/server.log" 2>&1 &
     echo $! > "$RUN_DIR/server.pid"
   )
 
@@ -82,14 +82,14 @@ start_agent() {
     return
   fi
 
-  local env_file="$AGENT_DIR/.env.production"
+  local env_file="$AGENT_DIR/.env"
   require_env agent "$env_file"
 
   echo "[START] agent"
 
   (
     cd "$AGENT_DIR"
-    nohup node --env-file=.env.production --import tsx src/main.ts >> "$LOG_DIR/agent.log" 2>&1 &
+    nohup node --env-file=.env --import tsx src/main.ts >> "$LOG_DIR/agent.log" 2>&1 &
     echo $! > "$RUN_DIR/agent.pid"
   )
 
