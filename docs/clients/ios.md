@@ -40,9 +40,9 @@ App 启动后先进入认证 Gate：
 - access token 临近过期时，使用 Keychain 中的 refresh token 调用 `POST /api/auth/tokens/refresh`，成功后原子替换整对 token；
 - refresh token 过期、无效或用户被禁用时清理本地认证状态并回到登录页；
 - access / refresh token 均保存在 Keychain，业务 token 不写入 `UserDefaults`；
-- 当前没有“我的”、设置或退出登录入口；认证失效时会清除本地认证状态并回到欢迎页。
+- 当前没有“我的”、设置或退出登录入口；认证失效时会清除本地认证状态并回到登录页。
 
-欢迎页先提供“创建 Fanto 账号”和“已有账号？登录”两个入口；两者进入独立的注册或登录页，并使用 Google 官方 `GoogleSignInSwift` 按钮，保持 Server register / login challenge 的确定语义。完整链路为：先请求 `/api/auth/intents`（`purpose=register|login, provider=google`）获得一次性 challenge nonce，再把 nonce 传入 Google Sign-In，客户端通过 `/api/auth/registrations` 或 `/api/auth/logins` 的通用 `proof` 字段把 Google ID token 发送给 Fanto Server；Server 验证签名、audience、expiry 与 nonce 后，按 Google `sub` 查找或创建 `user_id`，再签发 Fanto access / refresh JWT。认证成功后进入“记录”Tab。
+认证 Gate 直接展示包含 Fanto IP 与 “Pieces become something.” 的登录页，仅提供带 Google 官方 G 标识的 Google 继续按钮。完整链路为：iOS 请求 `/api/auth/intents`（`purpose=authenticate, provider=google`）获得一次性 challenge nonce，再把 nonce 传入 Google Sign-In，并通过 `/api/auth/authentications` 的通用 `proof` 字段把 Google ID token 发送给 Fanto Server；Server 验证签名、audience、expiry 与 nonce 后，按 Google `sub` 登录已有用户或原子创建新用户，随后签发 Fanto access / refresh JWT。认证成功后进入“记录”Tab；客户端不展示也不判断注册状态。
 
 Google 配置位于 `Supporting/Info-Debug.plist` 与 `Supporting/Info-Release.plist`：
 
@@ -50,9 +50,9 @@ Google 配置位于 `Supporting/Info-Debug.plist` 与 `Supporting/Info-Release.p
 - `GIDServerClientID`：后端验证使用的 Web / Server OAuth Client ID，同时需要加入 Server 的 `GOOGLE_ALLOWED_CLIENT_IDS`；
 - `CFBundleURLTypes`：iOS Client ID 对应的 reversed client ID URL scheme。
 
-仓库当前保留 `REPLACE_WITH_*` 占位值，不包含生产 OAuth 配置。未替换时登录页会给出配置错误，不会尝试启动无效 OAuth。
+Debug 与 Release 均配置 iOS OAuth Client ID、Server OAuth Client ID 和对应 reversed URL scheme。Server OAuth Client ID 同时必须位于 Server 的 `GOOGLE_ALLOWED_CLIENT_IDS`；iOS 客户端不保存也不使用 Web Client Secret。
 
-认证成功后才创建业务根视图；认证失效时会先清空当前 `FantoStore` 的 Records / Creations / Proposals 运行态数据，再回到欢迎页。Agent Session 的 Keychain key 继续包含真实 `user_id + agent_id`，因此不同账号不会复用同一个长期会话。
+认证成功后才创建业务根视图；认证失效时会先清空当前 `FantoStore` 的 Records / Creations / Proposals 运行态数据，再回到登录页。Agent Session 的 Keychain key 继续包含真实 `user_id + agent_id`，因此不同账号不会复用同一个长期会话。
 
 ## Fanto 对话
 

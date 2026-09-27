@@ -6,7 +6,7 @@
 { "success": true, "result": {}, "errorCode": null, "errorMsg": null }
 ```
 
-除健康检查、Google 注册/登录 intent、Google 注册/登录和 Refresh 外，所有 API 都要求 `Authorization: Bearer <access token>`。Access Token 有效期 30 分钟；Refresh Token 有效期 30 天并采用滑动续期。用户身份只来自服务端验证后的 JWT `sub`。
+除健康检查、Google 认证 intent、Google 认证、兼容的注册/登录接口和 Refresh 外，所有 API 都要求 `Authorization: Bearer <access token>`。Access Token 有效期 30 分钟；Refresh Token 有效期 30 天并采用滑动续期。用户身份只来自服务端验证后的 JWT `sub`。
 
 ## 健康检查
 
@@ -16,7 +16,8 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/auth/intents` | 为 Google 注册或登录创建一次性 challenge |
+| POST | `/api/auth/intents` | 为 Google 认证创建一次性 challenge |
+| POST | `/api/auth/authentications` | 用 Google proof 登录；新身份会自动创建 Fanto 用户 |
 | POST | `/api/auth/registrations` | 使用 Google proof 创建 Fanto 用户 |
 | POST | `/api/auth/logins` | 使用 Google proof 登录已有 Fanto 用户 |
 | POST | `/api/auth/tokens/refresh` | 用 refresh token 换取新的 access / refresh token 对 |
@@ -24,12 +25,14 @@
 创建 intent：
 
 ```json
-{ "purpose": "register", "provider": "google" }
+{ "purpose": "authenticate", "provider": "google" }
 ```
 
-`purpose` 也可为 `login`。成功响应的 `result` 包含 `intentId`、`provider`、`expiresAt` 和 `challenge.nonce`。iOS 必须将 nonce 传给 Google Sign-In；随后以 `{ "intentId": "...", "proof": { "idToken": "..." } }` 调用注册或登录接口。Server 验证 Google token 的签名、issuer、audience、expiry、sub 和 nonce，并只签发 Fanto JWT；Google ID token 不可用于其他业务接口。
+客户端登录应创建 `purpose=authenticate` 的 intent。成功响应的 `result` 包含 `intentId`、`provider`、`expiresAt` 和 `challenge.nonce`；iOS 将 nonce 传给 Google Sign-In，随后以 `{ "intentId": "...", "proof": { "idToken": "..." } }` 调用 `/api/auth/authentications`。Server 验证 Google token 的签名、issuer、audience、expiry、sub 和 nonce，在同一事务中按 Google `sub` 登录已有用户或创建新用户，再签发 Fanto JWT。Google ID token 不可用于其他业务接口。`register` 与 `login` purpose 以及对应 endpoints 仍保留给兼容调用方，但 iOS 不使用它们。
 
 认证成功结果为 `{ user, accessToken, accessTokenExpiresAt, refreshToken, refreshTokenExpiresAt }`，其中 `user` 为 `{ userId, status }`。Access Token 有效期 30 分钟，Refresh Token 有效期 30 天。常见认证错误包括：`IDENTITY_NOT_REGISTERED`、`IDENTITY_ALREADY_REGISTERED`、`CHALLENGE_INVALID`、`INVALID_PROVIDER_PROOF`、`USER_DISABLED`、`REFRESH_TOKEN_INVALID` 和 `RATE_LIMITED`。
+
+已认证用户接口：`GET /api/users/me` 返回当前用户和有效登录身份；`POST /api/users/me/identities/intents` 创建绑定身份所需 challenge，`POST /api/users/me/identities` 完成绑定；`POST /api/users/me/reauth/intents` 创建解除身份前的验证 challenge；`DELETE /api/users/me/identities/:identityId` 携带 reauth proof 后解除非最后一个身份。iOS 当前不展示账号管理界面，因此不调用这些接口。
 
 ## 记录
 

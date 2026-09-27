@@ -25,19 +25,19 @@ final class AuthenticationStore {
             else { state = .signedOut }
         } catch {
             state = .signedOut
-            if let authError = error as? AuthenticationError, authError != .expired { self.error = authError }
+            self.error = nil
         }
     }
 
-    func authenticate(mode: AuthenticationMode) async {
+    func authenticateWithGoogle() async {
         guard !isSubmitting else { return }
         isSubmitting = true
         error = nil
         defer { isSubmitting = false }
         do {
-            let intent = try await AuthAPIClient.shared.createGoogleIntent(mode: mode)
+            let intent = try await AuthAPIClient.shared.createGoogleAuthenticationIntent()
             let idToken = try await GoogleAuthenticationProvider.idToken(nonce: intent.nonce)
-            let result = try await AuthAPIClient.shared.completeGoogle(mode: mode, intentID: intent.intentId, idToken: idToken)
+            let result = try await AuthAPIClient.shared.authenticateGoogle(intentID: intent.intentId, idToken: idToken)
             let user = try await AuthSession.shared.install(result)
             state = .signedIn(user)
         } catch let authError as AuthenticationError {

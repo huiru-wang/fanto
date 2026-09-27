@@ -4,20 +4,19 @@ nonisolated struct AuthAPIClient {
     static let shared = AuthAPIClient()
     private let baseURL = URL(string: "https://fanto.robinverse.me")!
 
-    func createGoogleIntent(mode: AuthenticationMode) async throws -> AuthIntent {
+    func createGoogleAuthenticationIntent() async throws -> AuthIntent {
         try await post(
             path: "api/auth/intents",
             body: IntentRequest(
-                purpose: mode == .signIn ? "login" : "register",
+                purpose: "authenticate",
                 provider: "google"
             )
         )
     }
 
-    func completeGoogle(mode: AuthenticationMode, intentID: String, idToken: String) async throws -> AuthResult {
-        let path = mode == .signIn ? "api/auth/logins" : "api/auth/registrations"
+    func authenticateGoogle(intentID: String, idToken: String) async throws -> AuthResult {
         return try await post(
-            path: path,
+            path: "api/auth/authentications",
             body: ProofRequest(
                 intentId: intentID,
                 proof: ProviderProof(idToken: idToken)
@@ -53,8 +52,6 @@ nonisolated struct AuthAPIClient {
 
     private func map(code: String?, message: String?, status: Int) -> AuthenticationError {
         switch code {
-        case "IDENTITY_NOT_REGISTERED": .notRegistered
-        case "IDENTITY_ALREADY_REGISTERED": .alreadyRegistered
         case "USER_DISABLED": .accountUnavailable
         case "REFRESH_TOKEN_INVALID", "UNAUTHENTICATED": .expired
         default: .server(message ?? "登录失败（\(status)）。")

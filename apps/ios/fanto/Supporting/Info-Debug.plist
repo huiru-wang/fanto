@@ -43,9 +43,9 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>GIDClientID</key>
-	<string>REPLACE_WITH_GOOGLE_IOS_CLIENT_ID</string>
+	<string>676865356273-p2j9g89j8npcg79155ntfc0o61uujc24.apps.googleusercontent.com</string>
 	<key>GIDServerClientID</key>
-	<string>REPLACE_WITH_GOOGLE_SERVER_CLIENT_ID</string>
+	<string>676865356273-263lmhnvoeptskuc6g4gvne37678b9en.apps.googleusercontent.com</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -53,7 +53,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>REPLACE_WITH_REVERSED_GOOGLE_IOS_CLIENT_ID</string>
+				<string>com.googleusercontent.apps.676865356273-p2j9g89j8npcg79155ntfc0o61uujc24</string>
 			</array>
 		</dict>
 	</array>
