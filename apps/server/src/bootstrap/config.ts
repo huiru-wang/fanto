@@ -3,10 +3,11 @@
  */
 
 import { readFileSync } from "node:fs";
+import { dirname, isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export interface AppConfig {
   databaseUrl: string;
-  agentApiToken: string;
   port: number;
   host: string;
   auth: {
@@ -23,6 +24,7 @@ export interface AppConfig {
   };
   oss: { region: string; endpoint?: string; bucket: string; accessKeyId: string; accessKeySecret: string };
   dashscope: { apiKey: string; baseUrl: string; embeddingModel: string; embeddingDimension: number; visionModel: string; asrModel: string };
+  agent: { sessionDatabasePath: string; workspaceRoot: string; definitionPath: string; deepseekApiKey: string };
 }
 
 export function loadEnv(path = ".env") {
@@ -44,10 +46,13 @@ export function loadEnv(path = ".env") {
 export function loadConfig(): AppConfig {
   const databaseUrl = process.env.DATABASE_URL?.trim();
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
-  const agentApiToken = required("AGENT_API_TOKEN");
   const embeddingDimension = parseInt(process.env.DASHSCOPE_EMBEDDING_DIMENSION ?? "768", 10);
   if (embeddingDimension !== 768) throw new Error("DASHSCOPE_EMBEDDING_DIMENSION must be 768");
   const endpoint = process.env.OSS_ENDPOINT?.trim();
+  const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
+  const projectPath = (value: string | undefined, fallback: string) => value
+    ? (isAbsolute(value) ? value : resolve(projectRoot, value))
+    : resolve(projectRoot, fallback);
   const ossEndpoint = endpoint ? (endpoint.startsWith("http://") || endpoint.startsWith("https://") ? endpoint : `https://${endpoint}`) : undefined;
   if (ossEndpoint?.includes("-internal.")) throw new Error("OSS_ENDPOINT must be publicly reachable");
 
@@ -62,7 +67,6 @@ export function loadConfig(): AppConfig {
 
   return {
     databaseUrl,
-    agentApiToken,
     port: parseInt(process.env.PORT ?? "3000", 10),
     host: process.env.HOST ?? "0.0.0.0",
     auth: {
@@ -91,6 +95,12 @@ export function loadConfig(): AppConfig {
       embeddingDimension,
       visionModel: process.env.DASHSCOPE_VL_MODEL ?? "qwen3-vl-flash",
       asrModel: process.env.DASHSCOPE_ASR_MODEL ?? "qwen3-asr-flash",
+    },
+    agent: {
+      sessionDatabasePath: projectPath(process.env.AGENT_SESSION_DB, "data/agent-sessions.sqlite"),
+      workspaceRoot: projectPath(process.env.AGENT_WORKSPACE_ROOT, "data/workspaces"),
+      definitionPath: projectPath(process.env.AGENT_CONFIG_PATH, "apps/server/agent.yaml"),
+      deepseekApiKey: required("DEEPSEEK_API_KEY"),
     },
   };
 }

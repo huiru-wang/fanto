@@ -8,8 +8,7 @@ Fanto 是一个建立在长期个人记录之上的陪伴型个人智能。用�
 
 Fanto 目前处于 MVP 阶段，仓库包含：
 
-- `apps/server`：Hono + TypeScript 业务服务，负责 Record、Media、Creation / Proposal 与 Record 向量索引。
-- `apps/agent`：独立的 Pi `AgentHarness` 服务，负责 Agent Session、流式执行、异步任务、工作区与内置工具。
+- `apps/server`：Hono + TypeScript 服务，负责业务领域，以及内嵌的 Pi Agent Runtime（Session、流式执行、工作区与内置工具）。
 - `apps/ios/fanto`：SwiftUI iOS 客户端，已实现 Record 读取、Creation / Proposal 主要链路与 Fanto 单 Session 对话代码；当前演示用户与公网 allowlist 尚未对齐。
 - `apps/h5`：React + Vite 响应式测试客户端，支持多模态 Record、语义搜索、Fanto 多轮对话、Markdown 与媒体消息渲染。
 - `packages/shared`：TypeScript 共享 API / Record 类型。
@@ -31,7 +30,13 @@ pnpm dev:server
 curl http://127.0.0.1:3000/health
 ```
 
-Agent 服务独立运行，启动方式见 [apps/agent/README.md](apps/agent/README.md)。
+Agent API 由同一个 Server 进程提供在 `/api/agent/*`；配置入口为 `apps/server/agent.yaml`。
+
+生产服务器首次完整发布（Server、内嵌 Agent Runtime、H5 与 Nginx）使用：
+
+```bash
+pnpm deploy:nginx
+```
 
 常用验证：
 

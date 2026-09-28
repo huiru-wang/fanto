@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { PreferenceService } from "../domain/preferences/preference-service.js";
+import type { PreferenceService } from "../domain/preferences/index.js";
 import { requireUserId } from "./request-user.js";
 
 const category = z.enum(["communication", "scenario", "lifestyle"]);

@@ -1,54 +1,56 @@
 # Agent Runtime
 
-目录：`apps/agent/`。它是独立于 Business Server 的 Hono + Pi `AgentHarness` 服务。
+当前 Agent Runtime 位于 `apps/server/src/agent/`，由 Business Server 同一 Hono 进程提供 `/api/agent/*`。
 
 ## 组成
 
 ```mermaid
 flowchart TD
-  HTTP[Agent HTTP API] --> REG[Agent Registry]
+  HTTP[Server Agent Route] --> AUTH[Server JWT / principal]
+  AUTH --> REG[Agent Registry]
   HTTP --> SM[Session Manager]
   HTTP --> RUN[Agent Run]
   HTTP --> TR[Task Runner]
   TR --> RUN
-  REG --> YAML[agents.yaml]
-  YAML --> PROMPTS[prompts/*.md]
+  REG --> DEF[Config-loaded Agent definitions]
+  DEF --> YAML[apps/server/agent.yaml]
+  YAML --> PROMPTS[apps/server/src/agent/prompts/*.ts]
 
-  SM --> HARNESS[createHarness]
+  SM --> HARNESS[buildRuntime]
   HARNESS --> PI[Pi AgentHarness / Lane]
   SM --> DB[(Agent SQLite)]
   SM --> WS[Session Workspace]
 
-  RUN --> CR[Context Runtime / once per run]
-  CR --> CHAR[CharacterProvider]
-  CR --> PREF[PreferenceProvider]
-  CR --> MEM[MemoryProvider]
-  PREF --> FSC[FantoServerClient]
+  RUN --> RC[createRunContext]
+  HARNESS --> SP[Dynamic System Prompt]
+  RC --> SP
+  SP --> CHAR[CharacterProvider]
+  SP --> PREF[PreferenceProvider]
+  SP --> MEM[MemoryProvider]
+  PREF --> B[Agent Business Services]
   MEM --> QR[Query Rewrite / deepseek-v4-flash]
-  MEM --> FSC
-  RUN --> CMP[Context Composer]
-  CR --> CMP
-  CMP --> RUN
+  MEM --> B
   RUN --> PI
+  PI --> TC[transform_context / messages view]
 
   PI --> TOOLS[Configured Pi Tools]
   TOOLS --> BUILTIN[read / write / edit / bash]
   TOOLS --> RECORD[record_get / record_list / record_search]
   TOOLS --> PM[preference_manage]
   TOOLS --> PRESENT[present_media]
-  RECORD --> FSC
-  PM --> FSC
-  PRESENT --> FSC
-  FSC -->|X-API-Token / X-User-Id / x-trace-id| SERVER[Business Server]
+  RECORD --> B
+  PM --> B
+  PRESENT --> B
+  B --> SERVICE[Record / Media / Preference Service]
   PI --> SKILLS[Skills]
 ```
 
 ## Agent Definition
 
-`apps/agent/agents.yaml` 是 Agent 定义入口；YAML 及其引用的 Prompt 文件都只在服务启动时读取。顶层 `models` 定义 Pi `provider` / `model` 组合，Agent 用 `model_id` 引用其中一项。定义包含：
+`apps/server/agent.yaml` 是当前 Server Agent 定义入口。它引用受限的 TypeScript Prompt 模块名；`apps/server/src/agent/harness/definition.ts` 在 Server 启动时加载模块、校验模型、Tool、Skill 与 revision。定义包含：
 
 - model_id；
-- systemPrompt 或 systemPromptFile；
+- systemPrompt，或受限的 TypeScript Prompt 模块引用；
 - tools；
 - skills；
 - compaction 配置。
@@ -69,39 +71,17 @@ present_media
 preference_manage
 ```
 
-当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media` 与 `preference_manage`；`coding` 只开启 `read / write / edit / bash`。Fanto 的认识与关系 Core 位于 `apps/agent/prompts/core.md`，操作规则与动态插槽位于 `apps/agent/prompts/operational.md`；分别通过 `corePromptFile` 与 `systemPromptFile` 在启动期拼成最终 Prompt。操作模板包含 `{{character}}`、`{{current_time}}`、`{{user_preferences}}`、`{{relevant_memory}}` 四个运行时插槽。Tool 权限仍由 Agent definition 显式声明。
+当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media` 与 `preference_manage`；`coding` 只开启 `read / write / edit / bash`。Fanto 的认识与关系 Core 位于 `apps/server/src/agent/prompts/core.ts`，操作规则与动态插槽位于 `apps/server/src/agent/prompts/operational.ts`；`apps/server/agent.yaml` 分别通过 `corePromptModule` 与 `systemPromptModule` 在启动期拼成最终 Prompt。操作模板包含 `{{character}}`、`{{current_time}}`、`{{user_preferences}}`、`{{relevant_memory}}` 四个运行时插槽。Tool 权限仍由 Agent definition 显式声明。
 
-`systemPromptFile` 与可选 `corePromptFile` 必须是相对 `agents.yaml` 的路径，不能逃逸出配置目录。Loader 会把文件内容解析为最终 `systemPrompt`，并基于解析后的完整 Agent definition 计算 revision，所以只修改 Prompt 文件也会产生新的 revision。
+Core 与 operational Prompt 在启动期按固定顺序合并为最终 `systemPrompt`，并参与 Agent revision 计算；修改 Prompt 后需要重启 Server。
 
-Skill 通过 ID 映射到 `apps/agent/skills/<id>/SKILL.md`。密钥不写入 YAML。
+Skill 通过 ID 映射到与 `apps/server/agent.yaml` 同级的 `apps/server/skills/<id>/SKILL.md`。密钥不写入 YAML。
 
-## Context Runtime
+## Context
 
-Context Runtime 是每次 Agent Run 的前置准备阶段，不属于 Pi Agent Loop。`agent/run.ts` 是唯一执行入口：它在调用 `lane.prompt()` 前构建一次 Context，并由 Composer 将 Context fragments 注入 Prompt 模板：
+`context/index.ts` 只公开 `createRunContext`、`createSystemPrompt` 与 `createTransformContext`。`harness/run.ts` 是唯一执行入口：它在调用 Runtime `prompt()` 前创建包含 runId、用户、query、Session、时区、最近消息和 slot store 的 Chord Context，并作为 Pi prompt 的第三参传入。
 
-```text
-current message + recent conversation
-             |
-             v
-       Context Runtime
-       /      |      \
-Character  Time  Preference  Memory
-             |
-             v
-      Context Fragments
-             |
-             v
-       Context Composer
-             |
-             v
- fill operational prompt slots
-             |
-             v
-      one system prompt
-             |
-             v
-       Pi Agent Loop
-```
+`harness/build-runtime.ts` 在创建 Harness 时注册 System Prompt 回调。首次回调从 Run Context 解析模板引用的 `{{slot}}`，只选择被引用的自声明 Provider 并行执行，得到 `{ slot, content }` 后填充模板。缺少 Provider、空内容或普通 Provider 失败填 `（无）`；取消会中止 Run。结果按 run 缓存，所以该 Run 后续 turn 不再解析模板或运行 IO。
 
 当前只有包含 Context 插槽的 Prompt 才会触发 Provider；因此 `coding` Agent 不会执行用户 Preference / Memory 查询。
 
@@ -111,7 +91,7 @@ Character  Time  Preference  Memory
 - MemoryProvider 先用 `deepseek-v4-flash` 结合当前消息与最近最多约 4 轮对话重写 0–2 条语义查询，再复用 Business Server 的 `POST /api/records/search`；跨查询按真实 `recordId` 去重并只注入最相关 2 条。
 - Relevant Memory 直接包含真实 `recordId`、片段和按该时区格式化的 `eventAt`；命中媒体原子单元时还会提示可能有可展示媒体。需要完整内容或展示媒体时主模型可继续调用已有 `record_get`。
 
-Context Build 失败采用降级策略：单个 Provider 普通失败只使对应 fragment 为空，用户取消则中止 Run。Context Runtime 的产物是独立 fragments；Composer 再生成本次 Run 使用的 System Prompt，并写入 Pi Run Context。后续 Tool / Model turn 不重新执行 Provider，也不会因为 `preference_manage` 成功而刷新本轮 Context。
+`transform_context` 已在 Harness Hook 中接入，当前默认 pass。它只允许返回 messages 请求视图，可用于裁剪、重排、注入或脱敏；不会写回 transcript，也不能修改 System Prompt。后续 Tool / Model turn 不重新执行 Provider，也不会因为 `preference_manage` 成功而刷新本轮 Context。
 
 ## Session
 
@@ -126,7 +106,7 @@ Context Build 失败采用降级策略：单个 Provider 普通失败只使对�
 
 绑定信息保存在 Pi Session 的 `fanto.session_owner` custom entry。旧 Session 在下一次执行时可以应用当前 Agent revision；如果调用方指定另一个 Agent，空闲 Session 可以切换 Agent，同时保留历史和工作区。
 
-同一 Session 同时只允许一个运行。Session Manager 不负责执行 Prompt；`agent/run.ts` 是唯一执行入口。
+同一 Session 同时只允许一个运行。Session Manager 不负责执行 Prompt；`harness/run.ts` 是唯一执行入口。
 
 ## 执行方式
 
@@ -146,18 +126,16 @@ Session History 直接读取 Pi Session entry，以 `seq` 倒序分页。内部 
 
 ## 与 Fanto 业务数据的当前关系
 
-Agent Runtime 不连接 Business Server 数据库。Record 能力与媒体展示校验都通过 `FantoServerClient` 调用 Business Server HTTP API：
+Agent Runtime 不连接业务数据库，也不调用 Server HTTP API。`business-services.ts` 将 Tool / Provider 所需的最小能力适配到领域 Service：
 
 ```text
-record_list   → GET  /api/records
-record_get    → GET  /api/records/:id
-record_search      → POST   /api/records/search
-preference_manage → GET/POST/PATCH/DELETE /api/preferences
-present_media      → GET    /api/media/:id/meta
+record_list / record_get / record_search → RecordService
+preference_manage                       → PreferenceService
+present_media                            → MediaService
 ```
 
-每次 prompt 已把 Session owner 的 `userId` 与可选 `traceId` 写入 Pi Run Context。Record Tool、`present_media` 与 `preference_manage` 都从当前 Tool execution Context 读取这些值；LLM Tool schema 不包含 `userId`。`FantoServerClient` 使用受控的内部 API Token，并发送 `X-User-Id` / `x-trace-id`。Preference Tool 的 `sessionId` / `sourceMessageId` 同样来自当前 Run Context，模型只提供动作、业务 ID/version、偏好内容与当前用户消息中的逐字 `sourceQuote`。其中 `present_media` 的 Tool Call 只接受 `mediaIds`，Business Server 返回的真实 `mediaType / mimeType / capture` 被写入原生 Tool Result `details`，不会保存短期 OSS signed URL。
+每次 prompt 已把 Server JWT 验证后的 Session owner `userId` 与可选 `traceId` 写入 Pi Run Context。Record Tool、`present_media` 与 `preference_manage` 都从当前 Tool execution Context 读取这些值；LLM Tool schema 不包含 `userId`。Preference Tool 的 `sessionId` / `sourceMessageId` 同样来自当前 Run Context，模型只提供动作、业务 ID/version、偏好内容与当前用户消息中的逐字 `sourceQuote`。其中 `present_media` 的 Tool Call 只接受 `mediaIds`，真实 `mediaType / mimeType / capture` 被写入原生 Tool Result `details`，不会保存短期 OSS signed URL。
 
-用户 Access Token 仅用于客户端进入 Agent Runtime 的 HTTP 鉴权，不进入 Run Context，也不在 Agent 与 Business Server 之间透传。Client 统一负责 Business Server base URL、内部身份 Header、JSON envelope、15 秒 timeout、运行取消和安全错误映射。Business Server 对内部 Token 强制要求 `X-User-Id`，并仅允许预定义白名单路由。
+客户端 Access Token 由 Server 的统一鉴权中间件验证，不进入 Run Context。Runtime 不使用内部 HTTP Client、`FANTO_SERVER_BASE_URL`、`FANTO_SERVER_API_TOKEN`、`X-API-Token` 或 `X-User-Id`。
 
-接口和运行示例见 [apps/agent/README.md](../../apps/agent/README.md)。
+接口和运行示例见 [HTTP API](../api/http-api.md#agent-runtime)。

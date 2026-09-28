@@ -5,10 +5,10 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TARGET="${1:-all}"
 
 case "$TARGET" in
-  server|agent|h5|all)
+  server|h5|all)
     ;;
   *)
-    echo "Usage: $0 [server|agent|h5|all]"
+    echo "Usage: $0 [server|h5|all]"
     exit 1
     ;;
 esac

@@ -14,7 +14,7 @@
 进入子模块时继续读取最近的局部规则：
 
 - Server：`apps/server/AGENTS.md`
-- Agent Runtime：`apps/agent/AGENTS.md`
+- Agent Runtime：`apps/server/AGENTS.md`
 - iOS：`apps/ios/fanto/AGENTS.md`
 
 ## 2. Source of Truth
@@ -81,7 +81,7 @@ Current State 文档只描述**当前最终仓库状态**。它不仅包括 `doc
 - `apps/server/src/domain/media/**`、媒体 Client → `docs/domain/media.md`
 - `apps/server/src/domain/memory/**`、向量脚本 → `docs/domain/memory.md`
 - `apps/server/src/domain/creations/**` → `docs/domain/creations.md`
-- `apps/agent/**` → `docs/architecture/agent-runtime.md`、`apps/agent/README.md`，必要时根 `README.md`
+- `apps/server/src/agent/**`、`apps/server/src/routes/agent/**` → `docs/architecture/agent-runtime.md`，必要时根 `README.md`
 - `apps/h5/**` → `docs/product/current-scope.md`、`docs/engineering/local-development.md`、`docs/architecture/overview.md`，必要时根 `README.md`
 - `apps/ios/fanto/**` → `docs/clients/ios.md`、`apps/ios/fanto/AGENTS.md`
 - 配置读取逻辑 → `docs/engineering/configuration.md`

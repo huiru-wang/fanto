@@ -60,9 +60,9 @@ Fanto `main` 在每次 Run 前由 PreferenceProvider 读取当前用户 Preferen
 
 ## Agent Runtime
 
-独立 Agent 服务当前支持：
+Server 内嵌的 Agent Runtime 当前支持：
 
-- 从 `apps/agent/agents.yaml` 加载模型与 Agent 定义，Agent 通过 `model_id` 引用同级模型项，并支持通过 `systemPromptFile` 加载独立 Prompt 文件；`main` 是必需的默认 Agent；
+- 从 `apps/server/agent.yaml` 加载模型与 Agent 定义，Agent 通过 `model_id` 引用同级模型项，并通过受限的 TypeScript Prompt 模块构建 System Prompt；`main` 是必需的默认 Agent；
 - 创建持久 Session；
 - 基于同一 Session 的多轮流式执行；
 - Session 历史分页；
@@ -75,7 +75,7 @@ Fanto `main` 在每次 Run 前由 PreferenceProvider 读取当前用户 Preferen
 - Run 前一次性 Context Runtime（Character / Preference / Relevant Memory）；
 - Skill 文件加载。
 
-它不直接访问 Fanto 业务数据库；Record Tool、PreferenceProvider / Tool 与 `present_media` 统一通过 `FantoServerClient` 调用 Business Server，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool 与 `present_media`；`coding` 默认不具备个人历史访问能力。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 的认识与关系原则由 `apps/agent/prompts/core.md` 约束，工具与 Markdown / Media 规则位于 `apps/agent/prompts/operational.md`；每轮还会注入 Character、当前时区下的时间、偏好与相关记忆。
+它不直接访问 Fanto 业务数据库；Record Tool、PreferenceProvider / Tool 与 `present_media` 统一通过 `business-services.ts` 调用相应领域 Service，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media` 与 `preference_manage`；`coding` 默认不具备个人历史访问能力。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 的认识与关系原则由 `apps/server/src/agent/prompts/core.ts` 约束，工具与 Markdown / Media 规则位于 `apps/server/src/agent/prompts/operational.ts`；每轮还会注入 Character、当前时区下的时间、偏好与相关记忆。
 
 ## 当前基础设施边界
 
@@ -84,4 +84,4 @@ Fanto `main` 在每次 Run 前由 PreferenceProvider 读取当前用户 Preferen
 - Server 的 `x-user-id` 仍不是正式认证；当前运行入口额外只允许 `user001`，用于公网测试期收紧访问范围。
 - iOS 当前仍硬编码 HTTP ECS 地址和测试用户 `user001`；该用户与当前公网 Server / Agent allowlist 一致。
 - H5 固定使用 `user001` 并内置测试 Agent Token；Token 对能访问前端 bundle 的用户可见，因此该方式只用于测试。
-- Agent Runtime 使用 Bearer Token + `X-User-Id`，当前运行入口同样只允许 `user001`；bash 的宿主机执行仍只适合开发环境，生产环境需要真正的容器或微虚拟机隔离。
+- Agent Runtime 使用与 Server 相同的 Bearer Token 鉴权，并使用验证后的 JWT `sub` 绑定 Session；bash 的宿主机执行仍只适合开发环境，生产环境需要真正的容器或微虚拟机隔离。

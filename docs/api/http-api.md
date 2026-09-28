@@ -161,9 +161,9 @@ Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionI
 
 提案列表只支持 `pending_confirmation` 状态。确认使用事务创建或更新 Creation，并把来源 Record 关联迁移到该 Creation；若更新目标版本已变化，则返回 `VERSION_CONFLICT`。Creation 完整列表目前支持可选的类型筛选；尚未提供搜索、状态筛选或列表分页。
 
-## 独立 Agent 服务
+## Agent Runtime
 
-Agent 服务独立运行在 `http://127.0.0.1:3001`，定义读取 `apps/agent/agents.yaml`，不复用业务服务的数据库。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference 和最多 2 条 Relevant Memory，再由 Context Composer 注入 Prompt；Relevant Memory 的 `eventAt` 按请求时区展示。Agent Loop 内通过 `src/clients/server-client.ts` 的 `FantoServerClient` 调用 `record_list`、`record_search`、`record_get` 三个只读 Record Tool，通过 `preference_manage` 管理明确长期偏好，并通过 `present_media` 调用 `GET /api/media/:id/meta` 校验要展示的媒体。Tool schema 不接受 `userId`，实际用户身份来自已验证 Access JWT 的 `sub`；该 JWT 只用于客户端进入 Agent 服务的鉴权，不进入 Run Context。Agent 调用 Business Server 使用内部 `X-API-Token` 与 `X-User-Id`，并受 Server 白名单限制。除 `GET /health` 外，Agent HTTP 接口统一要求同一份 Fanto Access JWT：
+Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 仍使用独立 SQLite，不与业务 PostgreSQL 共用。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference 和最多 2 条 Relevant Memory，再填充 System Prompt；Relevant Memory 的 `eventAt` 按请求时区展示。Record Tool、Preference Provider / Tool 与 `present_media` 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
 
 ```text
 Authorization: Bearer <ACCESS_TOKEN>
@@ -182,7 +182,7 @@ X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC
 ```sh
 export ACCESS_TOKEN='替换为服务端 ACCESS_TOKEN'
 
-SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
+SESSION_ID=$(curl -sS http://127.0.0.1:3000/api/agent/sessions \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'X-Trace-Id: trace_001' \
   -H 'Content-Type: application/json' \
@@ -193,7 +193,7 @@ SESSION_ID=$(curl -sS http://127.0.0.1:3001/api/agent/sessions \
 流式执行使用 POST 响应体的 SSE 流，不使用浏览器原生 `EventSource`：
 
 ```sh
-curl -N http://127.0.0.1:3001/api/agent/stream \
+curl -N http://127.0.0.1:3000/api/agent/stream \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'X-Trace-Id: trace_002' \
   -H 'Content-Type: application/json' \
@@ -217,4 +217,4 @@ curl -N http://127.0.0.1:3001/api/agent/stream \
 }
 ```
 
-`apps/agent/agents.yaml` 及其通过 `systemPromptFile` 引用的 Prompt 文件仅在服务启动时加载，不做运行时热更新。变更 YAML 或 Prompt 后需要重启服务；已有 Session 在下一次 stream 执行时会自动升级，无需额外状态查询或配置更新接口。
+`apps/server/agent.yaml` 与其引用的 TypeScript Prompt 模块仅在 Server 启动时加载，不做运行时热更新。变更 YAML 或 Prompt 后需要重启 Server；已有 Session 在下一次 stream 执行时会自动升级，无需额外状态查询或配置更新接口。

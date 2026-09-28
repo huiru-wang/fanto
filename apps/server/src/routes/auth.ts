@@ -1,8 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import type { AuthService } from "../domain/auth/service.js";
-import type { ChallengePurpose, IdentityProviderName } from "../domain/auth/identity-provider.js";
-import { AuthError } from "../domain/auth/errors.js";
+import { AuthError, type AuthService, type ChallengePurpose, type IdentityProviderName } from "../domain/auth/index.js";
 import { requireUserId } from "./request-user.js";
 
 const providerSchema = z.enum(["google", "apple", "phone"]);

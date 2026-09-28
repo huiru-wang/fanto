@@ -3,17 +3,17 @@ import type { AudioTranscriptionClient } from "../infrastructure/clients/audio-c
 import type { ImageUnderstanding } from "../infrastructure/clients/image-client.js";
 import type { OssStorage } from "../infrastructure/clients/oss-client.js";
 import type { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
-import type { MemoryService } from "../domain/memory/memory-service.js";
-import type { PostgresMediaRepository } from "../domain/media/postgres-repository.js";
-import type { RecordRepository } from "../domain/records/repository.js";
+import type { MemoryService } from "../domain/memory/index.js";
+import type { MediaService } from "../domain/media/index.js";
+import type { RecordService } from "../domain/records/index.js";
 import { logError } from "../infrastructure/logging/logger.js";
 
 type RecordMemory = Pick<MemoryService, "replaceRecord">;
 
 export function registerRecordPostprocessListener(
   queue: RecordPostprocessQueue,
-  records: RecordRepository,
-  media: PostgresMediaRepository,
+  records: RecordService,
+  media: MediaService,
   oss: OssStorage,
   image: ImageUnderstanding,
   audio: AudioTranscriptionClient,
@@ -26,7 +26,7 @@ export function registerRecordPostprocessListener(
 
     let completed;
     try {
-      const assets = await media.findMediaByIds(record.content.blocks.map(block => block.mediaId), task.userId);
+      const assets = await media.findOwnedByIds(task.userId, record.content.blocks.map(block => block.mediaId));
       const byId = new Map(assets.filter(asset => asset.status === "ready" && asset.extData.recordId === task.recordId).map(asset => [asset.mediaId, asset]));
       const imageJobs = record.content.blocks.filter(block => block.type === "image").flatMap(block => {
         const asset = byId.get(block.mediaId);

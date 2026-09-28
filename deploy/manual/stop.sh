@@ -6,7 +6,7 @@ TARGET="${1:-all}"
 RUN_DIR="$ROOT/run"
 
 usage() {
-  echo "Usage: $0 [server|agent|h5|all]"
+  echo "Usage: $0 [server|h5|all]"
 }
 
 stop_h5() {
@@ -53,15 +53,11 @@ case "$TARGET" in
   server)
     stop_process server
     ;;
-  agent)
-    stop_process agent
-    ;;
   h5)
     stop_h5
     ;;
   all)
     stop_h5
-    stop_process agent
     stop_process server
     ;;
   *)

@@ -6,24 +6,23 @@
 flowchart LR
   IOS[iOS / SwiftUI] -->|HTTP| S[Business Server / Hono]
   H5[H5 / React + Vite] -->|HTTPS / Nginx| S
-  H5 -->|HTTPS / Nginx| AR[Agent Runtime / Hono + Pi]
   S --> DB[(Supabase PostgreSQL)]
   S --> OSS[Aliyun OSS]
   S --> VL[Vision Model]
   S --> ASR[ASR Model]
   S --> EMB[Embedding API]
 
+  S --> AR[Agent Runtime / Pi]
   AR --> ADB[(agent-sessions.sqlite)]
   AR --> WS[Session Workspaces]
-  AR -->|Record Tools / HTTP| S
+  AR --> DS[Domain Services]
 ```
 
-Fanto 当前有两个独立后端服务，并有 iOS 与 H5 两类客户端入口：
+Fanto 当前有一个后端服务，并有 iOS 与 H5 两类客户端入口：
 
-1. **Business Server**：Record、Media、Memory / Retrieval、User Preference、Creation / Proposal 的业务运行时。
-2. **Agent Runtime**：Agent 定义、Session、Context Runtime、流式执行、异步任务、工作区、Pi 内置工具、Record / Preference Tool 与媒体展示 Tool 的独立运行时。
+1. **Business Server**：Record、Media、Memory / Retrieval、User Preference、Creation / Proposal，以及内嵌的 Agent Runtime。
 
-两个后端服务没有共享数据库。Agent Runtime 通过 `FantoServerClient` 使用 Business Server 的 Record Search / Record、User Preference 与 user-scoped Media metadata API；业务数据仍由 Business Server 负责用户隔离与访问。H5 生产构建由 Nginx 提供静态文件，并把 `/api/*` 转发到 Business Server、`/api/agent/*` 转发到 Agent Runtime。
+Agent Runtime 的 Session 与工作区仍独立于业务数据；其 Tool 和 Context Provider 通过 `business-services.ts` 调用领域 Service，不经过 Server Route 或内部 HTTP。H5 生产构建由 Nginx 提供静态文件，所有 `/api/*` 请求均转发到 Business Server。
 
 ## 业务数据边界
 
@@ -47,7 +46,7 @@ Agent Runtime 使用独立 SQLite 保存 Pi Session 与 Agent Task，并在 `AGE
 
 Business Server 的公开入口只有健康检查与 Google 注册 / 登录 / Refresh。其余业务 API 统一验证 EdDSA Access JWT，并只从经过验证的 `sub` 生成 `principal.userId`；客户端提交的用户 ID 不参与授权。
 
-Agent Runtime 使用同一 Access JWT，验证 `fanto-agent` audience 后以 `sub` 绑定 Session 归属。Agent 调用 Business Server 时原样转发 Authorization，Business Server 再独立验证 `fanto-api` audience。Access Token 有效期 30 分钟，Refresh Token 为 30 天滑动有效期。
+Agent Runtime 使用同一 Server 鉴权中间件验证 Access JWT，并以验证后的 `sub` 绑定 Session 归属。Access Token 有效期 30 分钟，Refresh Token 为 30 天滑动有效期。
 
 ## 当前可靠性边界
 

@@ -28,23 +28,22 @@ pnpm --filter @fanto/server test
 ## Agent Runtime
 
 ```bash
-pnpm --filter @fanto/agent typecheck
-pnpm --filter @fanto/agent test
-pnpm --filter @fanto/agent build
+pnpm --filter @fanto/server typecheck
+pnpm --filter @fanto/server test
 ```
 
-修改 Session、Tool、Task 或安全边界时，至少覆盖对应现有测试，并验证：
+Agent Runtime 的测试已包含在 Server 测试中。修改 Session、Tool、Task 或安全边界时，至少覆盖对应现有测试，并验证：
 
 - user ownership；
 - 同一 Session 并发保护；
 - workspace confinement；
 - 配置 reload / revision 行为；
 - HTTP 错误映射；
-- Record Tool 的 Run Context 用户身份、`FantoServerClient` Header / timeout / cancellation / envelope；
+- Record Tool 的 Run Context 用户身份、Service 调用、timeout / cancellation / SSE 边界；
 - `record_list / record_search / record_get` 的模型 DTO 投影与 Agent 权限配置；
 - `present_media` 的 mediaId-only schema、user-scoped metadata 校验、Tool Result 白名单投影，以及其他 Tool 参数 / 结果不进入 SSE 的边界。
 
-Record Tool 变更除单元测试外，还应至少做一次 Business Server + Agent Runtime 真实 smoke；真实模型的 Tool Selection 不作为 CI 的确定性断言。
+Record Tool 变更除单元测试外，还应至少做一次 Server 内 Agent Runtime 真实 smoke；真实模型的 Tool Selection 不作为 CI 的确定性断言。
 
 ## iOS
 

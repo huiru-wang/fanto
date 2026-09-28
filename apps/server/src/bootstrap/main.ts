@@ -6,22 +6,21 @@ import { QwenAudioTranscription } from "../infrastructure/clients/audio-client.j
 import { EmbeddingsClient } from "../infrastructure/clients/embeddings-client.js";
 import { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import { OssStorage } from "../infrastructure/clients/oss-client.js";
-import { PostgresMediaRepository } from "../domain/media/postgres-repository.js";
-import { PostgresRecordRepository } from "../domain/records/postgres-repository.js";
  import { registerRecordPostprocessListener } from "../listeners/record-postprocess.listener.js";
-import { createApp } from "./app.js";
+import { createApp, type ServerServices } from "./app.js";
 import { logInfo } from "../infrastructure/logging/logger.js";
-import { MemoryService } from "../domain/memory/memory-service.js";
+import { MemoryService } from "../domain/memory/index.js";
 import { PostgresMemoryIndex } from "../infrastructure/memory/postgres-memory-index.js";
-import { CreationReadRepository } from "../domain/creations/creation-repository.js";
-import { CreationProposalRepository } from "../domain/creations/proposal-repository.js";
-import { PostgresPreferenceRepository } from "../domain/preferences/postgres-repository.js";
-import { PreferenceService } from "../domain/preferences/preference-service.js";
+import { PreferenceService } from "../domain/preferences/index.js";
 import { JwtTokenService } from "../infrastructure/auth/jwt-token-service.js";
 import { GoogleIdentityProvider } from "../infrastructure/auth/providers/google-identity-provider.js";
 import { AppleIdentityProvider } from "../infrastructure/auth/providers/apple-identity-provider.js";
 import { IdentityProviderRegistry } from "../domain/auth/identity-provider.js";
-import { AuthService } from "../domain/auth/service.js";
+import { AuthService } from "../domain/auth/index.js";
+import { RecordService } from "../domain/records/index.js";
+import { MediaService } from "../domain/media/index.js";
+import { CreationService, CreationProposalService } from "../domain/creations/index.js";
+import { createAgentRuntime } from "../agent/agent-runtime.js";
 
 loadEnv();
 const config = loadConfig();
@@ -35,11 +34,8 @@ const identityProviders = new IdentityProviderRegistry([
 ]);
 const auth = new AuthService(db, identityProviders, authTokens);
 const oss = new OssStorage(config.oss);
-const records = new PostgresRecordRepository(db);
-const media = new PostgresMediaRepository(db);
-const creationRead = new CreationReadRepository(db);
-const creationProposals = new CreationProposalRepository(db);
-const preferences = new PreferenceService(new PostgresPreferenceRepository(db));
+const media = MediaService.create(db, oss);
+const preferences = PreferenceService.create(db);
 const embeddings = new EmbeddingsClient(
   config.dashscope.apiKey,
   config.dashscope.baseUrl,
@@ -49,6 +45,8 @@ const embeddings = new EmbeddingsClient(
 const memoryIndex = new PostgresMemoryIndex(db);
 const memory = new MemoryService(memoryIndex, embeddings);
 const queue = new RecordPostprocessQueue();
+const records = RecordService.create(db, media, queue, memory);
+const agent = createAgentRuntime({ records, media, preferences, ...config.agent });
 
 registerRecordPostprocessListener(
   queue,
@@ -60,8 +58,18 @@ registerRecordPostprocessListener(
   memory,
 );
 
+const services: ServerServices = {
+  auth,
+  records,
+  media,
+  preferences,
+  creations: CreationService.create(db),
+  creationProposals: CreationProposalService.create(db),
+  agent,
+};
+
 const server = serve({
-  fetch: createApp(records, media, queue, oss, creationRead, creationProposals, memory, preferences, { tokens: authTokens, service: auth }, config.agentApiToken).fetch,
+  fetch: createApp(services).fetch,
   port: config.port,
   hostname: config.host,
 });
@@ -69,6 +77,7 @@ logInfo("main", "Server listening", { host: config.host, port: config.port });
 
 const shutdown = async () => {
   server.close();
+  await agent.close();
   await db.destroy();
   process.exit(0);
 };

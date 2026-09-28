@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createAuthRoutes } from "./auth.js";
-import type { AuthService } from "../domain/auth/service.js";
+import type { AuthService } from "../domain/auth/auth-service.js";
 
 test("auth routes use provider-neutral contracts", async () => {
   const calls: Array<{ method: string; args: unknown[] }> = [];

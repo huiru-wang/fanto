@@ -1,5 +1,8 @@
 import type { PreferenceCategory, PreferenceSource, UserPreference } from "./model.js";
 import type { PreferenceMutationResult, PreferenceRepository } from "./repository.js";
+import { PostgresPreferenceRepository } from "./postgres-repository.js";
+import type { Kysely } from "kysely";
+import type { DB } from "../../infrastructure/database/schema.js";
 
 export type PreferenceCreateResult =
   | { kind: "ok"; preference: UserPreference; reused: boolean }
@@ -9,6 +12,7 @@ export class PreferenceService {
   static readonly MAX_PREFERENCES = 20;
 
   constructor(private readonly repository: PreferenceRepository) {}
+  static create(db: Kysely<DB>) { return new PreferenceService(new PostgresPreferenceRepository(db)); }
 
   list(userId: string): Promise<UserPreference[]> {
     return this.repository.listByUser(userId, PreferenceService.MAX_PREFERENCES);

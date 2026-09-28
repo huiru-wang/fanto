@@ -3,10 +3,9 @@ import { randomUUID } from "node:crypto";
 import { rm } from "node:fs/promises";
 import nodeTest from "node:test";
 import { createApp } from "../bootstrap/app.js";
-import { CreationProposalRepository } from "../domain/creations/proposal-repository.js";
-import { CreationReadRepository } from "../domain/creations/creation-repository.js";
-import { PostgresMediaRepository } from "../domain/media/postgres-repository.js";
-import { PostgresRecordRepository } from "../domain/records/postgres-repository.js";
+import { CreationProposalService, CreationService } from "../domain/creations/index.js";
+import { MediaService } from "../domain/media/index.js";
+import { RecordService } from "../domain/records/index.js";
 import { createDatabase, runMigrations } from "../infrastructure/database/database.js";
 import { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import { nowIso } from "../infrastructure/time.js";
@@ -34,11 +33,19 @@ test("creation and proposal HTTP routes preserve the public read and decision co
     }
     await db.insertInto("entity_relations").values({ relation_id: randomUUID(), user_id: userId, source_entity_id: recordId, source_entity_type: "record", target_entity_id: proposalId, target_entity_type: "creation_proposal", relation_type: "record_creation_proposal", source_created_at: now, created_at: now }).execute();
 
-    const authDeps = {
-      tokens: { verifyAccess: async () => ({ userId, tokenId: "test-token-id" }) },
-      service: { assertActiveUser: async () => ({ user_id: userId, status: "active" }) },
+    const authService = {
+      verifyAccess: async () => ({ userId, tokenId: "test-token-id" }),
+      assertActiveUser: async () => ({ user_id: userId, status: "active" }),
     };
-    const app = createApp(new PostgresRecordRepository(db), new PostgresMediaRepository(db), new RecordPostprocessQueue(), { readUrl: () => "https://private.example", putUrl: () => "https://upload.example" } as any, new CreationReadRepository(db), new CreationProposalRepository(db), undefined, undefined, authDeps as never);
+    const oss = { readUrl: () => "https://private.example", putUrl: () => "https://upload.example" } as any;
+    const media = MediaService.create(db, oss);
+    const app = createApp({
+      auth: authService as never,
+      records: RecordService.create(db, media, new RecordPostprocessQueue()),
+      media,
+      creations: CreationService.create(db),
+      creationProposals: CreationProposalService.create(db),
+    });
     const auth = { Authorization: "Bearer test-access-token" };
     assert.equal((await app.request("/health")).status, 200);
     assert.equal((await app.request("/api/creation-kinds", { headers: auth })).status, 200);

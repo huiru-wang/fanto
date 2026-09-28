@@ -1,24 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import { createApp, logSafeBody } from "./app.js";
 
 test("protected API requires a verified access token", async () => {
   const auth = {
-    tokens: { verifyAccess: async (token: string) => ({ userId: "550e8400-e29b-41d4-a716-446655440000", tokenId: token }) },
-    service: { assertActiveUser: async () => ({ status: "active" }) },
+    verifyAccess: async (token: string) => ({ userId: "550e8400-e29b-41d4-a716-446655440000", tokenId: token }),
+    assertActiveUser: async () => ({ status: "active" }),
   };
-  const app = createApp(
-    {} as never,
-    {} as never,
-    new RecordPostprocessQueue(),
-    {} as never,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    auth as never,
-  );
+  const app = createApp({ records: {} as never, media: {} as never, auth: auth as never });
 
   const denied = await app.request("/api/not-found", {
     headers: { "x-user-id": "forged-user" },
@@ -30,40 +19,6 @@ test("protected API requires a verified access token", async () => {
     headers: { Authorization: "Bearer signed-access-token", "x-user-id": "forged-user" },
   });
   assert.equal(allowed.status, 404);
-});
-
-test("internal Agent API token requires a user context and is limited to allowlisted routes", async () => {
-  const users: string[] = [];
-  const auth = {
-    tokens: { verifyAccess: async () => ({ userId: "ignored", tokenId: "ignored" }) },
-    service: { assertActiveUser: async (userId: string) => { users.push(userId); return { status: "active" }; } },
-  };
-  const app = createApp(
-    { findByUserId: async () => [] } as never,
-    {} as never,
-    new RecordPostprocessQueue(),
-    {} as never,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    auth as never,
-    "agent-api-token",
-  );
-
-  const missingUser = await app.request("/api/records?limit=1", { headers: { "x-api-token": "agent-api-token" } });
-  assert.equal(missingUser.status, 401);
-
-  const allowed = await app.request("/api/records?limit=1", {
-    headers: { "x-api-token": "agent-api-token", "x-user-id": "user-1" },
-  });
-  assert.equal(allowed.status, 200);
-  assert.deepEqual(users, ["user-1"]);
-
-  const forbidden = await app.request("/api/auth/me", {
-    headers: { "x-api-token": "agent-api-token", "x-user-id": "user-1" },
-  });
-  assert.equal(forbidden.status, 403);
 });
 
 

@@ -7,13 +7,12 @@ TARGET="${1:-all}"
 LOG_DIR="$ROOT/logs"
 RUN_DIR="$ROOT/run"
 SERVER_DIR="$ROOT/apps/server"
-AGENT_DIR="$ROOT/apps/agent"
 PUBLISH_H5="$ROOT/deploy/manual/publish-h5.sh"
 
 mkdir -p "$LOG_DIR" "$RUN_DIR"
 
 usage() {
-  echo "Usage: $0 [server|agent|h5|all]"
+  echo "Usage: $0 [server|h5|all]"
 }
 
 is_running() {
@@ -76,37 +75,6 @@ start_server() {
   fi
 }
 
-start_agent() {
-  if is_running agent; then
-    echo "[SKIP] agent already running (pid=$(cat "$RUN_DIR/agent.pid"))"
-    return
-  fi
-
-  local env_file="$AGENT_DIR/.env"
-  require_env agent "$env_file"
-
-  echo "[START] agent"
-
-  (
-    cd "$AGENT_DIR"
-    nohup node --env-file=.env --import tsx src/main.ts >> "$LOG_DIR/agent.log" 2>&1 &
-    echo $! > "$RUN_DIR/agent.pid"
-  )
-
-  local pid
-  pid="$(cat "$RUN_DIR/agent.pid")"
-  sleep 1
-
-  if kill -0 "$pid" 2>/dev/null; then
-    echo "[OK] agent started (pid=$pid)"
-  else
-    rm -f "$RUN_DIR/agent.pid"
-    echo "[ERROR] agent failed to start"
-    tail -n 50 "$LOG_DIR/agent.log" 2>/dev/null || true
-    exit 1
-  fi
-}
-
 start_h5() {
   "$PUBLISH_H5"
 }
@@ -115,15 +83,11 @@ case "$TARGET" in
   server)
     start_server
     ;;
-  agent)
-    start_agent
-    ;;
   h5)
     start_h5
     ;;
   all)
     start_server
-    start_agent
     start_h5
     ;;
   *)

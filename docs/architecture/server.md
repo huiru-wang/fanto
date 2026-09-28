@@ -15,7 +15,7 @@ apps/server/src/
 └── scripts/         # 演示数据等运维脚本
 ```
 
-普通 CRUD Route 直接调用相应 Repository。Memory 通过 Domain 内的 `MemoryService + MemoryIndex / EmbeddingProvider` 边界编排，当前 pgvector 实现位于 `infrastructure/memory/`。外部 OSS、图片理解、音频转写与 Embedding 通过 infrastructure adapter 适配。
+每个 Domain 以 `index.ts` 作为模块外入口，采用 `model.ts`、`repository.ts`、`postgres-repository.ts`（需要持久化时）和 `*-service.ts` 的统一组织方式。Route 只能调用相应 Service，Repository 不对模块外暴露。Memory 通过 Domain 内的 `MemoryService + MemoryIndex / EmbeddingProvider` 边界编排，当前 pgvector 实现位于 `infrastructure/memory/`。外部 OSS、图片理解、音频转写与 Embedding 通过 infrastructure adapter 适配。
 
 ## HTTP 请求路径
 
@@ -25,7 +25,8 @@ flowchart LR
   H --> U[Bearer access JWT validation]
   U --> P[Authenticated principal from JWT sub]
   P --> R[Route]
-  R --> D[Domain / Repository]
+  R --> S[Domain Service]
+  S --> D[Domain Repository]
   D --> DB[(Supabase PostgreSQL)]
 ```
 
@@ -43,18 +44,20 @@ flowchart LR
 
 ## Record 后置处理
 
-Record 创建或更新成功后，Route 发布 postprocess task。Listener 对指定 Record 版本进行 claim：
+Record 创建或更新成功后，Record Service 发布 postprocess task。Listener 对指定 Record 版本进行 claim：
 
 ```mermaid
 sequenceDiagram
   participant HTTP as Record Route
+  participant S as Record Service
   participant Q as In-process Queue
   participant L as Postprocess Listener
   participant R as Record Repository
   participant AI as Vision / ASR
   participant M as MemoryService
 
-  HTTP->>Q: publish(userId, recordId, version)
+  HTTP->>S: create / update
+  S->>Q: publish(userId, recordId, version)
   Q->>L: task
   L->>R: claimPostprocess
   R-->>L: status=processing
