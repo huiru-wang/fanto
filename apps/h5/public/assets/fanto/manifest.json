@@ -1,0 +1,19 @@
+{
+  "avatar": "/assets/fanto/avatar/fanto-avatar-512.png",
+  "states": {
+    "idle": "/assets/fanto/states/idle.png",
+    "thinking": "/assets/fanto/states/thinking.png",
+    "remembering": "/assets/fanto/states/remembering.png",
+    "creating": "/assets/fanto/states/creating.png",
+    "reminding": "/assets/fanto/states/reminding.png",
+    "done": "/assets/fanto/states/done.png"
+  },
+  "props": {
+    "note": "/assets/fanto/props/note.png",
+    "bell": "/assets/fanto/props/bell.png",
+    "magnifier": "/assets/fanto/props/magnifier.png",
+    "calendar": "/assets/fanto/props/calendar.png",
+    "photo": "/assets/fanto/props/photo.png",
+    "thread-ball": "/assets/fanto/props/thread-ball.png"
+  }
+}

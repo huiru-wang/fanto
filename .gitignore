@@ -18,3 +18,5 @@ test-results/
 playwright-report/
 *.tmp
 **/xcuserdata/
+__pycache__/
+*.pyc
