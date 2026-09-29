@@ -2,27 +2,23 @@ import { requestJson } from "./http";
 
 export type RecordStatus = "pending" | "updated" | "processing" | "processed";
 
-export type RecordMedia =
+export type RecordAudioAsr = {
+  status: "succeeded" | "failed";
+  model?: string;
+  emotion?: string;
+  language?: string;
+  completedAt?: string;
+  errorCode?: string;
+};
+
+export type RecordContentBlock =
+  | { type: "image"; mediaId: string; description?: string }
   | {
-      mediaId: string;
-      type: "image";
-      url: string;
-      description?: string | null;
-    }
-  | {
-      mediaId: string;
       type: "audio";
-      url: string;
-      durationMs?: number | null;
-      asr?: {
-        status?: string;
-        transcript?: string | null;
-        model?: string | null;
-        emotion?: string | null;
-        language?: string | null;
-        completedAt?: string | null;
-        errorCode?: string | null;
-      } | null;
+      mediaId: string;
+      durationMs?: number;
+      transcription?: string;
+      asr?: RecordAudioAsr;
     };
 
 export type RecordItem = {
@@ -35,12 +31,8 @@ export type RecordItem = {
   status: RecordStatus;
   content: {
     text: string;
-    blocks: Array<
-      | { type: "image"; mediaId: string; description?: string }
-      | { type: "audio"; mediaId: string; transcription?: string }
-    >;
+    blocks: RecordContentBlock[];
   };
-  media: RecordMedia[];
 };
 
 type RecordPage = {
@@ -51,7 +43,7 @@ type RecordPage = {
 };
 
 export async function listRecords(cursor?: string | null): Promise<RecordPage> {
-  const query = new URLSearchParams({ limit: "50" });
+  const query = new URLSearchParams({ limit: "10" });
   if (cursor) query.set("cursor", cursor);
   return requestJson<RecordPage>(`/api/records?${query}`);
 }

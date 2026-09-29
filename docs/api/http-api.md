@@ -39,7 +39,7 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | `/api/records` | 创建记录，返回 201 |
-| GET | `/api/records?limit=20&cursor=` | 倒序分页读取，limit 为 1–100 |
+| GET | `/api/records?limit=10&cursor=` | 倒序分页读取，limit 默认 10、范围 1–100 |
 | GET | `/api/records/:id` | 单条记录 |
 | PATCH | `/api/records/:id` | 以 expectedVersion 更新内容 |
 | DELETE | `/api/records/:id` | 以 expectedVersion 硬删除记录 |
@@ -47,7 +47,7 @@
 
 `POST /api/records/search` 的每个命中返回 `recordId`、`sourceType` (`record_text` / `image` / `audio`)、可选 `mediaId`、`snippet`、原始 Record 的 `eventAt` 和向量 `distance`；图片和音频命中仍关联回原 Record。
 
-创建体：`{ text, media, eventAt, source? }`；更新体：`{ text, media, expectedVersion }`；删除体：`{ expectedVersion }`。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。创建或更新完成后，服务端异步处理当前版本的图片理解、音频转写与向量索引；图片 description 写入对应 image block，音频 transcription 写入对应 audio block。删除会解除媒体的 Record 绑定、移除 Record 的向量记忆与来源关联，但不会删除媒体文件本身；已排队的后置任务因找不到 Record 而失效。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
+创建体：`{ text, media, eventAt, source? }`；更新体：`{ text, media, expectedVersion }`；删除体：`{ expectedVersion }`。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。保存 Record 时，音频 capture 中已有的 `durationMs` 会写入对应 audio block；后置处理完成后，图片 description、音频 transcription 与 ASR metadata 写回 `content.blocks`。Record 读取不再查询 `media_assets`，也不返回冗余 `media[]`。删除会解除媒体的 Record 绑定、移除 Record 的向量记忆与来源关联，但不会删除媒体文件本身；已排队的后置任务因找不到 Record 而失效。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
 
 列表结果：`{ data, hasMore, nextCursor, pageSize }`。`nextCursor` 只应在 `hasMore=true` 时使用。
 
@@ -80,25 +80,29 @@
     "text": "准备周末徒步",
     "blocks": [
       { "type": "image", "mediaId": "image_media_id", "description": "雨衣和登山杖放在玄关。" },
-      { "type": "audio", "mediaId": "audio_media_id", "transcription": "周末去西山徒步。" }
+      {
+        "type": "audio",
+        "mediaId": "audio_media_id",
+        "durationMs": 12000,
+        "transcription": "周末去西山徒步。",
+        "asr": {
+          "status": "succeeded",
+          "model": "qwen3-asr-flash",
+          "emotion": "neutral",
+          "language": "zh",
+          "completedAt": "2026-09-17T00:00:00.000Z"
+        }
+      }
     ]
-  },
-  "media": [
-    { "mediaId": "image_media_id", "type": "image", "url": "/api/media/image_media_id", "description": "雨衣和登山杖放在玄关。" },
-    { "mediaId": "audio_media_id", "type": "audio", "url": "/api/media/audio_media_id", "durationMs": 12000, "asr": { "status": "succeeded", "transcript": "周末去西山徒步。", "model": "qwen3-asr-flash", "emotion": "neutral", "language": "zh", "completedAt": "2026-09-17T00:00:00.000Z", "errorCode": null } }
-  ]
+  }
 }
 ```
 
-`status` 取值为：`pending`（已保存，等待处理）、`updated`（内容已更新，等待处理）、`processing`（正在进行图片/音频理解）和 `processed`（当前版本处理完成）。音频完成后，`media[].asr` 同步返回转写文本、模型、情绪 `emotion` 与语种 `language`；情绪与语种由 ASR 服务的 `audio_info` 注解提供，缺失时为 `null`。单个媒体失败不会阻断其他媒体处理；失败音频的 `media[].asr.status` 为 `failed`，其 `transcript` 为 `null`；图片失败时对应 block 不含 `description`。Record 完成当前版本的 postprocess 后才更新 Memory；后续 Embedding / Memory Index 失败不会把已经 `processed` 的 Record 回滚。
+`status` 取值为：`pending`（已保存，等待处理）、`updated`（内容已更新，等待处理）、`processing`（正在进行图片/音频理解）和 `processed`（当前版本处理完成）。音频成功后，audio block 的 `transcription` 保存正文，`asr` 保存状态、模型、情绪 `emotion`、语种 `language` 与完成时间；失败音频写入 `asr.status=failed` 和 `errorCode`，不产生 `transcription`。单个媒体失败不会阻断其他媒体处理；图片失败时对应 block 不含 `description`。Record 完成当前版本的 postprocess 后才更新 Memory；后续 Embedding / Memory Index 失败不会把已经 `processed` 的 Record 回滚。
 
 `eventAt` 是 Record 的业务发生时间；`createdAt`、`updatedAt` 仅表示服务端保存与变更时间。当前 schema 只支持空 PostgreSQL 数据库初始化；已有 SQLite 数据库不提供原地升级。
 
-### 本次接口变更
-
-- **移除** `POST /api/uploads/:mediaId/transcription` 及其 SSE `delta`、`completed`、`failed` 事件。音频转写改为在 Record 创建或更新后的自动后置处理中执行。
-- **新增返回字段**：audio block 的可选 `transcription`。同一文本也会投影为 `media[].asr.transcript`，方便现有媒体展示；其正式存储位置是 Record 的 audio block。
-- **新增更新限制**：Record 为 `processing` 时，`PATCH /api/records/:id` 返回 `409 VERSION_CONFLICT`；读取接口始终可用。
+Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒体 URL 不嵌入 Record，而是按 `mediaId` 从 Media API 临时获取。
 
 ## User Preferences
 
@@ -136,12 +140,12 @@ Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionI
 | POST | `/api/uploads` | 根据 MIME 创建上传凭据，返回直传 URL |
 | POST | `/api/uploads/:mediaId/complete` | 校验对象并将媒体标记 ready |
 | GET | `/api/media/:mediaId` | 已就绪且属于当前用户的媒体重定向到 OSS |
-| GET | `/api/media/:mediaId/url` | 返回已就绪媒体的短期 OSS 签名读取地址与过期时间 |
+| GET | `/api/media/:mediaId/url?variant=original|thumbnail` | 返回已就绪媒体的短期 OSS 签名读取地址与过期时间 |
 | GET | `/api/media/:mediaId/meta` | 返回已就绪媒体的稳定类型与 capture metadata |
 
 创建上传体：`{ mimeType, bytes }`。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
 
-`GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Access JWT。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，供不能附加自定义 Header 的浏览器 `<img>` / `<audio>` 元素使用。读取签名有效期为五分钟，客户端不应持久化，并应在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`，用于需要稳定媒体 metadata 的服务端 / Agent 路径，不包含 signed URL。
+`GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Access JWT。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到原始媒体的短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，`variant` 默认为 `original`，图片可请求 `thumbnail`（OSS 实时宽 600、q80、WebP），音频无论 variant 都返回 original；非法 variant 返回 `400 INVALID_INPUT`。读取签名有效期为五分钟，客户端不应持久化，thumbnail / original 应分键缓存，并在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`，用于需要稳定媒体 metadata 的服务端 / Agent 路径，不包含 signed URL。
 
 ## 脉络与待确认提案
 
@@ -163,7 +167,7 @@ Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionI
 
 ## Agent Runtime
 
-Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 仍使用独立 SQLite，不与业务 PostgreSQL 共用。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference 和最多 2 条 Relevant Memory，再填充 System Prompt；Relevant Memory 的 `eventAt` 按请求时区展示。Record Tool、Preference Provider / Tool 与 `present_media` 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
+Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 仍使用独立 SQLite，不与业务 PostgreSQL 共用。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference 和最近 10 条紧凑 Recent Memory，再填充 System Prompt；Recent Memory 通过 `listRecords(limit=10)` 读取，可命中 Record 首页缓存，不执行 Query Rewrite 或向量搜索，记录时间按请求时区展示。Record Tool、Preference Provider / Tool 与 `present_media` 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
 
 ```text
 Authorization: Bearer <ACCESS_TOKEN>

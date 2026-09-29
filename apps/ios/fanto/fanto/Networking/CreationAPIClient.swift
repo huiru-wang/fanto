@@ -23,6 +23,11 @@ struct RecordPage {
     let nextCursor: String?
 }
 
+enum MediaReadVariant: String {
+    case thumbnail
+    case original
+}
+
 enum CreationAPIError: LocalizedError {
     case invalidBaseURL
     case invalidResponse
@@ -52,7 +57,7 @@ struct CreationAPIClient {
 
     func fetchRecords() async throws -> RecordPage {
         var components = URLComponents(url: baseURL.appending(path: "api/records"), resolvingAgainstBaseURL: false)
-        components?.queryItems = [URLQueryItem(name: "limit", value: "100")]
+        components?.queryItems = [URLQueryItem(name: "limit", value: "10")]
         guard let url = components?.url else { throw CreationAPIError.invalidBaseURL }
         let response: RecordsPayload = try await request(url: url)
         return RecordPage(
@@ -62,10 +67,13 @@ struct CreationAPIClient {
         )
     }
 
-    func fetchMediaReadURL(id: String) async throws -> URL {
-        let response: MediaReadURLPayload = try await request(path: "api/media/\(id)/url")
-        guard let url = URL(string: response.url) else { throw CreationAPIError.invalidResponse }
-        return url
+    func fetchMediaReadURL(id: String, variant: MediaReadVariant = .original) async throws -> URL {
+        var components = URLComponents(url: baseURL.appending(path: "api/media/\(id)/url"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "variant", value: variant.rawValue)]
+        guard let url = components?.url else { throw CreationAPIError.invalidBaseURL }
+        let response: MediaReadURLPayload = try await request(url: url)
+        guard let readURL = URL(string: response.url) else { throw CreationAPIError.invalidResponse }
+        return readURL
     }
 
     func fetchCreation(id: String) async throws -> Creation {
@@ -395,12 +403,25 @@ private extension CreationSourceRecord {
 
 private struct RecordContentPayload: Decodable {
     let text: String
+    let blocks: [RecordContentBlockPayload]?
 
     static func text(from encoded: String) -> String {
         guard let data = encoded.data(using: .utf8),
               let record = try? JSONDecoder().decode(Self.self, from: data)
         else { return encoded }
         return record.text
+    }
+}
+
+private struct RecordContentBlockPayload: Decodable {
+    let type: String
+    let mediaID: String
+    let durationMs: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case mediaID = "mediaId"
+        case durationMs
     }
 }
 
@@ -414,25 +435,11 @@ private struct RecordPayload: Decodable {
     let id: String
     let content: RecordContentPayload
     let eventAt: Date
-    let media: [RecordMediaPayload]
 
     enum CodingKeys: String, CodingKey {
         case id
         case content
         case eventAt
-        case media
-    }
-}
-
-private struct RecordMediaPayload: Decodable {
-    let mediaID: String
-    let type: String
-    let durationMs: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case mediaID = "mediaId"
-        case type
-        case durationMs
     }
 }
 
@@ -442,10 +449,11 @@ private struct MediaReadURLPayload: Decodable {
 
 private extension Record {
     init(_ payload: RecordPayload) {
-        let images = payload.media
+        let blocks = payload.content.blocks ?? []
+        let images = blocks
             .filter { $0.type == "image" }
             .map { RecordPhoto(id: $0.mediaID) }
-        let audio = payload.media.first { $0.type == "audio" }
+        let audio = blocks.first { $0.type == "audio" }
         let media: RecordMedia? = if let audio {
             RecordMedia.audio(duration: TimeInterval(audio.durationMs ?? 0) / 1_000)
         } else if !images.isEmpty {

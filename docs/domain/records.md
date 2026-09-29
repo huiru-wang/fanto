@@ -11,12 +11,24 @@ Record 是用户原始记录，是 Fanto 个人数据的基础事实之一。它
   "text": "准备周末徒步",
   "blocks": [
     { "type": "image", "mediaId": "...", "description": "异步生成，可选" },
-    { "type": "audio", "mediaId": "...", "transcription": "异步生成，可选" }
+    {
+      "type": "audio",
+      "mediaId": "...",
+      "durationMs": 12000,
+      "transcription": "异步生成，可选",
+      "asr": {
+        "status": "succeeded",
+        "model": "qwen3-asr-flash",
+        "emotion": "neutral",
+        "language": "zh",
+        "completedAt": "2026-09-29T00:00:00.000Z"
+      }
+    }
   ]
 }
 ```
 
-创建 / 更新时客户端只提交文字与 `mediaId`，不提交 AI 生成的 `description` 或 `transcription`。
+创建 / 更新时客户端只提交文字与 `mediaId`，不提交 AI 生成的 `description`、`transcription` 或 `asr`。保存音频 block 时，Server 会把上传完成阶段记录的 `durationMs` 一并写入 Record。
 
 保存约束：
 
@@ -32,7 +44,7 @@ Record 是用户原始记录，是 Fanto 个人数据的基础事实之一。它
 - `createdAt`：服务端首次保存时间。
 - `updatedAt`：服务端最后变更时间。
 
-列表按 `eventAt DESC, recordId DESC` 分页，cursor 同时编码这两个值，避免相同时间戳导致漏项。
+列表按 `eventAt DESC, recordId DESC` 分页，cursor 同时编码这两个值，避免相同时间戳导致漏项。无 cursor 且 `limit <= 10` 时，Server 使用按用户隔离的 24 小时内存缓存：固定读取 11 条、只缓存前 10 条及 `hasMore`，因此 1–10 条的首页请求可共享同一缓存窗口；带 cursor 或 `limit > 10` 时直接查询 PostgreSQL。Record create / update / delete，以及 postprocess 的 claim / complete / release，都会立即使该用户的首页缓存失效。
 
 ## 版本与状态
 
@@ -66,7 +78,7 @@ Record save
 → MemoryService.replaceRecord
 ```
 
-图片描述和音频转写都写回当前 Record 版本的 block；旧 task 不能覆盖已经变化的版本。
+图片描述写回 image block；音频转写正文与 ASR 状态 / 模型 / 语言 / 情绪 / 完成时间写回 audio block。Record 的读取数据因此由 `records.content.blocks` 自包含；旧 task 不能覆盖已经变化的版本。
 
 Memory 是派生能力。Record 已经成功变成 `processed` 后，如果 Embedding 或 Memory Index 写入失败，不会把 Record 回滚到 pending；当前没有持久重试，索引可通过 Memory rebuild 恢复。
 
@@ -74,4 +86,4 @@ Memory 是派生能力。Record 已经成功变成 `processed` 后，如果 Embe
 
 删除使用当前 `version` 进行乐观并发校验，并从主表硬删除 Record。删除会解除关联媒体的 `recordId` 占用标记、移除该 Record 的向量记忆，以及清除其作为来源的创作关联；媒体资产及其 OSS 对象保留，后续可由专门的媒体清理能力处理。已入队或执行中的后置任务只会匹配仍存在的 Record，因此不会写回已删除内容。
 
-Record 的完整 HTTP 投影还会把 block 关联到 Media URL、音频时长和 ASR 元数据，见 [HTTP API](../api/http-api.md)。
+Record HTTP 返回不再生成额外 `media[]` 投影，也不会在读取路径查询 `media_assets`。媒体二进制访问按 block 的 `mediaId` 单独通过 [Media](media.md) 读取接口获取。

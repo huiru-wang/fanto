@@ -111,7 +111,11 @@ export function createApp(services: ServerServices) {
       : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404);
   });
   app.get("/api/media/:id/url", async c => {
-    const result = await mediaService.readUrl(requireUserId(c.req.raw), c.req.param("id"));
+    const variant = c.req.query("variant") ?? "original";
+    if (variant !== "thumbnail" && variant !== "original") {
+      return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: "Invalid media variant" }, 400);
+    }
+    const result = await mediaService.readUrl(requireUserId(c.req.raw), c.req.param("id"), variant);
     return result
       ? c.json({ success: true, result, errorCode: null, errorMsg: null })
       : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404);

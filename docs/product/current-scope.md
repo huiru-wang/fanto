@@ -36,7 +36,7 @@ Server 已经会为处理完成的 Record 构建向量索引。用户文本、�
 
 `POST /api/records/search` 已注册，可对当前用户 Record 做语义搜索。pgvector 查询在 SQL 层按 `user_id` 限定当前用户，并在读取 metadata 时保持用户归属校验。
 
-Agent Runtime 已通过 Business Server HTTP 接入 `record_get`、`record_list`、`record_search` 三个只读 Record Tool，并新增 `present_media` 展示 Tool。`main` 在每次 Agent Run 前还会执行一次 MemoryProvider：用快速模型结合当前消息与最近对话重写 0–2 条查询，复用 Record Search，跨查询按真实 `recordId` 去重后只注入最相关 2 条 Relevant Memory。LLM 不传 `userId`；所有业务读取身份都来自当前 Session 的 Run Context。
+Agent Runtime 已通过 Business Services 接入 `record_get`、`record_list`、`record_search` 三个只读 Record Tool，并提供 `present_media` 展示 Tool。`main` 在每次 Agent Run 前执行一次 MemoryProvider，但当前固定使用 `recent` 模式：读取最近 10 条 Record 的缓存窗口，注入截断正文、真实 `recordId`、媒体 `mediaId` 及截断图片描述 / 音频转写，不再在 Run 前执行 Query Rewrite 或向量搜索。需要主题相关历史时由主模型主动调用 `record_search`。LLM 不传 `userId`；所有业务读取身份都来自当前 Session 的 Run Context。
 
 ## User Preference
 
@@ -72,10 +72,10 @@ Server 内嵌的 Agent Runtime 当前支持：
 - `record_get`、`record_list`、`record_search` 三个只读 Record Tool；
 - `present_media` 媒体展示 Tool；
 - `preference_manage` 长期偏好管理 Tool；
-- Run 前一次性 Context Runtime（Character / Preference / Relevant Memory）；
+- Run 前一次性 Context Runtime（Character / Preference / Recent Memory）；
 - Skill 文件加载。
 
-它不直接访问 Fanto 业务数据库；Record Tool、PreferenceProvider / Tool 与 `present_media` 统一通过 `business-services.ts` 调用相应领域 Service，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media` 与 `preference_manage`；`coding` 默认不具备个人历史访问能力。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 的认识与关系原则由 `apps/server/src/agent/prompts/core.ts` 约束，工具与 Markdown / Media 规则位于 `apps/server/src/agent/prompts/operational.ts`；每轮还会注入 Character、当前时区下的时间、偏好与相关记忆。
+它不直接访问 Fanto 业务数据库；Record Tool、PreferenceProvider / Tool 与 `present_media` 统一通过 `business-services.ts` 调用相应领域 Service，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media` 与 `preference_manage`；`coding` 默认不具备个人历史访问能力。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 的认识与关系原则由 `apps/server/src/agent/prompts/core.ts` 约束，工具与 Markdown / Media 规则位于 `apps/server/src/agent/prompts/operational.ts`；每轮还会注入 Character、当前时区下的时间、偏好与近期记忆；相关历史由主 Agent 按需搜索。
 
 ## 当前基础设施边界
 

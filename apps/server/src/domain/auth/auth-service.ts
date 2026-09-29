@@ -9,6 +9,11 @@ import { IdentityProviderRegistry } from "./identity-provider.js";
 
 const challengeTtlMs = 10 * 60 * 1000;
 const now = () => new Date();
+type UserStatusCacheValue = { user_id: string; status: "active" | "disabled" } | null;
+type UserStatusCache = {
+  getOrLoad(key: string, loader: () => Promise<UserStatusCacheValue>): Promise<UserStatusCacheValue>;
+  delete(key: string): void;
+};
 
 function uniqueViolation(cause: unknown): boolean {
   return !!cause && typeof cause === "object" && (cause as { code?: unknown }).code === "23505";
@@ -19,6 +24,7 @@ export class AuthService {
     private readonly db: Kysely<DB>,
     private readonly providers: IdentityProviderRegistry,
     private readonly tokens: JwtTokenService,
+    private readonly userStatusCache: UserStatusCache,
   ) {}
 
   async createIntent(purpose: ChallengePurpose, providerName: IdentityProviderName, userId?: string) {
@@ -285,10 +291,19 @@ export class AuthService {
   }
 
   async assertActiveUser(userId: string) {
-    const user = await this.db.selectFrom("users").selectAll().where("user_id", "=", userId).executeTakeFirst();
+    const user = await this.userStatusCache.getOrLoad(userId, async () =>
+      await this.db.selectFrom("users")
+        .select(["user_id", "status"])
+        .where("user_id", "=", userId)
+        .executeTakeFirst() ?? null,
+    );
     if (!user) throw new AuthError(401, "UNAUTHENTICATED", "User does not exist");
     if (user.status !== "active") throw new AuthError(403, "USER_DISABLED", "User is disabled");
     return user;
+  }
+
+  invalidateUserStatus(userId: string) {
+    this.userStatusCache.delete(userId);
   }
 
   private async authResult(userId: string) {

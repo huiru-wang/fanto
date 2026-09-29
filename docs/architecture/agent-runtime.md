@@ -26,9 +26,8 @@ flowchart TD
   RC --> SP
   SP --> CHAR[CharacterProvider]
   SP --> PREF[PreferenceProvider]
-  SP --> MEM[MemoryProvider]
+  SP --> MEM[MemoryProvider / recent]
   PREF --> B[Agent Business Services]
-  MEM --> QR[Query Rewrite / deepseek-v4-flash]
   MEM --> B
   RUN --> PI
   PI --> TC[transform_context / messages view]
@@ -71,7 +70,7 @@ present_media
 preference_manage
 ```
 
-当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media` 与 `preference_manage`；`coding` 只开启 `read / write / edit / bash`。Fanto 的认识与关系 Core 位于 `apps/server/src/agent/prompts/core.ts`，操作规则与动态插槽位于 `apps/server/src/agent/prompts/operational.ts`；`apps/server/agent.yaml` 分别通过 `corePromptModule` 与 `systemPromptModule` 在启动期拼成最终 Prompt。操作模板包含 `{{character}}`、`{{current_time}}`、`{{user_preferences}}`、`{{relevant_memory}}` 四个运行时插槽。Tool 权限仍由 Agent definition 显式声明。
+当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media` 与 `preference_manage`；`coding` 只开启 `read / write / edit / bash`。Fanto 的认识与关系 Core 位于 `apps/server/src/agent/prompts/core.ts`，操作规则与动态插槽位于 `apps/server/src/agent/prompts/operational.ts`；`apps/server/agent.yaml` 分别通过 `corePromptModule` 与 `systemPromptModule` 在启动期拼成最终 Prompt。操作模板包含 `{{character}}`、`{{current_time}}`、`{{user_preferences}}`、`{{recent_memory}}` 四个运行时插槽。Tool 权限仍由 Agent definition 显式声明。
 
 Core 与 operational Prompt 在启动期按固定顺序合并为最终 `systemPrompt`，并参与 Agent revision 计算；修改 Prompt 后需要重启 Server。
 
@@ -79,7 +78,7 @@ Skill 通过 ID 映射到与 `apps/server/agent.yaml` 同级的 `apps/server/ski
 
 ## Context
 
-`context/index.ts` 只公开 `createRunContext`、`createSystemPrompt` 与 `createTransformContext`。`harness/run.ts` 是唯一执行入口：它在调用 Runtime `prompt()` 前创建包含 runId、用户、query、Session、时区、最近消息和 slot store 的 Chord Context，并作为 Pi prompt 的第三参传入。
+`context/index.ts` 对 Harness 暴露 `createRunContext`、`createSystemPrompt`、`createTransformContext` 与 `createContextProviders`；各 Provider 的具体组合和构造依赖收敛在 `context/providers/index.ts`。`harness/run.ts` 是唯一执行入口：它在调用 Runtime `prompt()` 前创建包含 runId、用户、query、Session、时区、最近消息和 slot store 的 Chord Context，并作为 Pi prompt 的第三参传入。
 
 `harness/build-runtime.ts` 在创建 Harness 时注册 System Prompt 回调。首次回调从 Run Context 解析模板引用的 `{{slot}}`，只选择被引用的自声明 Provider 并行执行，得到 `{ slot, content }` 后填充模板。缺少 Provider、空内容或普通 Provider 失败填 `（无）`；取消会中止 Run。结果按 run 缓存，所以该 Run 后续 turn 不再解析模板或运行 IO。
 
@@ -87,9 +86,10 @@ Skill 通过 ID 映射到与 `apps/server/agent.yaml` 同级的 `apps/server/ski
 
 - CharacterProvider 返回当前默认 `natural` 表达风格，不使用数据库。
 - CurrentTimeProvider 以请求的 `X-Time-Zone` 生成当前日期、时间和星期；缺失或无效时使用 UTC。
-- PreferenceProvider 读取当前用户最多 20 条已保存 Preference。
-- MemoryProvider 先用 `deepseek-v4-flash` 结合当前消息与最近最多约 4 轮对话重写 0–2 条语义查询，再复用 Business Server 的 `POST /api/records/search`；跨查询按真实 `recordId` 去重并只注入最相关 2 条。
-- Relevant Memory 直接包含真实 `recordId`、片段和按该时区格式化的 `eventAt`；命中媒体原子单元时还会提示可能有可展示媒体。需要完整内容或展示媒体时主模型可继续调用已有 `record_get`。
+- PreferenceProvider 读取当前用户最多 20 条已保存 Preference；热路径命中 Preference 读缓存。
+- MemoryProvider 当前使用代码内固定的 `recent` 模式，调用 `listRecords(limit=10)` 且不传 cursor，因此可直接命中 Record 首页前 10 条缓存；Run 前不再调用额外模型或向量搜索。
+- Recent Memory 只包含真实 `recordId`、时间、截断正文，以及媒体的真实 `mediaId` 和截断图片描述 / 音频转写。已给出的 `mediaId` 可直接用于 `present_media`；需要完整内容时使用 `record_get`，需要主题相关历史时由主模型主动使用 `record_search`。
+- `PiQueryRewriter` 与 MemoryProvider 的 `relevant` 模式仍保留在代码中，但 main Agent 当前不使用，也不通过 Agent 配置切换。
 
 `transform_context` 已在 Harness Hook 中接入，当前默认 pass。它只允许返回 messages 请求视图，可用于裁剪、重排、注入或脱敏；不会写回 transcript，也不能修改 System Prompt。后续 Tool / Model turn 不重新执行 Provider，也不会因为 `preference_manage` 成功而刷新本轮 Context。
 

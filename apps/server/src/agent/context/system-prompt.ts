@@ -1,7 +1,7 @@
 import type { Context, ExecutionToolContext } from "@earendil-works/pi-agent-core";
 import { createRunContext } from "./run-context.js";
 
-type SystemPromptProvider = {
+export type SystemPromptProvider = {
   readonly slot: string;
   build(context: Context): Promise<{ slot: string; content: string }>;
 };

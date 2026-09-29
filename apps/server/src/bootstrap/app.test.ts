@@ -22,6 +22,33 @@ test("protected API requires a verified access token", async () => {
 });
 
 
+test("media URL route validates and forwards the requested variant", async () => {
+  const variants: string[] = [];
+  const auth = {
+    verifyAccess: async () => ({ userId: "user-1", tokenId: "token" }),
+    assertActiveUser: async () => ({ user_id: "user-1", status: "active" }),
+  };
+  const media = {
+    readUrl: async (_userId: string, _mediaId: string, variant: string) => {
+      variants.push(variant);
+      return { url: "https://oss.example/file", expiresAt: "2026-09-29T00:05:00.000Z" };
+    },
+  };
+  const app = createApp({ records: {} as never, media: media as never, auth: auth as never });
+
+  const thumbnail = await app.request("/api/media/media-1/url?variant=thumbnail", {
+    headers: { Authorization: "Bearer token" },
+  });
+  assert.equal(thumbnail.status, 200);
+  assert.deepEqual(variants, ["thumbnail"]);
+
+  const invalid = await app.request("/api/media/media-1/url?variant=large", {
+    headers: { Authorization: "Bearer token" },
+  });
+  assert.equal(invalid.status, 400);
+  assert.equal((await invalid.json() as { errorCode: string }).errorCode, "INVALID_INPUT");
+});
+
 test("preference access logging redacts preference content and source quotes", () => {
   assert.deepEqual(logSafeBody("/api/preferences", {
     content: "技术方案详细展开",

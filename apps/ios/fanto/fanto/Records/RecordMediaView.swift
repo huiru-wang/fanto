@@ -103,7 +103,7 @@ private struct RecordImageThumbnail: View {
 
     private func loadReadURL() async {
         guard !Task.isCancelled else { return }
-        imageURL = try? await CreationAPIClient.shared.fetchMediaReadURL(id: photo.id)
+        imageURL = try? await CreationAPIClient.shared.fetchMediaReadURL(id: photo.id, variant: .thumbnail)
     }
 }
 
@@ -219,6 +219,6 @@ private struct RecordPhotoPage: View {
 
     private func loadReadURL() async {
         guard !Task.isCancelled else { return }
-        imageURL = try? await CreationAPIClient.shared.fetchMediaReadURL(id: photo.id)
+        imageURL = try? await CreationAPIClient.shared.fetchMediaReadURL(id: photo.id, variant: .original)
     }
 }

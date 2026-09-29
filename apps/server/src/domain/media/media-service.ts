@@ -1,6 +1,6 @@
 import { mediaMime, mediaObjectKey, normalizeMimeType } from "./mime.js";
 import { PostgresMediaRepository, type MediaAsset } from "./postgres-repository.js";
-import type { OssStorage } from "../../infrastructure/clients/oss-client.js";
+import type { MediaVariant, OssStorage } from "../../infrastructure/clients/oss-client.js";
 import type { Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
 
@@ -22,7 +22,7 @@ export class MediaService {
     } catch { return { kind: "incomplete" } as const; }
   }
   async readyMetadata(userId: string, id: string) { const asset = await this.media.findMedia(id, userId); return asset?.status === "ready" ? metadata(asset) : null; }
-  async readUrl(userId: string, id: string) { const asset = await this.media.findMedia(id, userId); return asset?.status === "ready" ? { url: this.oss.readUrl(asset.objectKey), expiresAt: new Date(Date.now() + 300_000).toISOString() } : null; }
+  async readUrl(userId: string, id: string, variant: MediaVariant = "original") { const asset = await this.media.findMedia(id, userId); if (asset?.status !== "ready") return null; const resolvedVariant = asset.mediaType === "image" ? variant : "original"; return { url: this.oss.readUrl(asset.objectKey, resolvedVariant), expiresAt: new Date(Date.now() + 300_000).toISOString() }; }
   async redirectUrl(userId: string, id: string) { const asset = await this.media.findMedia(id, userId); return asset?.status === "ready" ? this.oss.readUrl(asset.objectKey) : null; }
 }
 

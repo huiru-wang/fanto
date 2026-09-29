@@ -156,6 +156,8 @@ export async function uploadMedia(media: DraftMedia): Promise<string> {
   return ticket.mediaId;
 }
 
+export type MediaVariant = "thumbnail" | "original";
+
 type MediaUrlTicket = {
   url: string;
   expiresAt?: string;
@@ -171,44 +173,58 @@ const MEDIA_URL_EXPIRY_SAFETY_MS = 15_000;
 const mediaUrlCache = new Map<string, CachedMediaUrl>();
 const pendingMediaUrls = new Map<string, Promise<string>>();
 
-function usableCachedUrl(mediaId: string): string | null {
-  const cached = mediaUrlCache.get(mediaId);
+const mediaUrlKey = (mediaId: string, variant: MediaVariant) => `${mediaId}:${variant}`;
+
+function usableCachedUrl(mediaId: string, variant: MediaVariant): string | null {
+  const key = mediaUrlKey(mediaId, variant);
+  const cached = mediaUrlCache.get(key);
   if (!cached) return null;
   if (Date.now() >= cached.expiresAtMs - MEDIA_URL_EXPIRY_SAFETY_MS) {
-    mediaUrlCache.delete(mediaId);
+    mediaUrlCache.delete(key);
     return null;
   }
   return cached.url;
 }
 
-export function getCachedMediaUrl(mediaId: string): string | null {
-  return usableCachedUrl(mediaId);
+export function getCachedMediaUrl(mediaId: string, variant: MediaVariant = "original"): string | null {
+  return usableCachedUrl(mediaId, variant);
 }
 
-export function invalidateMediaUrl(mediaId: string): void {
-  mediaUrlCache.delete(mediaId);
+export function invalidateMediaUrl(mediaId: string, variant?: MediaVariant): void {
+  if (variant) {
+    mediaUrlCache.delete(mediaUrlKey(mediaId, variant));
+    return;
+  }
+  mediaUrlCache.delete(mediaUrlKey(mediaId, "thumbnail"));
+  mediaUrlCache.delete(mediaUrlKey(mediaId, "original"));
 }
 
-export async function resolveMediaUrl(mediaId: string, force = false): Promise<string> {
-  if (force) invalidateMediaUrl(mediaId);
-  const cached = usableCachedUrl(mediaId);
+export async function resolveMediaUrl(
+  mediaId: string,
+  variant: MediaVariant = "original",
+  force = false,
+): Promise<string> {
+  const key = mediaUrlKey(mediaId, variant);
+  if (force) invalidateMediaUrl(mediaId, variant);
+  const cached = usableCachedUrl(mediaId, variant);
   if (cached) return cached;
 
-  const pending = pendingMediaUrls.get(mediaId);
+  const pending = pendingMediaUrls.get(key);
   if (pending) return pending;
 
-  const request = requestJson<MediaUrlTicket>(`/api/media/${encodeURIComponent(mediaId)}/url`)
+  const query = new URLSearchParams({ variant });
+  const request = requestJson<MediaUrlTicket>(`/api/media/${encodeURIComponent(mediaId)}/url?${query}`)
     .then(result => {
       const parsedExpiry = result.expiresAt ? Date.parse(result.expiresAt) : Number.NaN;
-      mediaUrlCache.set(mediaId, {
+      mediaUrlCache.set(key, {
         url: result.url,
         expiresAtMs: Number.isFinite(parsedExpiry) ? parsedExpiry : Date.now() + MEDIA_URL_FALLBACK_TTL_MS,
       });
       return result.url;
     })
     .finally(() => {
-      pendingMediaUrls.delete(mediaId);
+      pendingMediaUrls.delete(key);
     });
-  pendingMediaUrls.set(mediaId, request);
+  pendingMediaUrls.set(key, request);
   return request;
 }

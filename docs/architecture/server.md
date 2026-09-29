@@ -9,7 +9,7 @@ apps/server/src/
 ├── bootstrap/       # 启动、配置、Hono 装配、迁移命令
 ├── routes/          # HTTP 输入、用户边界、响应映射
 ├── domain/          # records / media / memory / preferences / creations
-├── infrastructure/ # PostgreSQL、Memory adapter、外部 client、queue、logging、time
+├── infrastructure/ # PostgreSQL、TTL cache、Memory adapter、外部 client、queue、logging、time
 ├── listeners/       # 进程内事件处理
 ├── migrations/      # 当前空库 schema 基线
 └── scripts/         # 演示数据等运维脚本
@@ -23,7 +23,8 @@ apps/server/src/
 flowchart LR
   C[Client] --> H[Hono]
   H --> U[Bearer access JWT validation]
-  U --> P[Authenticated principal from JWT sub]
+  U --> A[24h user status TTL cache]
+  A --> P[Authenticated principal from JWT sub]
   P --> R[Route]
   R --> S[Domain Service]
   S --> D[Domain Repository]
@@ -41,6 +42,15 @@ flowchart LR
 | `/api/creation-proposals` | Proposal |
 
 具体契约见 [HTTP API](../api/http-api.md)。
+
+当前进程内读缓存统一使用 `infrastructure/cache/TtlCache`：
+
+- 用户 active 状态：24 小时 TTL；
+- Record 首页：按 userId 缓存前 10 条，24 小时 TTL；只有无 cursor 且 limit ≤ 10 命中；
+- User Preferences：按 userId 缓存前 20 条，24 小时 TTL；
+- Record / Preference 的成功写入会同步删除对应用户缓存，Record 后置处理的状态与内容写入也会删除 Record 首页缓存。
+
+这些缓存是单进程缓存；未来 Business Server 多实例部署时，如需跨实例即时失效，应切换到共享缓存或增加失效广播。
 
 ## Record 后置处理
 
@@ -70,13 +80,13 @@ sequenceDiagram
   L->>M: replaceRecord(processed Record)
 ```
 
-图片与音频任务可以部分失败；成功结果写回对应 Record block，音频 ASR 状态同时写入 Media `ext_data`。只有完成当前 Record 版本的 postprocess 后才会把最终 Record 交给 Memory。
+图片与音频任务可以部分失败；图片 description、音频 transcription 与 ASR metadata 都写回对应 Record block，不再把 ASR 结果复制到 Media `ext_data`。只有完成当前 Record 版本的 postprocess 后才会把最终 Record 交给 Memory。
 
 Record 已成功变成 `processed` 后，Memory / Embedding 失败只记录错误，不会重新 release Record；索引属于可重建派生数据。该队列仍是进程内机制，服务进程退出时未完成任务不会恢复，也没有持久 retry。
 
 ## 数据库与 migration
 
-启动时建立 Supabase PostgreSQL 连接、启用 `vector` extension，并执行 `create_current_schema.ts`。
+启动时创建 PostgreSQL Pool，执行 migration 后先用 `SELECT 1` 预热连接，再开放 HTTP 服务。Pool 开启 TCP keepalive，当前 `max=10`、`min=1`、连接超时 5 秒、空闲超时 5 分钟。
 
 当前 migration 策略是：**只维护一个面向空数据库的当前 schema 基线**。它不是历史数据库升级系统。已有旧 schema 文件不能假设可以直接原地升级。
 

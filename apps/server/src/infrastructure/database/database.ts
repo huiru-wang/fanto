@@ -2,7 +2,7 @@
  * PostgreSQL 数据库初始化 — pg Pool + Kysely。
  */
 
-import { Kysely, PostgresDialect, Migrator, type MigrationProvider, type Migration } from "kysely";
+import { Kysely, PostgresDialect, Migrator, sql, type MigrationProvider, type Migration } from "kysely";
 import { Pool } from "pg";
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -13,9 +13,22 @@ import { logError, logInfo } from "../logging/logger.js";
 export function createDatabase(databaseUrl: string): Kysely<DB> {
   return new Kysely<DB>({
     dialect: new PostgresDialect({
-      pool: new Pool({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } }),
+      pool: new Pool({
+        connectionString: databaseUrl,
+        ssl: { rejectUnauthorized: false },
+        max: 10,
+        min: 1,
+        connectionTimeoutMillis: 5_000,
+        idleTimeoutMillis: 300_000,
+        keepAlive: true,
+        keepAliveInitialDelayMillis: 30_000,
+      }),
     }),
   });
+}
+
+export async function warmDatabase(db: Kysely<DB>): Promise<void> {
+  await sql`SELECT 1`.execute(db);
 }
 
 /** 动态加载 migrations 目录下的 .ts/.js 文件 */

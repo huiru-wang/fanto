@@ -16,7 +16,7 @@
 
 | 能力 | 数据来源 | 当前状态 |
 | --- | --- | --- |
-| Record 列表 / 日历 / Timeline | `GET /api/records?limit=100` | Client 已接 |
+| Record 列表 / 日历 / Timeline | `GET /api/records?limit=10` | Client 已接 |
 | 新建 Record | 本地 `FantoStore.addRecord` | 仅本地，不持久化到 Server |
 | 媒体写入 | UI / model 占位 | 未形成 Server 上传链路 |
 | Creation 概览 | `GET /api/creations/overview` | Client 已接 |
@@ -29,7 +29,7 @@
 | Fanto 最近历史 | `GET /api/agent/sessions/:id/history?limit=10` | 已接 iOS 客户端流程 |
 | Fanto 文本流式回复 | `POST /api/agent/stream` | 已接 iOS 客户端流程 |
 
-Record 首批最多读取 100 条，当前客户端据此生成日历标记和 Timeline；尚未实现继续加载整个 Record 历史。
+Record 当前首批读取 10 条，客户端据此生成日历标记和 Timeline；服务端返回 `nextCursor`，客户端后续连续时间线会基于该 cursor 继续加载更早记录。
 
 
 ## Google 登录与账号状态
@@ -65,6 +65,8 @@ Fanto 位于根导航中间，只使用一个默认长期 Agent Session，不提
 ## Record UI
 
 Record 日历以周日为一周起点，周视图 / 月视图共享同一日期选择状态。轻点顶部“月 · 年”会以系统 sheet 打开年月滚轮，确认后保留可用的当月日期并同步周历 / 月历定位。日历区域横滑可按当前视图切换前后周或前后月；视觉翻页箭头不显示，但 VoiceOver 保留等价操作。音频 Record 当前主要显示播放入口和时长；图片缩略图按需通过媒体读取接口取得短期签名地址。轻点缩略图会全屏展示图片；多张图片可左右分页切换。签名地址只保留在视图运行态，图片请求失败时会刷新地址并重试一次。
+
+运行态 Record 直接从 `content.blocks` 构建图片与音频展示，不依赖额外 `media[]` 投影。图片缩略图请求 `/api/media/:id/url?variant=thumbnail`，全屏查看请求 `variant=original`；音频时长直接读取 audio block 的 `durationMs`。
 
 “新建记录”通过系统 sheet 打开 Composer，但保存动作当前只追加到本地 Store。不要把这一界面视为已经完成了 Server Record Create。
 

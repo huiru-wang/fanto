@@ -2,15 +2,11 @@ import { AgentHarness, TODO_CONTEXT, type AgentLane, type Context, type Executio
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { Models } from "@earendil-works/pi-ai";
 import type { AgentDefinition } from "./definition.js";
-import { createSystemPrompt, createTransformContext } from "../context/index.js";
+import { createContextProviders, createSystemPrompt, createTransformContext } from "../context/index.js";
 import type { ContextMessage } from "../context/run-context.js";
 import type { AgentBusinessServices } from "../business-services.js";
 import type { SkillLoader } from "../skills/loader.js";
 import { createTools } from "../tools/index.js";
-import { CharacterProvider } from "../context/providers/character.js";
-import { CurrentTimeProvider } from "../context/providers/current-time.js";
-import { PreferenceProvider } from "../context/providers/preference.js";
-import { MemoryProvider, PiQueryRewriter } from "../context/providers/memory.js";
 import { installHarnessHooks } from "./hooks.js";
 import { messageText } from "./events.js";
 
@@ -31,7 +27,7 @@ export async function buildRuntime(session: Session, definition: AgentDefinition
   const tools = createTools(definition.tools, workspace, dependencies.fanto);
   const systemPrompt = createSystemPrompt({
     template: definition.systemPrompt,
-    providers: [new CharacterProvider(), new CurrentTimeProvider(), new PreferenceProvider(dependencies.fanto), new MemoryProvider(dependencies.fanto, new PiQueryRewriter(dependencies.models))],
+    providers: createContextProviders({ fanto: dependencies.fanto }),
   });
   const { harness } = await AgentHarness.create<ExecutionToolContext>({
     session, models: dependencies.models, model, systemPrompt: systemPrompt.resolve, tools, activeToolNames: tools.map(tool => tool.name),

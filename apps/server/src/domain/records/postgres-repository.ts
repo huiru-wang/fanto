@@ -84,14 +84,14 @@ export class PostgresRecordRepository implements RecordRepository {
       content.blocks = content.blocks.map(block => {
         if (block.type === "image") return images.has(block.mediaId) ? { ...block, description: images.get(block.mediaId) } : block;
         const result = audio.get(block.mediaId);
-        return result?.transcription ? { ...block, transcription: result.transcription } : block;
+        if (!result) return block;
+        return {
+          ...block,
+          ...(result.transcription !== undefined ? { transcription: result.transcription } : {}),
+          asr: result.asr,
+        };
       });
       const now = nowIso();
-      for (const result of input.audio) {
-        const media = await trx.selectFrom("media_assets").selectAll().where("media_id", "=", result.mediaId).where("user_id", "=", input.userId).where("media_type", "=", "audio").executeTakeFirst();
-        if (!media || ext(media.ext_data).recordId !== input.recordId) continue;
-        await trx.updateTable("media_assets").set({ ext_data: JSON.stringify({ ...ext(media.ext_data), asr: result.asr }), updated_at: now }).where("media_id", "=", result.mediaId).where("user_id", "=", input.userId).execute();
-      }
       const updated = await trx.updateTable("records").set({ content: JSON.stringify(content), status: "processed", task_id: null, updated_at: now }).where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).returningAll().executeTakeFirst();
       return updated ? this.toEntity(updated) : null;
     });
@@ -107,7 +107,14 @@ export class PostgresRecordRepository implements RecordRepository {
     if (assets.length !== ids.length || assets.some(asset => asset.status !== "ready" || ext(asset.ext_data).recordId && ext(asset.ext_data).recordId !== recordId)) return "invalid_media";
     if (!value.text.trim() && !assets.some(asset => asset.media_type === "audio")) return "invalid_content";
     const byId = new Map(assets.map(asset => [asset.media_id, asset]));
-    return value.media.map(item => byId.get(item.mediaId)!.media_type === "image" ? { type: "image", mediaId: item.mediaId } : { type: "audio", mediaId: item.mediaId });
+    return value.media.map(item => {
+      const asset = byId.get(item.mediaId)!;
+      if (asset.media_type === "image") return { type: "image", mediaId: item.mediaId };
+      const durationMs = ext(asset.ext_data).capture?.durationMs;
+      return typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs > 0
+        ? { type: "audio", mediaId: item.mediaId, durationMs }
+        : { type: "audio", mediaId: item.mediaId };
+    });
   }
 
   private async link(trx: Kysely<DB>, userId: string, ids: string[], recordId: string) {

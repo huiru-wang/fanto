@@ -122,32 +122,28 @@ HTTP 返回 `recordId`、原子 `sourceType`、可选 `mediaId`、`snippet`、�
 
 ## Agent Context Retrieval
 
-Fanto main Agent 在每次 Agent Run 开始前执行一次 MemoryProvider。它不新增 Memory HTTP API，而是复用现有 Record Search：
+Fanto main Agent 在每次 Agent Run 开始前执行一次 MemoryProvider，当前固定使用 `recent` 模式：
 
 ```text
-current message + recent conversation
-          |
-          v
-Query Rewrite (deepseek-v4-flash)
-          |
-          v
-0-2 semantic queries
-          |
-          v
-POST /api/records/search
-          |
-          v
-dedupe by real recordId
-          |
-          v
-top 2 Relevant Memory
+Agent Run
+   |
+   v
+listRecords(limit=10, no cursor)
+   |
+   v
+Record first-10 cache
+   |
+   v
+compact Recent Memory
 ```
 
-Query Rewrite 只负责把指代和自然对话改写成检索查询；纯知识问答、简单寒暄或不需要过去信息时可以返回空查询。每条查询最多取 4 个原子命中，MemoryProvider 跨查询按真实 Record ID 去重、保留距离更近的命中，最终只向 System Prompt 注入 2 条。
+Recent Memory 只提供最近 10 条 Record 的紧凑背景，不做 Query Rewrite，也不做向量搜索。每条只注入真实 `recordId`、按请求时区格式化的时间、截断后的正文，以及媒体的真实 `mediaId` 和截断后的图片描述 / 音频转写；不会把完整 Record 注入 System Prompt。正文最多约 300 字，单个媒体语义文本最多约 160 字。
 
-注入内容包含真实 `recordId`、`snippet` 和 `eventAt`，不包含 `mediaId` 或向量 `distance`。主模型需要恢复完整 Record 时可以直接调用 `record_get(recordId)`。
+Recent Memory 不保证与当前问题相关，主模型应忽略无关内容。需要完整记录时调用 `record_get(recordId)`；Recent Memory 已提供的真实 `mediaId` 可以直接交给 `present_media`；需要按主题寻找更早或其他相关历史时，主模型主动调用 `record_search`。
 
-该 Context Build 只在 Run 前执行一次；Agent Loop 中不会再次自动重写或搜索。主模型仍可按需要主动调用 Record Tools。
+MemoryProvider 代码仍保留 `relevant` 模式以及 `PiQueryRewriter`：该模式继续支持 Query Rewrite + Record Search + 去重后的 Relevant Memory，但当前 main Agent 不使用，也没有新增 agents.yaml 配置项。
+
+该 Context Build 只在 Run 前执行一次。
 
 ## Rebuild
 

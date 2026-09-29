@@ -52,7 +52,7 @@ Preference Tool 成功后不会重新构建本轮 System Prompt。Tool Result �
 
 ## 读取与 Context Runtime
 
-每次 Fanto Agent Run 开始前，PreferenceProvider 调用 GET /api/preferences。Server 最多返回当前用户 20 条，按最近更新时间排序。Context Runtime 构建对应 fragment，Context Composer 将其注入 user_preferences 插槽，并包含 preferenceId / version / category / content，使模型在用户后续明确修改或删除时可以直接调用 preference_manage。
+每次 Fanto Agent Run 开始前，PreferenceProvider 调用 GET /api/preferences。Server 最多返回当前用户 20 条，按最近更新时间排序，并按用户缓存这 20 条结果 24 小时；同一进程内 create / update / delete 成功后立即失效该用户缓存。创建新 Preference 时的 20 条上限判断也复用这份列表缓存。Context Runtime 构建对应 fragment，Context Composer 将其注入 user_preferences 插槽，并包含 preferenceId / version / category / content，使模型在用户后续明确修改或删除时可以直接调用 preference_manage。
 
 用户当前消息优先级始终高于已保存 Preference。
 

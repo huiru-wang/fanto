@@ -41,7 +41,7 @@ test("creation and proposal HTTP routes preserve the public read and decision co
     const media = MediaService.create(db, oss);
     const app = createApp({
       auth: authService as never,
-      records: RecordService.create(db, media, new RecordPostprocessQueue()),
+      records: RecordService.create(db, new RecordPostprocessQueue()),
       media,
       creations: CreationService.create(db),
       creationProposals: CreationProposalService.create(db),

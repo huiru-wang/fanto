@@ -176,7 +176,7 @@ export function RecordsPage() {
                     <div className="timeline-node" />
                     <div className="record-content">
                       {record.content.text && <p>{record.content.text}</p>}
-                      <RecordMediaList media={record.media ?? []} />
+                      <RecordMediaList blocks={record.content.blocks} />
                       <div className="record-meta">
                         <span className={`record-status ${record.status}`}>{statusText[record.status]}</span>
                         {record.content.blocks.length > 0 && <span>{record.content.blocks.length} 个媒体</span>}

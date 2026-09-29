@@ -44,12 +44,9 @@ Record postprocess 发现 image block 尚无 description 时，会通过 Vision 
 
 ## 音频转写
 
-Audio block 在 Record postprocess 中调用 ASR。成功后：
+Audio block 在 Record postprocess 中调用 ASR。成功后，transcription 与 ASR 状态、模型、语言、情绪、完成时间都写入 Record audio block。失败时 audio block 写入 `asr.status=failed` 与错误码，不产生 transcription。
 
-- transcription 写入 Record audio block；
-- ASR 状态、模型、语言、情绪、完成时间写入对应 Media `ext_data.asr`。
-
-失败时 Media 记录失败状态和错误码，Record block 不产生 transcription。
+`media_assets.ext_data` 继续保存上传阶段 capture metadata（包括可用的 `durationMs`）与 Record 占用关系；ASR 结果不再写入 Media。Record 创建 / 更新时会把 capture 中的音频时长复制进 audio block。
 
 当前没有独立的“上传后立即转写” SSE API；音频理解属于 Record 后置处理的一部分。
 
@@ -57,8 +54,8 @@ Audio block 在 Record postprocess 中调用 ASR。成功后：
 
 三个读取接口都先校验当前用户和 ready 状态，不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`：
 
-- `GET /api/media/:id`：302 到短期 OSS 读取地址；
-- `GET /api/media/:id/url`：返回 `{ url, expiresAt }`，供浏览器 `<img>` / `<audio>` 这类无法附加 `Authorization` Header 的元素使用；
+- `GET /api/media/:id`：302 到原始媒体的短期 OSS 读取地址；
+- `GET /api/media/:id/url?variant=original|thumbnail`：返回 `{ url, expiresAt }`；不传 variant 时默认为 `original`。图片 `thumbnail` 使用 OSS 实时处理生成宽 600、质量 80、WebP 变体；音频始终返回原始媒体；
 - `GET /api/media/:id/meta`：返回稳定的 `mediaId / mediaType / mimeType` 与可用的 `width / height / durationMs`，不返回 OSS 地址。
 
-`present_media` Agent Tool 使用 `/meta` 对模型给出的 mediaId 做用户归属与 ready 校验，并把稳定 metadata 写入原生 Tool Result `details`。短期 signed URL 不写入 Agent Session，真正展示或播放时再由客户端调用 `/url` 获取。业务 API 不直接暴露永久 OSS URL。
+`present_media` Agent Tool 使用 `/meta` 对模型给出的 mediaId 做用户归属与 ready 校验，并把稳定 metadata 写入原生 Tool Result `details`。短期 signed URL 不写入 Agent Session，真正展示或播放时再由客户端调用 `/url` 获取。缩略图 URL 与原图 URL 必须按 variant 独立缓存；业务 API 不直接暴露永久 OSS URL。

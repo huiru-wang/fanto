@@ -1,13 +1,18 @@
 import type { Context } from "@earendil-works/pi-agent-core";
 import type { Models } from "@earendil-works/pi-ai";
 import { z } from "zod";
-import type { AgentBusinessServices, AgentRecordSearch } from "../../business-services.js";
+import type { AgentBusinessServices, AgentRecord, AgentRecordSearch } from "../../business-services.js";
 import { createRunContext, type RunData } from "../run-context.js";
 import { formatEventTime } from "./current-time.js";
 
-type MemoryClient = Pick<AgentBusinessServices, "searchRecords">;
+type MemoryClient = Pick<AgentBusinessServices, "listRecords" | "searchRecords">;
 type SearchHit = AgentRecordSearch["data"][number];
+export type MemoryMode = "recent" | "relevant";
+
 const rewriteResult = z.object({ queries: z.array(z.string().trim().min(1)).max(2) }).strict();
+const RECENT_RECORD_LIMIT = 10;
+const RECORD_TEXT_LIMIT = 300;
+const MEDIA_TEXT_LIMIT = 160;
 
 interface QueryRewriter {
   rewrite(input: RunData, signal?: AbortSignal): Promise<string[]>;
@@ -41,18 +46,70 @@ export class PiQueryRewriter implements QueryRewriter {
 }
 
 export function parseRewriteResult(text: string): string[] {
-  const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  const cleaned = text.replace(/^\`\`\`(?:json)?\s*/i, "").replace(/\s*\`\`\`$/, "").trim();
   const parsed = rewriteResult.safeParse(JSON.parse(cleaned));
   if (!parsed.success) throw new Error("Invalid query rewrite response");
   return [...new Set(parsed.data.queries.map(query => query.trim()).filter(Boolean))].slice(0, 2);
 }
 
-export class MemoryProvider {
-  readonly slot = "relevant_memory";
+function compact(value: string | undefined): string {
+  return value?.trim().replace(/\s+/g, " ") ?? "";
+}
 
-  constructor(private readonly client: MemoryClient, private readonly rewriter: QueryRewriter) {}
+export function truncateMemoryText(value: string | undefined, maxLength: number): string {
+  const text = compact(value);
+  if (!text) return "";
+  return text.length <= maxLength ? text : `${text.slice(0, maxLength)}…`;
+}
+
+export function formatRecentRecord(record: AgentRecord, timeZone: string | undefined): string {
+  const lines = [
+    `recordId: ${record.id}`,
+    `时间: ${formatEventTime(record.eventAt, timeZone)}`,
+    `内容: ${truncateMemoryText(record.content.text, RECORD_TEXT_LIMIT) || "（无文字）"}`,
+  ];
+  if (record.content.blocks.length > 0) {
+    lines.push("媒体:");
+    for (const block of record.content.blocks) {
+      if (block.type === "image") {
+        const description = truncateMemoryText(block.description, MEDIA_TEXT_LIMIT);
+        lines.push(`- 图片: mediaId=${block.mediaId}${description ? `；描述=${description}` : ""}`);
+      } else {
+        const transcription = truncateMemoryText(block.transcription, MEDIA_TEXT_LIMIT);
+        lines.push(`- 音频: mediaId=${block.mediaId}${transcription ? `；转写=${transcription}` : ""}`);
+      }
+    }
+  }
+  return lines.join("\n");
+}
+
+export class MemoryProvider {
+  readonly slot: "recent_memory" | "relevant_memory";
+
+  constructor(
+    private readonly client: MemoryClient,
+    private readonly mode: MemoryMode,
+    private readonly rewriter?: QueryRewriter,
+  ) {
+    this.slot = mode === "recent" ? "recent_memory" : "relevant_memory";
+  }
 
   async build(context: Context): Promise<{ slot: string; content: string }> {
+    return this.mode === "recent" ? this.buildRecent(context) : this.buildRelevant(context);
+  }
+
+  private async buildRecent(context: Context): Promise<{ slot: string; content: string }> {
+    const input = createRunContext.read(context);
+    const result = await this.client.listRecords(
+      { userId: input.userId, traceId: input.traceId, signal: context.abortSignal },
+      { limit: RECENT_RECORD_LIMIT },
+    );
+    const content = result.data.map(record => formatRecentRecord(record, input.timeZone)).join("\n\n");
+    return { slot: this.slot, content };
+  }
+
+  private async buildRelevant(context: Context): Promise<{ slot: string; content: string }> {
+    if (!this.rewriter) throw new Error("Relevant memory mode requires a query rewriter");
     const input = createRunContext.read(context);
     const queries = await this.rewriter.rewrite(input, context.abortSignal);
     if (queries.length === 0) return { slot: this.slot, content: "" };
@@ -67,6 +124,14 @@ recordId：${record.recordId}
 - 时间：${formatEventTime(record.eventAt, input.timeZone)}${record.mediaId ? "\n- 可能有可展示媒体：是" : ""}`).join("\n\n");
     return { slot: this.slot, content };
   }
+}
+
+export function createMemoryProvider(options:
+  | { mode: "recent"; client: MemoryClient }
+  | { mode: "relevant"; client: MemoryClient; models: Models }
+): MemoryProvider {
+  if (options.mode === "recent") return new MemoryProvider(options.client, "recent");
+  return new MemoryProvider(options.client, "relevant", new PiQueryRewriter(options.models));
 }
 
 export function dedupeRecords(hits: SearchHit[]): SearchHit[] {

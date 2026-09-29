@@ -1,6 +1,6 @@
 import { serve } from "@hono/node-server";
 import { loadConfig, loadEnv } from "./config.js";
-import { createDatabase, runMigrations } from "../infrastructure/database/database.js";
+import { createDatabase, runMigrations, warmDatabase } from "../infrastructure/database/database.js";
 import { QwenImageUnderstanding } from "../infrastructure/clients/image-client.js";
 import { QwenAudioTranscription } from "../infrastructure/clients/audio-client.js";
 import { EmbeddingsClient } from "../infrastructure/clients/embeddings-client.js";
@@ -11,31 +11,47 @@ import { createApp, type ServerServices } from "./app.js";
 import { logInfo } from "../infrastructure/logging/logger.js";
 import { MemoryService } from "../domain/memory/index.js";
 import { PostgresMemoryIndex } from "../infrastructure/memory/postgres-memory-index.js";
-import { PreferenceService } from "../domain/preferences/index.js";
+import { PreferenceService, type UserPreference } from "../domain/preferences/index.js";
 import { JwtTokenService } from "../infrastructure/auth/jwt-token-service.js";
 import { GoogleIdentityProvider } from "../infrastructure/auth/providers/google-identity-provider.js";
 import { AppleIdentityProvider } from "../infrastructure/auth/providers/apple-identity-provider.js";
 import { IdentityProviderRegistry } from "../domain/auth/identity-provider.js";
 import { AuthService } from "../domain/auth/index.js";
-import { RecordService } from "../domain/records/index.js";
+import { RecordService, type Record } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
 import { CreationService, CreationProposalService } from "../domain/creations/index.js";
 import { createAgentRuntime } from "../agent/agent-runtime.js";
+import { TtlCache } from "../infrastructure/cache/ttl-cache.js";
+
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 loadEnv();
 const config = loadConfig();
 const db = createDatabase(config.databaseUrl);
 await runMigrations(db);
+await warmDatabase(db);
 
 const authTokens = await JwtTokenService.create(config.auth);
 const identityProviders = new IdentityProviderRegistry([
   new GoogleIdentityProvider(config.auth.googleAllowedClientIds),
   new AppleIdentityProvider(config.auth.appleAllowedClientIds),
 ]);
-const auth = new AuthService(db, identityProviders, authTokens);
+const userStatusCache = new TtlCache<string, { user_id: string; status: "active" | "disabled" } | null>({
+  ttlMs: CACHE_TTL_MS,
+  maxEntries: 20_000,
+});
+const auth = new AuthService(db, identityProviders, authTokens, userStatusCache);
+const recordListCache = new TtlCache<string, { records: Record[]; hasMoreAfterTopTen: boolean }>({
+  ttlMs: CACHE_TTL_MS,
+  maxEntries: 2_000,
+});
+const preferenceListCache = new TtlCache<string, UserPreference[]>({
+  ttlMs: CACHE_TTL_MS,
+  maxEntries: 10_000,
+});
 const oss = new OssStorage(config.oss);
 const media = MediaService.create(db, oss);
-const preferences = PreferenceService.create(db);
+const preferences = PreferenceService.create(db, preferenceListCache);
 const embeddings = new EmbeddingsClient(
   config.dashscope.apiKey,
   config.dashscope.baseUrl,
@@ -45,7 +61,7 @@ const embeddings = new EmbeddingsClient(
 const memoryIndex = new PostgresMemoryIndex(db);
 const memory = new MemoryService(memoryIndex, embeddings);
 const queue = new RecordPostprocessQueue();
-const records = RecordService.create(db, media, queue, memory);
+const records = RecordService.create(db, queue, memory, recordListCache);
 const agent = createAgentRuntime({ records, media, preferences, ...config.agent });
 
 registerRecordPostprocessListener(
