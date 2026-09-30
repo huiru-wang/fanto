@@ -24,9 +24,8 @@ export type TaskOutput = {
   format: TaskResultFormat;
 };
 
-export type TaskSources = {
+export type TaskReferences = {
   recordIds: string[];
-  mediaIds: string[];
 };
 
 export type Task = {
@@ -39,7 +38,7 @@ export type Task = {
   triggerType: "immediate" | "scheduled";
   trigger: TaskTrigger;
   output: TaskOutput;
-  sources: TaskSources;
+  references: TaskReferences;
   extData: Record<string, unknown>;
   status: TaskStatus;
   nextRunAt: string | null;
@@ -48,6 +47,27 @@ export type Task = {
   createdAt: string;
   updatedAt: string;
 };
+
+export type TaskRunPlanStep = {
+  id: string;
+  title: string;
+  description?: string;
+};
+
+export type TaskRunPlan = {
+  summary: string;
+  steps: TaskRunPlanStep[];
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+};
+
+export type TaskRunPlanInput = {
+  summary: string;
+  steps: TaskRunPlanStep[];
+};
+
+export type TaskPlanAction = "create" | "update";
 
 export type TaskRunArtifact = {
   filename: string;
@@ -74,6 +94,7 @@ export type TaskRun = {
   result: TaskRunResult | null;
   error: Record<string, unknown> | null;
   extData: Record<string, unknown>;
+  plan: TaskRunPlan | null;
   startedAt: string | null;
   finishedAt: string | null;
   createdAt: string;
@@ -83,6 +104,7 @@ export type TaskRun = {
 export type TaskAgentPolicy = {
   defaultTimeoutSeconds: number;
   maxTimeoutSeconds: number;
+  maxAttempts?: number;
 };
 
 export type DelegateTaskInput = {
@@ -97,9 +119,9 @@ export type DelegateTaskInput = {
           | { type: "once"; at: string; timezone: string }
           | { type: "recurring"; rrule: string; timezone: string; startAt?: string };
       };
+  output: TaskOutput;
+  references?: Partial<TaskReferences>;
   timeoutSeconds?: number;
-  result?: { format?: TaskResultFormat };
-  sources?: Partial<TaskSources>;
 };
 
 export type DelegateTaskContext = {
@@ -123,8 +145,7 @@ export type UpdateTaskInput = {
   title?: string;
   goal?: TaskGoal;
   trigger?: DelegateTaskInput["trigger"];
-  timeoutSeconds?: number;
-  result?: { format?: TaskResultFormat };
-  sources?: Partial<TaskSources>;
+  output?: TaskOutput;
+  references?: Partial<TaskReferences>;
   status?: "active" | "paused" | "cancelled";
 };

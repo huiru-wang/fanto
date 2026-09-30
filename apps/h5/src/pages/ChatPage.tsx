@@ -2,18 +2,22 @@ import { ArrowUp, MessageCircleMore, Plus, RotateCcw, Sparkles, Square } from "l
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   createAgentSession,
+  encodeUserInputResponse,
   fetchAgentHistory,
   mergePresentedMedia,
   mergePresentedTasks,
+  mergeUserInputRequests,
   streamAgentMessage,
   type AgentHistoryMessage,
   type PresentedMedia,
   type PresentedTask,
+  type PresentedUserInputRequest,
 } from "../api/agent";
 import { ApiError } from "../api/http";
 import { ChatMarkdown } from "../components/ChatMarkdown";
 import { MediaPresentation } from "../components/MediaPresentation";
 import { TaskCard } from "../components/TaskCard";
+import { UserInputCard } from "../components/UserInputCard";
 import { AGENT_SESSION_KEY } from "../config";
 
 type MessageState = "complete" | "processing" | "streaming" | "stopped" | "failed";
@@ -21,14 +25,20 @@ type ChatMessage = AgentHistoryMessage & { state: MessageState };
 
 const localId = () => `local-${crypto.randomUUID()}`;
 
-const ChatMessageItem = memo(function ChatMessageItem({ message }: { message: ChatMessage }) {
-  const hasContent = Boolean(message.text) || message.media.length > 0 || message.tasks.length > 0;
+const ChatMessageItem = memo(function ChatMessageItem({
+  message,
+  responding,
+  onSubmitInput,
+}: {
+  message: ChatMessage;
+  responding: boolean;
+  onSubmitInput: (request: PresentedUserInputRequest, visibleText: string) => void;
+}) {
+  const hasContent = Boolean(message.text) || message.media.length > 0 || message.tasks.length > 0 || message.inputRequests.length > 0;
 
   return (
     <article className={`message ${message.role}`}>
-      {message.role === "assistant" && (
-        <span className="message-avatar"><Sparkles size={14} /></span>
-      )}
+      {message.role === "assistant" && <span className="message-avatar"><Sparkles size={14} /></span>}
       <div className="message-body">
         {message.text ? (
           message.role === "assistant"
@@ -40,12 +50,22 @@ const ChatMessageItem = memo(function ChatMessageItem({ message }: { message: Ch
             <span>正在回想…</span>
           </div>
         ) : null}
-        {message.role === "assistant" && message.media.length > 0 && (
-          <MediaPresentation items={message.media} />
-        )}
+        {message.role === "assistant" && message.media.length > 0 && <MediaPresentation items={message.media} />}
         {message.role === "assistant" && message.tasks.length > 0 && (
           <div className="chat-task-list">
             {message.tasks.map(task => <TaskCard key={task.taskId} task={task} />)}
+          </div>
+        )}
+        {message.role === "assistant" && message.inputRequests.length > 0 && (
+          <div className="chat-input-request-list">
+            {message.inputRequests.map(request => (
+              <UserInputCard
+                key={request.interactionId}
+                request={request}
+                disabled={responding}
+                onSubmit={visibleText => onSubmitInput(request, visibleText)}
+              />
+            ))}
           </div>
         )}
         {message.state === "stopped" && <span className="message-state">已停止生成</span>}
@@ -116,7 +136,6 @@ export function ChatPage() {
   }, [createFreshSession, scrollToEnd]);
 
   useEffect(() => { void load(); }, [load]);
-
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const newConversation = async () => {
@@ -133,29 +152,16 @@ export function ChatPage() {
     }
   };
 
-  const send = async () => {
-    const text = draft.trim();
-    if (!text || !sessionId || responding) return;
-
+  const sendMessage = async (wireText: string, visibleText: string) => {
+    if (!wireText.trim() || !sessionId || responding) return;
     const userMessage: ChatMessage = {
-      id: localId(),
-      role: "user",
-      text,
-      media: [],
-      tasks: [],
-      state: "complete",
+      id: localId(), role: "user", text: visibleText, media: [], tasks: [], inputRequests: [], state: "complete",
     };
     const assistantId = localId();
     const assistantMessage: ChatMessage = {
-      id: assistantId,
-      role: "assistant",
-      text: "",
-      media: [],
-      tasks: [],
-      state: "processing",
+      id: assistantId, role: "assistant", text: "", media: [], tasks: [], inputRequests: [], state: "processing",
     };
 
-    setDraft("");
     setError(null);
     setMessages(current => [...current, userMessage, assistantMessage]);
     setResponding(true);
@@ -165,11 +171,12 @@ export function ChatPage() {
     abortRef.current = controller;
     let pendingMedia: PresentedMedia[] = [];
     let pendingTasks: PresentedTask[] = [];
+    let pendingInputs: PresentedUserInputRequest[] = [];
 
     try {
       await streamAgentMessage(
         sessionId,
-        text,
+        wireText,
         event => {
           if (event.type === "processing") {
             setMessages(current => current.map(message =>
@@ -181,26 +188,28 @@ export function ChatPage() {
             pendingMedia = mergePresentedMedia(pendingMedia, event.items);
           } else if (event.type === "task_created") {
             pendingTasks = mergePresentedTasks(pendingTasks, [event.task]);
+          } else if (event.type === "user_input_requested") {
+            pendingInputs = mergeUserInputRequests(pendingInputs, [event.request]);
+            setMessages(current => current.map(message =>
+              message.id === assistantId ? { ...message, inputRequests: pendingInputs, state: "streaming" } : message,
+            ));
+            scrollToEnd();
           } else if (event.type === "delta") {
             const follow = isNearEnd();
             setMessages(current => current.map(message =>
-              message.id === assistantId
-                ? { ...message, text: message.text + event.text, state: "streaming" }
-                : message,
+              message.id === assistantId ? { ...message, text: message.text + event.text, state: "streaming" } : message,
             ));
             if (follow) scrollToEnd();
           } else if (event.type === "done") {
             const follow = isNearEnd();
             setMessages(current => current.map(message =>
               message.id === assistantId
-                ? { ...message, media: pendingMedia, tasks: pendingTasks, state: "complete" }
+                ? { ...message, media: pendingMedia, tasks: pendingTasks, inputRequests: pendingInputs, state: "complete" }
                 : message,
             ));
             if (follow) scrollToEnd();
           } else if (event.type === "error") {
-            setMessages(current => current.map(message =>
-              message.id === assistantId ? { ...message, state: "failed" } : message,
-            ));
+            setMessages(current => current.map(message => message.id === assistantId ? { ...message, state: "failed" } : message));
             setError(event.message);
           }
         },
@@ -208,13 +217,9 @@ export function ChatPage() {
       );
     } catch (cause) {
       if (controller.signal.aborted) {
-        setMessages(current => current.map(message =>
-          message.id === assistantId ? { ...message, state: "stopped" } : message,
-        ));
+        setMessages(current => current.map(message => message.id === assistantId ? { ...message, state: "stopped" } : message));
       } else {
-        setMessages(current => current.map(message =>
-          message.id === assistantId ? { ...message, state: "failed" } : message,
-        ));
+        setMessages(current => current.map(message => message.id === assistantId ? { ...message, state: "failed" } : message));
         setError(cause instanceof Error ? cause.message : "这次回复没有完成");
       }
     } finally {
@@ -224,41 +229,45 @@ export function ChatPage() {
     }
   };
 
-  const stop = () => {
-    abortRef.current?.abort();
+  const send = async () => {
+    const text = draft.trim();
+    if (!text) return;
+    setDraft("");
+    await sendMessage(text, text);
   };
+
+  const submitUserInput = (request: PresentedUserInputRequest, visibleText: string) => {
+    if (responding) return;
+    setMessages(current => current.map(message => ({
+      ...message,
+      inputRequests: message.inputRequests.map(item => item.interactionId === request.interactionId ? { ...item, resolved: true } : item),
+    })));
+    void sendMessage(encodeUserInputResponse(request.interactionId, visibleText), visibleText);
+  };
+
+  const stop = () => { abortRef.current?.abort(); };
 
   return (
     <div className="chat-page">
       <header className="chat-header">
         <div className="chat-title">
           <span className="chat-avatar"><Sparkles size={17} /></span>
-          <div>
-            <strong>Fanto</strong>
-            <span>基于你的记录继续聊</span>
-          </div>
+          <div><strong>Fanto</strong><span>基于你的记录继续聊</span></div>
         </div>
         <button className="secondary-button compact" onClick={() => void newConversation()} disabled={loading}>
-          <Plus size={16} />
-          <span>新对话</span>
+          <Plus size={16} /><span>新对话</span>
         </button>
       </header>
 
       <div className="chat-scroll" ref={scrollRef}>
         <div className="chat-content">
           {loading ? (
-            <div className="empty-state chat-loading">
-              <span className="large-loader" />
-              <p>正在恢复对话…</p>
-            </div>
+            <div className="empty-state chat-loading"><span className="large-loader" /><p>正在恢复对话…</p></div>
           ) : error && messages.length === 0 ? (
             <div className="empty-state">
               <div className="empty-orb"><RotateCcw size={22} /></div>
-              <h2>暂时没有连接上 Fanto</h2>
-              <p>{error}</p>
-              <button className="secondary-button" onClick={() => void load()}>
-                <RotateCcw size={16} />重新连接
-              </button>
+              <h2>暂时没有连接上 Fanto</h2><p>{error}</p>
+              <button className="secondary-button" onClick={() => void load()}><RotateCcw size={16} />重新连接</button>
             </div>
           ) : messages.length === 0 ? (
             <div className="chat-welcome">
@@ -273,7 +282,14 @@ export function ChatPage() {
             </div>
           ) : (
             <div className="message-list">
-              {messages.map(message => <ChatMessageItem message={message} key={message.id} />)}
+              {messages.map(message => (
+                <ChatMessageItem
+                  message={message}
+                  responding={responding}
+                  onSubmitInput={submitUserInput}
+                  key={message.id}
+                />
+              ))}
               {error && <div className="chat-inline-error">{error}</div>}
             </div>
           )}

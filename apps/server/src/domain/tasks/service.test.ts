@@ -52,6 +52,7 @@ test("delegate rejects recurring schedules with no future occurrence before writ
             startAt: "2020-01-01T09:00:00+08:00",
           },
         },
+        output: { format: "markdown" },
       },
       { defaultTimeoutSeconds: 900, maxTimeoutSeconds: 3600 },
     ),
@@ -75,7 +76,8 @@ test("immediate task persists its creation time as nextRunAt without creating a 
       agentId: "task-worker",
       goal: { objective: "Create one result file" },
       trigger: { type: "immediate" },
-      sources: { recordIds: ["record-1"], mediaIds: ["media-1"] },
+      output: { format: "html" },
+      references: { recordIds: ["record-1"] },
     },
     { defaultTimeoutSeconds: 900, maxTimeoutSeconds: 3600 },
   );
@@ -84,6 +86,7 @@ test("immediate task persists its creation time as nextRunAt without creating a 
   assert.ok(result.nextRunAt);
   assert.equal(created?.trigger_type, "immediate");
   assert.equal((created?.next_run_at as Date).toISOString(), result.nextRunAt);
-  assert.deepEqual((created?.ext_data as any).sources, { recordIds: ["record-1"], mediaIds: ["media-1"] });
+  assert.deepEqual((created?.ext_data as any).references, { recordIds: ["record-1"] });
+  assert.deepEqual(created?.output, { format: "html" });
   assert.equal("run_id" in (created ?? {}), false);
 });

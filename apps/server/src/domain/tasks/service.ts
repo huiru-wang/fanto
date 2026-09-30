@@ -38,12 +38,12 @@ export class TaskService {
     if (!title) throw new Error("Task title must not be empty");
     const timeoutSeconds = this.resolveTimeout(input.timeoutSeconds, policy);
     const trigger = normalizeTrigger(input.trigger, now);
-    const sources = normalizeSources(input.sources);
+    const references = normalizeReferences(input.references);
     const nextRunAt = initialNextRunAt(trigger, now);
     if (trigger.type === "scheduled" && !nextRunAt) {
       throw new Error("Scheduled task has no future occurrence");
     }
-    const output = { format: input.result?.format ?? "markdown" as const };
+    const output = { format: input.output.format };
     const row = {
       task_id: taskId,
       user_id: context.userId,
@@ -59,7 +59,7 @@ export class TaskService {
         timeZone: trigger.type === "scheduled" ? trigger.schedule.timezone : context.timeZone,
         source: "agent",
         delegate: { requestedByAgentId: "main" },
-        sources,
+        references,
       },
       status: "active" as const,
       next_run_at: nextRunAt,
@@ -120,7 +120,7 @@ export class TaskService {
     return this.repository.cancel(userId, taskId);
   }
 
-  async update(userId: string, taskId: string, input: UpdateTaskInput, policy?: TaskAgentPolicy): Promise<Task | undefined> {
+  async update(userId: string, taskId: string, input: UpdateTaskInput, _policy?: TaskAgentPolicy): Promise<Task | undefined> {
     const current = await this.repository.findById(userId, taskId);
     if (!current) return undefined;
     if (input.status === "cancelled") return this.cancel(userId, taskId);
@@ -133,28 +133,38 @@ export class TaskService {
     const trigger = input.trigger ? normalizeTrigger(input.trigger, now) : task.trigger;
     const title = input.title === undefined ? undefined : input.title.trim();
     if (title !== undefined && !title) throw new Error("Task title must not be empty");
-    const timeoutSeconds = input.timeoutSeconds === undefined
-      ? undefined
-      : this.resolveTimeout(input.timeoutSeconds, policy ?? { defaultTimeoutSeconds: task.timeoutSeconds, maxTimeoutSeconds: task.timeoutSeconds });
     const nextRunAt = input.trigger
       ? initialNextRunAt(trigger, now)
       : undefined;
-    const sources = input.sources === undefined ? undefined : {
+    const references = input.references === undefined ? undefined : {
       ...task.extData,
-      sources: normalizeSources(input.sources),
+      references: normalizeReferences(input.references),
     };
     const updated = await this.repository.updateTaskDetails({
       userId,
       taskId,
       ...(title !== undefined ? { title } : {}),
       ...(input.goal ? { goal: normalizeGoal(input.goal) } : {}),
-      ...(timeoutSeconds !== undefined ? { timeoutSeconds } : {}),
       ...(input.trigger ? { triggerType: trigger.type, trigger, nextRunAt } : {}),
-      ...(input.result ? { output: { format: input.result.format ?? task.output.format } } : {}),
-      ...(sources !== undefined ? { sources } : {}),
+      ...(input.output ? { output: { format: input.output.format } } : {}),
+      ...(references !== undefined ? { extData: references } : {}),
     });
     if (updated) logInfo("task", "task_updated", { taskId, userId });
     return updated;
+  }
+
+  manageRunPlan(input: {
+    userId: string;
+    taskId: string;
+    runId: string;
+    action: import("./model.js").TaskPlanAction;
+    plan: import("./model.js").TaskRunPlanInput;
+  }): Promise<TaskRun | undefined> {
+    return this.repository.manageRunPlan(input);
+  }
+
+  rebindRunWorkerSession(userId: string, taskId: string, runId: string, workerSessionId: string): Promise<TaskRun | undefined> {
+    return this.repository.rebindRunWorkerSession(userId, taskId, runId, workerSessionId);
   }
 
   dueTasks(now = new Date(), limit?: number): Promise<Task[]> {
@@ -214,18 +224,15 @@ function normalizeGoal(goal: DelegateTaskInput["goal"]): DelegateTaskInput["goal
   };
 }
 
-function normalizeSources(sources: DelegateTaskInput["sources"]): { recordIds: string[]; mediaIds: string[] } {
-  return {
-    recordIds: normalizeSourceIds(sources?.recordIds),
-    mediaIds: normalizeSourceIds(sources?.mediaIds),
-  };
+function normalizeReferences(references: DelegateTaskInput["references"]): { recordIds: string[] } {
+  return { recordIds: normalizeReferenceIds(references?.recordIds) };
 }
 
-function normalizeSourceIds(values: string[] | undefined): string[] {
+function normalizeReferenceIds(values: string[] | undefined): string[] {
   if (!values) return [];
-  if (values.length > 20) throw new Error("Task sources support at most 20 IDs per type");
+  if (values.length > 20) throw new Error("Task references support at most 20 record IDs");
   const normalized = values.map(value => value.trim()).filter(Boolean);
-  if (normalized.some(value => value.length > 100)) throw new Error("Task source ID must be at most 100 characters");
+  if (normalized.some(value => value.length > 100)) throw new Error("Task reference ID must be at most 100 characters");
   return [...new Set(normalized)];
 }
 

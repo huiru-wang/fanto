@@ -1,12 +1,13 @@
 import type { AgentHarness, ExecutionToolContext } from "@earendil-works/pi-agent-core";
 import { sanitizePresentMediaDetails, type PresentMediaDetails } from "../tools/media.js";
 import { sanitizeCreateTaskDetails, type CreateTaskPresentation } from "../tools/task-management.js";
+import { sanitizeUserInputRequestDetails, type UserInputRequestDetails } from "../tools/user-input.js";
 import type { RunData } from "../context/run-context.js";
 
 export type AgentStreamEvent =
   | { type: "turn_start" }
   | { type: "tool_start"; toolCallId: string; toolName: string }
-  | { type: "tool_end"; toolCallId: string; toolName: string; status: "succeeded" | "failed"; result?: PresentMediaDetails | CreateTaskPresentation }
+  | { type: "tool_end"; toolCallId: string; toolName: string; status: "succeeded" | "failed"; result?: PresentMediaDetails | CreateTaskPresentation | UserInputRequestDetails }
   | { type: "delta"; text: string };
 
 export function subscribeHarnessEvents(
@@ -28,7 +29,9 @@ export function subscribeHarnessEvents(
           ? sanitizePresentMediaDetails(event.result.details)
           : event.toolName === "create_task"
             ? sanitizeCreateTaskDetails(event.result.details)
-            : undefined;
+            : event.toolName === "collect_user_input"
+              ? sanitizeUserInputRequestDetails(event.result.details)
+              : undefined;
       await emit({ type: "tool_end", toolCallId: event.toolCallId, toolName: event.toolName, status: event.isError ? "failed" : "succeeded", ...(result ? { result } : {}) });
     }),
     harness.events.on("message_update", async ({ event }) => {

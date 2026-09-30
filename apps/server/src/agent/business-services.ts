@@ -1,8 +1,9 @@
 import type { MediaService } from "../domain/media/index.js";
 import type { PreferenceCategory, PreferenceService, UserPreference } from "../domain/preferences/index.js";
 import type { RecordService } from "../domain/records/index.js";
-import type { DelegateTaskInput, DelegateTaskResult, TaskAgentPolicy, TaskService, UpdateTaskInput } from "../domain/tasks/index.js";
+import type { DelegateTaskInput, DelegateTaskResult, TaskAgentPolicy, TaskPlanAction, TaskRunPlan, TaskRunPlanInput, TaskService, UpdateTaskInput } from "../domain/tasks/index.js";
 import type { TaskDeliveryInput, TaskResultPublisher } from "../task-runtime/result-publisher.js";
+import type { DeepSeekWebSearchClient, WebSearchResult } from "./web/deepseek-web-search.js";
 
 export type AgentRequestContext = {
   userId: string;
@@ -26,6 +27,7 @@ export type AgentBusinessServices = {
   getRecord(context: AgentRequestContext, recordId: string): Promise<AgentRecord>;
   listRecords(context: AgentRequestContext, input: { limit: number; cursor?: string }): Promise<AgentRecordList>;
   searchRecords(context: AgentRequestContext, input: { query: string; limit: number }): Promise<AgentRecordSearch>;
+  searchWeb(context: AgentRequestContext, query: string): Promise<WebSearchResult>;
   getMediaMetadata(context: AgentRequestContext, mediaId: string): Promise<AgentMediaMetadata>;
   listPreferences(context: AgentRequestContext): Promise<AgentPreferenceList>;
   createPreference(context: AgentRequestContext, input: { category: AgentPreferenceCategory; content: string; source: { sessionId: string; messageId: string; quote: string } }): Promise<{ preference: AgentPreference; reused: boolean }>;
@@ -35,6 +37,7 @@ export type AgentBusinessServices = {
   updateTask(context: AgentRequestContext, taskId: string, input: UpdateTaskInput): Promise<unknown>;
   getTask(context: AgentRequestContext, taskId: string): Promise<unknown>;
   listTasks(context: AgentRequestContext): Promise<unknown>;
+  manageTaskPlan(context: AgentRequestContext, input: { action: TaskPlanAction; plan: TaskRunPlanInput }): Promise<TaskRunPlan>;
   deliverTaskResult(context: AgentRequestContext, input: TaskDeliveryInput): Promise<{ mediaId: string; result: unknown }>;
 };
 
@@ -52,6 +55,7 @@ export function createAgentBusinessServices(services: {
   tasks: TaskService;
   resolveTaskAgent(agentId: string): TaskAgentPolicy | undefined;
   taskResultPublisher?: TaskResultPublisher;
+  webSearch: DeepSeekWebSearchClient;
 }): AgentBusinessServices {
   return {
     async getRecord(context, recordId) {
@@ -63,6 +67,7 @@ export function createAgentBusinessServices(services: {
     async searchRecords(context, input) {
       return { data: await withRunAbort(context, () => services.records.search(context.userId, input.query, input.limit)) };
     },
+    searchWeb: (context, query) => withRunAbort(context, () => services.webSearch.search(query, context.signal)),
     async getMediaMetadata(context, mediaId) {
       const media = await withRunAbort(context, () => services.media.readyMetadata(context.userId, mediaId));
       if (!media) throw new Error("Media not found or not accessible");
@@ -112,6 +117,22 @@ export function createAgentBusinessServices(services: {
     async listTasks(context) {
       return { data: await withRunAbort(context, () => services.tasks.list(context.userId)) };
     },
+    async manageTaskPlan(context, input) {
+      const taskContext = context.task;
+      if (!taskContext || !context.sessionId) throw new Error("当前 Agent 运行不是任务 Worker，不能管理任务计划。");
+      const run = await services.tasks.findRun(context.userId, taskContext.taskId, taskContext.taskRunId);
+      if (!run || run.status !== "running") throw new Error("任务执行记录不存在或已经结束，不能管理计划。");
+      if (run.workerSessionId !== context.sessionId) throw new Error("当前 Worker Session 与任务执行记录不匹配，不能管理计划。");
+      const updated = await withRunAbort(context, () => services.tasks.manageRunPlan({
+        userId: context.userId,
+        taskId: taskContext.taskId,
+        runId: taskContext.taskRunId,
+        action: input.action,
+        plan: input.plan,
+      }));
+      if (!updated?.plan) throw new Error("任务计划没有保存成功。");
+      return updated.plan;
+    },
     async deliverTaskResult(context, input) {
       const taskContext = context.task;
       if (!taskContext || !context.sessionId || !context.workspace) throw new Error("当前 Agent 运行不是任务 Worker，不能交付任务结果。");
@@ -120,6 +141,7 @@ export function createAgentBusinessServices(services: {
       if (!task || !run) throw new Error("任务或执行记录不存在，无法交付结果。");
       if (run.status !== "running") throw new Error(`任务当前状态为 ${run.status}，不能交付结果。`);
       if (run.workerSessionId !== context.sessionId) throw new Error("当前 Worker Session 与任务执行记录不匹配，不能交付结果。");
+      if (!run.plan) throw new Error("任务尚未建立执行计划。请先调用 task_plan_manage 创建计划后再交付结果。");
       if (!services.taskResultPublisher) throw new Error("任务结果发布服务不可用。");
       const published = await services.taskResultPublisher.publish(task, run, context.workspace, context.sessionId, input);
       await services.tasks.completeRun({ run, resultMediaId: published.primaryMediaId, result: published.result });

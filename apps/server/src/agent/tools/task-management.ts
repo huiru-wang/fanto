@@ -3,7 +3,7 @@ import type { AgentHarnessTool, Context, ExecutionToolContext } from "@earendil-
 import type { AgentBusinessServices } from "../business-services.js";
 import { createRunContext } from "../context/index.js";
 import type { TaskAgentCatalogEntry } from "../harness/registry.js";
-import type { DelegateTaskInput, DelegateTaskResult, TaskResultFormat, UpdateTaskInput } from "../../domain/tasks/index.js";
+import type { DelegateTaskInput, DelegateTaskResult, TaskOutput, UpdateTaskInput } from "../../domain/tasks/index.js";
 
 type TaskClient = Pick<AgentBusinessServices, "createTask" | "updateTask" | "getTask">;
 
@@ -49,7 +49,6 @@ export function sanitizeCreateTaskDetails(value: unknown): CreateTaskPresentatio
 
 type DelegateTaskParams = {
   title: string;
-  agentId: string;
   goal: {
     objective: string;
     context?: string;
@@ -66,27 +65,36 @@ type DelegateTaskParams = {
       startAt?: string;
     };
   };
-  timeoutSeconds?: number;
-  result?: { format?: TaskResultFormat };
-  sources?: { recordIds?: string[]; mediaIds?: string[] };
+  output: TaskOutput;
+  references?: { recordIds?: string[] };
 };
 
 const goalSchema = Type.Object({
-  objective: Type.String({ minLength: 1, maxLength: 4000, description: "任务最终要达成的目标。描述结果，不要写执行步骤。" }),
-  context: Type.Optional(Type.String({ minLength: 1, maxLength: 8000, description: "完成目标所需的必要背景，不要复制完整聊天历史。" })),
+  objective: Type.String({
+    minLength: 1,
+    maxLength: 4000,
+    description: "最终要交付给用户什么。只描述结果本身，不写工具、文件路径、媒体协议或执行步骤。",
+  }),
+  context: Type.Optional(Type.String({
+    minLength: 1,
+    maxLength: 12000,
+    description: "保留完成任务真正需要的用户原始诉求、用途、人物、场景、素材背景和已确认信息。不要压缩成一句抽象摘要，也不要加入技术实现细节。",
+  })),
   constraints: Type.Optional(Type.Array(
     Type.String({ minLength: 1, maxLength: 1000 }),
-    { maxItems: 20, description: "必须遵守的边界、禁止事项或范围限制。" },
+    { maxItems: 20, description: "用户真正关心的风格、内容、范围与禁止项。不要写 Fanto 内部实现约束。" },
   )),
   successCriteria: Type.Optional(Type.Array(
     Type.String({ minLength: 1, maxLength: 1000 }),
-    { maxItems: 20, description: "判断目标是否完成的标准。" },
+    { maxItems: 20, description: "从用户视角判断任务是否做好的验收标准。" },
   )),
 }, { additionalProperties: false });
 
-const sourcesSchema = Type.Object({
-  recordIds: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 100 }), { maxItems: 20, description: "任务必须回查的真实 Record ID。" })),
-  mediaIds: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 100 }), { maxItems: 20, description: "任务关联的真实 Media ID，仅在已知时填写。" })),
+const referencesSchema = Type.Object({
+  recordIds: Type.Optional(Type.Array(
+    Type.String({ minLength: 1, maxLength: 100 }),
+    { maxItems: 20, description: "已确认与任务直接相关、需要 Worker 回查的真实 Record ID。不要传 mediaId。" },
+  )),
 }, { additionalProperties: false });
 
 const scheduleSchema = Type.Object({
@@ -97,30 +105,22 @@ const scheduleSchema = Type.Object({
   startAt: Type.Optional(Type.String({ minLength: 1, maxLength: 100 })),
 }, { additionalProperties: false });
 
-export function createTaskSchema(taskAgents: readonly TaskAgentCatalogEntry[]) {
-  if (taskAgents.length === 0) throw new Error("create_task requires at least one task-enabled sub-agent");
-  const agentIdSchema = Type.Union(
-    taskAgents.map(agent => Type.Literal(agent.id)),
-    {
-      description: [
-        "执行该目标的后台 Agent ID。必须从可用 Agent 中选择：",
-        ...taskAgents.map(agent => `- ${agent.id}: ${agent.description || "后台任务 Agent"}`),
-      ].join("\n"),
-    },
-  );
+const outputSchema = Type.Object({
+  format: Type.Union([Type.Literal("markdown"), Type.Literal("text"), Type.Literal("html")], {
+    description: "最终交付格式。必须与用户明确要求一致；用户要求 HTML 时必须填写 html。",
+  }),
+}, { additionalProperties: false });
+
+export function createTaskSchema() {
   return Type.Object({
-    title: Type.String({ minLength: 1, maxLength: 200 }),
-    agentId: agentIdSchema,
+    title: Type.String({ minLength: 1, maxLength: 200, description: "面向用户的简洁任务名称。" }),
     goal: goalSchema,
     trigger: Type.Object({
       type: Type.Union([Type.Literal("immediate"), Type.Literal("scheduled")]),
       schedule: Type.Optional(scheduleSchema),
     }, { additionalProperties: false }),
-    timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 86400 })),
-    result: Type.Optional(Type.Object({
-      format: Type.Optional(Type.Union([Type.Literal("markdown"), Type.Literal("text"), Type.Literal("html")])),
-    }, { additionalProperties: false })),
-    sources: Type.Optional(sourcesSchema),
+    output: outputSchema,
+    references: Type.Optional(referencesSchema),
   }, { additionalProperties: false });
 }
 
@@ -164,13 +164,16 @@ function toTrigger(params: DelegateTaskParams["trigger"]): DelegateTaskInput["tr
   };
 }
 
+function taskAgent(taskAgents: readonly TaskAgentCatalogEntry[]): TaskAgentCatalogEntry {
+  if (taskAgents.length === 0) throw new Error("create_task requires one task-enabled sub-agent");
+  if (taskAgents.length > 1) throw new Error("create_task currently requires exactly one task-enabled sub-agent");
+  return taskAgents[0]!;
+}
+
 function toInput(params: DelegateTaskParams, taskAgents: readonly TaskAgentCatalogEntry[]): DelegateTaskInput {
-  if (!taskAgents.some(agent => agent.id === params.agentId)) {
-    throw new Error(`Task agent "${params.agentId}" is not available`);
-  }
   return {
     title: params.title.trim(),
-    agentId: params.agentId,
+    agentId: taskAgent(taskAgents).id,
     goal: {
       objective: params.goal.objective.trim(),
       ...(params.goal.context?.trim() ? { context: params.goal.context.trim() } : {}),
@@ -178,9 +181,8 @@ function toInput(params: DelegateTaskParams, taskAgents: readonly TaskAgentCatal
       ...(params.goal.successCriteria?.length ? { successCriteria: params.goal.successCriteria } : {}),
     },
     trigger: toTrigger(params.trigger),
-    ...(params.timeoutSeconds !== undefined ? { timeoutSeconds: params.timeoutSeconds } : {}),
-    ...(params.result ? { result: params.result } : {}),
-    ...(params.sources ? { sources: params.sources } : {}),
+    output: params.output,
+    ...(params.references ? { references: params.references } : {}),
   };
 }
 
@@ -203,26 +205,21 @@ function result<T>(details: T) {
   };
 }
 
-function toolDescription(taskAgents: readonly TaskAgentCatalogEntry[]): string {
-  return [
-    "当目标适合在后台独立完成、需要较长时间或需要按指定时间执行时使用。",
-    "用 goal 描述要达成什么，不要替子 Agent 规划步骤。任务创建后不会立即执行；由后台调度器统一领取。",
-    "任务依赖已读取的 Record 或 Media 时，必须在 sources 中传入真实 ID，供 Worker 回查原始资料。",
-    "可用后台 Agent：",
-    ...taskAgents.map(agent => `- ${agent.id}: ${agent.description || "后台任务 Agent"}`),
-  ].join("\n");
-}
-
 export function createCreateTaskTool(
   client: TaskClient,
   taskAgents: readonly TaskAgentCatalogEntry[],
 ): AgentHarnessTool<ExecutionToolContext, ReturnType<typeof createTaskSchema>, CreateTaskPresentation> {
-  const schema = createTaskSchema(taskAgents);
+  taskAgent(taskAgents);
   return {
     name: "create_task",
     label: "创建后台任务",
-    description: toolDescription(taskAgents),
-    parameters: schema,
+    description: [
+      "把一个已经理解清楚、适合后台独立完成或按时间执行的用户目标交给 Fanto 后台。",
+      "goal 是用户需求说明，不是 Worker 技术指令：objective 写最终结果；context 保留必要的原始诉求和背景；constraints 写用户真实边界；successCriteria 写用户视角的验收标准。",
+      "不要在 goal 中出现 Workspace、Tool、文件路径、result.html、mediaId、fanto-media、OSS 等内部实现概念。",
+      "output.format 必填并与用户要求一致。references 只传已确认相关的 Record ID。",
+    ].join("\n"),
+    parameters: createTaskSchema(),
     executionMode: "sequential",
     replay: "never",
     async execute(_toolCallId, params, _onUpdate, _toolContext, _invocation, context) {
@@ -240,9 +237,8 @@ const updateSchema = Type.Object({
     type: Type.Union([Type.Literal("immediate"), Type.Literal("scheduled")]),
     schedule: Type.Optional(scheduleSchema),
   }, { additionalProperties: false })),
-  timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 86400 })),
-  result: Type.Optional(Type.Object({ format: Type.Optional(Type.Union([Type.Literal("markdown"), Type.Literal("text"), Type.Literal("html")])) }, { additionalProperties: false })),
-  sources: Type.Optional(sourcesSchema),
+  output: Type.Optional(outputSchema),
+  references: Type.Optional(referencesSchema),
   status: Type.Optional(Type.Union([Type.Literal("active"), Type.Literal("paused"), Type.Literal("cancelled")])),
 }, { additionalProperties: false });
 
@@ -254,7 +250,7 @@ export function createUpdateTaskTool(
   return {
     name: "update_task",
     label: "更新后台任务",
-    description: "更新已有任务的目标、标题、调度、产出格式、超时或状态。taskId 来自此前创建任务或 get_task 的结果。",
+    description: "更新已有任务的用户目标、标题、调度、交付格式、相关记录或状态。taskId 来自此前创建任务或 get_task 的结果。",
     parameters: updateSchema,
     executionMode: "sequential",
     replay: "never",
@@ -265,9 +261,8 @@ export function createUpdateTaskTool(
         ...(value.title !== undefined ? { title: value.title } : {}),
         ...(value.goal ? { goal: value.goal } : {}),
         ...(value.trigger ? { trigger: toTrigger(value.trigger) } : {}),
-        ...(value.timeoutSeconds !== undefined ? { timeoutSeconds: value.timeoutSeconds } : {}),
-        ...(value.result ? { result: value.result } : {}),
-        ...(value.sources ? { sources: value.sources } : {}),
+        ...(value.output ? { output: value.output } : {}),
+        ...(value.references ? { references: value.references } : {}),
         ...(value.status ? { status: value.status } : {}),
       };
       return result(await client.updateTask(requestContext(context), taskId, input));
@@ -278,8 +273,8 @@ export function createUpdateTaskTool(
 export function createGetTaskTool(client: TaskClient): AgentHarnessTool<ExecutionToolContext, typeof getSchema, unknown> {
   return {
     name: "get_task",
-    label: "查询后台任务",
-    description: "读取任务定义、执行记录、Worker Session 和已交付文件。",
+    label: "查看后台任务",
+    description: "读取一个已存在的后台任务及其执行记录。taskId 必须来自当前任务上下文或此前 create_task 的真实结果。",
     parameters: getSchema,
     executionMode: "parallel",
     replay: "safe",

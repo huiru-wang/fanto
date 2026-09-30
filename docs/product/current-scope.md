@@ -27,7 +27,7 @@
 
 当前 iOS 中间 Fanto Tab 通过 Agent Runtime 的 Session、History 与 SSE Stream 接口支持开发态多轮对话。它只恢复最近 10 条历史，在 Keychain 保存一个默认 Session ID；历史解码已能容忍 Pi 的结构化 message content，并重建可见文本及成功 `present_media` 的白名单媒体 metadata，同时兼容旧正文中的 `fanto-media://<mediaId>`。Assistant 文本使用原生 Markdown 渲染；图片以横向缩略图呈现并可全屏分页查看，语音可在会话中播放。iOS 只保存稳定媒体 metadata，实际展示时才读取短期签名地址。它不支持会话切换、新话题、跨设备恢复、来源引用、其他 Tool 产品效果或正式认证。Agent 网关若将 HTTP 转至 HTTPS，真机联调依赖系统信任该 HTTPS 证书；客户端不接受不受信任的证书。
 
-当前 H5 位于 `apps/h5`，覆盖测试所需的 Record、Agent 与 Task 基础能力：查看 / 创建 / 语义搜索 Record，支持文字、JPEG/PNG/WebP 图片、M4A/MP3/WAV 音频、浏览器录音、发生时间选择，以及时间线图片缩略图和音频播放；同时支持恢复一个默认 Agent Session、兼容字符串或结构化 content 的历史消息、POST SSE 流式多轮对话和新建会话。Assistant 可见文本继续使用 Markdown；新媒体展示由原生 `present_media` Tool Result 驱动，图片和语音按类型分开渲染，图片使用固定 104×104 单行缩略图并可进入多图 Viewer 查看完整原图。成功的 `create_task` Tool Result 会在当前 Assistant 消息中形成 Task Card，刷新历史后仍可恢复；H5 新增 Tasks 页面，可查看 Task 状态、TaskRun 列表、暂停 / 恢复 / 取消任务，并在运行中的 TaskRun 详情打开时轮询状态。完成的 TaskRun 可在域内直接预览 `text/html / text/markdown / text/plain` 产物；HTML 使用 sandboxed `iframe srcDoc`，Markdown 复用 Fanto Markdown 渲染，产物中的 `fanto-media://<mediaId>` 会先通过受保护 Media API 换取短期 OSS signed URL 后再展示。当前不提供 Worker Progress 阶段或内部执行历史。旧 Session 中的 `fanto-media://<mediaId>` 仍保留兼容渲染。H5 会缓存短期媒体 URL、避免已完成历史消息随流式 delta 反复重载，并只在用户接近底部时自动跟随新内容。H5 不提供 Creation / Proposal 页面，也不提供正式登录。测试客户端固定使用 `user001`，Agent Bearer Token 被直接编译进 H5 bundle，因此只适用于受控测试环境。
+当前 H5 位于 `apps/h5`，覆盖测试所需的 Record、Agent 与 Task 基础能力：查看 / 创建 / 语义搜索 Record，支持文字、JPEG/PNG/WebP 图片、M4A/MP3/WAV 音频、浏览器录音、发生时间选择，以及时间线图片缩略图和音频播放；同时支持恢复一个默认 Agent Session、兼容字符串或结构化 content 的历史消息、POST SSE 流式多轮对话和新建会话。Assistant 可见文本继续使用 Markdown；新媒体展示由原生 `present_media` Tool Result 驱动。成功的 `create_task` Tool Result 会在当前 Assistant 消息中形成 Task Card，刷新历史后仍可恢复；`collect_user_input` 会形成原生澄清表单，用户提交后以同一 Session 的下一条 User Message 继续执行，刷新历史后可恢复并识别已回答状态。Tasks 页面列表只展示任务标题、状态和任务类型；任务详情只展示 Goal、最新 TaskRun 持久化的 Plan、最终 summary 与 artifact，不展示 Worker Tool Trace、内部 Session 或技术执行细节。运行中的详情会轮询 TaskRun；完成产物可在域内直接预览 `text/html / text/markdown / text/plain`，HTML 使用 sandboxed `iframe srcDoc`，Markdown 复用 Fanto Markdown，产物中的内部 `fanto-media://<mediaId>` 在渲染前换取短期 OSS signed URL。Task Plan 的事实来源仅为 `task_runs.ext_data.plan`，不从 Agent Session 消息反推。旧 Session 中的 `fanto-media://<mediaId>` 仍保留兼容渲染。H5 不提供 Creation / Proposal 页面，也不提供正式登录。测试客户端固定使用 `user001`，Agent Bearer Token 被直接编译进 H5 bundle，因此只适用于受控测试环境。
 
 ## Memory / Retrieval
 
@@ -37,7 +37,7 @@ Server 已经会为处理完成的 Record 构建向量索引。用户文本、�
 
 `POST /api/records/search` 已注册，可对当前用户 Record 做语义搜索。pgvector 查询在 SQL 层按 `user_id` 限定当前用户，并在读取 metadata 时保持用户归属校验。
 
-Agent Runtime 已通过 Business Services 接入 `record_get`、`record_list`、`record_search` 三个只读 Record Tool，并提供 `present_media` 展示 Tool；`main` 还可以通过 `create_task / update_task / get_task` 管理后台 Agent Task。`main` 在每次 Agent Run 前执行一次 MemoryProvider，但当前固定使用 `recent` 模式：读取最近 10 条 Record 的缓存窗口，注入截断正文、真实 `recordId`、媒体 `mediaId` 及截断图片描述 / 音频转写，不再在 Run 前执行 Query Rewrite 或向量搜索。需要主题相关历史时由主模型主动调用 `record_search`。LLM 不传 `userId`；所有业务读取身份都来自当前 Session 的 Run Context。
+Agent Runtime 已通过 Business Services 接入 `record_get`、`record_list`、`record_search` 三个只读 Record Tool，并提供 `present_media` 展示 Tool；`main` 还可以通过 `collect_user_input` 采集真正必要的用户决策，并通过 `create_task / update_task / get_task` 管理后台 Agent Task。`main` 在每次 Agent Run 前执行一次 MemoryProvider，但当前固定使用 `recent` 模式：读取最近 10 条 Record 的缓存窗口，注入截断正文、真实 `recordId`、媒体 `mediaId` 及截断图片描述 / 音频转写，不再在 Run 前执行 Query Rewrite 或向量搜索。需要主题相关历史时由主模型主动调用 `record_search`。LLM 不传 `userId`；所有业务读取身份都来自当前 Session 的 Run Context。
 
 ## User Preference
 
@@ -72,15 +72,17 @@ Server 内嵌的 Agent Runtime 当前支持：
 - 每个 Session 使用 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>` 独立工作区；
 - Pi 内置 `read`、`write`、`edit`、`bash` 工具；
 - `record_get`、`record_list`、`record_search` 三个只读 Record Tool；
+- `web_search` 公开网页检索 Tool，仅开放给后台 Task Worker；复用 DeepSeek Anthropic 兼容接口的服务端 Web Search，并把检索来源 URL 返回给 Worker；
 - `present_media` 媒体展示 Tool；
 - `preference_manage` 长期偏好管理 Tool；
-- `create_task` 后台任务 Tool；其 `agentId` 枚举与 Agent 用途说明从 `agent.yaml` 中 `task.enabled=true` 的非 main Agent 动态生成；
-- `update_task / get_task` 后台任务管理 Tool，以及后台 Worker 的 `deliver_task_result` 文件交付 Tool；
-- 唯一的 `task-worker` 后台子 Agent，统一处理资料整理、文件、HTML 页面和代码工作；
+- `collect_user_input` 结构化澄清 Tool；只有缺少会明显改变结果的用户决策时使用，成功调用后结束当前 Main Run 等待用户回答；
+- `create_task` 后台任务 Tool；当前唯一 `task-worker` 由系统自动选择，LLM 不接触 Worker 路由、timeout、mediaId 或文件协议，`output.format` 必填，关联资料只传 `references.recordIds`；
+- `update_task / get_task` 后台任务管理 Tool；
+- 唯一的 `task-worker` 后台子 Agent，统一处理资料整理、文件、HTML 页面和代码工作；Worker 必须先用 `task_plan_manage(create/update)` 将用户可读 Plan 写入 `task_runs.ext_data.plan`，之后才允许 write/edit/bash/交付，并通过 `deliver_task_result` 完成最终文件交付；单个 TaskRun 最多自动尝试 3 次；
 - Run 前一次性 Context Runtime（Character / Preference / Current Tasks / Recent Memory）；
 - Skill 文件加载。
 
-它不直接访问 Fanto 业务数据库；Record Tool、PreferenceProvider / Tool、`present_media` 与 Task Tool 统一通过 `business-services.ts` 调用相应领域 Service，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media`、`preference_manage` 与 `create_task / update_task / get_task`；唯一的 `task-worker` 可读取用户 Record、使用文件和 bash 工具，并通过 `deliver_task_result` 交付工作区文件。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 的认识与关系原则由 `apps/server/src/agent/prompts/core.ts` 约束，工具与 Markdown / Media 规则位于 `apps/server/src/agent/prompts/operational.ts`；每轮还会注入 Character、当前时区下的时间、偏好、当前 Task 摘要与近期记忆；相关历史由主 Agent 按需搜索。
+它不直接访问 Fanto 业务数据库；Record Tool、PreferenceProvider / Tool、`present_media` 与 Task Tool 统一通过 `business-services.ts` 调用相应领域 Service，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media`、`preference_manage`、`collect_user_input` 与 `create_task / update_task / get_task`；唯一的 `task-worker` 可读取用户 Record、在需要当前或公开事实时通过 `web_search` 查询网页、通过 `task_plan_manage` 保存执行计划、使用文件和 bash 工具，并通过 `deliver_task_result` 交付最终成品。Main 只负责理解 What / Why，Worker 自主负责 How；Task Brief 不再携带文件路径、媒体协议等执行细节。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 的认识与关系原则由 `apps/server/src/agent/prompts/core.ts` 约束，工具与 Markdown / Media 规则位于 `apps/server/src/agent/prompts/operational.ts`；每轮还会注入 Character、当前时区下的时间、偏好、当前 Task 摘要与近期记忆；相关历史由主 Agent 按需搜索。
 
 ## 当前基础设施边界
 

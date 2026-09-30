@@ -30,7 +30,7 @@ sequenceDiagram
 
 Server 根据 MIME 决定 media type 和对象后缀。complete 时会验证 OSS 实际对象大小和 MIME；不一致返回 `UPLOAD_MISMATCH`。
 
-用户主动上传的媒体对象键为 `users/<userId>/media/<YYYY-MM>/<mediaId>.<extension>`。后台 Task 的交付文件由 `deliver_task_result` 上传，使用独立对象键 `users/<userId>/task/<YYYY-MM>/<workerSessionId>/<filename>`；Task 产物仍作为 ready Media 保存。普通下载继续通过现有 Media URL 接口取得短期 OSS signed URL；HTML / Markdown / Text Task Artifact 的域内预览由 `/api/tasks/artifacts/:mediaId/preview` 读取受控文本内容。Artifact 中引用 Fanto 图片或音频统一使用 `fanto-media://<mediaId>`，客户端在渲染前再将其解析成短期 signed URL，不把 signed URL 持久化进 Artifact、TaskRun 或 Agent Session。
+用户主动上传的媒体对象键为 `users/<userId>/media/<YYYY-MM>/<mediaId>.<extension>`。后台 Task 的交付文件由 `deliver_task_result` 上传，使用独立对象键 `users/<userId>/task/<YYYY-MM>/<workerSessionId>/<filename>`；Task 产物仍作为 ready Media 保存。普通下载继续通过现有 Media URL 接口取得短期 OSS signed URL；HTML / Markdown / Text Task Artifact 的域内预览由 `/api/tasks/artifacts/:mediaId/preview` 读取受控文本内容。Artifact 实现内部引用 Fanto 图片或音频统一使用 `fanto-media://<mediaId>`，客户端在渲染前再将其解析成短期 signed URL，不把 signed URL 持久化进 Artifact、TaskRun 或 Agent Session。该 URI 是 Fanto 内部媒体协议：Worker 可以在 HTML / Markdown 资源属性中使用，但不得把它写成用户可见的使用说明、图片替换指南或交付摘要。
 
 ready Media 才能关联到 Record。关联后 `ext_data.recordId` 记录归属，避免同一媒体被不同 Record 重复使用。
 

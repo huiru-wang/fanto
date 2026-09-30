@@ -15,7 +15,14 @@ test("TaskRun HTTP response exposes declared result artifacts without worker int
     resultMediaId: "media-1",
     result: { summary: "done", artifacts: [{ filename: "result.md", role: "primary", mediaId: "media-1", mimeType: "text/markdown", bytes: 4, checksum: "sha256:test" }] },
     error: null,
-    extData: { worker: { host: "internal" } },
+    extData: { worker: { host: "internal" }, plan: { internal: true } },
+    plan: {
+      summary: "先整理素材，再生成结果。",
+      steps: [{ id: "one", title: "整理素材" }],
+      createdAt: "2026-09-29T10:05:00.000Z",
+      updatedAt: "2026-09-29T10:05:00.000Z",
+      version: 1,
+    },
     startedAt: "2026-09-29T10:05:00.000Z",
     finishedAt: "2026-09-29T10:05:30.000Z",
   } as unknown as TaskRun;
@@ -35,6 +42,13 @@ test("TaskRun HTTP response exposes declared result artifacts without worker int
   );
   assert.equal(response.status, 200);
   const body = await response.json() as any;
+  assert.deepEqual(body.result.plan, {
+    summary: "先整理素材，再生成结果。",
+    steps: [{ id: "one", title: "整理素材" }],
+    createdAt: "2026-09-29T10:05:00.000Z",
+    updatedAt: "2026-09-29T10:05:00.000Z",
+    version: 1,
+  });
   assert.deepEqual(body.result.result, {
     summary: "done",
     artifacts: [{ filename: "result.md", role: "primary", mediaId: "media-1", mimeType: "text/markdown", bytes: 4, checksum: "sha256:test" }],

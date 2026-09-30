@@ -1,6 +1,6 @@
 import type { Kysely, Transaction } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
-import type { Task, TaskRun, TaskRunResult, TaskStatus } from "./model.js";
+import type { Task, TaskPlanAction, TaskRun, TaskRunPlan, TaskRunPlanInput, TaskRunResult, TaskStatus } from "./model.js";
 
 const objectValue = (value: unknown): Record<string, unknown> => {
   if (!value) return {};
@@ -19,7 +19,7 @@ const iso = (value: Date | string | null): string | null => value === null ? nul
 
 const toTask = (row: any): Task => {
   const extData = objectValue(row.ext_data);
-  const source = objectValue(extData.sources);
+  const references = objectValue(extData.references ?? extData.sources);
   return {
     taskId: row.task_id,
     userId: row.user_id,
@@ -30,9 +30,8 @@ const toTask = (row: any): Task => {
     triggerType: row.trigger_type,
     trigger: objectValue(row.trigger) as Task["trigger"],
     output: objectValue(row.output) as Task["output"],
-    sources: {
-      recordIds: stringValues(source.recordIds),
-      mediaIds: stringValues(source.mediaIds),
+    references: {
+      recordIds: stringValues(references.recordIds),
     },
     extData,
     status: row.status,
@@ -48,22 +47,42 @@ function stringValues(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
-const toRun = (row: any): TaskRun => ({
-  runId: row.run_id,
-  taskId: row.task_id,
-  userId: row.user_id,
-  status: row.status,
-  scheduledAt: iso(row.scheduled_at)!,
-  workerSessionId: row.worker_session_id,
-  resultMediaId: row.result_media_id,
-  result: row.result ? objectValue(row.result) as TaskRunResult : null,
-  error: row.error ? objectValue(row.error) : null,
-  extData: objectValue(row.ext_data),
-  startedAt: iso(row.started_at),
-  finishedAt: iso(row.finished_at),
-  createdAt: iso(row.created_at)!,
-  updatedAt: iso(row.updated_at)!,
-});
+const toRun = (row: any): TaskRun => {
+  const extData = objectValue(row.ext_data);
+  return {
+    runId: row.run_id,
+    taskId: row.task_id,
+    userId: row.user_id,
+    status: row.status,
+    scheduledAt: iso(row.scheduled_at)!,
+    workerSessionId: row.worker_session_id,
+    resultMediaId: row.result_media_id,
+    result: row.result ? objectValue(row.result) as TaskRunResult : null,
+    error: row.error ? objectValue(row.error) : null,
+    extData,
+    plan: parseRunPlan(extData.plan),
+    startedAt: iso(row.started_at),
+    finishedAt: iso(row.finished_at),
+    createdAt: iso(row.created_at)!,
+    updatedAt: iso(row.updated_at)!,
+  };
+};
+
+function parseRunPlan(value: unknown): TaskRunPlan | null {
+  const plan = objectValue(value);
+  if (typeof plan.summary !== "string" || !Array.isArray(plan.steps) || typeof plan.createdAt !== "string" || typeof plan.updatedAt !== "string" || !Number.isInteger(plan.version)) return null;
+  const steps = plan.steps.flatMap(step => {
+    const item = objectValue(step);
+    if (typeof item.id !== "string" || typeof item.title !== "string") return [];
+    return [{
+      id: item.id,
+      title: item.title,
+      ...(typeof item.description === "string" && item.description ? { description: item.description } : {}),
+    }];
+  });
+  if (steps.length !== plan.steps.length) return null;
+  return { summary: plan.summary, steps, createdAt: plan.createdAt, updatedAt: plan.updatedAt, version: plan.version as number };
+}
 
 type NewTaskRow = {
   task_id: string;
@@ -163,7 +182,7 @@ export class TaskRepository {
     triggerType?: "immediate" | "scheduled";
     trigger?: unknown;
     output?: unknown;
-    sources?: unknown;
+    extData?: unknown;
     nextRunAt?: Date | null;
   }): Promise<Task | undefined> {
     const values: Record<string, unknown> = { updated_at: new Date() };
@@ -173,7 +192,7 @@ export class TaskRepository {
     if (input.triggerType !== undefined) values.trigger_type = input.triggerType;
     if (input.trigger !== undefined) values.trigger = input.trigger;
     if (input.output !== undefined) values.output = input.output;
-    if (input.sources !== undefined) values.ext_data = input.sources;
+    if (input.extData !== undefined) values.ext_data = input.extData;
     if (input.nextRunAt !== undefined) values.next_run_at = input.nextRunAt;
     const row = await this.db.updateTable("tasks")
       .set(values)
@@ -183,6 +202,59 @@ export class TaskRepository {
       .returningAll()
       .executeTakeFirst();
     return row ? toTask(row) : undefined;
+  }
+
+  async manageRunPlan(input: {
+    userId: string;
+    taskId: string;
+    runId: string;
+    action: TaskPlanAction;
+    plan: TaskRunPlanInput;
+  }): Promise<TaskRun | undefined> {
+    return this.db.transaction().execute(async trx => {
+      const row = await trx.selectFrom("task_runs")
+        .selectAll()
+        .where("run_id", "=", input.runId)
+        .where("task_id", "=", input.taskId)
+        .where("user_id", "=", input.userId)
+        .where("status", "=", "running")
+        .forUpdate()
+        .executeTakeFirst();
+      if (!row) return undefined;
+      const extData = objectValue(row.ext_data);
+      const existing = parseRunPlan(extData.plan);
+      if (input.action === "create" && existing) throw new Error("Task plan already exists; use action=update to revise it");
+      if (input.action === "update" && !existing) throw new Error("Task plan does not exist; use action=create first");
+      const now = new Date().toISOString();
+      const plan: TaskRunPlan = {
+        summary: input.plan.summary,
+        steps: input.plan.steps,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        version: (existing?.version ?? 0) + 1,
+      };
+      const updated = await trx.updateTable("task_runs")
+        .set({ ext_data: { ...extData, plan }, updated_at: new Date() })
+        .where("run_id", "=", input.runId)
+        .where("task_id", "=", input.taskId)
+        .where("user_id", "=", input.userId)
+        .where("status", "=", "running")
+        .returningAll()
+        .executeTakeFirst();
+      return updated ? toRun(updated) : undefined;
+    });
+  }
+
+  async rebindRunWorkerSession(userId: string, taskId: string, runId: string, workerSessionId: string): Promise<TaskRun | undefined> {
+    const row = await this.db.updateTable("task_runs")
+      .set({ worker_session_id: workerSessionId, updated_at: new Date() })
+      .where("run_id", "=", runId)
+      .where("task_id", "=", taskId)
+      .where("user_id", "=", userId)
+      .where("status", "=", "running")
+      .returningAll()
+      .executeTakeFirst();
+    return row ? toRun(row) : undefined;
   }
 
   async cancel(userId: string, taskId: string): Promise<Task | undefined> {

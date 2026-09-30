@@ -5,6 +5,7 @@ import { CurrentTimeProvider } from "./current-time.js";
 import { createMemoryProvider } from "./memory.js";
 import { PreferenceProvider } from "./preference.js";
 import { TaskProvider } from "./tasks.js";
+import { TaskExecutionContextProvider } from "./task-execution.js";
 
 export function createContextProviders(dependencies: {
   fanto: AgentBusinessServices;
@@ -14,6 +15,7 @@ export function createContextProviders(dependencies: {
     new CurrentTimeProvider(),
     new PreferenceProvider(dependencies.fanto),
     new TaskProvider(dependencies.fanto),
+    new TaskExecutionContextProvider(dependencies.fanto),
     createMemoryProvider({ mode: "recent", client: dependencies.fanto }),
   ];
 }

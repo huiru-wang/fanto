@@ -18,6 +18,7 @@ test("Agent business services forward only the Run user to domain services", asy
       delete: async () => ({ kind: "ok", preference: { preferenceId: "p1" } }),
     } as never,
     tasks: {} as never,
+    webSearch: { search: async () => ({ query: "q", summary: "s", sources: [] }) } as never,
     resolveTaskAgent: () => undefined,
   });
   const context = { userId: "user-from-run" };

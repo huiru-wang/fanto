@@ -24,15 +24,20 @@ export type TaskDto = {
     constraints?: string[];
     successCriteria?: string[];
   };
-  agentId: string;
-  timeoutSeconds: number;
   trigger: TaskTrigger;
   output: TaskOutput;
-  sources: { recordIds: string[]; mediaIds: string[] };
   status: TaskStatus;
   nextRunAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type TaskRunPlan = {
+  summary: string;
+  steps: Array<{ id: string; title: string; description?: string }>;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
 };
 
 export type TaskArtifactDto = {
@@ -51,6 +56,7 @@ export type TaskRunDto = {
   scheduledAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+  plan: TaskRunPlan | null;
   result: { summary: string; artifacts: TaskArtifactDto[] } | null;
   error: { code: string; message: string } | null;
 };
@@ -68,31 +74,24 @@ type DataResult<T> = { data: T[] };
 export async function listTasks(): Promise<TaskDto[]> {
   return (await requestJson<DataResult<TaskDto>>("/api/tasks")).data;
 }
-
 export function getTask(taskId: string): Promise<TaskDto> {
   return requestJson(`/api/tasks/${encodeURIComponent(taskId)}`);
 }
-
 export async function listTaskRuns(taskId: string): Promise<TaskRunDto[]> {
   return (await requestJson<DataResult<TaskRunDto>>(`/api/tasks/${encodeURIComponent(taskId)}/runs`)).data;
 }
-
 export function getTaskRun(taskId: string, runId: string): Promise<TaskRunDto> {
   return requestJson(`/api/tasks/${encodeURIComponent(taskId)}/runs/${encodeURIComponent(runId)}`);
 }
-
 export function pauseTask(taskId: string): Promise<TaskDto> {
   return requestJson(`/api/tasks/${encodeURIComponent(taskId)}/pause`, { method: "POST" });
 }
-
 export function resumeTask(taskId: string): Promise<TaskDto> {
   return requestJson(`/api/tasks/${encodeURIComponent(taskId)}/resume`, { method: "POST" });
 }
-
 export function cancelTask(taskId: string): Promise<TaskDto> {
   return requestJson(`/api/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE" });
 }
-
 export function getTaskArtifactPreview(mediaId: string): Promise<TaskArtifactPreviewDto> {
   return requestJson(`/api/tasks/artifacts/${encodeURIComponent(mediaId)}/preview`);
 }

@@ -21,8 +21,7 @@ export class TaskProvider {
       `- taskId: ${task.taskId} | status: ${task.status} | agent: ${task.agentId}`,
       `  title: ${task.title}`,
       `  objective: ${task.goal.objective}`,
-      ...(task.sources.recordIds.length ? [`  sourceRecordIds: ${task.sources.recordIds.join(", ")}`] : []),
-      ...(task.sources.mediaIds.length ? [`  sourceMediaIds: ${task.sources.mediaIds.join(", ")}`] : []),
+      ...(task.references.recordIds.length ? [`  referenceRecordIds: ${task.references.recordIds.join(", ")}`] : []),
     ].join("\n")).join("\n");
     return { slot: this.slot, content };
   }

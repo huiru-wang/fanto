@@ -8,6 +8,7 @@ test("createTask derives identity and provenance from Run context", async () => 
     records: {} as never,
     media: {} as never,
     preferences: {} as never,
+    webSearch: { search: async () => ({ query: "q", summary: "s", sources: [] }) } as never,
     tasks: {
       delegate: async (context: any, input: any, policy: any) => {
         received = { context, input, policy };
@@ -32,6 +33,7 @@ test("createTask derives identity and provenance from Run context", async () => 
       agentId: "task-worker",
       goal: { objective: "Find the answer" },
       trigger: { type: "immediate" },
+      output: { format: "markdown" },
     },
   );
 

@@ -7,13 +7,14 @@ import { corePrompt } from "../prompts/core.js";
 import { operationalPrompt } from "../prompts/operational.js";
 import { taskWorkerPrompt } from "../prompts/task-worker.js";
 
-const tool = z.enum(["read", "write", "edit", "bash", "record_get", "record_list", "record_search", "present_media", "preference_manage", "create_task", "update_task", "get_task", "deliver_task_result"]);
+const tool = z.enum(["read", "write", "edit", "bash", "record_get", "record_list", "record_search", "web_search", "present_media", "preference_manage", "collect_user_input", "create_task", "update_task", "get_task", "task_plan_manage", "deliver_task_result"]);
 const taskConfig = z.discriminatedUnion("enabled", [
   z.object({ enabled: z.literal(false) }).strict(),
   z.object({
     enabled: z.literal(true),
     defaultTimeoutSeconds: z.number().int().positive(),
     maxTimeoutSeconds: z.number().int().positive(),
+    maxAttempts: z.number().int().min(1).max(5),
   }).strict(),
 ]);
 const compaction = z.object({

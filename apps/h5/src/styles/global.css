@@ -2799,3 +2799,212 @@ input:focus-visible {
   .task-html-preview { min-height: 70dvh; }
   .task-markdown-preview { width: calc(100% - 28px); padding-top: 24px; }
 }
+
+/* Task agent input + simplified task UI */
+.chat-input-request-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.user-input-card {
+  width: min(440px, 100%);
+  padding: 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 10px 30px rgba(42, 39, 31, 0.04);
+}
+
+.user-input-heading strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.user-input-heading p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.user-input-questions {
+  display: grid;
+  gap: 16px;
+  margin-top: 15px;
+}
+
+.user-input-question {
+  display: grid;
+  gap: 8px;
+}
+
+.user-input-question > label {
+  font-size: 13px;
+  line-height: 1.5;
+  font-weight: 580;
+}
+
+.user-input-question input,
+.user-input-question textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  padding: 10px 11px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.76);
+  outline: 0;
+  resize: vertical;
+}
+
+.user-input-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.user-input-options button {
+  min-height: 34px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 0 12px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.56);
+  cursor: pointer;
+}
+
+.user-input-options button.selected {
+  color: var(--text);
+  border-color: rgba(39, 39, 35, 0.28);
+  background: var(--accent-soft);
+}
+
+.user-input-submit {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 16px;
+  border: 0;
+  border-radius: 12px;
+  padding: 0 14px;
+  color: #fff;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.user-input-submit:disabled,
+.user-input-options button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.user-input-card.resolved {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.user-input-card.resolved > div {
+  display: grid;
+  gap: 2px;
+}
+
+.user-input-card.resolved strong {
+  font-size: 13px;
+}
+
+.user-input-card.resolved span:not(.user-input-resolved-icon) {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.user-input-resolved-icon {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+}
+
+.message.user .message-body > p {
+  white-space: pre-line;
+}
+
+.compact-task-item {
+  grid-template-columns: 8px minmax(0, 1fr) 18px;
+}
+
+.compact-task-item .task-list-meta {
+  display: none;
+}
+
+.simple-task-detail {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.simple-task-detail-scroll {
+  display: grid;
+  gap: 2px;
+}
+
+.task-goal-context,
+.task-result-summary,
+.task-plan-simple > p {
+  color: var(--muted);
+  line-height: 1.75;
+}
+
+.task-goal-list {
+  margin-top: 14px;
+}
+
+.task-goal-list strong {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.task-goal-list ul,
+.task-plan-simple ol {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.task-goal-list li,
+.task-plan-simple li {
+  margin: 6px 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.task-plan-simple li strong {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.task-plan-simple li span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.simple-artifact-list {
+  margin-top: 14px;
+}
+
+@media (max-width: 720px) {
+  .user-input-card {
+    width: 100%;
+    border-radius: 16px;
+  }
+
+  .simple-task-detail {
+    width: 100%;
+  }
+}

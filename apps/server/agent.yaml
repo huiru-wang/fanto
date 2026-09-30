@@ -12,7 +12,7 @@ agents:
     description: Fanto 面向用户的长期记忆对话 Agent
     corePromptModule: core
     systemPromptModule: operational
-    tools: [record_get, record_list, record_search, present_media, preference_manage, create_task, update_task, get_task]
+    tools: [record_get, record_list, record_search, present_media, preference_manage, collect_user_input, create_task, update_task, get_task]
     skills: []
     compaction:
       enabled: true
@@ -23,12 +23,13 @@ agents:
     model_id: deepseek/deepseek-v4-pro
     description: 处理所有需要后台独立完成并交付文件的任务，包括资料整理、HTML 页面和卡片、文本与 Markdown 文档、代码及工作区文件修改；需要可预览页面、文件、报告或耗时处理时使用。
     systemPromptModule: task-worker
-    tools: [read, write, edit, bash, record_get, record_list, record_search, deliver_task_result]
+    tools: [read, write, edit, bash, record_get, record_list, record_search, web_search, task_plan_manage, deliver_task_result]
     skills: []
     task:
       enabled: true
       defaultTimeoutSeconds: 900
       maxTimeoutSeconds: 3600
+      maxAttempts: 3
     compaction:
       enabled: true
       reserveTokens: 16384

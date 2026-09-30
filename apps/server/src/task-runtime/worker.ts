@@ -4,11 +4,14 @@ import type { AgentSessionManager } from "../agent/harness/session-manager.js";
 import type { Task, TaskGoal, TaskRun, TaskService } from "../domain/tasks/index.js";
 import { logError, logInfo } from "../infrastructure/logging/logger.js";
 
+type TaskExecutionError = { code: string; message: string };
+
 export class TaskWorker {
   constructor(
     private readonly tasks: TaskService,
     private readonly registry: AgentRegistry,
     private readonly sessions: AgentSessionManager,
+    private readonly run: typeof runAgent = runAgent,
   ) {}
 
   async execute(task: Task): Promise<void> {
@@ -25,101 +28,138 @@ export class TaskWorker {
       return;
     }
 
-    let session: Awaited<ReturnType<AgentSessionManager["create"]>> | undefined;
-    let releaseReservation: (() => void) | undefined;
     let run: TaskRun | undefined;
-    const controller = new AbortController();
-    let timedOut = false;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let finalError: TaskExecutionError = { code: "TASK_EXECUTION_FAILED", message: "Task execution failed" };
 
-    try {
-      session = await this.sessions.create(definition, task.userId);
-      releaseReservation = this.sessions.reserve(session);
-      run = await this.tasks.startDueRun(task, session.id);
-      if (!run) return;
-      timeout = setTimeout(() => {
-        timedOut = true;
-        controller.abort();
-      }, task.timeoutSeconds * 1000);
+    for (let attempt = 1; attempt <= definition.task.maxAttempts; attempt += 1) {
+      let session: Awaited<ReturnType<AgentSessionManager["create"]>> | undefined;
+      let releaseReservation: (() => void) | undefined;
+      const controller = new AbortController();
+      let timedOut = false;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
 
-      logInfo("task-worker", "worker_started", {
-        traceId,
-        taskId: task.taskId,
-        runId: run.runId,
-        sessionId: session.id,
-        agentId: task.agentId,
-      });
+      try {
+        session = await this.sessions.create(definition, task.userId);
+        releaseReservation = this.sessions.reserve(session);
+        if (!run) {
+          run = await this.tasks.startDueRun(task, session.id);
+          if (!run) return;
+        } else {
+          run = await this.tasks.rebindRunWorkerSession(run.userId, run.taskId, run.runId, session.id);
+          if (!run) return;
+        }
 
-      await runAgent(
-        session,
-        renderTaskGoal(task, run),
-        controller.signal,
-        {
+        timeout = setTimeout(() => {
+          timedOut = true;
+          controller.abort();
+        }, task.timeoutSeconds * 1000);
+
+        logInfo("task-worker", "worker_attempt_started", {
           traceId,
-          timeZone: taskTimeZone(task),
-          task: { taskId: task.taskId, taskRunId: run.runId },
-        },
-        async () => {},
-      );
+          taskId: task.taskId,
+          runId: run.runId,
+          sessionId: session.id,
+          agentId: task.agentId,
+          attempt,
+          maxAttempts: definition.task.maxAttempts,
+        });
 
-      const completed = await this.tasks.findRun(run.userId, run.taskId, run.runId);
-      if (completed?.status !== "completed" || !completed.result || !completed.resultMediaId) {
-        await this.tasks.failRun(run, {
+        await this.run(
+          session,
+          renderTaskBrief(task),
+          controller.signal,
+          {
+            traceId,
+            timeZone: taskTimeZone(task),
+            task: { taskId: task.taskId, taskRunId: run.runId },
+            taskPlanReady: Boolean(run.plan),
+          },
+          async () => {},
+        );
+
+        const completed = await this.tasks.findRun(run.userId, run.taskId, run.runId);
+        if (completed?.status === "completed" && completed.result && completed.resultMediaId) {
+          logInfo("task-worker", "worker_completed", {
+            traceId,
+            taskId: task.taskId,
+            runId: run.runId,
+            agentId: task.agentId,
+            mediaId: completed.resultMediaId,
+            attempt,
+            durationMs: Date.now() - startedAt,
+          });
+          return;
+        }
+        if (completed?.status !== "running") return;
+        run = completed;
+        finalError = {
           code: "TASK_RESULT_NOT_DELIVERED",
           message: "Task Agent finished without successfully calling deliver_task_result",
-        });
-        logError("task-worker", "task_failed", {
+        };
+      } catch (error) {
+        if (run) {
+          const current = await this.tasks.findRun(run.userId, run.taskId, run.runId).catch(() => undefined);
+          if (current?.status === "completed" && current.result && current.resultMediaId) return;
+          if (current?.status === "running") run = current;
+        }
+        finalError = timedOut
+          ? { code: "TASK_TIMEOUT", message: "Task execution timed out" }
+          : { code: "TASK_EXECUTION_FAILED", message: "Task execution failed" };
+        logError("task-worker", "worker_attempt_failed", {
           traceId,
-          taskId: run.taskId,
+          taskId: task.taskId,
+          runId: run?.runId,
+          agentId: task.agentId,
+          attempt,
+          maxAttempts: definition.task.maxAttempts,
+          code: finalError.code,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        if (timeout) clearTimeout(timeout);
+        releaseReservation?.();
+        if (session) {
+          await this.sessions.release(session.id).catch(error => {
+            logError("task-worker", "Failed to release task agent session", {
+              traceId,
+              taskId: task.taskId,
+              runId: run?.runId,
+              sessionId: session?.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          });
+        }
+      }
+
+      if (run && attempt < definition.task.maxAttempts) {
+        logInfo("task-worker", "worker_retrying", {
+          traceId,
+          taskId: task.taskId,
           runId: run.runId,
           agentId: task.agentId,
-          code: "TASK_RESULT_NOT_DELIVERED",
+          nextAttempt: attempt + 1,
+          previousCode: finalError.code,
         });
-        return;
       }
-      logInfo("task-worker", "worker_completed", {
-        traceId,
-        taskId: task.taskId,
-        runId: run?.runId,
-        agentId: task.agentId,
-        mediaId: completed.resultMediaId,
-        durationMs: Date.now() - startedAt,
-      });
-    } catch (error) {
-      const taskError = timedOut
-        ? { code: "TASK_TIMEOUT", message: "Task execution timed out" }
-        : { code: "TASK_EXECUTION_FAILED", message: "Task execution failed" };
+    }
+
+    if (run) {
+      await this.tasks.failRun(run, finalError);
       logError("task-worker", "task_failed", {
         traceId,
         taskId: task.taskId,
-        runId: run?.runId,
+        runId: run.runId,
         agentId: task.agentId,
-        code: taskError.code,
+        code: finalError.code,
         durationMs: Date.now() - startedAt,
-        error: error instanceof Error ? error.message : String(error),
       });
-      if (run) await this.tasks.failRun(run, taskError);
-    } finally {
-      if (timeout) clearTimeout(timeout);
-      releaseReservation?.();
-      if (session) {
-        await this.sessions.release(session.id).catch(error => {
-          logError("task-worker", "Failed to release task agent session", {
-            traceId,
-            taskId: task.taskId,
-            runId: run?.runId,
-            sessionId: session?.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
-      }
     }
   }
 }
 
-export function renderTaskGoal(task: Task, run: TaskRun): string {
+export function renderTaskBrief(task: Task): string {
   const sections = [
-    "# Task Goal",
+    "# Task Brief",
     "",
     "## Objective",
     task.goal.objective,
@@ -128,25 +168,7 @@ export function renderTaskGoal(task: Task, run: TaskRun): string {
   pushOptionalSection(sections, "Context", task.goal.context);
   pushListSection(sections, "Constraints", task.goal.constraints);
   pushListSection(sections, "Success Criteria", task.goal.successCriteria);
-  pushListSection(sections, "Source Record IDs", task.sources.recordIds);
-  pushListSection(sections, "Source Media IDs", task.sources.mediaIds);
-
-  sections.push(
-    "",
-    "## Execution Context",
-    `- Scheduled at: ${run.scheduledAt}`,
-    `- Time zone: ${taskTimeZone(task)}`,
-    `- Result format: ${task.output.format}`,
-    "",
-    `Write the primary result as ${resultFilename(task.output.format)} using a relative path in the workspace.`,
-    "When source Record IDs are provided, call record_get for the relevant records before using their facts.",
-    "When every result file is ready, call deliver_task_result. Ordinary text is not task delivery.",
-  );
   return sections.join("\n");
-}
-
-function resultFilename(format: Task["output"]["format"]): string {
-  return format === "html" ? "result.html" : format === "markdown" ? "result.md" : "result.txt";
 }
 
 function taskTraceId(task: Task): string | undefined {

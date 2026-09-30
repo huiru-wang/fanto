@@ -9,6 +9,7 @@ import { AgentRegistry } from "./harness/registry.js";
 import { AgentSessionManager } from "./harness/session-manager.js";
 import { SkillLoader } from "./skills/loader.js";
 import { TaskResultPublisher } from "../task-runtime/result-publisher.js";
+import { DeepSeekWebSearchClient } from "./web/deepseek-web-search.js";
 
 export type AgentRuntime = { registry: AgentRegistry; sessions: AgentSessionManager; close(): Promise<void> };
 
@@ -20,23 +21,26 @@ export function createAgentRuntime(input: {
   sessionDatabasePath: string;
   workspaceRoot: string;
   definitionPath: string;
+  deepseekApiKey: string;
 }): AgentRuntime {
   const models = builtinModels();
   const skills = new SkillLoader(resolve(dirname(input.definitionPath), "skills"));
   const registry = new AgentRegistry(input.definitionPath, models, skills);
   const taskAgents = registry.taskAgents();
-  if (registry.get("main")?.tools.includes("create_task") && taskAgents.length === 0) {
-    throw new Error('Agent "main" enables create_task but no task-enabled sub-agent exists');
+  if (registry.get("main")?.tools.includes("create_task") && taskAgents.length !== 1) {
+    throw new Error('Agent "main" currently requires exactly one task-enabled sub-agent');
   }
   const fanto = createAgentBusinessServices({
     ...input,
     taskResultPublisher: new TaskResultPublisher(input.media),
+    webSearch: new DeepSeekWebSearchClient(input.deepseekApiKey),
     resolveTaskAgent(agentId) {
       const definition = registry.get(agentId);
       if (!definition || definition.id === "main" || !definition.task?.enabled) return undefined;
       return {
         defaultTimeoutSeconds: definition.task.defaultTimeoutSeconds,
         maxTimeoutSeconds: definition.task.maxTimeoutSeconds,
+        maxAttempts: definition.task.maxAttempts,
       };
     },
   });

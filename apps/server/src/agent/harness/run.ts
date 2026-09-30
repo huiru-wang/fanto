@@ -10,7 +10,7 @@ export async function runAgent(
   session: RunSession,
   message: string,
   signal: AbortSignal,
-  metadata: { traceId?: string; timeZone?: string; task?: { taskId: string; taskRunId: string } },
+  metadata: { traceId?: string; timeZone?: string; task?: { taskId: string; taskRunId: string }; taskPlanReady?: boolean },
   emit: (event: AgentStreamEvent) => Promise<void>,
 ): Promise<string> {
   let output = "";
@@ -20,7 +20,7 @@ export async function runAgent(
     signal.throwIfAborted();
     const context = withAbortSignal(signal, createRunContext({
       runId: randomUUID(), userId: session.userId, sessionId: session.id, query: message, slots: {},
-      traceId: metadata.traceId, timeZone: metadata.timeZone, task: metadata.task, recentMessages: await session.runtime.readRecentMessages(),
+      traceId: metadata.traceId, timeZone: metadata.timeZone, task: metadata.task, taskPlanReady: metadata.taskPlanReady, recentMessages: await session.runtime.readRecentMessages(),
     }));
     const data = createRunContext.read(context);
     const unsubscribe = subscribeHarnessEvents(session.runtime.harness, data, message, emit, () => signal.aborted, text => { output += text; });

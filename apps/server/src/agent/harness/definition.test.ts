@@ -16,6 +16,7 @@ test("agent.yaml exposes task management and the single task-worker", () => {
   const main = registry.get("main");
   const worker = registry.get("task-worker");
 
+  assert.ok(main?.tools.includes("collect_user_input"));
   assert.ok(main?.tools.includes("create_task"));
   assert.ok(main?.tools.includes("update_task"));
   assert.ok(main?.tools.includes("get_task"));
@@ -24,9 +25,13 @@ test("agent.yaml exposes task management and the single task-worker", () => {
     enabled: true,
     defaultTimeoutSeconds: 900,
     maxTimeoutSeconds: 3600,
+    maxAttempts: 3,
   });
+  assert.ok(worker?.tools.includes("web_search"));
+  assert.ok(worker?.tools.includes("task_plan_manage"));
   assert.ok(worker?.tools.includes("deliver_task_result"));
-  assert.match(worker?.systemPrompt ?? "", /完成任务的唯一方式是调用 deliver_task_result/);
+  assert.match(worker?.systemPrompt ?? "", /Fanto 的后台执行 Agent/);
+  assert.match(worker?.systemPrompt ?? "", /task_plan_manage/);
   assert.deepEqual(registry.taskAgents(), [
     {
       id: "task-worker",

@@ -75,7 +75,7 @@ export function TasksPage() {
       {error && tasks.length > 0 && <div className="task-page-error">{error}</div>}
 
       {selectedTaskId && (
-        <TaskDetailModal taskId={selectedTaskId} onClose={closeTask} onChanged={() => void load()} />
+        <TaskDetailModal taskId={selectedTaskId} onClose={closeTask} />
       )}
     </div>
   );
