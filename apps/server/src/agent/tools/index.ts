@@ -7,8 +7,11 @@ import {
   type ExecutionToolContext,
 } from "@earendil-works/pi-agent-core";
 import type { AgentDefinition } from "../harness/definition.js";
+import type { TaskAgentCatalogEntry } from "../harness/registry.js";
 import type { AgentBusinessServices } from "../business-services.js";
 import { prepareBashExecution } from "../workspace/bash.js";
+import { createCreateTaskTool, createGetTaskTool, createUpdateTaskTool } from "./task-management.js";
+import { createDeliverTaskResultTool } from "./deliver-task-result.js";
 import { createPresentMediaTool } from "./media.js";
 import { createPreferenceManageTool } from "./preferences.js";
 import { createRecordGetTool, createRecordListTool, createRecordSearchTool } from "./records.js";
@@ -17,6 +20,7 @@ export function createTools(
   names: AgentDefinition["tools"],
   workspace: string,
   fanto: AgentBusinessServices,
+  taskAgents: readonly TaskAgentCatalogEntry[],
 ): AgentHarnessTool<ExecutionToolContext>[] {
   return names.map(name => {
     switch (name) {
@@ -29,6 +33,10 @@ export function createTools(
       case "record_search": return createRecordSearchTool(fanto);
       case "present_media": return createPresentMediaTool(fanto);
       case "preference_manage": return createPreferenceManageTool(fanto);
+      case "create_task": return createCreateTaskTool(fanto, taskAgents);
+      case "update_task": return createUpdateTaskTool(fanto);
+      case "get_task": return createGetTaskTool(fanto);
+      case "deliver_task_result": return createDeliverTaskResultTool(fanto, workspace);
     }
   });
 }

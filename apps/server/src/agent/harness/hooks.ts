@@ -31,7 +31,10 @@ export function installHarnessHooks(
   harness.hooks.on("before_request", async () => undefined);
   harness.hooks.on("before_payload", async () => undefined);
   harness.hooks.on("after_response", async () => undefined);
-  harness.hooks.on("after_tool", async () => undefined);
+  harness.hooks.on("after_tool", async ({ toolName, isError }) => {
+    if (toolName === "deliver_task_result" && !isError) return { terminate: true };
+    return undefined;
+  });
   harness.hooks.on("before_compaction", async () => undefined);
   harness.hooks.on("before_navigation", async () => undefined);
 }

@@ -41,9 +41,10 @@ struct AuthenticationEntryView: View {
                     AuthenticationProviderButton(
                         title: "通过 Apple 继续",
                         systemIcon: "apple.logo",
-                        action: {}
+                        action: authenticateWithApple
                     )
                     .padding(.top, 12)
+                    .disabled(auth.isSubmitting)
 
                     if let error = auth.error {
                         Label(error.localizedDescription, systemImage: "exclamationmark.circle")
@@ -73,6 +74,12 @@ struct AuthenticationEntryView: View {
     private func authenticateWithGoogle() {
         Task {
             await auth.authenticateWithGoogle()
+        }
+    }
+
+    private func authenticateWithApple() {
+        Task {
+            await auth.authenticateWithApple()
         }
     }
 }

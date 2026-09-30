@@ -5,17 +5,33 @@ nonisolated struct AuthAPIClient {
     private let baseURL = URL(string: "https://fanto.robinverse.me")!
 
     func createGoogleAuthenticationIntent() async throws -> AuthIntent {
+        try await createAuthenticationIntent(provider: "google")
+    }
+
+    func createAppleAuthenticationIntent() async throws -> AuthIntent {
+        try await createAuthenticationIntent(provider: "apple")
+    }
+
+    func authenticateGoogle(intentID: String, idToken: String) async throws -> AuthResult {
+        try await authenticate(intentID: intentID, idToken: idToken)
+    }
+
+    func authenticateApple(intentID: String, idToken: String) async throws -> AuthResult {
+        try await authenticate(intentID: intentID, idToken: idToken)
+    }
+
+    private func createAuthenticationIntent(provider: String) async throws -> AuthIntent {
         try await post(
             path: "api/auth/intents",
             body: IntentRequest(
                 purpose: "authenticate",
-                provider: "google"
+                provider: provider
             )
         )
     }
 
-    func authenticateGoogle(intentID: String, idToken: String) async throws -> AuthResult {
-        return try await post(
+    private func authenticate(intentID: String, idToken: String) async throws -> AuthResult {
+        try await post(
             path: "api/auth/authentications",
             body: ProofRequest(
                 intentId: intentID,

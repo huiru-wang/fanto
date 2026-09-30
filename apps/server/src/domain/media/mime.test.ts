@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mediaMime, mediaObjectKey, normalizeMimeType } from "./mime.js";
+import { mediaMime, mediaObjectKey, normalizeMimeType, taskObjectKey } from "./mime.js";
 
 test("media MIME mapping derives the canonical type and object extension", () => {
   assert.deepEqual(mediaMime("audio/mp4"), { mimeType: "audio/mp4", mediaType: "audio", extension: ".m4a" });
@@ -11,5 +11,7 @@ test("media MIME mapping derives the canonical type and object extension", () =>
   assert.deepEqual(mediaMime("image/webp"), { mimeType: "image/webp", mediaType: "image", extension: ".webp" });
   assert.equal(mediaMime("audio/aac"), null);
   assert.equal(normalizeMimeType(" Audio/MPEG; charset=binary "), "audio/mpeg");
-  assert.equal(mediaObjectKey("u", "media-id", ".mp3"), "users/u/media/media-id.mp3");
+  const createdAt = new Date("2026-09-30T01:02:03.000Z");
+  assert.equal(mediaObjectKey("u", "media-id", ".mp3", createdAt), "users/u/media/2026-09/media-id.mp3");
+  assert.equal(taskObjectKey("u", "session-id", "result.html", createdAt), "users/u/task/2026-09/session-id/result.html");
 });

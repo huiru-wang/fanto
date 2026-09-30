@@ -20,7 +20,9 @@ import { AuthService } from "../domain/auth/index.js";
 import { RecordService, type Record } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
 import { CreationService, CreationProposalService } from "../domain/creations/index.js";
+import { TaskService } from "../domain/tasks/index.js";
 import { createAgentRuntime } from "../agent/agent-runtime.js";
+import { TaskScheduler, TaskWorker, TaskWorkerPool } from "../task-runtime/index.js";
 import { TtlCache } from "../infrastructure/cache/ttl-cache.js";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -62,7 +64,16 @@ const memoryIndex = new PostgresMemoryIndex(db);
 const memory = new MemoryService(memoryIndex, embeddings);
 const queue = new RecordPostprocessQueue();
 const records = RecordService.create(db, queue, memory, recordListCache);
-const agent = createAgentRuntime({ records, media, preferences, ...config.agent });
+const tasks = new TaskService(db, {
+  minSeconds: config.tasks.timeoutMinSeconds,
+  maxSeconds: config.tasks.timeoutMaxSeconds,
+});
+const agent = createAgentRuntime({ records, media, preferences, tasks, ...config.agent });
+const taskWorker = new TaskWorker(tasks, agent.registry, agent.sessions);
+const taskWorkerPool = new TaskWorkerPool(config.tasks.workerConcurrency, taskWorker);
+const taskScheduler = new TaskScheduler(tasks, taskWorkerPool, config.tasks.schedulerIntervalMs);
+await tasks.recoverRunning();
+taskScheduler.start();
 
 registerRecordPostprocessListener(
   queue,
@@ -81,6 +92,7 @@ const services: ServerServices = {
   preferences,
   creations: CreationService.create(db),
   creationProposals: CreationProposalService.create(db),
+  tasks,
   agent,
 };
 
@@ -92,6 +104,7 @@ const server = serve({
 logInfo("main", "Server listening", { host: config.host, port: config.port });
 
 const shutdown = async () => {
+  taskScheduler.stop();
   server.close();
   await agent.close();
   await db.destroy();

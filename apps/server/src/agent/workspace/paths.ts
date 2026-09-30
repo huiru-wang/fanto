@@ -1,8 +1,10 @@
 import { existsSync, lstatSync, mkdirSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 
-export function createWorkspace(root: string, sessionId: string): string {
-  const workspace = resolve(root, sessionId);
+export function createWorkspace(root: string, userId: string, sessionId: string): string {
+  assertWorkspaceSegment(userId, "userId");
+  assertWorkspaceSegment(sessionId, "sessionId");
+  const workspace = resolve(root, userId, sessionId);
   mkdirSync(workspace, { recursive: true });
   return workspace;
 }
@@ -18,6 +20,12 @@ export function assertWorkspacePath(workspace: string, path: string): void {
   if (!isWithin(root, resolvedExisting)) throw new Error("File paths must not traverse workspace symlinks");
   if (existsSync(target) && lstatSync(target).isSymbolicLink() && !isWithin(root, realpathSync(target))) {
     throw new Error("File paths must not resolve outside the session workspace");
+  }
+}
+
+function assertWorkspaceSegment(value: string, label: string): void {
+  if (!/^[a-zA-Z0-9._-]+$/.test(value) || value === "." || value === "..") {
+    throw new Error(`Invalid workspace ${label}`);
   }
 }
 

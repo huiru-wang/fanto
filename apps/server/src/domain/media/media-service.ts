@@ -1,4 +1,4 @@
-import { mediaMime, mediaObjectKey, normalizeMimeType } from "./mime.js";
+import { mediaMime, mediaObjectKey, normalizeMimeType, taskObjectKey } from "./mime.js";
 import { PostgresMediaRepository, type MediaAsset } from "./postgres-repository.js";
 import type { MediaVariant, OssStorage } from "../../infrastructure/clients/oss-client.js";
 import type { Kysely } from "kysely";
@@ -14,6 +14,52 @@ export class MediaService {
     const created = await this.media.create({ mediaId, userId, objectKey: mediaObjectKey(userId, mediaId, descriptor.extension), mediaType: descriptor.mediaType, mimeType: descriptor.mimeType, bytes: input.bytes });
     return { mediaId: created.mediaId, uploadUrl: this.oss.putUrl(created.objectKey, created.mimeType), expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
   }
+  async createGeneratedFile(input: { userId: string; filename: string; mimeType: "text/plain" | "text/markdown" | "text/html"; data: Buffer; extData?: Record<string, unknown> }) {
+    const filename = safeFilename(input.filename);
+    const mediaId = crypto.randomUUID();
+    const objectKey = `users/${input.userId}/media/${mediaId}/${filename}`;
+    await this.oss.putObject(objectKey, input.data, input.mimeType);
+    try {
+      return await this.media.createReadyFile({
+        mediaId,
+        userId: input.userId,
+        objectKey,
+        mimeType: input.mimeType,
+        bytes: input.data.byteLength,
+        extData: { ...(input.extData ?? {}), filename },
+      });
+    } catch (error) {
+      await this.oss.remove(objectKey).catch(() => {});
+      throw error;
+    }
+  }
+  async createTaskGeneratedFile(input: {
+    userId: string;
+    workerSessionId: string;
+    filename: string;
+    mimeType: "text/plain" | "text/markdown" | "text/html";
+    data: Buffer;
+    completedAt: Date;
+    extData?: Record<string, unknown>;
+  }) {
+    const filename = safeFilename(input.filename);
+    const mediaId = crypto.randomUUID();
+    const objectKey = taskObjectKey(input.userId, input.workerSessionId, filename, input.completedAt);
+    await this.oss.putObject(objectKey, input.data, input.mimeType);
+    try {
+      return await this.media.createReadyFile({
+        mediaId,
+        userId: input.userId,
+        objectKey,
+        mimeType: input.mimeType,
+        bytes: input.data.byteLength,
+        extData: { ...(input.extData ?? {}), filename },
+      });
+    } catch (error) {
+      await this.oss.remove(objectKey).catch(() => {});
+      throw error;
+    }
+  }
   async completeUpload(userId: string, id: string, capture: Record<string, unknown>) {
     const current = await this.media.findMedia(id, userId); if (!current) return { kind: "not_found" } as const;
     try { const head: any = await this.oss.head(current.objectKey); const bytes = Number(head.res?.headers?.["content-length"] ?? head.res?.headers?.["Content-Length"]); const mimeType = head.res?.headers?.["content-type"] ?? head.res?.headers?.["Content-Type"];
@@ -26,4 +72,25 @@ export class MediaService {
   async redirectUrl(userId: string, id: string) { const asset = await this.media.findMedia(id, userId); return asset?.status === "ready" ? this.oss.readUrl(asset.objectKey) : null; }
 }
 
-export function metadata(asset: MediaAsset) { const capture = asset.extData.capture && typeof asset.extData.capture === "object" ? asset.extData.capture as Record<string, unknown> : {}; const positive = (value: unknown) => typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined; return { mediaId: asset.mediaId, mediaType: asset.mediaType, mimeType: asset.mimeType, ...(positive(capture.width) ? { width: positive(capture.width) } : {}), ...(positive(capture.height) ? { height: positive(capture.height) } : {}), ...(positive(capture.durationMs) ? { durationMs: positive(capture.durationMs) } : {}) }; }
+export function metadata(asset: MediaAsset) {
+  const capture = asset.extData.capture && typeof asset.extData.capture === "object"
+    ? asset.extData.capture as Record<string, unknown>
+    : {};
+  const positive = (value: unknown) => typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+  const filename = typeof asset.extData.filename === "string" ? asset.extData.filename : undefined;
+  return {
+    mediaId: asset.mediaId,
+    mediaType: asset.mediaType,
+    mimeType: asset.mimeType,
+    ...(asset.mediaType === "file" ? { bytes: asset.bytes, ...(filename ? { filename } : {}) } : {}),
+    ...(positive(capture.width) ? { width: positive(capture.width) } : {}),
+    ...(positive(capture.height) ? { height: positive(capture.height) } : {}),
+    ...(positive(capture.durationMs) ? { durationMs: positive(capture.durationMs) } : {}),
+  };
+}
+
+function safeFilename(value: string): string {
+  const filename = value.trim().replace(/[^a-zA-Z0-9._-]+/g, "_");
+  if (!filename || filename === "." || filename === "..") throw new Error("Invalid generated filename");
+  return filename.slice(0, 200);
+}

@@ -8,6 +8,9 @@ export class OssStorage {
   private client: any;
   constructor(options: { region: string; endpoint?: string; bucket: string; accessKeyId: string; accessKeySecret: string }) { this.client = new OSS(options); }
   putUrl(key: string, contentType: string) { return this.client.signatureUrl(key, { method: "PUT", expires: 900, "Content-Type": contentType }); }
+  async putObject(key: string, data: Buffer, contentType: string) {
+    await this.client.put(key, data, { headers: { "Content-Type": contentType } });
+  }
   readUrl(key: string, variant: MediaVariant = "original") {
     return this.client.signatureUrl(key, {
       method: "GET",

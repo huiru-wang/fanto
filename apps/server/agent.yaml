@@ -12,20 +12,23 @@ agents:
     description: Fanto 面向用户的长期记忆对话 Agent
     corePromptModule: core
     systemPromptModule: operational
-    tools: [record_get, record_list, record_search, present_media, preference_manage]
+    tools: [record_get, record_list, record_search, present_media, preference_manage, create_task, update_task, get_task]
     skills: []
     compaction:
       enabled: true
       reserveTokens: 16384
       keepRecentTokens: 20000
 
-  - id: coding
-    model_id: deepseek/deepseek-v4-flash
-    description: 在隔离工作区中执行代码任务
-    systemPrompt: |
-      你在隔离工作区中工作。先阅读相关文件，再做最小改动。
-    tools: [read, write, edit, bash]
+  - id: task-worker
+    model_id: deepseek/deepseek-v4-pro
+    description: 处理所有需要后台独立完成并交付文件的任务，包括资料整理、HTML 页面和卡片、文本与 Markdown 文档、代码及工作区文件修改；需要可预览页面、文件、报告或耗时处理时使用。
+    systemPromptModule: task-worker
+    tools: [read, write, edit, bash, record_get, record_list, record_search, deliver_task_result]
     skills: []
+    task:
+      enabled: true
+      defaultTimeoutSeconds: 900
+      maxTimeoutSeconds: 3600
     compaction:
       enabled: true
       reserveTokens: 16384

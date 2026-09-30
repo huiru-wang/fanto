@@ -25,6 +25,7 @@ export interface AppConfig {
   oss: { region: string; endpoint?: string; bucket: string; accessKeyId: string; accessKeySecret: string };
   dashscope: { apiKey: string; baseUrl: string; embeddingModel: string; embeddingDimension: number; visionModel: string; asrModel: string };
   agent: { sessionDatabasePath: string; workspaceRoot: string; definitionPath: string; deepseekApiKey: string };
+  tasks: { schedulerIntervalMs: number; workerConcurrency: number; timeoutMinSeconds: number; timeoutMaxSeconds: number };
 }
 
 export function loadEnv(path = ".env") {
@@ -65,6 +66,12 @@ export function loadConfig(): AppConfig {
   const appleAllowedClientIds = required("APPLE_ALLOWED_CLIENT_IDS").split(",").map(value => value.trim()).filter(Boolean);
   if (appleAllowedClientIds.length === 0) throw new Error("APPLE_ALLOWED_CLIENT_IDS is required");
 
+  const taskTimeoutMinSeconds = positiveInt("TASK_TIMEOUT_MIN_SECONDS", 30);
+  const taskTimeoutMaxSeconds = positiveInt("TASK_TIMEOUT_MAX_SECONDS", 3600);
+  if (taskTimeoutMinSeconds > taskTimeoutMaxSeconds) {
+    throw new Error("TASK_TIMEOUT_MIN_SECONDS must not exceed TASK_TIMEOUT_MAX_SECONDS");
+  }
+
   return {
     databaseUrl,
     port: parseInt(process.env.PORT ?? "3000", 10),
@@ -102,7 +109,20 @@ export function loadConfig(): AppConfig {
       definitionPath: projectPath(process.env.AGENT_CONFIG_PATH, "apps/server/agent.yaml"),
       deepseekApiKey: required("DEEPSEEK_API_KEY"),
     },
+    tasks: {
+      schedulerIntervalMs: positiveInt("TASK_SCHEDULER_INTERVAL_MS", 300_000),
+      workerConcurrency: positiveInt("TASK_WORKER_CONCURRENCY", 1),
+      timeoutMinSeconds: taskTimeoutMinSeconds,
+      timeoutMaxSeconds: taskTimeoutMaxSeconds,
+    },
   };
+}
+
+function positiveInt(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  const value = raw ? Number.parseInt(raw, 10) : fallback;
+  if (!Number.isInteger(value) || value <= 0) throw new Error(name + " must be a positive integer");
+  return value;
 }
 
 function required(name: string): string {

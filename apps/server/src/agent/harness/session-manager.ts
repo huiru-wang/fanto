@@ -8,6 +8,7 @@ import type { AgentDefinition } from "./definition.js";
 import { buildRuntime, type HarnessRuntime } from "./build-runtime.js";
 import type { AgentBusinessServices } from "../business-services.js";
 import type { SkillLoader } from "../skills/loader.js";
+import type { TaskAgentCatalogEntry } from "./registry.js";
 import { createWorkspace } from "../workspace/paths.js";
 
 const SESSION_OWNER_ENTRY = "fanto.session_owner";
@@ -39,6 +40,7 @@ export class AgentSessionManager {
     private readonly models: Models,
     private readonly fanto: AgentBusinessServices,
     private readonly skills: SkillLoader,
+    private readonly taskAgents: readonly TaskAgentCatalogEntry[],
     private readonly databasePath: string,
     private readonly workspaceRoot: string,
   ) {
@@ -126,6 +128,14 @@ export class AgentSessionManager {
     }
   }
 
+  async release(id: string): Promise<void> {
+    if (this.running.has(id)) throw new SessionBusyError("Session is still running");
+    const current = this.sessions.get(id);
+    if (!current) return;
+    this.sessions.delete(id);
+    await current.runtime.close();
+  }
+
   async close(): Promise<void> {
     await Promise.all([...this.sessions.values()].map(item => item.runtime.close()));
     this.sessions.clear();
@@ -167,8 +177,8 @@ export class AgentSessionManager {
     const runtime = await buildRuntime(
       session,
       definition,
-      createWorkspace(this.workspaceRoot, id),
-      { models: this.models, fanto: this.fanto, skills: this.skills },
+      createWorkspace(this.workspaceRoot, userId, id),
+      { models: this.models, fanto: this.fanto, skills: this.skills, taskAgents: this.taskAgents },
     );
     return {
       id,

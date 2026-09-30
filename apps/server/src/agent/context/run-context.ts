@@ -13,6 +13,7 @@ type RunContextInput = {
   timeZone?: string;
   recentMessages: readonly ContextMessage[];
   sourceMessageId?: string;
+  task?: { taskId: string; taskRunId: string };
 };
 
 export type RunData = Omit<RunContextInput, "slots"> & {

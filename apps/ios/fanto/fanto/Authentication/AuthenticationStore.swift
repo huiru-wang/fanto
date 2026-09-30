@@ -47,6 +47,24 @@ final class AuthenticationStore {
         }
     }
 
+    func authenticateWithApple() async {
+        guard !isSubmitting else { return }
+        isSubmitting = true
+        error = nil
+        defer { isSubmitting = false }
+        do {
+            let intent = try await AuthAPIClient.shared.createAppleAuthenticationIntent()
+            let idToken = try await AppleAuthenticationProvider.idToken(nonce: intent.nonce)
+            let result = try await AuthAPIClient.shared.authenticateApple(intentID: intent.intentId, idToken: idToken)
+            let user = try await AuthSession.shared.install(result)
+            state = .signedIn(user)
+        } catch let authError as AuthenticationError {
+            if authError != .cancelled { error = authError }
+        } catch {
+            self.error = .server("登录没有完成，请重试。")
+        }
+    }
+
     func clearError() {
         error = nil
     }

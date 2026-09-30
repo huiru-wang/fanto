@@ -2,7 +2,7 @@ import type { Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
 import { nowIso } from "../../infrastructure/time.js";
 
-export type MediaAsset = { mediaId: string; userId: string; objectKey: string; mediaType: "image" | "audio"; mimeType: string; bytes: number; status: "uploading" | "ready"; extData: Record<string, unknown>; createdAt: string; updatedAt: string };
+export type MediaAsset = { mediaId: string; userId: string; objectKey: string; mediaType: "image" | "audio" | "file"; mimeType: string; bytes: number; status: "uploading" | "ready"; extData: Record<string, unknown>; createdAt: string; updatedAt: string };
 export type AudioAsr = { status: "running" | "succeeded" | "failed"; model?: string; emotion?: string; language?: string; completedAt?: string; errorCode?: string };
 const json = (value: string | null): Record<string, unknown> => value ? JSON.parse(value) : {};
 const asset = (row: any): MediaAsset => ({ mediaId: row.media_id, userId: row.user_id, objectKey: row.object_key, mediaType: row.media_type, mimeType: row.mime_type, bytes: row.bytes, status: row.status, extData: json(row.ext_data), createdAt: row.created_at, updatedAt: row.updated_at });
@@ -13,6 +13,24 @@ export class PostgresMediaRepository {
   async create(input: { mediaId: string; userId: string; objectKey: string; mediaType: "image" | "audio"; mimeType: string; bytes: number }) {
     const now = nowIso();
     const row = { media_id: input.mediaId, user_id: input.userId, object_key: input.objectKey, media_type: input.mediaType, mime_type: input.mimeType, bytes: input.bytes, status: "uploading", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now };
+    await this.db.insertInto("media_assets").values(row).execute();
+    return asset(row);
+  }
+
+  async createReadyFile(input: { mediaId: string; userId: string; objectKey: string; mimeType: string; bytes: number; extData: Record<string, unknown> }) {
+    const now = nowIso();
+    const row = {
+      media_id: input.mediaId,
+      user_id: input.userId,
+      object_key: input.objectKey,
+      media_type: "file",
+      mime_type: input.mimeType,
+      bytes: input.bytes,
+      status: "ready",
+      ext_data: JSON.stringify(input.extData),
+      created_at: now,
+      updated_at: now,
+    };
     await this.db.insertInto("media_assets").values(row).execute();
     return asset(row);
   }

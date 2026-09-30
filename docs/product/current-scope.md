@@ -6,8 +6,8 @@
 
 | 组件 | 当前状态 |
 | --- | --- |
-| Server | 可运行，负责 Record、Media、Memory / Retrieval、User Preference、Creation / Proposal |
-| Agent Runtime | 可独立运行，负责 Context Runtime、Agent Session、流式执行、异步任务与工作区 |
+| Server | 可运行，负责 Record、Media、Memory / Retrieval、User Preference、Creation / Proposal、Agent Task |
+| Agent Runtime | 内嵌 Server，负责 Context Runtime、Agent Session、流式执行、子 Agent 执行与工作区 |
 | iOS | 客户端代码链路已实现；Record 读取、Creation / Proposal 与 Fanto 单 Session 对话均已接 API，但当前硬编码演示用户与 Server / Agent 公网 allowlist 不一致 |
 | H5 | 可运行；提供响应式多模态 Record、语义搜索、Markdown / 媒体消息与 Fanto 多轮对话测试客户端，适配 PC / iPad / 手机 |
 
@@ -20,7 +20,8 @@
 - 图片和音频先申请上传凭据，客户端直传 OSS，再 complete；
 - Record 创建 / 更新后异步执行图片理解、音频转写与向量索引；
 - 图片描述和音频转写写回 Record content block；
-- 按用户读取媒体，并通过短期 OSS 地址返回内容。
+- 按用户读取媒体，并通过短期 OSS 地址返回内容；
+- Task Worker 可由 Server 直接生成 `text/plain / text/markdown / text/html` 文件、上传 OSS，并注册为 `media_type=file`。
 
 当前 iOS 的 Record 读取、Creation / Proposal 与 Agent Client 都已实现 Server 调用链路，客户端与当前 Server / Agent 主运行入口均使用测试用户 `user001`。除此之外，“新建记录”仍只写入本地 Store，没有调用 Server 创建接口；媒体上传也没有在 iOS 端形成完整写入链路。
 
@@ -36,7 +37,7 @@ Server 已经会为处理完成的 Record 构建向量索引。用户文本、�
 
 `POST /api/records/search` 已注册，可对当前用户 Record 做语义搜索。pgvector 查询在 SQL 层按 `user_id` 限定当前用户，并在读取 metadata 时保持用户归属校验。
 
-Agent Runtime 已通过 Business Services 接入 `record_get`、`record_list`、`record_search` 三个只读 Record Tool，并提供 `present_media` 展示 Tool。`main` 在每次 Agent Run 前执行一次 MemoryProvider，但当前固定使用 `recent` 模式：读取最近 10 条 Record 的缓存窗口，注入截断正文、真实 `recordId`、媒体 `mediaId` 及截断图片描述 / 音频转写，不再在 Run 前执行 Query Rewrite 或向量搜索。需要主题相关历史时由主模型主动调用 `record_search`。LLM 不传 `userId`；所有业务读取身份都来自当前 Session 的 Run Context。
+Agent Runtime 已通过 Business Services 接入 `record_get`、`record_list`、`record_search` 三个只读 Record Tool，并提供 `present_media` 展示 Tool；`main` 还可以通过 `create_task / update_task / get_task` 管理后台 Agent Task。`main` 在每次 Agent Run 前执行一次 MemoryProvider，但当前固定使用 `recent` 模式：读取最近 10 条 Record 的缓存窗口，注入截断正文、真实 `recordId`、媒体 `mediaId` 及截断图片描述 / 音频转写，不再在 Run 前执行 Query Rewrite 或向量搜索。需要主题相关历史时由主模型主动调用 `record_search`。LLM 不传 `userId`；所有业务读取身份都来自当前 Session 的 Run Context。
 
 ## User Preference
 
@@ -66,16 +67,20 @@ Server 内嵌的 Agent Runtime 当前支持：
 - 创建持久 Session；
 - 基于同一 Session 的多轮流式执行；
 - Session 历史分页；
-- 异步任务提交和查询；
-- 每个 Session 独立工作区；
+- `create_task / update_task / get_task` Goal 模型的异步任务管理，以及 `/api/tasks` Task / TaskRun 查询与暂停、恢复、取消；
+- Task / TaskRun 持久化在 PostgreSQL，由 5 分钟 Scheduler 按 WorkerPool 可用容量调度；
+- 每个 Session 使用 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>` 独立工作区；
 - Pi 内置 `read`、`write`、`edit`、`bash` 工具；
 - `record_get`、`record_list`、`record_search` 三个只读 Record Tool；
 - `present_media` 媒体展示 Tool；
 - `preference_manage` 长期偏好管理 Tool；
-- Run 前一次性 Context Runtime（Character / Preference / Recent Memory）；
+- `create_task` 后台任务 Tool；其 `agentId` 枚举与 Agent 用途说明从 `agent.yaml` 中 `task.enabled=true` 的非 main Agent 动态生成；
+- `update_task / get_task` 后台任务管理 Tool，以及后台 Worker 的 `deliver_task_result` 文件交付 Tool；
+- 唯一的 `task-worker` 后台子 Agent，统一处理资料整理、文件、HTML 页面和代码工作；
+- Run 前一次性 Context Runtime（Character / Preference / Current Tasks / Recent Memory）；
 - Skill 文件加载。
 
-它不直接访问 Fanto 业务数据库；Record Tool、PreferenceProvider / Tool 与 `present_media` 统一通过 `business-services.ts` 调用相应领域 Service，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media` 与 `preference_manage`；`coding` 默认不具备个人历史访问能力。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 的认识与关系原则由 `apps/server/src/agent/prompts/core.ts` 约束，工具与 Markdown / Media 规则位于 `apps/server/src/agent/prompts/operational.ts`；每轮还会注入 Character、当前时区下的时间、偏好与近期记忆；相关历史由主 Agent 按需搜索。
+它不直接访问 Fanto 业务数据库；Record Tool、PreferenceProvider / Tool、`present_media` 与 Task Tool 统一通过 `business-services.ts` 调用相应领域 Service，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media`、`preference_manage` 与 `create_task / update_task / get_task`；唯一的 `task-worker` 可读取用户 Record、使用文件和 bash 工具，并通过 `deliver_task_result` 交付工作区文件。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 的认识与关系原则由 `apps/server/src/agent/prompts/core.ts` 约束，工具与 Markdown / Media 规则位于 `apps/server/src/agent/prompts/operational.ts`；每轮还会注入 Character、当前时区下的时间、偏好、当前 Task 摘要与近期记忆；相关历史由主 Agent 按需搜索。
 
 ## 当前基础设施边界
 

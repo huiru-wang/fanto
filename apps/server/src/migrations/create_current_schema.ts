@@ -12,6 +12,46 @@ export async function up(db: Kysely<any>) {
     CREATE INDEX idx_user_preferences_user_category_content ON user_preferences(user_id, category, content);
     CREATE TABLE media_assets (id SERIAL PRIMARY KEY, media_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, object_key TEXT NOT NULL UNIQUE, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, status TEXT NOT NULL, ext_data TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE INDEX idx_media_assets_user_created ON media_assets(user_id, created_at);
+    CREATE TABLE tasks (
+      task_id UUID PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      goal JSONB NOT NULL,
+      agent_id TEXT NOT NULL,
+      timeout_seconds INTEGER NOT NULL,
+      trigger_type TEXT NOT NULL CHECK (trigger_type IN ('immediate','scheduled')),
+      trigger JSONB NOT NULL,
+      output JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ext_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      status TEXT NOT NULL CHECK (status IN ('active','paused','completed','cancelled')),
+      next_run_at TIMESTAMPTZ,
+      source_session_id TEXT,
+      source_message_id TEXT,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+    CREATE INDEX idx_tasks_due ON tasks(status, next_run_at) WHERE next_run_at IS NOT NULL;
+    CREATE INDEX idx_tasks_user_status_updated ON tasks(user_id, status, updated_at DESC, task_id DESC);
+    CREATE TABLE task_runs (
+      run_id UUID PRIMARY KEY,
+      task_id UUID NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+      status TEXT NOT NULL CHECK (status IN ('running','completed','failed','cancelled')),
+      scheduled_at TIMESTAMPTZ NOT NULL,
+      worker_session_id TEXT,
+      result_media_id TEXT REFERENCES media_assets(media_id),
+      result JSONB,
+      error JSONB,
+      ext_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+      started_at TIMESTAMPTZ,
+      finished_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      CONSTRAINT uq_task_runs_task_scheduled_at UNIQUE(task_id, scheduled_at)
+    );
+    CREATE INDEX idx_task_runs_status_scheduled ON task_runs(status, scheduled_at ASC, created_at ASC);
+    CREATE INDEX idx_task_runs_task_created ON task_runs(task_id, created_at DESC);
+    CREATE INDEX idx_task_runs_user_created ON task_runs(user_id, created_at DESC);
     CREATE TABLE vector_items (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, type TEXT NOT NULL, outer_id TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, status TEXT NOT NULL, error_code TEXT, event_at TEXT NOT NULL, indexed_at TEXT, created_at TEXT NOT NULL, embedding vector(768) NOT NULL);
     CREATE INDEX idx_vector_items_lookup ON vector_items(user_id, type, outer_id, status);
     CREATE TABLE creation_kinds (kind_id TEXT PRIMARY KEY, owner_user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE, name TEXT NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -29,5 +69,5 @@ export async function up(db: Kysely<any>) {
 }
 
 export async function down(db: Kysely<any>) {
-  await sql`DROP TABLE IF EXISTS entity_relations; DROP TABLE IF EXISTS creation_proposals; DROP TABLE IF EXISTS creations; DROP TABLE IF EXISTS creation_kinds; DROP TABLE IF EXISTS vector_items; DROP TABLE IF EXISTS media_assets; DROP TABLE IF EXISTS user_preferences; DROP TABLE IF EXISTS records; DROP TABLE IF EXISTS auth_challenges; DROP TABLE IF EXISTS user_login_identities; DROP TABLE IF EXISTS users;`.execute(db);
+  await sql`DROP TABLE IF EXISTS entity_relations; DROP TABLE IF EXISTS creation_proposals; DROP TABLE IF EXISTS creations; DROP TABLE IF EXISTS creation_kinds; DROP TABLE IF EXISTS vector_items; DROP TABLE IF EXISTS task_runs; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS media_assets; DROP TABLE IF EXISTS user_preferences; DROP TABLE IF EXISTS records; DROP TABLE IF EXISTS auth_challenges; DROP TABLE IF EXISTS user_login_identities; DROP TABLE IF EXISTS users;`.execute(db);
 }

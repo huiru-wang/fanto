@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { AgentRegistry } from "../../agent/harness/registry.js";
@@ -22,6 +23,7 @@ export function createAgentRoutes(
     if (!body.success || !traceId.success) {
       return c.json({ error: "agentId, sessionId, message, or x-trace-id is invalid" }, 400);
     }
+    const runTraceId = traceId.data ?? randomUUID();
     const definition = registry.get(body.data.agentId);
     if (!definition) return c.json({ error: "Agent not found" }, 404);
 
@@ -46,13 +48,13 @@ export function createAgentRoutes(
       try {
         await stream.writeSSE({
           event: "start",
-          data: JSON.stringify({ sessionId: session.id, agentId: session.agentId, traceId: traceId.data }),
+          data: JSON.stringify({ sessionId: session.id, agentId: session.agentId, traceId: runTraceId }),
         });
         await runAgent(
           session,
           body.data.message,
           controller.signal,
-          { traceId: traceId.data, timeZone },
+          { traceId: runTraceId, timeZone },
           event => writeStreamEvent(stream, event),
         );
         controller.signal.throwIfAborted();

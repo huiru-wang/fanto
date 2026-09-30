@@ -1,8 +1,19 @@
 import type { MediaService } from "../domain/media/index.js";
 import type { PreferenceCategory, PreferenceService, UserPreference } from "../domain/preferences/index.js";
 import type { RecordService } from "../domain/records/index.js";
+import type { DelegateTaskInput, DelegateTaskResult, TaskAgentPolicy, TaskService, UpdateTaskInput } from "../domain/tasks/index.js";
+import type { TaskDeliveryInput, TaskResultPublisher } from "../task-runtime/result-publisher.js";
 
-export type AgentRequestContext = { userId: string; traceId?: string; signal?: AbortSignal };
+export type AgentRequestContext = {
+  userId: string;
+  traceId?: string;
+  signal?: AbortSignal;
+  sessionId?: string;
+  sourceMessageId?: string;
+  timeZone?: string;
+  task?: { taskId: string; taskRunId: string };
+  workspace?: string;
+};
 export type AgentRecord = NonNullable<Awaited<ReturnType<RecordService["find"]>>>;
 export type AgentRecordList = Awaited<ReturnType<RecordService["list"]>>;
 export type AgentRecordSearch = { data: Awaited<ReturnType<RecordService["search"]>> };
@@ -20,6 +31,11 @@ export type AgentBusinessServices = {
   createPreference(context: AgentRequestContext, input: { category: AgentPreferenceCategory; content: string; source: { sessionId: string; messageId: string; quote: string } }): Promise<{ preference: AgentPreference; reused: boolean }>;
   updatePreference(context: AgentRequestContext, preferenceId: string, input: { expectedVersion: number; category: AgentPreferenceCategory; content: string; source: { sessionId: string; messageId: string; quote: string } }): Promise<AgentPreference>;
   deletePreference(context: AgentRequestContext, preferenceId: string, expectedVersion: number): Promise<{ preferenceId: string }>;
+  createTask(context: AgentRequestContext, input: DelegateTaskInput): Promise<DelegateTaskResult>;
+  updateTask(context: AgentRequestContext, taskId: string, input: UpdateTaskInput): Promise<unknown>;
+  getTask(context: AgentRequestContext, taskId: string): Promise<unknown>;
+  listTasks(context: AgentRequestContext): Promise<unknown>;
+  deliverTaskResult(context: AgentRequestContext, input: TaskDeliveryInput): Promise<{ mediaId: string; result: unknown }>;
 };
 
 async function withRunAbort<T>(context: AgentRequestContext, operation: () => Promise<T>): Promise<T> {
@@ -33,6 +49,9 @@ export function createAgentBusinessServices(services: {
   records: RecordService;
   media: MediaService;
   preferences: PreferenceService;
+  tasks: TaskService;
+  resolveTaskAgent(agentId: string): TaskAgentPolicy | undefined;
+  taskResultPublisher?: TaskResultPublisher;
 }): AgentBusinessServices {
   return {
     async getRecord(context, recordId) {
@@ -64,6 +83,47 @@ export function createAgentBusinessServices(services: {
       const result = await withRunAbort(context, () => services.preferences.delete({ userId: context.userId, preferenceId, expectedVersion }));
       if (result.kind !== "ok") throw new Error(result.kind === "not_found" ? "Preference not found" : "Preference was changed by another request");
       return { preferenceId: result.preference.preferenceId };
+    },
+    async createTask(context, input) {
+      const policy = services.resolveTaskAgent(input.agentId);
+      if (!policy) throw new Error("Task agent is not available");
+      return withRunAbort(context, () => services.tasks.delegate({
+        userId: context.userId,
+        sourceSessionId: context.sessionId,
+        sourceMessageId: context.sourceMessageId,
+        traceId: context.traceId,
+        timeZone: context.timeZone ?? "UTC",
+      }, input, policy));
+    },
+    async updateTask(context, taskId, input) {
+      const current = await services.tasks.find(context.userId, taskId);
+      if (!current) throw new Error("Task not found or not accessible");
+      const policy = services.resolveTaskAgent(current.agentId);
+      const task = await withRunAbort(context, () => services.tasks.update(context.userId, taskId, input, policy));
+      if (!task) throw new Error("Task could not be updated");
+      return task;
+    },
+    async getTask(context, taskId) {
+      const task = await withRunAbort(context, () => services.tasks.find(context.userId, taskId));
+      if (!task) throw new Error("Task not found or not accessible");
+      const runs = await withRunAbort(context, () => services.tasks.listRuns(context.userId, taskId));
+      return { task, runs };
+    },
+    async listTasks(context) {
+      return { data: await withRunAbort(context, () => services.tasks.list(context.userId)) };
+    },
+    async deliverTaskResult(context, input) {
+      const taskContext = context.task;
+      if (!taskContext || !context.sessionId || !context.workspace) throw new Error("当前 Agent 运行不是任务 Worker，不能交付任务结果。");
+      const task = await services.tasks.find(context.userId, taskContext.taskId);
+      const run = await services.tasks.findRun(context.userId, taskContext.taskId, taskContext.taskRunId);
+      if (!task || !run) throw new Error("任务或执行记录不存在，无法交付结果。");
+      if (run.status !== "running") throw new Error(`任务当前状态为 ${run.status}，不能交付结果。`);
+      if (run.workerSessionId !== context.sessionId) throw new Error("当前 Worker Session 与任务执行记录不匹配，不能交付结果。");
+      if (!services.taskResultPublisher) throw new Error("任务结果发布服务不可用。");
+      const published = await services.taskResultPublisher.publish(task, run, context.workspace, context.sessionId, input);
+      await services.tasks.completeRun({ run, resultMediaId: published.primaryMediaId, result: published.result });
+      return { mediaId: published.primaryMediaId, result: published.result };
     },
   };
 }

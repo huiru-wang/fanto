@@ -18,7 +18,7 @@ export function createDatabase(databaseUrl: string): Kysely<DB> {
         ssl: { rejectUnauthorized: false },
         max: 10,
         min: 1,
-        connectionTimeoutMillis: 5_000,
+        connectionTimeoutMillis: 15_000,
         idleTimeoutMillis: 300_000,
         keepAlive: true,
         keepAliveInitialDelayMillis: 30_000,

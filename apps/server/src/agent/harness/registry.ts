@@ -2,6 +2,11 @@ import type { Models } from "@earendil-works/pi-ai";
 import { readAgentDefinitions, type AgentDefinition } from "./definition.js";
 import type { SkillLoader } from "../skills/loader.js";
 
+export type TaskAgentCatalogEntry = {
+  id: string;
+  description: string;
+};
+
 export class AgentRegistry {
   private readonly definitions: ReadonlyMap<string, AgentDefinition>;
 
@@ -19,5 +24,11 @@ export class AgentRegistry {
 
   get(id?: string): AgentDefinition | undefined {
     return this.definitions.get(id ?? "main");
+  }
+
+  taskAgents(): readonly TaskAgentCatalogEntry[] {
+    return [...this.definitions.values()]
+      .filter(definition => definition.id !== "main" && definition.task?.enabled)
+      .map(definition => ({ id: definition.id, description: definition.description }));
   }
 }

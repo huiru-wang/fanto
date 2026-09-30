@@ -145,7 +145,7 @@ Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionI
 
 创建上传体：`{ mimeType, bytes }`。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
 
-`GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Access JWT。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到原始媒体的短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，`variant` 默认为 `original`，图片可请求 `thumbnail`（OSS 实时宽 600、q80、WebP），音频无论 variant 都返回 original；非法 variant 返回 `400 INVALID_INPUT`。读取签名有效期为五分钟，客户端不应持久化，thumbnail / original 应分键缓存，并在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`，用于需要稳定媒体 metadata 的服务端 / Agent 路径，不包含 signed URL。
+`GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Access JWT。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到原始媒体的短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，`variant` 默认为 `original`，图片可请求 `thumbnail`（OSS 实时宽 600、q80、WebP），音频无论 variant 都返回 original；非法 variant 返回 `400 INVALID_INPUT`。读取签名有效期为五分钟，客户端不应持久化，thumbnail / original 应分键缓存，并在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 对客户端上传的图片 / 音频返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`。Task Worker 生成的结果文件由 Server 内部直接上传，不经过 `/api/uploads`，其 `mediaType=file`，meta 额外返回 `bytes / filename`。所有 meta 都不包含 signed URL。
 
 ## 脉络与待确认提案
 
@@ -165,9 +165,54 @@ Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionI
 
 提案列表只支持 `pending_confirmation` 状态。确认使用事务创建或更新 Creation，并把来源 Record 关联迁移到该 Creation；若更新目标版本已变化，则返回 `VERSION_CONFLICT`。Creation 完整列表目前支持可选的类型筛选；尚未提供搜索、状态筛选或列表分页。
 
+## Agent Tasks
+
+Task 只能由 `main` Agent 的 `create_task` Tool 创建；当前没有客户端直接创建 Task 的 POST API。`main` 使用 `get_task` 和 `update_task` 管理既有 Task；Task 定义与 TaskRun 持久化在 PostgreSQL，所有查询和状态变更按 Access JWT `sub` 强制 user-scoped。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/tasks` | 当前用户 Task 列表 |
+| GET | `/api/tasks/:taskId` | Task 详情 |
+| GET | `/api/tasks/:taskId/runs` | TaskRun 列表 |
+| GET | `/api/tasks/:taskId/runs/:runId` | TaskRun 详情 |
+| POST | `/api/tasks/:taskId/pause` | 暂停后续 scheduled Run 生成 |
+| POST | `/api/tasks/:taskId/resume` | 恢复 scheduled Task |
+| DELETE | `/api/tasks/:taskId` | 取消 Task；不再创建后续 Run，已运行的 Run 由其 Worker 自行收尾 |
+
+`create_task` 使用 Goal 模型：`objective` 必填，另有可选 `context / constraints / successCriteria`；执行步骤由子 Agent 自主决定。已读取的来源资料必须通过可选 `sources.recordIds / sources.mediaIds` 传递真实 ID，不能只复制摘要。Task 查询响应也包含该来源列表。同一 Main Session 可创建多个 Task，系统不自动去重、替代或版本化。Task 创建时只写入 `nextRunAt`，包括 immediate Task 的创建时刻；Scheduler 每 5 分钟按 WorkerPool 可用容量扫描到期 Task，只有获得 Worker 与独立 Session 后才创建并启动 TaskRun。
+
+TaskRun 成功响应中的结果形态为：
+
+```json
+{
+  "runId": "...",
+  "taskId": "...",
+  "status": "completed",
+  "scheduledAt": "2026-09-29T10:00:00.000Z",
+  "startedAt": "...",
+  "finishedAt": "...",
+  "result": {
+    "summary": "...",
+    "artifacts": [
+      {
+        "filename": "result.html",
+        "role": "primary",
+        "mediaId": "...",
+        "mimeType": "text/html",
+        "bytes": 1024,
+        "checksum": "sha256:..."
+      }
+    ]
+  },
+  "error": null
+}
+```
+
+后台 Worker 必须先在自己的工作区写入主文件 `result.md` / `result.txt` / `result.html`，再调用 `deliver_task_result` 声明主文件和可选附属文件。该工具校验相对路径与文件内容、上传 OSS、注册 ready Media，最后完成 TaskRun；普通模型文本不能作为任务结果。成功交付会立即结束该 Worker 回合，后续文件写入不能改变已交付产物。每个 artifact 的 `mediaId` 复用现有 Media API 查看或下载。
+
 ## Agent Runtime
 
-Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 仍使用独立 SQLite，不与业务 PostgreSQL 共用。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference 和最近 10 条紧凑 Recent Memory，再填充 System Prompt；Recent Memory 通过 `listRecords(limit=10)` 读取，可命中 Record 首页缓存，不执行 Query Rewrite 或向量搜索，记录时间按请求时区展示。Record Tool、Preference Provider / Tool 与 `present_media` 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
+Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 仍使用独立 SQLite，不与业务 PostgreSQL 共用。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference、当前 Task 摘要和最近 10 条紧凑 Recent Memory，再填充 System Prompt；Recent Memory 通过 `listRecords(limit=10)` 读取，可命中 Record 首页缓存，不执行 Query Rewrite 或向量搜索，记录时间按请求时区展示。Record Tool、Preference Provider / Tool、`present_media` 与 Task Tool 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
 
 ```text
 Authorization: Bearer <ACCESS_TOKEN>
@@ -181,7 +226,7 @@ X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC
 | POST | `/api/agent/stream` | `{ agentId?, sessionId, message }` | `200`，SSE 事件流 |
 | GET | `/api/agent/sessions/:sessionId/history?cursor=&limit=` | 无请求体 | `200`，倒序历史页 |
 
-先创建 Session；`stream` 必须使用该 `sessionId`。`agentId` 可省略，省略时固定使用 `main`。Session 固定绑定 `userId` 和工作区；请求的 `agentId` 是本次执行目标，服务会在 Session 空闲时自动应用或切换到该 Agent。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<sessionId>`。
+先创建 Session；`stream` 必须使用该 `sessionId`。`agentId` 可省略，省略时固定使用 `main`。Session 固定绑定 `userId` 和工作区；请求的 `agentId` 是本次执行目标，服务会在 Session 空闲时自动应用或切换到该 Agent。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<userId>/<sessionId>`。TaskRun 也使用同样的两层用户隔离路径，并创建独立 Session。
 
 ```sh
 export ACCESS_TOKEN='替换为服务端 ACCESS_TOKEN'

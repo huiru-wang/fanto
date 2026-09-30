@@ -5,8 +5,17 @@ import { z } from "zod";
 import type { Models } from "@earendil-works/pi-ai";
 import { corePrompt } from "../prompts/core.js";
 import { operationalPrompt } from "../prompts/operational.js";
+import { taskWorkerPrompt } from "../prompts/task-worker.js";
 
-const tool = z.enum(["read", "write", "edit", "bash", "record_get", "record_list", "record_search", "present_media", "preference_manage"]);
+const tool = z.enum(["read", "write", "edit", "bash", "record_get", "record_list", "record_search", "present_media", "preference_manage", "create_task", "update_task", "get_task", "deliver_task_result"]);
+const taskConfig = z.discriminatedUnion("enabled", [
+  z.object({ enabled: z.literal(false) }).strict(),
+  z.object({
+    enabled: z.literal(true),
+    defaultTimeoutSeconds: z.number().int().positive(),
+    maxTimeoutSeconds: z.number().int().positive(),
+  }).strict(),
+]);
 const compaction = z.object({
   enabled: z.boolean(),
   reserveTokens: z.number().int().nonnegative(),
@@ -16,10 +25,11 @@ const partialDefinition = z.object({
   description: z.string().max(500).optional(),
   model_id: z.string().min(3).optional(),
   systemPrompt: z.string().min(1).optional(),
-  systemPromptModule: z.enum(["operational"]).optional(),
+  systemPromptModule: z.enum(["operational", "task-worker"]).optional(),
   corePromptModule: z.enum(["core"]).optional(),
   tools: z.array(tool).optional(),
   skills: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)).optional(),
+  task: taskConfig.optional(),
   compaction: compaction.partial().optional(),
 }).strict();
 const configuredAgent = partialDefinition.extend({
@@ -43,12 +53,13 @@ const definitionSchema = z.object({
   systemPrompt: z.string().min(1),
   tools: z.array(tool),
   skills: z.array(z.string()),
+  task: taskConfig.optional(),
   compaction,
 }).strict();
 
 export type AgentDefinition = z.infer<typeof definitionSchema> & { revision: string };
 
-const promptModules = { core: corePrompt, operational: operationalPrompt } as const;
+const promptModules = { core: corePrompt, operational: operationalPrompt, "task-worker": taskWorkerPrompt } as const;
 
 function assertPromptSource(
   value: { systemPrompt?: string; systemPromptModule?: string },
@@ -105,6 +116,15 @@ export function readAgentDefinitions(
     };
     const definition = definitionSchema.safeParse(merged);
     if (!definition.success) throw new Error(`Invalid agents.yaml agent "${id}": ${definition.error.message}`);
+    if (definition.data.task?.enabled && definition.data.task.defaultTimeoutSeconds > definition.data.task.maxTimeoutSeconds) {
+      throw new Error(`Agent "${id}" task default timeout exceeds max timeout`);
+    }
+    if (id === "main" && definition.data.task?.enabled) {
+      throw new Error('Agent "main" cannot be task-enabled');
+    }
+    if (definition.data.tools.includes("deliver_task_result") && !definition.data.task?.enabled) {
+      throw new Error(`Agent "${id}" enables deliver_task_result but is not task-enabled`);
+    }
     if (new Set(definition.data.tools).size !== definition.data.tools.length) throw new Error(`Agent "${id}" has duplicate tools`);
     if (new Set(definition.data.skills).size !== definition.data.skills.length) throw new Error(`Agent "${id}" has duplicate skills`);
     for (const skill of definition.data.skills) {

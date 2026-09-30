@@ -14,9 +14,11 @@ import { createPreferenceRoutes } from "../routes/preferences.js";
 import { RecordService } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
 import { CreationService, CreationProposalService } from "../domain/creations/index.js";
+import type { TaskService } from "../domain/tasks/index.js";
 import type { AgentRuntime } from "../agent/agent-runtime.js";
 import { createSessionRoutes } from "../routes/agent/sessions.js";
 import { createAgentRoutes } from "../routes/agent/stream.js";
+import { createTaskRoutes } from "../routes/tasks.js";
 import { bodyLimit } from "hono/body-limit";
 
 const redact = (value: unknown): unknown => {
@@ -50,6 +52,7 @@ export type ServerServices = {
   preferences?: PreferenceService;
   creations?: CreationService;
   creationProposals?: CreationProposalService;
+  tasks?: TaskService;
   agent?: AgentRuntime;
 };
 
@@ -99,6 +102,7 @@ export function createApp(services: ServerServices) {
   if (preferences) app.route("/api/preferences", createPreferenceRoutes(preferences));
   if (creationService) app.route("/api", createCreationReadRoutes(creationService));
   if (creationProposalService) app.route("/api", createCreationProposalRoutes(creationProposalService));
+  if (services.tasks) app.route("/api", createTaskRoutes(services.tasks));
   if (services.agent) {
     app.use("/api/agent/*", bodyLimit({ maxSize: 64 * 1024 }));
     app.route("/api/agent", createSessionRoutes(services.agent.registry, services.agent.sessions));

@@ -17,6 +17,8 @@ test("Agent business services forward only the Run user to domain services", asy
       update: async () => ({ kind: "ok", preference: {} }),
       delete: async () => ({ kind: "ok", preference: { preferenceId: "p1" } }),
     } as never,
+    tasks: {} as never,
+    resolveTaskAgent: () => undefined,
   });
   const context = { userId: "user-from-run" };
   await services.getRecord(context, "r1");

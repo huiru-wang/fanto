@@ -3,10 +3,12 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { PreferenceService } from "../domain/preferences/index.js";
 import type { RecordService } from "../domain/records/index.js";
 import type { MediaService } from "../domain/media/index.js";
+import type { TaskService } from "../domain/tasks/index.js";
 import { createAgentBusinessServices } from "./business-services.js";
 import { AgentRegistry } from "./harness/registry.js";
 import { AgentSessionManager } from "./harness/session-manager.js";
 import { SkillLoader } from "./skills/loader.js";
+import { TaskResultPublisher } from "../task-runtime/result-publisher.js";
 
 export type AgentRuntime = { registry: AgentRegistry; sessions: AgentSessionManager; close(): Promise<void> };
 
@@ -14,6 +16,7 @@ export function createAgentRuntime(input: {
   records: RecordService;
   media: MediaService;
   preferences: PreferenceService;
+  tasks: TaskService;
   sessionDatabasePath: string;
   workspaceRoot: string;
   definitionPath: string;
@@ -21,10 +24,27 @@ export function createAgentRuntime(input: {
   const models = builtinModels();
   const skills = new SkillLoader(resolve(dirname(input.definitionPath), "skills"));
   const registry = new AgentRegistry(input.definitionPath, models, skills);
+  const taskAgents = registry.taskAgents();
+  if (registry.get("main")?.tools.includes("create_task") && taskAgents.length === 0) {
+    throw new Error('Agent "main" enables create_task but no task-enabled sub-agent exists');
+  }
+  const fanto = createAgentBusinessServices({
+    ...input,
+    taskResultPublisher: new TaskResultPublisher(input.media),
+    resolveTaskAgent(agentId) {
+      const definition = registry.get(agentId);
+      if (!definition || definition.id === "main" || !definition.task?.enabled) return undefined;
+      return {
+        defaultTimeoutSeconds: definition.task.defaultTimeoutSeconds,
+        maxTimeoutSeconds: definition.task.maxTimeoutSeconds,
+      };
+    },
+  });
   const sessions = new AgentSessionManager(
     models,
-    createAgentBusinessServices(input),
+    fanto,
     skills,
+    taskAgents,
     input.sessionDatabasePath,
     input.workspaceRoot,
   );

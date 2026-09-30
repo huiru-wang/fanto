@@ -41,7 +41,8 @@ Agent Runtime 的测试已包含在 Server 测试中。修改 Session、Tool、T
 - HTTP 错误映射；
 - Record Tool 的 Run Context 用户身份、Service 调用、timeout / cancellation / SSE 边界；
 - `record_list / record_search / record_get` 的模型 DTO 投影与 Agent 权限配置；
-- `present_media` 的 mediaId-only schema、user-scoped metadata 校验、Tool Result 白名单投影，以及其他 Tool 参数 / 结果不进入 SSE 的边界。
+- `present_media` 的 mediaId-only schema、user-scoped metadata 校验、Tool Result 白名单投影，以及其他 Tool 参数 / 结果不进入 SSE 的边界；
+- `create_task / update_task / get_task` 的 Goal contract、受信 Run 用户/来源、5 分钟 Scheduler 容量领取、WorkerPool 不排队、RRULE 时区、`userId/sessionId` Workspace 与结果 Media 绑定；以及 `deliver_task_result` 的相对路径校验、多文件结果、失败可重试与 TaskRun 完成边界。
 
 Record Tool 变更除单元测试外，还应至少做一次 Server 内 Agent Runtime 真实 smoke；真实模型的 Tool Selection 不作为 CI 的确定性断言。
 

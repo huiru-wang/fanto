@@ -52,7 +52,7 @@ Google 配置位于 `Supporting/Info-Debug.plist` 与 `Supporting/Info-Release.p
 
 Debug 与 Release 均配置 iOS OAuth Client ID、Server OAuth Client ID 和对应 reversed URL scheme。Server OAuth Client ID 同时必须位于 Server 的 `GOOGLE_ALLOWED_CLIENT_IDS`；iOS 客户端不保存也不使用 Web Client Secret。
 
-Apple 登录使用系统 `AuthenticationServices`，并要求 Xcode target 启用 Sign in with Apple capability；Server 的 `APPLE_ALLOWED_CLIENT_IDS` 必须包含原生 iOS Bundle ID `com.robinverse.fanto`。iOS 将 Server intent nonce 传给 `ASAuthorizationAppleIDRequest`，只提交 Apple `identityToken` 给 Server；不使用 Services ID、网页回调 URI 或 Apple client secret。
+Apple 登录使用系统 `AuthenticationServices`，Xcode target 通过 `fanto/fanto.entitlements` 启用 Sign in with Apple capability；Server 的 `APPLE_ALLOWED_CLIENT_IDS` 必须包含原生 iOS Bundle ID `com.robinverse.fanto`。iOS 将 Server intent nonce 传给 `ASAuthorizationAppleIDRequest`，只提交 Apple `identityToken` 给 Server；不使用 Services ID、网页回调 URI 或 Apple client secret。用户取消系统授权时不展示错误；其余 Apple 授权失败会显示登录失败状态。
 
 认证成功后才创建业务根视图；认证失效时会先清空当前 `FantoStore` 的 Records / Creations / Proposals 运行态数据，再回到登录页。Agent Session 的 Keychain key 继续包含真实 `user_id + agent_id`，因此不同账号不会复用同一个长期会话。
 

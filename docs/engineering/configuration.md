@@ -25,6 +25,10 @@
 | `AGENT_WORKSPACE_ROOT` | Server 内 Agent workspace 根目录，默认 `data/workspaces` |
 | `AGENT_CONFIG_PATH` | Server 内 Agent YAML 路径，默认 `apps/server/agent.yaml` |
 | `DEEPSEEK_API_KEY` | 当前 Server Agent YAML 使用的 DeepSeek 模型凭据；缺失时 Server 启动失败 |
+| `TASK_SCHEDULER_INTERVAL_MS` | Task Scheduler Tick 周期，默认 `300000`（5 分钟） |
+| `TASK_WORKER_CONCURRENCY` | 同时执行的 TaskWorker 数，默认 `1` |
+| `TASK_TIMEOUT_MIN_SECONDS` | Task 最小允许超时，默认 `30` |
+| `TASK_TIMEOUT_MAX_SECONDS` | Task 全局最大允许超时，默认 `3600` |
 | `OSS_REGION` | OSS Region |
 | `OSS_ENDPOINT` | 可选公开 Endpoint；拒绝 `-internal` 地址 |
 | `OSS_BUCKET` | OSS Bucket |
@@ -37,7 +41,7 @@
 
 当前 `fanto` OSS Bucket 使用无地域属性（中国内地），默认 Region 为 `oss-rg-china-mainland`，公网 Endpoint 为 `https://oss-rg-china-mainland.aliyuncs.com`。生产环境应显式配置 `OSS_ENDPOINT`，避免误用地域型 Endpoint。
 
-Agent 的模型、Agent、Tool 与 compaction 配置位于 `apps/server/agent.yaml`；`corePromptModule` 和 `systemPromptModule` 引用 `apps/server/src/agent/prompts/` 中受限的 TypeScript Prompt 模块。配置和 Prompt 都在 Server 启动时加载，内容参与 Agent revision；修改后需要重启 Server。
+Agent 的模型、Agent、Tool、Task capability 与 compaction 配置位于 `apps/server/agent.yaml`；`task.enabled=true` 的子 Agent 还定义 `defaultTimeoutSeconds / maxTimeoutSeconds`，最终 Task timeout 同时受 Server 全局最小/最大值约束。`corePromptModule` 和 `systemPromptModule` 引用 `apps/server/src/agent/prompts/` 中受限的 TypeScript Prompt 模块。配置和 Prompt 都在 Server 启动时加载，内容参与 Agent revision；修改后需要重启 Server。
 
 ## H5 线上测试认证
 

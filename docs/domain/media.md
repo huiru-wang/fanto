@@ -30,6 +30,8 @@ sequenceDiagram
 
 Server 根据 MIME 决定 media type 和对象后缀。complete 时会验证 OSS 实际对象大小和 MIME；不一致返回 `UPLOAD_MISMATCH`。
 
+用户主动上传的媒体对象键为 `users/<userId>/media/<YYYY-MM>/<mediaId>.<extension>`。后台 Task 的交付文件由 `deliver_task_result` 上传，使用独立对象键 `users/<userId>/task/<YYYY-MM>/<workerSessionId>/<filename>`；Task 产物仍作为 ready Media 通过现有媒体读取接口访问。
+
 ready Media 才能关联到 Record。关联后 `ext_data.recordId` 记录归属，避免同一媒体被不同 Record 重复使用。
 
 ## 图片理解

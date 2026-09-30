@@ -8,7 +8,8 @@
 apps/server/src/
 ├── bootstrap/       # 启动、配置、Hono 装配、迁移命令
 ├── routes/          # HTTP 输入、用户边界、响应映射
-├── domain/          # records / media / memory / preferences / creations
+├── domain/          # records / media / memory / preferences / creations / tasks
+├── task-runtime/    # 5 分钟 Scheduler、WorkerPool、TaskWorker、结果发布
 ├── infrastructure/ # PostgreSQL、TTL cache、Memory adapter、外部 client、queue、logging、time
 ├── listeners/       # 进程内事件处理
 ├── migrations/      # 当前空库 schema 基线
@@ -40,6 +41,7 @@ flowchart LR
 | `/api/preferences` | User Preference |
 | `/api/creation-kinds`、`/api/creations` | Creation |
 | `/api/creation-proposals` | Proposal |
+| `/api/tasks` | Agent Task |
 
 具体契约见 [HTTP API](../api/http-api.md)。
 
@@ -51,6 +53,12 @@ flowchart LR
 - Record / Preference 的成功写入会同步删除对应用户缓存，Record 后置处理的状态与内容写入也会删除 Record 首页缓存。
 
 这些缓存是单进程缓存；未来 Business Server 多实例部署时，如需跨实例即时失效，应切换到共享缓存或增加失效广播。
+
+## Agent Task 调度
+
+Task 定义和 TaskRun 都持久化在 PostgreSQL。Task 创建时仅设置 `next_run_at`；immediate Task 的值为创建时刻。`TaskScheduler` 每 5 分钟执行一次 single-flight Tick，只扫描 `status=active AND next_run_at <= now` 的 Task，并以 `TaskWorkerPool.available` 限制数量。Worker 先创建独立 Session，随后以事务原子写入已绑定 Session 的 `running` TaskRun 并推进该 Task 的 `next_run_at`；WorkerPool 不维护内存或数据库等待队列，没有容量时 Task 保持到期并等待下一次 Tick。
+
+每个 TaskRun 使用独立 Agent Session 与 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>` Workspace。Task 可携带结构化的 Record / Media 来源 ID，Worker 在执行 Goal 时通过 Record Tool 回查其中的真实资料。TaskWorker 根据 Task `agent_id` 加载 `agent.yaml` 中 `task.enabled=true` 的子 Agent，并通过现有 `runAgent()` 执行 Goal。Worker 必须调用 `deliver_task_result` 交付工作区内的相对路径文件；该工具上传 OSS、注册 `media_type=file`，并把摘要、主文件和附属文件 metadata 写入 `task_runs.result`。成功交付后 Harness 终止该回合，避免工作区随后变更与已上传产物分叉。产物对象键为 `users/<userId>/task/<YYYY-MM>/<workerSessionId>/<filename>`。
 
 ## Record 后置处理
 
@@ -88,6 +96,6 @@ Record 已成功变成 `processed` 后，Memory / Embedding 失败只记录错�
 
 启动时创建 PostgreSQL Pool，执行 migration 后先用 `SELECT 1` 预热连接，再开放 HTTP 服务。Pool 开启 TCP keepalive，当前 `max=10`、`min=1`、连接超时 5 秒、空闲超时 5 分钟。
 
-当前 migration 策略是：**只维护一个面向空数据库的当前 schema 基线**。它不是历史数据库升级系统。已有旧 schema 文件不能假设可以直接原地升级。
+`create_current_schema.ts` 仍是面向空数据库的当前 schema 基线。对已经执行过基线的现有数据库，必须新增按文件名顺序执行的前向 migration；当前 Task System 使用 `z_task_system_schema.ts` 幂等创建 `tasks / task_runs`。不要修改已经执行过的 migration 来假装完成线上升级。
 
 向量索引存储在同一业务数据库，但属于派生数据；`vector_items.embedding` 是 768 维 pgvector，查询从 SQL 层按 `user_id` 限定当前用户。
