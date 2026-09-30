@@ -84,10 +84,16 @@ async function writeStreamEvent(
     case "turn_start":
       await stream.writeSSE({ event: "turn_start", data: "{}" });
       return;
+    case "message_start":
+      await stream.writeSSE({ event: "message_start", data: "{}" });
+      return;
+    case "message_end":
+      await stream.writeSSE({ event: "message_end", data: "{}" });
+      return;
     case "tool_start":
       await stream.writeSSE({
         event: "tool_start",
-        data: JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName }),
+        data: JSON.stringify({ toolCallId: event.toolCallId, toolName: event.toolName, presentation: event.presentation }),
       });
       return;
     case "tool_end":
@@ -97,6 +103,7 @@ async function writeStreamEvent(
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           status: event.status,
+          presentation: event.presentation,
           ...(event.result ? { result: event.result } : {}),
         }),
       });

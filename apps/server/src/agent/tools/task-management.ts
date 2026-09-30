@@ -1,9 +1,10 @@
 import { Type } from "typebox";
-import type { AgentHarnessTool, Context, ExecutionToolContext } from "@earendil-works/pi-agent-core";
+import type { Context } from "@earendil-works/pi-agent-core";
 import type { AgentBusinessServices } from "../business-services.js";
 import { createRunContext } from "../context/index.js";
 import type { TaskAgentCatalogEntry } from "../harness/registry.js";
 import type { DelegateTaskInput, DelegateTaskResult, TaskOutput, UpdateTaskInput } from "../../domain/tasks/index.js";
+import type { FantoTool } from "./types.js";
 
 type TaskClient = Pick<AgentBusinessServices, "createTask" | "updateTask" | "getTask">;
 
@@ -208,11 +209,12 @@ function result<T>(details: T) {
 export function createCreateTaskTool(
   client: TaskClient,
   taskAgents: readonly TaskAgentCatalogEntry[],
-): AgentHarnessTool<ExecutionToolContext, ReturnType<typeof createTaskSchema>, CreateTaskPresentation> {
+): FantoTool<ReturnType<typeof createTaskSchema>, CreateTaskPresentation> {
   taskAgent(taskAgents);
   return {
     name: "create_task",
     label: "创建后台任务",
+    presentation: { visible: false },
     description: [
       "把一个已经理解清楚、适合后台独立完成或按时间执行的用户目标交给 Fanto 后台。",
       "goal 是用户需求说明，不是 Worker 技术指令：objective 写最终结果；context 保留必要的原始诉求和背景；constraints 写用户真实边界；successCriteria 写用户视角的验收标准。",
@@ -246,10 +248,16 @@ const getSchema = Type.Object({ taskId: Type.String({ minLength: 1 }) }, { addit
 
 export function createUpdateTaskTool(
   client: TaskClient,
-): AgentHarnessTool<ExecutionToolContext, typeof updateSchema, unknown> {
+): FantoTool<typeof updateSchema, unknown> {
   return {
     name: "update_task",
     label: "更新后台任务",
+    presentation: {
+      visible: true,
+      start: { displayContent: "🗓️ 正在调整任务...", animation: "working" },
+      succeeded: { displayContent: "✓ 任务已调整" },
+      failed: { displayContent: "任务没有调整成功" },
+    },
     description: "更新已有任务的用户目标、标题、调度、交付格式、相关记录或状态。taskId 来自此前创建任务或 get_task 的结果。",
     parameters: updateSchema,
     executionMode: "sequential",
@@ -270,10 +278,16 @@ export function createUpdateTaskTool(
   };
 }
 
-export function createGetTaskTool(client: TaskClient): AgentHarnessTool<ExecutionToolContext, typeof getSchema, unknown> {
+export function createGetTaskTool(client: TaskClient): FantoTool<typeof getSchema, unknown> {
   return {
     name: "get_task",
     label: "查看后台任务",
+    presentation: {
+      visible: true,
+      start: { displayContent: "正在查看任务...", animation: "working" },
+      succeeded: { displayContent: "✓ 已查看任务" },
+      failed: { displayContent: "这次没能读取任务" },
+    },
     description: "读取一个已存在的后台任务及其执行记录。taskId 必须来自当前任务上下文或此前 create_task 的真实结果。",
     parameters: getSchema,
     executionMode: "parallel",

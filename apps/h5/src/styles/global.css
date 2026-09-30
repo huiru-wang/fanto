@@ -748,6 +748,12 @@ input:focus-visible {
   box-shadow: inset 0 0 0 1px rgba(35,34,31,.055);
 }
 
+.message.user.clarification .message-body {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .message.assistant .message-body {
   flex: 1;
   padding-top: 3px;
@@ -2809,17 +2815,31 @@ input:focus-visible {
 
 .user-input-card {
   width: min(440px, 100%);
-  padding: 16px;
-  border: 1px solid var(--line-strong);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 10px 30px rgba(42, 39, 31, 0.04);
+  overflow: hidden;
+  padding: 18px;
+  border: 1px solid rgba(35, 34, 31, .11);
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .96), rgba(249, 248, 244, .88));
+  box-shadow: 0 14px 34px rgba(42, 39, 31, .06);
+}
+
+.user-input-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 8px;
+  color: #777268;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .025em;
 }
 
 .user-input-heading strong {
   display: block;
-  font-size: 14px;
-  font-weight: 650;
+  color: #292824;
+  font-size: 16px;
+  font-weight: 680;
+  letter-spacing: -.015em;
 }
 
 .user-input-heading p {
@@ -2831,31 +2851,45 @@ input:focus-visible {
 
 .user-input-questions {
   display: grid;
-  gap: 16px;
-  margin-top: 15px;
+  gap: 12px;
+  margin-top: 18px;
 }
 
 .user-input-question {
   display: grid;
   gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 13px;
+  border: 1px solid rgba(35, 34, 31, .075);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .54);
 }
 
-.user-input-question > label {
+.user-input-question > legend {
+  width: 100%;
+  padding: 0;
   font-size: 13px;
   line-height: 1.5;
-  font-weight: 580;
+  font-weight: 630;
 }
 
 .user-input-question input,
 .user-input-question textarea {
   width: 100%;
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
+  border: 1px solid rgba(35, 34, 31, .13);
+  border-radius: 10px;
   padding: 10px 11px;
   color: var(--text);
-  background: rgba(255, 255, 255, 0.76);
+  background: rgba(255, 255, 255, .9);
   outline: 0;
   resize: vertical;
+}
+
+.user-input-question input:focus,
+.user-input-question textarea:focus {
+  border-color: rgba(39, 39, 35, .34);
+  box-shadow: 0 0 0 3px rgba(39, 39, 35, .07);
 }
 
 .user-input-options {
@@ -2865,34 +2899,65 @@ input:focus-visible {
 }
 
 .user-input-options button {
-  min-height: 34px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  min-height: 36px;
+  border: 1px solid rgba(35, 34, 31, .12);
+  border-radius: 10px;
   padding: 0 12px;
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.56);
+  background: rgba(255, 255, 255, .76);
   cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.user-input-options button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: rgba(35, 34, 31, .25);
+  transform: translateY(-1px);
 }
 
 .user-input-options button.selected {
-  color: var(--text);
-  border-color: rgba(39, 39, 35, 0.28);
-  background: var(--accent-soft);
+  color: #2b2a26;
+  border-color: rgba(39, 39, 35, .38);
+  background: #e9e6dc;
+  box-shadow: inset 0 0 0 1px rgba(39, 39, 35, .04);
+}
+
+.user-input-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 13px;
+  border-top: 1px solid rgba(35, 34, 31, .075);
+}
+
+.user-input-footer > span {
+  color: var(--muted-2);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .user-input-submit {
-  min-height: 36px;
+  min-height: 38px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  margin-top: 16px;
   border: 0;
-  border-radius: 12px;
-  padding: 0 14px;
+  border-radius: 11px;
+  padding: 0 15px;
   color: #fff;
   background: var(--accent);
+  box-shadow: 0 5px 12px rgba(42, 40, 35, .15);
   cursor: pointer;
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.user-input-submit:hover:not(:disabled) {
+  background: #171715;
+  box-shadow: 0 7px 16px rgba(42, 40, 35, .2);
+  transform: translateY(-1px);
 }
 
 .user-input-submit:disabled,
@@ -2906,6 +2971,89 @@ input:focus-visible {
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
+}
+
+.user-clarification-card {
+  width: min(440px, 100%);
+  padding: 14px;
+  border: 1px solid rgba(81, 96, 81, .18);
+  border-radius: 18px 18px 5px 18px;
+  background: linear-gradient(145deg, rgba(245, 248, 242, .96), rgba(236, 241, 233, .82));
+  box-shadow: 0 10px 26px rgba(61, 76, 59, .055);
+}
+
+.user-clarification-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.user-clarification-icon {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  color: #556852;
+  background: rgba(92, 115, 95, .12);
+}
+
+.user-clarification-title {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.user-clarification-title small {
+  color: #778274;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .045em;
+}
+
+.user-clarification-title strong {
+  color: #303a2e;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.user-clarification-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  color: #647260;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.user-clarification-answers {
+  display: grid;
+  gap: 9px;
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(81, 96, 81, .12);
+}
+
+.user-clarification-answer {
+  display: grid;
+  gap: 3px;
+}
+
+.user-clarification-answer > span {
+  color: #778274;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.user-clarification-answer p {
+  margin: 0;
+  color: #303a2e;
+  font-size: 13px;
+  font-weight: 560;
+  line-height: 1.58;
+  white-space: pre-wrap;
 }
 
 .user-input-card.resolved > div {
@@ -3007,4 +3155,34 @@ input:focus-visible {
   .simple-task-detail {
     width: 100%;
   }
+}
+
+/* Ordered assistant response blocks */
+.message-block-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.message.user .message-block-list {
+  gap: 0;
+}
+
+.message-text-block {
+  min-width: 0;
+}
+
+.tool-activity-row {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #8f8b82;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.tool-activity-row .thinking-dots {
+  flex: 0 0 auto;
 }

@@ -6,6 +6,8 @@ import type { Models } from "@earendil-works/pi-ai";
 import { createNodeSqliteFactory, SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlite-node";
 import type { AgentDefinition } from "./definition.js";
 import { buildRuntime, type HarnessRuntime } from "./build-runtime.js";
+import { createTools } from "../tools/index.js";
+import type { FantoTool } from "../tools/types.js";
 import type { AgentBusinessServices } from "../business-services.js";
 import type { SkillLoader } from "../skills/loader.js";
 import type { TaskAgentCatalogEntry } from "./registry.js";
@@ -126,6 +128,21 @@ export class AgentSessionManager {
     } finally {
       await close();
     }
+  }
+
+
+  toolsForHistory(definition: AgentDefinition, id: string, userId: string): FantoTool[] {
+    const cached = this.sessions.get(id);
+    if (cached) {
+      this.assertOwner(cached, userId);
+      if (cached.agentId === definition.id && cached.revision === definition.revision) return cached.runtime.tools;
+    }
+    return createTools(
+      definition.tools,
+      createWorkspace(this.workspaceRoot, userId, id),
+      this.fanto,
+      this.taskAgents,
+    );
   }
 
   async release(id: string): Promise<void> {

@@ -1,8 +1,9 @@
 import { Type } from "typebox";
-import type { AgentHarnessTool, Context, ExecutionToolContext } from "@earendil-works/pi-agent-core";
+import type { Context } from "@earendil-works/pi-agent-core";
 import type { AgentBusinessServices } from "../business-services.js";
 import { createRunContext } from "../context/index.js";
 import type { WebSearchResult } from "../web/deepseek-web-search.js";
+import type { FantoTool } from "./types.js";
 
 const schema = Type.Object({
   query: Type.String({ minLength: 1, maxLength: 500, description: "需要从公开网页查证或补充的具体问题。" }),
@@ -15,10 +16,16 @@ function requestContext(context: Context) {
 
 export function createWebSearchTool(
   client: Pick<AgentBusinessServices, "searchWeb">,
-): AgentHarnessTool<ExecutionToolContext, typeof schema, WebSearchResult> {
+): FantoTool<typeof schema, WebSearchResult> {
   return {
     name: "web_search",
     label: "搜索公开资料",
+    presentation: {
+      visible: true,
+      start: { displayContent: "🔎 正在查找相关信息...", animation: "searching" },
+      succeeded: { displayContent: "✨ 找到了相关信息" },
+      failed: { displayContent: "这次没能找到相关信息" },
+    },
     description: "当任务缺少会影响结果的公开、当前或可查证信息时搜索网页。用户自己的经历和素材优先使用 Record Tools；稳定常识不需要搜索。搜索结果包含来源 URL，不得编造来源。",
     parameters: schema,
     executionMode: "parallel",

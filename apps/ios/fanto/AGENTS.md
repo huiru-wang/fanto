@@ -19,5 +19,6 @@
 - 周历与月历共用同一日期选择状态，不建立两套互相漂移的 selection。
 - Creation / Proposal 页面只展示服务端真实返回的数据。
 - 音频 Record 当前主要展示播放动作与时长，不在客户端自行生成 AI 摘要。
+- Fanto 对话须按 Server 的 SSE `presentation` 渲染可见进度；`create_task` 与 `collect_user_input` 的结构化结果分别渲染为任务卡和表单，不展示内部工具参数、结果或 interaction 标记。任务详情使用现有受保护 Task / TaskRun 接口按需读取，不新增独立任务管理页。
 
 修改网络契约前先核对 `../../../docs/api/http-api.md`。

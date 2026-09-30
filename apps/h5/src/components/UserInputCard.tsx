@@ -1,4 +1,4 @@
-import { Check, Send } from "lucide-react";
+import { Check, CircleHelp, Send } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { PresentedUserInputRequest, UserInputQuestion } from "../api/agent";
 
@@ -43,16 +43,22 @@ export function UserInputCard({
     );
   }
 
+  const submit = () => {
+    const text = request.questions.map(question => `${question.label}：${answerText(question, answers[question.id]!, others[question.id])}`).join("\n");
+    onSubmit(text);
+  };
+
   return (
-    <div className="user-input-card">
+    <form className="user-input-card" onSubmit={event => { event.preventDefault(); if (ready && !disabled) submit(); }}>
       <div className="user-input-heading">
+        <span className="user-input-kicker"><CircleHelp size={14} />需要你的确认</span>
         <strong>{request.title}</strong>
         {request.description && <p>{request.description}</p>}
       </div>
       <div className="user-input-questions">
         {request.questions.map(question => (
-          <div className="user-input-question" key={question.id}>
-            <label>{question.label}</label>
+          <fieldset className="user-input-question" key={question.id}>
+            <legend>{question.label}</legend>
             {question.type === "text" ? (
               question.multiline ? (
                 <textarea
@@ -80,6 +86,7 @@ export function UserInputCard({
                       <button
                         type="button"
                         className={selected ? "selected" : ""}
+                        aria-pressed={selected}
                         disabled={disabled}
                         key={option.value}
                         onClick={() => {
@@ -100,6 +107,7 @@ export function UserInputCard({
                     <button
                       type="button"
                       className={(question.type === "single_select" ? answers[question.id] === OTHER : Array.isArray(answers[question.id]) && (answers[question.id] as string[]).includes(OTHER)) ? "selected" : ""}
+                      aria-pressed={question.type === "single_select" ? answers[question.id] === OTHER : Array.isArray(answers[question.id]) && (answers[question.id] as string[]).includes(OTHER)}
                       disabled={disabled}
                       onClick={() => {
                         if (question.type === "single_select") setAnswers(current => ({ ...current, [question.id]: OTHER }));
@@ -123,20 +131,15 @@ export function UserInputCard({
                 )}
               </>
             )}
-          </div>
+          </fieldset>
         ))}
       </div>
-      <button
-        type="button"
-        className="user-input-submit"
-        disabled={!ready || disabled}
-        onClick={() => {
-          const text = request.questions.map(question => `${question.label}：${answerText(question, answers[question.id]!, others[question.id])}`).join("\n");
-          onSubmit(text);
-        }}
-      >
-        <Send size={15} />提交
-      </button>
-    </div>
+      <div className="user-input-footer">
+        <span>提交后将继续当前对话</span>
+        <button type="submit" className="user-input-submit" disabled={!ready || disabled}>
+          <Send size={15} />提交回答
+        </button>
+      </div>
+    </form>
   );
 }

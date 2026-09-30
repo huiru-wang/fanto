@@ -4,19 +4,16 @@ import {
   createAgentSession,
   encodeUserInputResponse,
   fetchAgentHistory,
-  mergePresentedMedia,
-  mergePresentedTasks,
-  mergeUserInputRequests,
   streamAgentMessage,
   type AgentHistoryMessage,
-  type PresentedMedia,
-  type PresentedTask,
+  type AgentMessageBlock,
   type PresentedUserInputRequest,
 } from "../api/agent";
 import { ApiError } from "../api/http";
 import { ChatMarkdown } from "../components/ChatMarkdown";
 import { MediaPresentation } from "../components/MediaPresentation";
 import { TaskCard } from "../components/TaskCard";
+import { UserClarificationCard } from "../components/UserClarificationCard";
 import { UserInputCard } from "../components/UserInputCard";
 import { AGENT_SESSION_KEY } from "../config";
 
@@ -34,38 +31,29 @@ const ChatMessageItem = memo(function ChatMessageItem({
   responding: boolean;
   onSubmitInput: (request: PresentedUserInputRequest, visibleText: string) => void;
 }) {
-  const hasContent = Boolean(message.text) || message.media.length > 0 || message.tasks.length > 0 || message.inputRequests.length > 0;
+  const hasContent = message.blocks.length > 0;
+  const isClarification = message.role === "user" && message.blocks.some(block => block.type === "user_input_response");
 
   return (
-    <article className={`message ${message.role}`}>
+    <article className={`message ${message.role}${isClarification ? " clarification" : ""}`}>
       {message.role === "assistant" && <span className="message-avatar"><Sparkles size={14} /></span>}
       <div className="message-body">
-        {message.text ? (
-          message.role === "assistant"
-            ? <ChatMarkdown text={message.text} />
-            : <p>{message.text}</p>
-        ) : !hasContent ? (
-          <div className="thinking-row">
-            <span className="thinking-dots"><i /><i /><i /></span>
-            <span>正在回想…</span>
-          </div>
-        ) : null}
-        {message.role === "assistant" && message.media.length > 0 && <MediaPresentation items={message.media} />}
-        {message.role === "assistant" && message.tasks.length > 0 && (
-          <div className="chat-task-list">
-            {message.tasks.map(task => <TaskCard key={task.taskId} task={task} />)}
-          </div>
-        )}
-        {message.role === "assistant" && message.inputRequests.length > 0 && (
-          <div className="chat-input-request-list">
-            {message.inputRequests.map(request => (
-              <UserInputCard
-                key={request.interactionId}
-                request={request}
-                disabled={responding}
-                onSubmit={visibleText => onSubmitInput(request, visibleText)}
+        {hasContent ? (
+          <div className="message-block-list">
+            {message.blocks.map((block, index) => (
+              <MessageBlock
+                block={block}
+                role={message.role}
+                responding={responding}
+                onSubmitInput={onSubmitInput}
+                key={block.type === "activity" ? `activity-${block.toolCallId}` : `${block.type}-${index}`}
               />
             ))}
+          </div>
+        ) : (
+          <div className="thinking-row">
+            <span className="thinking-dots"><i /><i /><i /></span>
+            <span>正在想…</span>
           </div>
         )}
         {message.state === "stopped" && <span className="message-state">已停止生成</span>}
@@ -74,6 +62,44 @@ const ChatMessageItem = memo(function ChatMessageItem({
     </article>
   );
 });
+
+function MessageBlock({
+  block,
+  role,
+  responding,
+  onSubmitInput,
+}: {
+  block: AgentMessageBlock;
+  role: "user" | "assistant";
+  responding: boolean;
+  onSubmitInput: (request: PresentedUserInputRequest, visibleText: string) => void;
+}) {
+  if (block.type === "text") {
+    return role === "assistant"
+      ? <div className="message-text-block"><ChatMarkdown text={block.content} /></div>
+      : <p className="message-text-block">{block.content}</p>;
+  }
+  if (block.type === "user_input_response") return <UserClarificationCard content={block.content} />;
+  if (block.type === "activity") {
+    return (
+      <div className={`tool-activity-row ${block.presentation.animation ? "is-running" : ""}`}>
+        {block.presentation.animation && <span className="thinking-dots"><i /><i /><i /></span>}
+        <span>{block.presentation.displayContent}</span>
+      </div>
+    );
+  }
+  if (block.type === "media") return <MediaPresentation items={block.items} />;
+  if (block.type === "task") return <div className="chat-task-list"><TaskCard task={block.task} /></div>;
+  return (
+    <div className="chat-input-request-list">
+      <UserInputCard
+        request={block.request}
+        disabled={responding}
+        onSubmit={visibleText => onSubmitInput(block.request, visibleText)}
+      />
+    </div>
+  );
+}
 
 export function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -152,14 +178,19 @@ export function ChatPage() {
     }
   };
 
-  const sendMessage = async (wireText: string, visibleText: string) => {
+  const sendMessage = async (wireText: string, visibleText: string, clarificationInteractionId?: string) => {
     if (!wireText.trim() || !sessionId || responding) return;
     const userMessage: ChatMessage = {
-      id: localId(), role: "user", text: visibleText, media: [], tasks: [], inputRequests: [], state: "complete",
+      id: localId(),
+      role: "user",
+      blocks: [clarificationInteractionId
+        ? { type: "user_input_response", interactionId: clarificationInteractionId, content: visibleText }
+        : { type: "text", content: visibleText }],
+      state: "complete",
     };
     const assistantId = localId();
     const assistantMessage: ChatMessage = {
-      id: assistantId, role: "assistant", text: "", media: [], tasks: [], inputRequests: [], state: "processing",
+      id: assistantId, role: "assistant", blocks: [], state: "processing",
     };
 
     setError(null);
@@ -169,9 +200,15 @@ export function ChatPage() {
 
     const controller = new AbortController();
     abortRef.current = controller;
-    let pendingMedia: PresentedMedia[] = [];
-    let pendingTasks: PresentedTask[] = [];
-    let pendingInputs: PresentedUserInputRequest[] = [];
+    let textBlockOpen = false;
+
+    const updateAssistant = (update: (message: ChatMessage) => ChatMessage) => {
+      setMessages(current => current.map(message => message.id === assistantId ? update(message) : message));
+    };
+
+    const appendBlock = (block: AgentMessageBlock) => {
+      updateAssistant(message => ({ ...message, blocks: [...message.blocks, block], state: "streaming" }));
+    };
 
     try {
       await streamAgentMessage(
@@ -179,37 +216,64 @@ export function ChatPage() {
         wireText,
         event => {
           if (event.type === "processing") {
-            setMessages(current => current.map(message =>
-              message.id === assistantId && !message.text && message.state !== "processing"
-                ? { ...message, state: "processing" }
-                : message,
-            ));
-          } else if (event.type === "presentation") {
-            pendingMedia = mergePresentedMedia(pendingMedia, event.items);
-          } else if (event.type === "task_created") {
-            pendingTasks = mergePresentedTasks(pendingTasks, [event.task]);
-          } else if (event.type === "user_input_requested") {
-            pendingInputs = mergeUserInputRequests(pendingInputs, [event.request]);
-            setMessages(current => current.map(message =>
-              message.id === assistantId ? { ...message, inputRequests: pendingInputs, state: "streaming" } : message,
-            ));
-            scrollToEnd();
+            updateAssistant(message => message.state === "processing" ? message : { ...message, state: "processing" });
+          } else if (event.type === "message_start") {
+            textBlockOpen = false;
+          } else if (event.type === "message_end") {
+            textBlockOpen = false;
           } else if (event.type === "delta") {
             const follow = isNearEnd();
-            setMessages(current => current.map(message =>
-              message.id === assistantId ? { ...message, text: message.text + event.text, state: "streaming" } : message,
-            ));
+            const startsNewBlock = !textBlockOpen;
+            textBlockOpen = true;
+            updateAssistant(message => {
+              if (startsNewBlock) {
+                return { ...message, blocks: [...message.blocks, { type: "text", content: event.text }], state: "streaming" };
+              }
+              const blocks = [...message.blocks];
+              let index = blocks.length - 1;
+              while (index >= 0 && blocks[index]?.type !== "text") index -= 1;
+              const current = index >= 0 ? blocks[index] : undefined;
+              if (current?.type === "text") blocks[index] = { ...current, content: current.content + event.text };
+              else blocks.push({ type: "text", content: event.text });
+              return { ...message, blocks, state: "streaming" };
+            });
             if (follow) scrollToEnd();
+          } else if (event.type === "tool_start") {
+            textBlockOpen = false;
+            if (event.presentation.visible) {
+              appendBlock({ type: "activity", toolCallId: event.toolCallId, status: "running", presentation: event.presentation });
+              scrollToEnd();
+            }
+          } else if (event.type === "tool_end") {
+            textBlockOpen = false;
+            updateAssistant(message => {
+              const blocks = [...message.blocks];
+              const index = blocks.findIndex(block => block.type === "activity" && block.toolCallId === event.toolCallId);
+              if (!event.presentation.visible) {
+                if (index >= 0) blocks.splice(index, 1);
+              } else if (index >= 0) {
+                blocks[index] = { type: "activity", toolCallId: event.toolCallId, status: event.status, presentation: event.presentation };
+              } else {
+                blocks.push({ type: "activity", toolCallId: event.toolCallId, status: event.status, presentation: event.presentation });
+              }
+              return { ...message, blocks, state: "streaming" };
+            });
+            scrollToEnd();
+          } else if (event.type === "media") {
+            appendBlock({ type: "media", items: event.items });
+            scrollToEnd();
+          } else if (event.type === "task") {
+            appendBlock({ type: "task", task: event.task });
+            scrollToEnd();
+          } else if (event.type === "user_input") {
+            appendBlock({ type: "user_input", request: event.request });
+            scrollToEnd();
           } else if (event.type === "done") {
             const follow = isNearEnd();
-            setMessages(current => current.map(message =>
-              message.id === assistantId
-                ? { ...message, media: pendingMedia, tasks: pendingTasks, inputRequests: pendingInputs, state: "complete" }
-                : message,
-            ));
+            updateAssistant(message => ({ ...message, state: "complete" }));
             if (follow) scrollToEnd();
           } else if (event.type === "error") {
-            setMessages(current => current.map(message => message.id === assistantId ? { ...message, state: "failed" } : message));
+            updateAssistant(message => ({ ...message, state: "failed" }));
             setError(event.message);
           }
         },
@@ -217,9 +281,9 @@ export function ChatPage() {
       );
     } catch (cause) {
       if (controller.signal.aborted) {
-        setMessages(current => current.map(message => message.id === assistantId ? { ...message, state: "stopped" } : message));
+        updateAssistant(message => ({ ...message, state: "stopped" }));
       } else {
-        setMessages(current => current.map(message => message.id === assistantId ? { ...message, state: "failed" } : message));
+        updateAssistant(message => ({ ...message, state: "failed" }));
         setError(cause instanceof Error ? cause.message : "这次回复没有完成");
       }
     } finally {
@@ -240,9 +304,11 @@ export function ChatPage() {
     if (responding) return;
     setMessages(current => current.map(message => ({
       ...message,
-      inputRequests: message.inputRequests.map(item => item.interactionId === request.interactionId ? { ...item, resolved: true } : item),
+      blocks: message.blocks.map(block => block.type === "user_input" && block.request.interactionId === request.interactionId
+        ? { ...block, request: { ...block.request, resolved: true } }
+        : block),
     })));
-    void sendMessage(encodeUserInputResponse(request.interactionId, visibleText), visibleText);
+    void sendMessage(encodeUserInputResponse(request.interactionId, visibleText), visibleText, request.interactionId);
   };
 
   const stop = () => { abortRef.current?.abort(); };

@@ -23,7 +23,7 @@ export async function runAgent(
       traceId: metadata.traceId, timeZone: metadata.timeZone, task: metadata.task, taskPlanReady: metadata.taskPlanReady, recentMessages: await session.runtime.readRecentMessages(),
     }));
     const data = createRunContext.read(context);
-    const unsubscribe = subscribeHarnessEvents(session.runtime.harness, data, message, emit, () => signal.aborted, text => { output += text; });
+    const unsubscribe = subscribeHarnessEvents(session.runtime.harness, session.runtime.tools, data, message, emit, () => signal.aborted, text => { output += text; });
     try {
       const result = await session.runtime.prompt(message, context);
       signal.throwIfAborted();

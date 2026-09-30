@@ -1,7 +1,8 @@
 import { Type } from "typebox";
-import type { AgentHarnessTool, Context, ExecutionToolContext } from "@earendil-works/pi-agent-core";
+import type { Context } from "@earendil-works/pi-agent-core";
 import type { AgentBusinessServices, AgentMediaMetadata } from "../business-services.js";
 import { createRunContext } from "../context/index.js";
+import type { FantoTool } from "./types.js";
 
 const presentMediaSchema = Type.Object({
   mediaIds: Type.Array(
@@ -52,10 +53,11 @@ export function sanitizePresentMediaDetails(value: unknown): PresentMediaDetails
 
 export function createPresentMediaTool(
   client: Pick<AgentBusinessServices, "getMediaMetadata">,
-): AgentHarnessTool<ExecutionToolContext, typeof presentMediaSchema, PresentMediaDetails> {
+): FantoTool<typeof presentMediaSchema, PresentMediaDetails> {
   return {
     name: "present_media",
     label: "展示相关媒体",
+    presentation: { visible: false },
     description: "当图片或音频能让当前回答更具体、更有感受，或本身就是用户正在谈论的事时使用；可以主动展示，不必等待用户点播。只有高度相关且不突兀、不重复时才使用。只能展示 Record Tools 或 Recent Memory 实际提供的媒体。",
     parameters: presentMediaSchema,
     executionMode: "parallel",

@@ -18,19 +18,20 @@ import { createWebSearchTool } from "./web-search.js";
 import { createPresentMediaTool } from "./media.js";
 import { createPreferenceManageTool } from "./preferences.js";
 import { createRecordGetTool, createRecordListTool, createRecordSearchTool } from "./records.js";
+import type { FantoTool, ToolPresentationConfig } from "./types.js";
 
 export function createTools(
   names: AgentDefinition["tools"],
   workspace: string,
   fanto: AgentBusinessServices,
   taskAgents: readonly TaskAgentCatalogEntry[],
-): AgentHarnessTool<ExecutionToolContext>[] {
+): FantoTool[] {
   return names.map(name => {
     switch (name) {
-      case "read": return createReadTool();
-      case "write": return createWriteTool();
-      case "edit": return createEditTool();
-      case "bash": return createBashTool({ prepare: execution => prepareBashExecution(execution, workspace) });
+      case "read": return createFantoReadTool();
+      case "write": return createFantoWriteTool();
+      case "edit": return createFantoEditTool();
+      case "bash": return createFantoBashTool(workspace);
       case "record_get": return createRecordGetTool(fanto);
       case "record_list": return createRecordListTool(fanto);
       case "record_search": return createRecordSearchTool(fanto);
@@ -45,4 +46,51 @@ export function createTools(
       case "deliver_task_result": return createDeliverTaskResultTool(fanto, workspace);
     }
   });
+}
+
+
+function createFantoReadTool(): FantoTool {
+  return withPresentation(createReadTool(), {
+    visible: true,
+    start: { displayContent: "正在处理...", animation: "working" },
+    succeeded: { displayContent: "✓ 处理完成" },
+    failed: { displayContent: "这一步没有完成" },
+  });
+}
+
+function createFantoWriteTool(): FantoTool {
+  return withPresentation(createWriteTool(), {
+    visible: true,
+    start: { displayContent: "正在处理...", animation: "working" },
+    succeeded: { displayContent: "✓ 处理完成" },
+    failed: { displayContent: "这一步没有完成" },
+  });
+}
+
+function createFantoEditTool(): FantoTool {
+  return withPresentation(createEditTool(), {
+    visible: true,
+    start: { displayContent: "正在处理...", animation: "working" },
+    succeeded: { displayContent: "✓ 处理完成" },
+    failed: { displayContent: "这一步没有完成" },
+  });
+}
+
+function createFantoBashTool(workspace: string): FantoTool {
+  return withPresentation(
+    createBashTool({ prepare: execution => prepareBashExecution(execution, workspace) }),
+    {
+      visible: true,
+      start: { displayContent: "正在处理...", animation: "working" },
+      succeeded: { displayContent: "✓ 处理完成" },
+      failed: { displayContent: "这一步没有完成" },
+    },
+  );
+}
+
+function withPresentation(
+  tool: AgentHarnessTool<ExecutionToolContext>,
+  presentation: ToolPresentationConfig,
+): FantoTool {
+  return { ...tool, presentation };
 }

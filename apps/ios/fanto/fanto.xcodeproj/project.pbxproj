@@ -88,15 +88,15 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2660;
 				LastUpgradeCheck = 2660;
-			TargetAttributes = {
-				E7DF35813056094D00FF4826 = {
-					CreatedOnToolsVersion = 26.6;
-					SystemCapabilities = {
-						com.apple.SignInWithApple = {
-							enabled = 1;
+				TargetAttributes = {
+					E7DF35813056094D00FF4826 = {
+						CreatedOnToolsVersion = 26.6;
+						SystemCapabilities = {
+							com.apple.SignInWithApple = {
+								enabled = 1;
+							};
 						};
 					};
-				};
 				};
 			};
 			buildConfigurationList = E7DF357D3056094D00FF4826 /* Build configuration list for PBXProject "fanto" */;

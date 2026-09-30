@@ -51,12 +51,19 @@ struct AgentHistoryMessage: Identifiable {
     let role: ConversationRole
     let text: String
     let media: [PresentedMedia]
+    let activities: [ConversationToolActivity]
+    let tasks: [FantoTaskSummary]
+    let userInputRequest: FantoUserInputRequest?
+    let userInputResponse: FantoUserInputResponse?
 }
 
 enum AgentStreamEvent {
-    case processing
+    case processing(String)
     case delta(String)
     case presentation([PresentedMedia])
+    case toolActivity(ConversationToolActivity)
+    case taskCreated(FantoTaskSummary)
+    case userInputRequested(FantoUserInputRequest)
     case done
     case failure(String)
 }
@@ -80,7 +87,14 @@ struct AgentAPIClient {
         components?.queryItems = [URLQueryItem(name: "limit", value: "10")]
         guard let url = components?.url else { throw AgentAPIError.invalidResponse }
         let response: HistoryResponse = try await request(url: url)
-        return projectHistory(response.data)
+        return projectHistory(response.messages)
+    }
+
+    func fetchTaskDetails(taskID: String) async throws -> FantoTaskDetails {
+        async let taskResponse: FantoTaskDetail = request(path: "api/tasks/\(taskID)", method: "GET", body: Optional<String>.none)
+        async let runsResponse: TaskRunsResponse = request(path: "api/tasks/\(taskID)/runs", method: "GET", body: Optional<String>.none)
+        let (task, runs) = try await (taskResponse, runsResponse)
+        return FantoTaskDetails(task: task, latestRun: runs.data.first)
     }
 
     func stream(sessionID: String, message: String, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
@@ -128,19 +142,43 @@ struct AgentAPIClient {
 
     private func deliver(eventName: String?, data: String, onEvent: (AgentStreamEvent) -> Void) {
         switch eventName {
-        case "turn_start", "tool_start":
-            onEvent(.processing)
+        case "turn_start":
+            onEvent(.processing("Fanto 正在思考…"))
+        case "message_start":
+            onEvent(.processing("正在组织回复…"))
+        case "tool_start":
+            guard let payload = try? JSONDecoder().decode(StreamToolEvent.self, from: Data(data.utf8)),
+                  payload.presentation.visible
+            else { return }
+            onEvent(.toolActivity(.init(
+                id: payload.toolCallID,
+                text: payload.presentation.displayContent,
+                animation: payload.presentation.animation,
+                state: .inProgress
+            )))
         case "delta":
             guard let payload = try? JSONDecoder().decode(StreamDelta.self, from: Data(data.utf8)) else { return }
             onEvent(.delta(payload.text))
         case "tool_end":
-            guard let payload = try? JSONDecoder().decode(StreamToolEnd.self, from: Data(data.utf8)),
-                  payload.toolName == "present_media",
-                  payload.status == "succeeded",
-                  let items = payload.result?.items,
-                  !items.isEmpty
-            else { return }
-            onEvent(.presentation(items))
+            guard let payload = try? JSONDecoder().decode(StreamToolEvent.self, from: Data(data.utf8)) else { return }
+            if payload.presentation.visible {
+                onEvent(.toolActivity(.init(
+                    id: payload.toolCallID,
+                    text: payload.presentation.displayContent,
+                    animation: payload.presentation.animation,
+                    state: payload.status == "succeeded" ? .succeeded : .failed
+                )))
+            }
+            guard payload.status == "succeeded" else { return }
+            if let items = payload.result?.items, !items.isEmpty {
+                onEvent(.presentation(items))
+            }
+            if let task = payload.result?.task {
+                onEvent(.taskCreated(task))
+            }
+            if let request = payload.result?.userInputRequest {
+                onEvent(.userInputRequested(request))
+            }
         case "done":
             onEvent(.done)
         case "error":
@@ -219,137 +257,113 @@ private struct CreateSessionResponse: Decodable {
     enum CodingKeys: String, CodingKey { case sessionID = "sessionId" }
 }
 
-private struct HistoryResponse: Decodable {
-    let data: [HistoryEntry]
-}
+private struct HistoryResponse: Decodable { let messages: [HistoryMessage] }
 
-private struct HistoryEntry: Decodable {
+private struct HistoryMessage: Decodable {
     let id: String
-    let message: HistoryEntryMessage
-}
-
-private struct HistoryEntryMessage: Decodable {
     let role: String
-    let content: HistoryMessageContent
-    let toolName: String?
-    let isError: Bool?
-    let details: PresentedMediaDetails?
+    let blocks: [HistoryBlock]
+}
 
-    private enum CodingKeys: String, CodingKey {
-        case role, content, toolName, isError, details
-    }
+private struct HistoryBlock: Decodable {
+    let type: String
+    let content: String?
+    let status: String?
+    let presentation: ToolPresentationPayload?
+    let items: [PresentedMedia]?
+    let task: FantoTaskSummary?
+    let request: HistoryUserInputRequest?
+    let interactionID: String?
 
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        role = try container.decode(String.self, forKey: .role)
-        content = (try? container.decode(HistoryMessageContent.self, forKey: .content)) ?? .init(text: "")
-        toolName = try? container.decode(String.self, forKey: .toolName)
-        isError = try? container.decode(Bool.self, forKey: .isError)
-        details = try? container.decode(PresentedMediaDetails.self, forKey: .details)
+    enum CodingKeys: String, CodingKey {
+        case type, content, status, presentation, items, task, request
+        case interactionID = "interactionId"
     }
 }
 
-private struct HistoryMessageContent: Decodable {
-    let text: String
+private struct HistoryUserInputRequest: Decodable {
+    let interactionID: String
+    let title: String
+    let description: String?
+    let questions: [FantoUserInputQuestion]
+    let resolved: Bool
 
-    init(text: String) {
-        self.text = text
+    enum CodingKeys: String, CodingKey {
+        case interactionID = "interactionId"
+        case title, description, questions, resolved
     }
 
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let value = try? container.decode(String.self) {
-            text = value
-            return
-        }
-        if let parts = try? container.decode([HistoryContentPart].self) {
-            text = parts.compactMap(\.text).joined()
-            return
-        }
-        if let part = try? container.decode(HistoryContentPart.self) {
-            text = part.text ?? ""
-            return
-        }
-        text = ""
+    var value: FantoUserInputRequest {
+        .init(interactionID: interactionID, title: title, description: description, questions: questions, isResolved: resolved)
     }
 }
 
-private struct HistoryContentPart: Decodable {
-    let text: String?
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        if let value = try? container.decode(String.self) {
-            text = value
-            return
-        }
-        guard let keyed = try? decoder.container(keyedBy: CodingKeys.self) else {
-            text = nil
-            return
-        }
-        text = try? keyed.decode(String.self, forKey: .text)
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case text
-    }
-}
-
-private struct PresentedMediaDetails: Decodable {
-    let items: [PresentedMedia]
+private struct ToolPresentationPayload: Decodable {
+    let visible: Bool
+    let displayContent: String
+    let animation: String?
 }
 
 private struct StreamDelta: Decodable { let text: String }
-private struct StreamToolEnd: Decodable {
+private struct StreamToolEvent: Decodable {
+    let toolCallID: String
     let toolName: String
-    let status: String
-    let result: PresentedMediaDetails?
+    let status: String?
+    let presentation: ToolPresentationPayload
+    let result: StreamToolResult?
+
+    enum CodingKeys: String, CodingKey {
+        case toolCallID = "toolCallId"
+        case toolName, status, presentation, result
+    }
+}
+
+private struct StreamToolResult: Decodable {
+    let items: [PresentedMedia]?
+    let task: FantoTaskSummary?
+    let interactionID: String?
+    let title: String?
+    let description: String?
+    let questions: [FantoUserInputQuestion]?
+
+    enum CodingKeys: String, CodingKey {
+        case items, task
+        case interactionID = "interactionId"
+        case title, description, questions
+    }
+
+    var userInputRequest: FantoUserInputRequest? {
+        guard let interactionID, let title, let questions else { return nil }
+        return .init(interactionID: interactionID, title: title, description: description, questions: questions)
+    }
 }
 private struct StreamFailure: Decodable { let error: String }
+private nonisolated struct TaskRunsResponse: Decodable { let data: [FantoTaskRun] }
 
-private func projectHistory(_ entries: [HistoryEntry]) -> [AgentHistoryMessage] {
-    var messages: [AgentHistoryMessage] = []
-    var assistantID: String?
-    var assistantText = ""
-    var assistantMedia: [PresentedMedia] = []
-
-    func flushAssistant() {
-        let text = assistantText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !text.isEmpty || !assistantMedia.isEmpty {
-            messages.append(AgentHistoryMessage(
-                id: assistantID ?? "history-assistant-\(messages.count)",
-                role: .assistant,
-                text: text,
-                media: assistantMedia
-            ))
+private func projectHistory(_ entries: [HistoryMessage]) -> [AgentHistoryMessage] {
+    entries.compactMap { entry in
+        guard let role = ConversationRole(rawValue: entry.role) else { return nil }
+        let text = entry.blocks.compactMap { $0.type == "text" ? $0.content : nil }.joined(separator: "\n")
+        let media = entry.blocks.flatMap { $0.type == "media" ? ($0.items ?? []) : [] }
+        let activities = entry.blocks.enumerated().compactMap { index, block -> ConversationToolActivity? in
+            guard block.type == "activity", let presentation = block.presentation else { return nil }
+            return .init(
+                id: "history-\(entry.id)-\(index)",
+                text: presentation.displayContent,
+                animation: presentation.animation,
+                state: block.status == "failed" ? .failed : .succeeded
+            )
         }
-        assistantID = nil
-        assistantText = ""
-        assistantMedia = []
-    }
-
-    for entry in entries.reversed() {
-        let message = entry.message
-        switch message.role {
-        case "user":
-            flushAssistant()
-            let text = message.content.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty {
-                messages.append(AgentHistoryMessage(id: entry.id, role: .user, text: text, media: []))
-            }
-        case "assistant":
-            assistantID = entry.id
-            assistantText.append(message.content.text)
-        case "toolResult" where message.toolName == "present_media" && message.isError != true:
-            assistantID = assistantID ?? entry.id
-            assistantMedia = mergePresentedMedia(assistantMedia, message.details?.items ?? [])
-        default:
-            break
+        let tasks = entry.blocks.compactMap { $0.type == "task" ? $0.task : nil }
+        let request = entry.blocks.compactMap { $0.type == "user_input" ? $0.request?.value : nil }.first
+        let responseBlock = entry.blocks.first { $0.type == "user_input_response" }
+        let response = responseBlock.flatMap { block -> FantoUserInputResponse? in
+            guard let interactionID = block.interactionID, let content = block.content else { return nil }
+            return .init(interactionID: interactionID, content: content)
         }
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !media.isEmpty || !activities.isEmpty || !tasks.isEmpty || request != nil || response != nil else { return nil }
+        return .init(id: entry.id, role: role, text: text, media: media, activities: activities, tasks: tasks, userInputRequest: request, userInputResponse: response)
     }
-
-    flushAssistant()
-    return messages
 }
 
 func mergePresentedMedia(_ current: [PresentedMedia], _ incoming: [PresentedMedia]) -> [PresentedMedia] {

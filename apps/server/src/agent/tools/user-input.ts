@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Type } from "typebox";
-import type { AgentHarnessTool, ExecutionToolContext } from "@earendil-works/pi-agent-core";
+import type { FantoTool } from "./types.js";
 
 const optionSchema = Type.Object({
   value: Type.String({ minLength: 1, maxLength: 100 }),
@@ -96,10 +96,11 @@ export function sanitizeUserInputRequestDetails(value: unknown): UserInputReques
   };
 }
 
-export function createCollectUserInputTool(): AgentHarnessTool<ExecutionToolContext, typeof schema, UserInputRequestDetails> {
+export function createCollectUserInputTool(): FantoTool<typeof schema, UserInputRequestDetails> {
   return {
     name: "collect_user_input",
     label: "向用户确认",
+    presentation: { visible: false },
     description: [
       "只有缺失的是用户必须做出的选择，而且不同答案会明显改变最终结果时才使用。",
       "技术实现、文件路径、媒体放置、输出如何预览等问题不能询问用户；能从用户记录或已有上下文获得的信息应先自行获取。",

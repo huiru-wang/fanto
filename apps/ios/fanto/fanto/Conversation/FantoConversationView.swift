@@ -32,6 +32,8 @@ struct FantoConversationView: View {
                         ForEach(store.messages) { message in
                             ConversationMessageBubble(message: message) {
                                 store.retryLastMessage()
+                            } submitUserInput: { request, answers in
+                                store.submitUserInput(request: request, answers: answers)
                             }
                             .id(message.id)
                         }
@@ -96,6 +98,8 @@ struct FantoConversationView: View {
 private struct ConversationMessageBubble: View {
     let message: ConversationMessage
     let retry: () -> Void
+    let submitUserInput: (FantoUserInputRequest, [String]) -> Void
+    @State private var selectedTask: FantoTaskSummary?
 
     private var legacyMedia: LegacyConversationMedia {
         LegacyConversationMedia.extract(from: message.text)
@@ -111,8 +115,13 @@ private struct ConversationMessageBubble: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 messageText
+                activities
                 if message.role == .assistant {
                     ConversationMediaPresentation(items: displayedMedia)
+                    taskCards
+                    if let request = message.userInputRequest {
+                        UserInputFormCard(request: request, submit: submitUserInput)
+                    }
                 }
                 stateText
             }
@@ -123,7 +132,10 @@ private struct ConversationMessageBubble: View {
             if message.role == .assistant { Spacer(minLength: 54) }
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
+        .sheet(item: $selectedTask) { task in
+            TaskDetailSheet(task: task)
+        }
     }
 
     @ViewBuilder
@@ -140,9 +152,39 @@ private struct ConversationMessageBubble: View {
                 MarkdownContentView(markdown: legacyMedia.markdown, leadingTitleToOmit: nil)
             }
         } else {
-            Text(message.text)
-                .textSelection(.enabled)
-                .foregroundStyle(.white)
+            if let response = message.userInputResponse {
+                UserInputResponseCard(response: response)
+            } else {
+                Text(message.text)
+                    .textSelection(.enabled)
+                    .foregroundStyle(.white)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var activities: some View {
+        if message.role == .assistant, !message.activities.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(message.activities) { activity in
+                    ConversationActivityRow(activity: activity)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var taskCards: some View {
+        if !message.tasks.isEmpty {
+            VStack(spacing: 8) {
+                ForEach(message.tasks) { task in
+                    Button { selectedTask = task } label: {
+                        TaskSummaryCard(task: task)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("打开任务详情")
+                }
+            }
         }
     }
 
@@ -168,5 +210,75 @@ private struct ConversationMessageBubble: View {
 
     private var background: Color {
         message.role == .user ? FantoTheme.accent : Color(uiColor: .secondarySystemBackground)
+    }
+}
+
+private struct ConversationActivityRow: View {
+    let activity: ConversationToolActivity
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if activity.state == .inProgress {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: activity.state == .succeeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(activity.state == .succeeded ? .green : .orange)
+            }
+            Text(activity.text)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityLabel(activity.text)
+    }
+}
+
+private struct UserInputResponseCard: View {
+    let response: FantoUserInputResponse
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label("你的补充", systemImage: "checkmark.circle.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.82))
+            Text(response.content)
+                .textSelection(.enabled)
+                .foregroundStyle(.white)
+        }
+    }
+}
+
+private struct TaskSummaryCard: View {
+    let task: FantoTaskSummary
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checklist.checked")
+                .font(.title3)
+                .foregroundStyle(FantoTheme.accent)
+                .frame(width: 34, height: 34)
+                .background(FantoTheme.softAccent, in: Circle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text("已创建任务")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(task.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(12)
+        .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(.quaternary, lineWidth: 1)
+        }
+        .contentShape(Rectangle())
     }
 }

@@ -8,11 +8,13 @@ import type { ContextMessage } from "../context/run-context.js";
 import type { AgentBusinessServices } from "../business-services.js";
 import type { SkillLoader } from "../skills/loader.js";
 import { createTools } from "../tools/index.js";
+import type { FantoTool } from "../tools/types.js";
 import { installHarnessHooks } from "./hooks.js";
 import { messageText } from "./events.js";
 
 export type HarnessRuntime = {
   harness: AgentHarness<ExecutionToolContext>;
+  tools: FantoTool[];
   prompt(query: string, context: Context): ReturnType<AgentLane["prompt"]>;
   readRecentMessages(): Promise<ContextMessage[]>;
   appendCustomEntry(type: string, data: JsonValue | undefined): Promise<string>;
@@ -46,6 +48,7 @@ export async function buildRuntime(session: Session, definition: AgentDefinition
   await lane.setActiveTools(definition.tools, TODO_CONTEXT);
   return {
     harness,
+    tools,
     prompt: (query, context) => lane.prompt(query, undefined, context),
     async readRecentMessages() {
       const entries = await lane.findEntries({ type: "message", order: "newestFirst", limit: 12 }, TODO_CONTEXT);

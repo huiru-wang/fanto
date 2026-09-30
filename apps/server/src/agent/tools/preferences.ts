@@ -1,7 +1,8 @@
 import { Type } from "typebox";
-import type { AgentHarnessTool, Context, ExecutionToolContext } from "@earendil-works/pi-agent-core";
+import type { Context } from "@earendil-works/pi-agent-core";
 import type { AgentBusinessServices, AgentPreference } from "../business-services.js";
 import { createRunContext } from "../context/index.js";
+import type { FantoTool } from "./types.js";
 
 type PreferenceClient = Pick<AgentBusinessServices, "listPreferences" | "createPreference" | "updatePreference" | "deletePreference">;
 
@@ -44,10 +45,11 @@ const asResult = (details: PreferenceDetails) => ({
   details,
 });
 
-export function createPreferenceManageTool(client: PreferenceClient): AgentHarnessTool<ExecutionToolContext, typeof schema, PreferenceDetails> {
+export function createPreferenceManageTool(client: PreferenceClient): FantoTool<typeof schema, PreferenceDetails> {
   return {
     name: "preference_manage",
     label: "管理长期偏好",
+    presentation: { visible: false },
     description: "仅当用户明确表达希望长期延续的偏好，或明确要求修改、删除偏好时使用。不要保存临时要求、推测出的特质、记录内容、角色扮演或第三方的话。sourceQuote 必须逐字来自当前用户消息。",
     parameters: schema,
     executionMode: "sequential",

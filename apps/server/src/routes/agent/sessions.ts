@@ -4,6 +4,7 @@ import { AgentSessionManager } from "../../agent/harness/session-manager.js";
 import { sessionError } from "./errors.js";
 import { createSessionSchema, cursorSchema, limitSchema, sessionParamsSchema, traceIdSchema } from "./schemas.js";
 import { requireUserId } from "../request-user.js";
+import { projectHistory } from "../../agent/presentation.js";
 
 export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSessionManager): Hono {
   const app = new Hono();
@@ -26,9 +27,19 @@ export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSess
     if (!params.success || !cursor.success || !limit.success) return c.json({ error: "sessionId, cursor, or limit is invalid" }, 400);
     try {
       const result = await sessions.history(params.data.sessionId, cursor.data, limit.data, userId);
+      const definition = registry.get(result.agentId);
+      if (!definition) return c.json({ error: "Agent not found" }, 404);
+      const tools = sessions.toolsForHistory(definition, params.data.sessionId, userId);
       return c.json({
         success: true,
-        result: { sessionId: params.data.sessionId, agentId: result.agentId, data: result.entries.map(redact), hasMore: result.hasMore, nextCursor: result.nextCursor },
+        result: {
+          sessionId: params.data.sessionId,
+          agentId: result.agentId,
+          data: result.entries.map(redact),
+          messages: projectHistory(result.entries, tools),
+          hasMore: result.hasMore,
+          nextCursor: result.nextCursor,
+        },
       });
     } catch (cause) {
       return sessionError(c, cause);

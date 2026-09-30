@@ -1,8 +1,9 @@
 import { Type } from "typebox";
-import type { AgentHarnessTool, Context, ExecutionToolContext } from "@earendil-works/pi-agent-core";
+import type { Context } from "@earendil-works/pi-agent-core";
 import type { AgentBusinessServices } from "../business-services.js";
 import { createRunContext } from "../context/index.js";
 import type { TaskPlanAction, TaskRunPlan } from "../../domain/tasks/index.js";
+import type { FantoTool } from "./types.js";
 
 const stepSchema = Type.Object({
   id: Type.String({ minLength: 1, maxLength: 60, pattern: "^[a-zA-Z0-9_-]+$" }),
@@ -30,10 +31,16 @@ function requestContext(context: Context) {
 
 export function createTaskPlanManageTool(
   client: Pick<AgentBusinessServices, "manageTaskPlan">,
-): AgentHarnessTool<ExecutionToolContext, typeof schema, { plan: TaskRunPlan }> {
+): FantoTool<typeof schema, { plan: TaskRunPlan }> {
   return {
     name: "task_plan_manage",
     label: "管理任务计划",
+    presentation: {
+      visible: true,
+      start: { displayContent: "🧩 正在整理执行计划...", animation: "working" },
+      succeeded: { displayContent: "✓ 执行计划已整理" },
+      failed: { displayContent: "执行计划没有整理完成" },
+    },
     description: [
       "在资料理解充分后、开始制作结果前建立用户可读的执行计划。",
       "首次使用 action=create；如果后续发现计划需要调整，使用 action=update 整体替换计划。",

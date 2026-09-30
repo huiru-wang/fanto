@@ -35,34 +35,42 @@ export type PresentedUserInputRequest = {
   resolved: boolean;
 };
 
+export type ToolPresentation = {
+  visible: boolean;
+  displayContent: string;
+  animation?: "thinking" | "searching" | "working";
+};
+
+export type AgentMessageBlock =
+  | { type: "text"; content: string }
+  | { type: "user_input_response"; interactionId: string; content: string }
+  | { type: "activity"; toolCallId: string; status: "running" | "succeeded" | "failed"; presentation: ToolPresentation }
+  | { type: "media"; items: PresentedMedia[] }
+  | { type: "task"; task: PresentedTask }
+  | { type: "user_input"; request: PresentedUserInputRequest };
+
 export type AgentHistoryMessage = {
   id: string;
   role: "user" | "assistant";
-  text: string;
-  media: PresentedMedia[];
-  tasks: PresentedTask[];
-  inputRequests: PresentedUserInputRequest[];
-};
-
-type HistoryEntry = {
-  id: string;
-  message?: unknown;
+  blocks: AgentMessageBlock[];
 };
 
 type HistoryResult = {
-  data: HistoryEntry[];
+  messages: AgentHistoryMessage[];
 };
 
 export type AgentStreamEvent =
   | { type: "processing" }
+  | { type: "message_start" }
+  | { type: "message_end" }
   | { type: "delta"; text: string }
-  | { type: "presentation"; items: PresentedMedia[] }
-  | { type: "task_created"; task: PresentedTask }
-  | { type: "user_input_requested"; request: PresentedUserInputRequest }
+  | { type: "tool_start"; toolCallId: string; presentation: ToolPresentation }
+  | { type: "tool_end"; toolCallId: string; status: "succeeded" | "failed"; presentation: ToolPresentation }
+  | { type: "media"; items: PresentedMedia[] }
+  | { type: "task"; task: PresentedTask }
+  | { type: "user_input"; request: PresentedUserInputRequest }
   | { type: "done" }
   | { type: "error"; message: string };
-
-const USER_INPUT_RESPONSE = /^\[\[fanto-user-input:([^\]]+)\]\]\s*\n?/;
 
 function agentHeaders(): Headers {
   const headers = new Headers();
@@ -79,27 +87,6 @@ function record(value: unknown): Record<string, unknown> | null {
 
 function positiveInt(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
-}
-
-export function extractMessageText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map(part => {
-        if (typeof part === "string") return part;
-        const value = record(part);
-        return value?.type === "text" && typeof value.text === "string" ? value.text : "";
-      })
-      .join("");
-  }
-  const value = record(content);
-  return typeof value?.text === "string" ? value.text : "";
-}
-
-function userInputResponse(text: string): { interactionId: string; visibleText: string } | null {
-  const match = text.match(USER_INPUT_RESPONSE);
-  if (!match) return null;
-  return { interactionId: match[1]!, visibleText: text.replace(USER_INPUT_RESPONSE, "").trim() };
 }
 
 export function encodeUserInputResponse(interactionId: string, visibleText: string): string {
@@ -124,18 +111,6 @@ export function extractPresentedMedia(value: unknown): PresentedMedia[] {
   });
 }
 
-export function mergePresentedMedia(current: PresentedMedia[], incoming: PresentedMedia[]): PresentedMedia[] {
-  if (incoming.length === 0) return current;
-  const seen = new Set(current.map(item => item.mediaId));
-  const merged = [...current];
-  for (const item of incoming) {
-    if (seen.has(item.mediaId)) continue;
-    seen.add(item.mediaId);
-    merged.push(item);
-  }
-  return merged;
-}
-
 export function extractPresentedTask(value: unknown): PresentedTask | null {
   const root = record(value);
   if (!root || root.kind !== "task_created") return null;
@@ -154,18 +129,6 @@ export function extractPresentedTask(value: unknown): PresentedTask | null {
     nextRunAt: task.nextRunAt,
     output: { format: output.format },
   };
-}
-
-export function mergePresentedTasks(current: PresentedTask[], incoming: PresentedTask[]): PresentedTask[] {
-  if (incoming.length === 0) return current;
-  const seen = new Set(current.map(item => item.taskId));
-  const merged = [...current];
-  for (const item of incoming) {
-    if (seen.has(item.taskId)) continue;
-    seen.add(item.taskId);
-    merged.push(item);
-  }
-  return merged;
 }
 
 export function extractUserInputRequest(value: unknown): PresentedUserInputRequest | null {
@@ -210,86 +173,14 @@ export function extractUserInputRequest(value: unknown): PresentedUserInputReque
   };
 }
 
-export function mergeUserInputRequests(current: PresentedUserInputRequest[], incoming: PresentedUserInputRequest[]): PresentedUserInputRequest[] {
-  const seen = new Set(current.map(item => item.interactionId));
-  return [...current, ...incoming.filter(item => !seen.has(item.interactionId))];
-}
-
-export function projectAgentHistory(entries: HistoryEntry[]): AgentHistoryMessage[] {
-  const ordered = [...entries].reverse();
-  const resolved = new Set<string>();
-  for (const entry of ordered) {
-    const message = record(entry.message);
-    if (message?.role !== "user") continue;
-    const response = userInputResponse(extractMessageText(message.content));
-    if (response) resolved.add(response.interactionId);
-  }
-
-  const messages: AgentHistoryMessage[] = [];
-  let assistantId: string | null = null;
-  let assistantText = "";
-  let assistantMedia: PresentedMedia[] = [];
-  let assistantTasks: PresentedTask[] = [];
-  let assistantInputs: PresentedUserInputRequest[] = [];
-
-  const flushAssistant = () => {
-    const text = assistantText.trim();
-    if (text || assistantMedia.length > 0 || assistantTasks.length > 0 || assistantInputs.length > 0) {
-      messages.push({ id: assistantId ?? `history-assistant-${messages.length}`, role: "assistant", text, media: assistantMedia, tasks: assistantTasks, inputRequests: assistantInputs });
-    }
-    assistantId = null;
-    assistantText = "";
-    assistantMedia = [];
-    assistantTasks = [];
-    assistantInputs = [];
+function extractToolPresentation(value: unknown): ToolPresentation {
+  const root = record(value);
+  const animation = root?.animation;
+  return {
+    visible: root?.visible === true,
+    displayContent: typeof root?.displayContent === "string" ? root.displayContent : "",
+    ...(animation === "thinking" || animation === "searching" || animation === "working" ? { animation } : {}),
   };
-
-  for (const entry of ordered) {
-    const message = record(entry.message);
-    if (!message || typeof message.role !== "string") continue;
-
-    if (message.role === "user") {
-      flushAssistant();
-      const rawText = extractMessageText(message.content).trim();
-      const response = userInputResponse(rawText);
-      const text = (response?.visibleText ?? rawText).trim();
-      if (text) messages.push({ id: entry.id, role: "user", text, media: [], tasks: [], inputRequests: [] });
-      continue;
-    }
-
-    if (message.role === "assistant") {
-      assistantId = entry.id;
-      assistantText += extractMessageText(message.content);
-      continue;
-    }
-
-    if (message.role === "toolResult" && message.toolName === "present_media" && message.isError !== true) {
-      const items = extractPresentedMedia(message.details);
-      if (items.length > 0) {
-        assistantId ??= entry.id;
-        assistantMedia = mergePresentedMedia(assistantMedia, items);
-      }
-    }
-
-    if (message.role === "toolResult" && message.toolName === "create_task" && message.isError !== true) {
-      const task = extractPresentedTask(message.details);
-      if (task) {
-        assistantId ??= entry.id;
-        assistantTasks = mergePresentedTasks(assistantTasks, [task]);
-      }
-    }
-
-    if (message.role === "toolResult" && message.toolName === "collect_user_input" && message.isError !== true) {
-      const request = extractUserInputRequest(message.details);
-      if (request) {
-        assistantId ??= entry.id;
-        assistantInputs = mergeUserInputRequests(assistantInputs, [{ ...request, resolved: resolved.has(request.interactionId) }]);
-      }
-    }
-  }
-
-  flushAssistant();
-  return messages;
 }
 
 export async function createAgentSession(): Promise<string> {
@@ -303,7 +194,7 @@ export async function createAgentSession(): Promise<string> {
 
 export async function fetchAgentHistory(sessionId: string): Promise<AgentHistoryMessage[]> {
   const result = await requestJson<HistoryResult>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/history?limit=100`, { headers: agentHeaders() });
-  return projectAgentHistory(result.data);
+  return result.messages;
 }
 
 export async function streamAgentMessage(
@@ -339,22 +230,34 @@ export async function streamAgentMessage(
     const rawData = data.join("\n");
     switch (eventName) {
       case "turn_start":
-      case "tool_start":
         onEvent({ type: "processing" });
         break;
+      case "message_start":
+        onEvent({ type: "message_start" });
+        break;
+      case "message_end":
+        onEvent({ type: "message_end" });
+        break;
+      case "tool_start": {
+        const payload = JSON.parse(rawData) as { toolCallId?: string; presentation?: unknown };
+        if (payload.toolCallId) onEvent({ type: "tool_start", toolCallId: payload.toolCallId, presentation: extractToolPresentation(payload.presentation) });
+        break;
+      }
       case "tool_end": {
-        const payload = JSON.parse(rawData) as { toolName?: string; status?: string; result?: unknown };
-        if (payload.toolName === "present_media" && payload.status === "succeeded") {
+        const payload = JSON.parse(rawData) as { toolCallId?: string; toolName?: string; status?: string; presentation?: unknown; result?: unknown };
+        const status = payload.status === "failed" ? "failed" : "succeeded";
+        if (payload.toolCallId) onEvent({ type: "tool_end", toolCallId: payload.toolCallId, status, presentation: extractToolPresentation(payload.presentation) });
+        if (payload.toolName === "present_media" && status === "succeeded") {
           const items = extractPresentedMedia(payload.result);
-          if (items.length > 0) onEvent({ type: "presentation", items });
+          if (items.length > 0) onEvent({ type: "media", items });
         }
-        if (payload.toolName === "create_task" && payload.status === "succeeded") {
+        if (payload.toolName === "create_task" && status === "succeeded") {
           const task = extractPresentedTask(payload.result);
-          if (task) onEvent({ type: "task_created", task });
+          if (task) onEvent({ type: "task", task });
         }
-        if (payload.toolName === "collect_user_input" && payload.status === "succeeded") {
+        if (payload.toolName === "collect_user_input" && status === "succeeded") {
           const request = extractUserInputRequest(payload.result);
-          if (request) onEvent({ type: "user_input_requested", request });
+          if (request) onEvent({ type: "user_input", request });
         }
         break;
       }

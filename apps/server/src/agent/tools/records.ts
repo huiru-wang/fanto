@@ -1,8 +1,9 @@
 import { Type } from "typebox";
-import type { AgentHarnessTool, ExecutionToolContext, Context } from "@earendil-works/pi-agent-core";
+import type { Context } from "@earendil-works/pi-agent-core";
 import type { AgentBusinessServices, AgentRecord } from "../business-services.js";
 import { createRunContext } from "../context/index.js";
 import { formatEventTime } from "../context/providers/current-time.js";
+import type { FantoTool } from "./types.js";
 
 type RecordClient = Pick<AgentBusinessServices, "getRecord" | "listRecords" | "searchRecords">;
 
@@ -86,10 +87,16 @@ export function buildRecordPreview(record: AgentRecord, maxLength = 500): string
   return `${preview.slice(0, maxLength - 1)}…`;
 }
 
-export function createRecordGetTool(client: RecordClient): AgentHarnessTool<ExecutionToolContext, typeof recordGetSchema, RecordGetDetails> {
+export function createRecordGetTool(client: RecordClient): FantoTool<typeof recordGetSchema, RecordGetDetails> {
   return {
     name: "record_get",
     label: "补全一段记忆",
+    presentation: {
+      visible: true,
+      start: { displayContent: "🤔 正在回忆...", animation: "thinking" },
+      succeeded: { displayContent: "💡 想起来了" },
+      failed: { displayContent: "这次没能回想起来" },
+    },
     description: "当已经知道某一条记录，并且需要其中更完整的文字、图片描述或音频转写来可靠回答时使用。不要用它盲目寻找过去的事。",
     parameters: recordGetSchema,
     executionMode: "parallel",
@@ -107,10 +114,16 @@ export function createRecordGetTool(client: RecordClient): AgentHarnessTool<Exec
   };
 }
 
-export function createRecordListTool(client: RecordClient): AgentHarnessTool<ExecutionToolContext, typeof recordListSchema, RecordListDetails> {
+export function createRecordListTool(client: RecordClient): FantoTool<typeof recordListSchema, RecordListDetails> {
   return {
     name: "record_list",
     label: "按时间回顾记录",
+    presentation: {
+      visible: true,
+      start: { displayContent: "🤔 正在回忆...", animation: "thinking" },
+      succeeded: { displayContent: "💡 想起来了" },
+      failed: { displayContent: "这次没能回想起来" },
+    },
     description: "当需要回顾用户最近记录过什么、或按时间梳理一段近况时使用。若要回想某个具体主题、经历或想法，使用 record_search。",
     parameters: recordListSchema,
     executionMode: "parallel",
@@ -135,10 +148,16 @@ export function createRecordListTool(client: RecordClient): AgentHarnessTool<Exe
   };
 }
 
-export function createRecordSearchTool(client: RecordClient): AgentHarnessTool<ExecutionToolContext, typeof recordSearchSchema, RecordSearchDetails> {
+export function createRecordSearchTool(client: RecordClient): FantoTool<typeof recordSearchSchema, RecordSearchDetails> {
   return {
     name: "record_search",
     label: "回想相关记录",
+    presentation: {
+      visible: true,
+      start: { displayContent: "🤔 正在回忆...", animation: "thinking" },
+      succeeded: { displayContent: "💡 想起来了" },
+      failed: { displayContent: "这次没能回想起来" },
+    },
     description: "当当前对话需要回想用户过去有关某个主题、经历、人物、事件或想法的内容时使用。若只是按时间浏览最近记录，使用 record_list。",
     parameters: recordSearchSchema,
     executionMode: "parallel",
@@ -155,7 +174,7 @@ export function createRecordSearchTool(client: RecordClient): AgentHarnessTool<E
   };
 }
 
-export function createRecordTools(client: RecordClient): AgentHarnessTool<ExecutionToolContext>[] {
+export function createRecordTools(client: RecordClient): FantoTool[] {
   return [
     createRecordGetTool(client),
     createRecordListTool(client),
