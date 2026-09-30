@@ -11,6 +11,14 @@ export class OssStorage {
   async putObject(key: string, data: Buffer, contentType: string) {
     await this.client.put(key, data, { headers: { "Content-Type": contentType } });
   }
+  async getObject(key: string): Promise<Buffer> {
+    const result = await this.client.get(key);
+    const content = result?.content;
+    if (Buffer.isBuffer(content)) return content;
+    if (content instanceof Uint8Array) return Buffer.from(content);
+    if (typeof content === "string") return Buffer.from(content);
+    throw new Error("OSS object content is unavailable");
+  }
   readUrl(key: string, variant: MediaVariant = "original") {
     return this.client.signatureUrl(key, {
       method: "GET",

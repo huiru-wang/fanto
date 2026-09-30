@@ -92,7 +92,40 @@ export class TaskResultPublisher {
 function validateContent(format: Task["output"]["format"], data: Buffer, filename: string): void {
   const content = data.toString("utf8").trim();
   if (!content) throw new Error(`${filename} 为空。请写入有效内容后重试。`);
-  if (format === "html" && !/^(?:<!doctype\s+html[^>]*>\s*)?<html(?:\s|>)/i.test(content)) {
-    throw new Error(`${filename} 不是有效的 HTML 起始结构。请写入完整 HTML 后重试。`);
+  if (format === "html") {
+    if (!/^(?:<!doctype\s+html[^>]*>\s*)?<html(?:\s|>)/i.test(content)) {
+      throw new Error(`${filename} 不是有效的 HTML 起始结构。请写入完整 HTML 后重试。`);
+    }
+    assertNoLocalHtmlMedia(content, filename);
   }
+  if (format === "markdown") assertNoLocalMarkdownMedia(content, filename);
+}
+
+function assertNoLocalHtmlMedia(content: string, filename: string): void {
+  const sourcePattern = /<(?:img|audio|video|source)\b[^>]*\bsrc\s*=\s*(?:(["'])(.*?)\1|([^\s>]+))/gi;
+  for (const match of content.matchAll(sourcePattern)) {
+    const source = (match[2] ?? match[3] ?? "").trim();
+    if (source && isLocalResource(source)) {
+      throw new Error(`${filename} 引用了无法交付的本地媒体路径 ${source}。请改用真实的 fanto-media://<mediaId>。`);
+    }
+  }
+}
+
+function assertNoLocalMarkdownMedia(content: string, filename: string): void {
+  const linkPattern = /!?\[[^\]]*\]\(\s*<?([^\s)>]+)>?(?:\s+["'][^"']*["'])?\s*\)/g;
+  for (const match of content.matchAll(linkPattern)) {
+    const source = (match[1] ?? "").trim();
+    if (!source || !isLocalResource(source)) continue;
+    if (/\.(?:png|jpe?g|gif|webp|svg|m4a|mp3|wav|ogg|mp4|webm)(?:[?#].*)?$/i.test(source)) {
+      throw new Error(`${filename} 引用了无法交付的本地媒体路径 ${source}。请改用真实的 fanto-media://<mediaId>。`);
+    }
+  }
+}
+
+function isLocalResource(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || normalized.startsWith("#")) return false;
+  if (normalized.startsWith("fanto-media://") || normalized.startsWith("http://") || normalized.startsWith("https://")
+    || normalized.startsWith("//") || normalized.startsWith("data:")) return false;
+  return true;
 }

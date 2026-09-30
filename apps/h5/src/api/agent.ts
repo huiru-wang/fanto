@@ -1,6 +1,7 @@
 import { FANTO_AGENT_ID } from "../config";
 import { authorizedFetch } from "../auth/test-session";
 import { ApiError, requestJson } from "./http";
+import type { TaskOutput, TaskTrigger } from "./tasks";
 
 export type PresentedMedia = {
   mediaId: string;
@@ -11,11 +12,21 @@ export type PresentedMedia = {
   durationMs?: number;
 };
 
+export type PresentedTask = {
+  taskId: string;
+  title: string;
+  status: "active";
+  trigger: TaskTrigger;
+  nextRunAt: string;
+  output: TaskOutput;
+};
+
 export type AgentHistoryMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
   media: PresentedMedia[];
+  tasks: PresentedTask[];
 };
 
 type HistoryEntry = {
@@ -31,6 +42,7 @@ export type AgentStreamEvent =
   | { type: "processing" }
   | { type: "delta"; text: string }
   | { type: "presentation"; items: PresentedMedia[] }
+  | { type: "task_created"; task: PresentedTask }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -104,25 +116,60 @@ export function mergePresentedMedia(current: PresentedMedia[], incoming: Present
   return merged;
 }
 
+export function extractPresentedTask(value: unknown): PresentedTask | null {
+  const root = record(value);
+  if (!root || root.kind !== "task_created") return null;
+  const task = record(root.task);
+  const output = record(task?.output);
+  const trigger = record(task?.trigger);
+  if (!task || typeof task.taskId !== "string" || typeof task.title !== "string" || task.status !== "active"
+    || typeof task.nextRunAt !== "string" || !output || !trigger) return null;
+  if (output.format !== "markdown" && output.format !== "text" && output.format !== "html") return null;
+  if (trigger.type !== "immediate" && trigger.type !== "scheduled") return null;
+  return {
+    taskId: task.taskId,
+    title: task.title,
+    status: "active",
+    trigger: task.trigger as TaskTrigger,
+    nextRunAt: task.nextRunAt,
+    output: { format: output.format },
+  };
+}
+
+export function mergePresentedTasks(current: PresentedTask[], incoming: PresentedTask[]): PresentedTask[] {
+  if (incoming.length === 0) return current;
+  const seen = new Set(current.map(item => item.taskId));
+  const merged = [...current];
+  for (const item of incoming) {
+    if (seen.has(item.taskId)) continue;
+    seen.add(item.taskId);
+    merged.push(item);
+  }
+  return merged;
+}
+
 export function projectAgentHistory(entries: HistoryEntry[]): AgentHistoryMessage[] {
   const messages: AgentHistoryMessage[] = [];
   let assistantId: string | null = null;
   let assistantText = "";
   let assistantMedia: PresentedMedia[] = [];
+  let assistantTasks: PresentedTask[] = [];
 
   const flushAssistant = () => {
     const text = assistantText.trim();
-    if (text || assistantMedia.length > 0) {
+    if (text || assistantMedia.length > 0 || assistantTasks.length > 0) {
       messages.push({
         id: assistantId ?? `history-assistant-${messages.length}`,
         role: "assistant",
         text,
         media: assistantMedia,
+        tasks: assistantTasks,
       });
     }
     assistantId = null;
     assistantText = "";
     assistantMedia = [];
+    assistantTasks = [];
   };
 
   for (const entry of [...entries].reverse()) {
@@ -132,7 +179,7 @@ export function projectAgentHistory(entries: HistoryEntry[]): AgentHistoryMessag
     if (message.role === "user") {
       flushAssistant();
       const text = extractMessageText(message.content).trim();
-      if (text) messages.push({ id: entry.id, role: "user", text, media: [] });
+      if (text) messages.push({ id: entry.id, role: "user", text, media: [], tasks: [] });
       continue;
     }
 
@@ -151,6 +198,18 @@ export function projectAgentHistory(entries: HistoryEntry[]): AgentHistoryMessag
       if (items.length > 0) {
         assistantId ??= entry.id;
         assistantMedia = mergePresentedMedia(assistantMedia, items);
+      }
+    }
+
+    if (
+      message.role === "toolResult"
+      && message.toolName === "create_task"
+      && message.isError !== true
+    ) {
+      const task = extractPresentedTask(message.details);
+      if (task) {
+        assistantId ??= entry.id;
+        assistantTasks = mergePresentedTasks(assistantTasks, [task]);
       }
     }
   }
@@ -229,6 +288,10 @@ export async function streamAgentMessage(
         if (payload.toolName === "present_media" && payload.status === "succeeded") {
           const items = extractPresentedMedia(payload.result);
           if (items.length > 0) onEvent({ type: "presentation", items });
+        }
+        if (payload.toolName === "create_task" && payload.status === "succeeded") {
+          const task = extractPresentedTask(payload.result);
+          if (task) onEvent({ type: "task_created", task });
         }
         break;
       }

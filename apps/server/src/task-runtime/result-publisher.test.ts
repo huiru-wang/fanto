@@ -81,3 +81,36 @@ test("TaskResultPublisher gives the Worker a retryable error for a missing file"
     await rm(workspace, { recursive: true, force: true });
   }
 });
+
+
+test("TaskResultPublisher rejects local relative media references in HTML", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "fanto-task-result-"));
+  const publisher = new TaskResultPublisher({ createTaskGeneratedFile: async () => ({ mediaId: "unused" }) } as never);
+  try {
+    await writeFile(join(workspace, "result.html"), '<!doctype html><html><body><img src="images/photo1.jpg"></body></html>');
+    await assert.rejects(
+      () => publisher.publish(task, run, workspace, "worker-session-1", {
+        summary: "已完成。",
+        artifacts: [{ path: "result.html", role: "primary" }],
+      }),
+      /fanto-media:\/\/<mediaId>/,
+    );
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("TaskResultPublisher accepts fanto-media references in HTML", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "fanto-task-result-"));
+  const publisher = new TaskResultPublisher({ createTaskGeneratedFile: async () => ({ mediaId: "media-result" }) } as never);
+  try {
+    await writeFile(join(workspace, "result.html"), '<!doctype html><html><body><img src="fanto-media://media-1"></body></html>');
+    const result = await publisher.publish(task, run, workspace, "worker-session-1", {
+      summary: "已完成。",
+      artifacts: [{ path: "result.html", role: "primary" }],
+    });
+    assert.equal(result.primaryMediaId, "media-result");
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
+});

@@ -110,7 +110,14 @@ export type DelegateTaskContext = {
   timeZone: string;
 };
 
-export type DelegateTaskResult = { taskId: string; status: "active"; nextRunAt: string };
+export type DelegateTaskResult = {
+  taskId: string;
+  title: string;
+  status: "active";
+  trigger: TaskTrigger;
+  nextRunAt: string;
+  output: TaskOutput;
+};
 
 export type UpdateTaskInput = {
   title?: string;

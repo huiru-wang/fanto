@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createCreateTaskTool, createTaskSchema } from "./task-management.js";
+import { createCreateTaskTool, createTaskSchema, sanitizeCreateTaskDetails } from "./task-management.js";
 
 const catalog = [
   { id: "task-worker", description: "处理文件交付任务" },
@@ -40,4 +40,33 @@ test("create_task schema follows a changed catalog without code changes", () => 
 
 test("create_task cannot be created without an available task Agent", () => {
   assert.throws(() => createTaskSchema([]), /at least one task-enabled sub-agent/);
+});
+
+
+test("create_task presentation sanitizer exposes only the stable task card payload", () => {
+  const result = sanitizeCreateTaskDetails({
+    kind: "task_created",
+    task: {
+      taskId: "task-1",
+      title: "旅行回顾",
+      status: "active",
+      trigger: { type: "immediate" },
+      nextRunAt: "2026-09-30T00:00:00.000Z",
+      output: { format: "html", internal: "hidden" },
+      userId: "must-not-leak",
+    },
+    traceId: "must-not-leak",
+  });
+
+  assert.deepEqual(result, {
+    kind: "task_created",
+    task: {
+      taskId: "task-1",
+      title: "旅行回顾",
+      status: "active",
+      trigger: { type: "immediate" },
+      nextRunAt: "2026-09-30T00:00:00.000Z",
+      output: { format: "html" },
+    },
+  });
 });

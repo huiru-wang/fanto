@@ -123,13 +123,13 @@ Skill 通过 ID 映射到与 `apps/server/agent.yaml` 同级的 `apps/server/ski
 
 ### Stream
 
-`POST /api/agent/stream` 使用 POST 响应体 SSE。除 `start`、`delta`、`done` / `error` 外，还会发送 Pi 运行阶段的 `turn_start`、`tool_start` 和 `tool_end`。普通工具事件只公开 `toolCallId`、`toolName` 与成功/失败状态；唯一例外是成功的 `present_media`，其 `tool_end` 会额外返回经过白名单映射的稳定媒体 metadata，供客户端渲染。Record Tool 参数、结果、内部错误与 reasoning 仍不对客户端公开。断连会取消执行，单次请求有超时限制。
+`POST /api/agent/stream` 使用 POST 响应体 SSE。除 `start`、`delta`、`done` / `error` 外，还会发送 Pi 运行阶段的 `turn_start`、`tool_start` 和 `tool_end`。普通工具事件只公开 `toolCallId`、`toolName` 与成功/失败状态；当前只对白名单的成功 `present_media` 和 `create_task` 返回产品化结果：前者提供稳定媒体 metadata，后者提供 Task Card 所需的任务摘要。Record Tool 参数、Goal 细节、sources、用户身份、Worker 信息、内部错误与 reasoning 仍不对客户端公开。断连会取消执行，单次请求有超时限制。
 
 ## 后台 Task
 
 `main` 通过 `create_task` 提交 Goal（objective、必要 context、constraints、successCriteria）与 Agent / trigger / timeout 等 Task 元数据；使用 `get_task` 查询，再用 `update_task` 更新任务详情或状态。Task 若依赖已读取的资料，Main 必须把真实 ID 写入 `sources.recordIds / sources.mediaIds`，Worker 会在 Goal 中接收该列表并通过 Record Tool 回查；不以复制聊天摘要替代来源引用。Tool schema 不接受用户身份，也不把 Main Chat 历史直接传给子 Agent。`AgentRegistry.taskAgents()` 会从 `agent.yaml` 自动筛选 `task.enabled=true` 且非 `main` 的 Agent，并把 `{ id, description }` 作为只读 catalog 注入 Harness。`create_task` 据此动态生成 `agentId` literal union，同时把每个可用 Agent 的 description 写进 Tool description，因此新增、删除或修改后台 Agent 只需要更新 `agent.yaml` 并重启 Server，不维护第二份 Agent 名单。Server 在真正创建 Task 时仍再次通过 Registry 校验 `agentId`。同一 Main Session 可以创建多个 Task；系统不做 Task 去重、版本、替代或并行关系建模，Main Agent 自行编排。Task 创建时只记录 `next_run_at`，不创建队列 Run。`TaskScheduler` 每 5 分钟执行一次 single-flight Tick，只扫描到期 Task 并按 `TaskWorkerPool.available` 提交；Worker 创建独立 Session 后，在同一数据库事务中创建携带该 Session 的 `running` TaskRun 并推进 `next_run_at`。没有容量时 Task 保持到期并等待下一次 Tick。
 
-每个 TaskRun 创建独立 Pi Session 与 Workspace，Worker 将 Goal 渲染为稳定的 Task Goal 消息后复用 `runAgent()`。Worker 先将主结果写为 `result.md` / `result.txt` / `result.html`，再调用 `deliver_task_result` 显式声明主文件和最多 9 个附属文件；工具只接受工作区根目录下的相对文件名，校验内容并上传 OSS。上传成功后才把 `summary + artifacts[]` 写入 `task_runs.result` 并将 Run 完成，同时终止该 Worker 回合；Worker 普通文本、未交付文件或交付失败都不能完成 Run。每一个 Worker Session 可以有多个交付文件，产物对象键使用 `users/<userId>/task/<YYYY-MM>/<workerSessionId>/<filename>`，因此失败重试的新 Run / Worker Session 不会覆盖旧产物。
+每个 TaskRun 创建独立 Pi Session 与 Workspace，Worker 将 Goal 渲染为稳定的 Task Goal 消息后复用 `runAgent()`。Worker 先将主结果写为 `result.md` / `result.txt` / `result.html`，再调用 `deliver_task_result` 显式声明主文件和最多 9 个附属文件；工具只接受工作区根目录下的相对文件名，校验内容并上传 OSS。HTML / Markdown 中的 Fanto 图片和音频必须使用真实 `fanto-media://<mediaId>`，本地相对媒体路径不属于当前交付模型并会被拒绝。上传成功后才把 `summary + artifacts[]` 写入 `task_runs.result` 并将 Run 完成，同时终止该 Worker 回合；Worker 普通文本、未交付文件或交付失败都不能完成 Run。每一个 Worker Session 可以有多个交付文件，产物对象键使用 `users/<userId>/task/<YYYY-MM>/<workerSessionId>/<filename>`，因此失败重试的新 Run / Worker Session 不会覆盖旧产物。当前 TaskRun 只暴露 `running/completed/failed/cancelled` 状态和最终结果，不向客户端投影 Worker Tool Progress 或内部 Session History。
 
 ## 历史
 

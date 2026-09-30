@@ -42,3 +42,78 @@ test("TaskRun HTTP response exposes declared result artifacts without worker int
   assert.equal("workerSessionId" in body.result, false);
   assert.equal("extData" in body.result, false);
 });
+
+
+test("Task artifact preview verifies declared task run ownership before returning content", async () => {
+  const service = {
+    findRun: async (userId: string, taskId: string, runId: string) => {
+      assert.equal(userId, "user-1");
+      assert.equal(taskId, "task-1");
+      assert.equal(runId, "run-1");
+      return {
+        runId,
+        taskId,
+        result: {
+          summary: "done",
+          artifacts: [{ filename: "result.html", role: "primary", mediaId: "media-1", mimeType: "text/html", bytes: 12, checksum: "sha256:test" }],
+        },
+      } as unknown as TaskRun;
+    },
+  } as unknown as TaskService;
+  const media = {
+    readTaskArtifact: async (userId: string, mediaId: string) => {
+      assert.equal(userId, "user-1");
+      assert.equal(mediaId, "media-1");
+      return {
+        kind: "ok" as const,
+        artifact: {
+          mediaId: "media-1",
+          taskId: "task-1",
+          taskRunId: "run-1",
+          filename: "result.html",
+          mimeType: "text/html" as const,
+          bytes: 12,
+          content: "<html></html>",
+        },
+      };
+    },
+  } as any;
+  const app = createTaskRoutes(service, media);
+
+  const response = await runWithRequestPrincipal(
+    { userId: "user-1", source: "user" },
+    () => app.request("http://localhost/tasks/artifacts/media-1/preview"),
+  );
+  assert.equal(response.status, 200);
+  const body = await response.json() as any;
+  assert.deepEqual(body.result, {
+    mediaId: "media-1",
+    filename: "result.html",
+    mimeType: "text/html",
+    format: "html",
+    content: "<html></html>",
+  });
+});
+
+test("Task artifact preview hides undeclared artifacts", async () => {
+  const service = {
+    findRun: async () => ({
+      result: { summary: "done", artifacts: [] },
+    } as unknown as TaskRun),
+  } as unknown as TaskService;
+  const media = {
+    readTaskArtifact: async () => ({
+      kind: "ok" as const,
+      artifact: {
+        mediaId: "media-1", taskId: "task-1", taskRunId: "run-1", filename: "result.md",
+        mimeType: "text/markdown" as const, bytes: 4, content: "# hi",
+      },
+    }),
+  } as any;
+  const app = createTaskRoutes(service, media);
+  const response = await runWithRequestPrincipal(
+    { userId: "user-1", source: "user" },
+    () => app.request("http://localhost/tasks/artifacts/media-1/preview"),
+  );
+  assert.equal(response.status, 404);
+});

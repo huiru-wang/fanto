@@ -178,6 +178,7 @@ Task 只能由 `main` Agent 的 `create_task` Tool 创建；当前没有客户�
 | POST | `/api/tasks/:taskId/pause` | 暂停后续 scheduled Run 生成 |
 | POST | `/api/tasks/:taskId/resume` | 恢复 scheduled Task |
 | DELETE | `/api/tasks/:taskId` | 取消 Task；不再创建后续 Run，已运行的 Run 由其 Worker 自行收尾 |
+| GET | `/api/tasks/artifacts/:mediaId/preview` | 读取当前用户已交付的 HTML / Markdown / Text Task Artifact 原文，用于域内预览 |
 
 `create_task` 使用 Goal 模型：`objective` 必填，另有可选 `context / constraints / successCriteria`；执行步骤由子 Agent 自主决定。已读取的来源资料必须通过可选 `sources.recordIds / sources.mediaIds` 传递真实 ID，不能只复制摘要。Task 查询响应也包含该来源列表。同一 Main Session 可创建多个 Task，系统不自动去重、替代或版本化。Task 创建时只写入 `nextRunAt`，包括 immediate Task 的创建时刻；Scheduler 每 5 分钟按 WorkerPool 可用容量扫描到期 Task，只有获得 Worker 与独立 Session 后才创建并启动 TaskRun。
 
@@ -208,7 +209,7 @@ TaskRun 成功响应中的结果形态为：
 }
 ```
 
-后台 Worker 必须先在自己的工作区写入主文件 `result.md` / `result.txt` / `result.html`，再调用 `deliver_task_result` 声明主文件和可选附属文件。该工具校验相对路径与文件内容、上传 OSS、注册 ready Media，最后完成 TaskRun；普通模型文本不能作为任务结果。成功交付会立即结束该 Worker 回合，后续文件写入不能改变已交付产物。每个 artifact 的 `mediaId` 复用现有 Media API 查看或下载。
+后台 Worker 必须先在自己的工作区写入主文件 `result.md` / `result.txt` / `result.html`，再调用 `deliver_task_result` 声明主文件和可选附属文件。该工具校验相对路径与文件内容、上传 OSS、注册 ready Media，最后完成 TaskRun；普通模型文本不能作为任务结果。HTML / Markdown 需要引用 Fanto 图片或音频时必须使用真实 `fanto-media://<mediaId>`，`images/foo.jpg`、`./foo.png` 等本地相对媒体路径会在交付阶段被拒绝。成功交付会立即结束该 Worker 回合，后续文件写入不能改变已交付产物。每个 artifact 的 `mediaId` 复用现有 Media API 查看或下载。`GET /api/tasks/artifacts/:mediaId/preview` 只允许当前用户自己的 ready `media_type=file` Task Artifact，且必须仍被对应 TaskRun 的 `result.artifacts[]` 声明；仅支持 `text/html / text/markdown / text/plain`，最大 2 MiB。
 
 ## Agent Runtime
 
@@ -249,7 +250,7 @@ curl -N http://127.0.0.1:3000/api/agent/stream \
   -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"你好\"}"
 ```
 
-事件以 `start` 开始，期间可发送 `turn_start`、`tool_start`（`toolCallId`、`toolName`）、`tool_end`（再加 `status: succeeded | failed`）和零到多个 `delta`，最终为 `done` 或 `error`。普通工具事件只提供客户端状态展示所需的标识与状态，不返回工具参数、工具结果、内部错误或 reasoning。成功的 `present_media` 是唯一例外：其 `tool_end` 会额外携带白名单映射后的 `result.items`，每项包含 `mediaId / mediaType / mimeType` 与可选 `width / height / durationMs`；不会包含 signed URL。单次请求最长 120 秒；同一 Session 已在运行时返回 `409`。
+事件以 `start` 开始，期间可发送 `turn_start`、`tool_start`（`toolCallId`、`toolName`）、`tool_end`（再加 `status: succeeded | failed`）和零到多个 `delta`，最终为 `done` 或 `error`。普通工具事件只提供客户端状态展示所需的标识与状态，不返回工具参数、工具结果、内部错误或 reasoning。当前有两个产品化白名单例外：成功的 `present_media` 会在 `tool_end.result.items` 中返回稳定的 `mediaId / mediaType / mimeType` 与可选尺寸 / 时长；成功的 `create_task` 会在 `tool_end.result` 中返回 `kind=task_created` 以及 Task Card 所需的 `taskId / title / status / trigger / nextRunAt / output`。两者都不返回 signed URL、用户身份、Goal 细节、sources、trace 或 Worker 内部信息。单次请求最长 120 秒；同一 Session 已在运行时返回 `409`。
 
 历史接口按 `seq` 从新到旧返回。`cursor` 填上页最后一项的 `seq`；`limit` 默认 50，范围为 1–100。`compaction` 和内部 `fanto.*` 条目不对外返回，敏感字段会被脱敏：
 

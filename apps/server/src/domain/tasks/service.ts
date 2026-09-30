@@ -77,7 +77,7 @@ export class TaskService {
       triggerType: trigger.type,
       nextRunAt: nextRunAt!.toISOString(),
     });
-    return { taskId, status: "active", nextRunAt: nextRunAt!.toISOString() };
+    return { taskId, title, status: "active", trigger, nextRunAt: nextRunAt!.toISOString(), output };
   }
 
   list(userId: string): Promise<Task[]> {

@@ -7,6 +7,46 @@ import type { DelegateTaskInput, DelegateTaskResult, TaskResultFormat, UpdateTas
 
 type TaskClient = Pick<AgentBusinessServices, "createTask" | "updateTask" | "getTask">;
 
+export type CreateTaskPresentation = {
+  kind: "task_created";
+  task: DelegateTaskResult;
+};
+
+export function sanitizeCreateTaskDetails(value: unknown): CreateTaskPresentation | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const root = value as Record<string, unknown>;
+  if (root.kind !== "task_created" || !root.task || typeof root.task !== "object") return undefined;
+  const task = root.task as Record<string, unknown>;
+  if (typeof task.taskId !== "string" || typeof task.title !== "string" || task.status !== "active" || typeof task.nextRunAt !== "string") return undefined;
+  const output = task.output;
+  if (!output || typeof output !== "object") return undefined;
+  const format = (output as Record<string, unknown>).format;
+  if (format !== "markdown" && format !== "text" && format !== "html") return undefined;
+  const trigger = task.trigger;
+  if (!trigger || typeof trigger !== "object") return undefined;
+  const triggerValue = trigger as Record<string, unknown>;
+  if (triggerValue.type !== "immediate" && triggerValue.type !== "scheduled") return undefined;
+  if (triggerValue.type === "scheduled") {
+    const schedule = triggerValue.schedule;
+    if (!schedule || typeof schedule !== "object") return undefined;
+    const scheduleValue = schedule as Record<string, unknown>;
+    if ((scheduleValue.type !== "once" && scheduleValue.type !== "recurring") || typeof scheduleValue.timezone !== "string") return undefined;
+    if (scheduleValue.type === "once" && typeof scheduleValue.at !== "string") return undefined;
+    if (scheduleValue.type === "recurring" && (typeof scheduleValue.rrule !== "string" || typeof scheduleValue.startAt !== "string")) return undefined;
+  }
+  return {
+    kind: "task_created",
+    task: {
+      taskId: task.taskId,
+      title: task.title,
+      status: "active",
+      trigger: trigger as DelegateTaskResult["trigger"],
+      nextRunAt: task.nextRunAt,
+      output: { format },
+    },
+  };
+}
+
 type DelegateTaskParams = {
   title: string;
   agentId: string;
@@ -176,7 +216,7 @@ function toolDescription(taskAgents: readonly TaskAgentCatalogEntry[]): string {
 export function createCreateTaskTool(
   client: TaskClient,
   taskAgents: readonly TaskAgentCatalogEntry[],
-): AgentHarnessTool<ExecutionToolContext, ReturnType<typeof createTaskSchema>, DelegateTaskResult> {
+): AgentHarnessTool<ExecutionToolContext, ReturnType<typeof createTaskSchema>, CreateTaskPresentation> {
   const schema = createTaskSchema(taskAgents);
   return {
     name: "create_task",
@@ -186,7 +226,8 @@ export function createCreateTaskTool(
     executionMode: "sequential",
     replay: "never",
     async execute(_toolCallId, params, _onUpdate, _toolContext, _invocation, context) {
-      return result(await client.createTask(requestContext(context), toInput(params as DelegateTaskParams, taskAgents)));
+      const task = await client.createTask(requestContext(context), toInput(params as DelegateTaskParams, taskAgents));
+      return result({ kind: "task_created" as const, task });
     },
   };
 }

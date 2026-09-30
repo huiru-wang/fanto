@@ -102,7 +102,7 @@ export function createApp(services: ServerServices) {
   if (preferences) app.route("/api/preferences", createPreferenceRoutes(preferences));
   if (creationService) app.route("/api", createCreationReadRoutes(creationService));
   if (creationProposalService) app.route("/api", createCreationProposalRoutes(creationProposalService));
-  if (services.tasks) app.route("/api", createTaskRoutes(services.tasks));
+  if (services.tasks) app.route("/api", createTaskRoutes(services.tasks, mediaService));
   if (services.agent) {
     app.use("/api/agent/*", bodyLimit({ maxSize: 64 * 1024 }));
     app.route("/api/agent", createSessionRoutes(services.agent.registry, services.agent.sessions));

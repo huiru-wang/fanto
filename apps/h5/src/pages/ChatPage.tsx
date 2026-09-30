@@ -4,13 +4,16 @@ import {
   createAgentSession,
   fetchAgentHistory,
   mergePresentedMedia,
+  mergePresentedTasks,
   streamAgentMessage,
   type AgentHistoryMessage,
   type PresentedMedia,
+  type PresentedTask,
 } from "../api/agent";
 import { ApiError } from "../api/http";
 import { ChatMarkdown } from "../components/ChatMarkdown";
 import { MediaPresentation } from "../components/MediaPresentation";
+import { TaskCard } from "../components/TaskCard";
 import { AGENT_SESSION_KEY } from "../config";
 
 type MessageState = "complete" | "processing" | "streaming" | "stopped" | "failed";
@@ -19,7 +22,7 @@ type ChatMessage = AgentHistoryMessage & { state: MessageState };
 const localId = () => `local-${crypto.randomUUID()}`;
 
 const ChatMessageItem = memo(function ChatMessageItem({ message }: { message: ChatMessage }) {
-  const hasContent = Boolean(message.text) || message.media.length > 0;
+  const hasContent = Boolean(message.text) || message.media.length > 0 || message.tasks.length > 0;
 
   return (
     <article className={`message ${message.role}`}>
@@ -39,6 +42,11 @@ const ChatMessageItem = memo(function ChatMessageItem({ message }: { message: Ch
         ) : null}
         {message.role === "assistant" && message.media.length > 0 && (
           <MediaPresentation items={message.media} />
+        )}
+        {message.role === "assistant" && message.tasks.length > 0 && (
+          <div className="chat-task-list">
+            {message.tasks.map(task => <TaskCard key={task.taskId} task={task} />)}
+          </div>
         )}
         {message.state === "stopped" && <span className="message-state">已停止生成</span>}
         {message.state === "failed" && <span className="message-state error">回复未完成</span>}
@@ -134,6 +142,7 @@ export function ChatPage() {
       role: "user",
       text,
       media: [],
+      tasks: [],
       state: "complete",
     };
     const assistantId = localId();
@@ -142,6 +151,7 @@ export function ChatPage() {
       role: "assistant",
       text: "",
       media: [],
+      tasks: [],
       state: "processing",
     };
 
@@ -154,6 +164,7 @@ export function ChatPage() {
     const controller = new AbortController();
     abortRef.current = controller;
     let pendingMedia: PresentedMedia[] = [];
+    let pendingTasks: PresentedTask[] = [];
 
     try {
       await streamAgentMessage(
@@ -168,6 +179,8 @@ export function ChatPage() {
             ));
           } else if (event.type === "presentation") {
             pendingMedia = mergePresentedMedia(pendingMedia, event.items);
+          } else if (event.type === "task_created") {
+            pendingTasks = mergePresentedTasks(pendingTasks, [event.task]);
           } else if (event.type === "delta") {
             const follow = isNearEnd();
             setMessages(current => current.map(message =>
@@ -180,7 +193,7 @@ export function ChatPage() {
             const follow = isNearEnd();
             setMessages(current => current.map(message =>
               message.id === assistantId
-                ? { ...message, media: pendingMedia, state: "complete" }
+                ? { ...message, media: pendingMedia, tasks: pendingTasks, state: "complete" }
                 : message,
             ));
             if (follow) scrollToEnd();

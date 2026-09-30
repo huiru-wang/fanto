@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { Task, TaskRun, TaskService } from "../domain/tasks/index.js";
+import type { MediaService } from "../domain/media/index.js";
 import { requireUserId } from "./request-user.js";
 
 const ok = (result: unknown) => ({ success: true, result, errorCode: null, errorMsg: null });
@@ -20,6 +21,19 @@ const toTaskResponse = (task: Task) => ({
   updatedAt: task.updatedAt,
 });
 
+const safeRunError = (error: Record<string, unknown> | null) => {
+  if (!error) return null;
+  const code = typeof error.code === "string" ? error.code : "TASK_EXECUTION_FAILED";
+  const message = code === "TASK_TIMEOUT"
+    ? "任务执行超时"
+    : code === "SERVER_RESTARTED"
+      ? "任务执行被中断"
+      : code === "TASK_RESULT_NOT_DELIVERED"
+        ? "任务没有生成可用结果"
+        : "任务执行失败";
+  return { code, message };
+};
+
 const toRunResponse = (run: TaskRun) => ({
   runId: run.runId,
   taskId: run.taskId,
@@ -28,11 +42,33 @@ const toRunResponse = (run: TaskRun) => ({
   startedAt: run.startedAt,
   finishedAt: run.finishedAt,
   result: run.result,
-  error: run.error,
+  error: safeRunError(run.error),
 });
 
-export function createTaskRoutes(service: TaskService): Hono {
+export function createTaskRoutes(service: TaskService, media?: MediaService): Hono {
   const app = new Hono();
+
+  app.get("/tasks/artifacts/:mediaId/preview", async c => {
+    if (!media) return notFound(c);
+    const userId = requireUserId(c.req.raw);
+    const loaded = await media.readTaskArtifact(userId, c.req.param("mediaId"));
+    if (loaded.kind === "too_large") {
+      return c.json({ success: false, result: null, errorCode: "ARTIFACT_TOO_LARGE", errorMsg: "Task artifact is too large to preview" }, 413);
+    }
+    if (loaded.kind !== "ok") return notFound(c);
+    const artifact = loaded.artifact;
+    const run = await service.findRun(userId, artifact.taskId, artifact.taskRunId);
+    const declared = run?.result?.artifacts.some(item => item.mediaId === artifact.mediaId);
+    if (!run || !declared) return notFound(c);
+    const format = artifact.mimeType === "text/html" ? "html" : artifact.mimeType === "text/markdown" ? "markdown" : "text";
+    return c.json(ok({
+      mediaId: artifact.mediaId,
+      filename: artifact.filename,
+      mimeType: artifact.mimeType,
+      format,
+      content: artifact.content,
+    }));
+  });
 
   app.get("/tasks", async c => {
     const data = await service.list(requireUserId(c.req.raw));
@@ -61,17 +97,17 @@ export function createTaskRoutes(service: TaskService): Hono {
 
   app.post("/tasks/:taskId/pause", async c => {
     const task = await service.pause(requireUserId(c.req.raw), c.req.param("taskId"));
-    return task ? c.json(ok(task)) : notFound(c);
+    return task ? c.json(ok(toTaskResponse(task))) : notFound(c);
   });
 
   app.post("/tasks/:taskId/resume", async c => {
     const task = await service.resume(requireUserId(c.req.raw), c.req.param("taskId"));
-    return task ? c.json(ok(task)) : notFound(c);
+    return task ? c.json(ok(toTaskResponse(task))) : notFound(c);
   });
 
   app.delete("/tasks/:taskId", async c => {
     const task = await service.cancel(requireUserId(c.req.raw), c.req.param("taskId"));
-    return task ? c.json(ok(task)) : notFound(c);
+    return task ? c.json(ok(toTaskResponse(task))) : notFound(c);
   });
 
   return app;

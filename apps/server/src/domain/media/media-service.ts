@@ -68,6 +68,33 @@ export class MediaService {
     } catch { return { kind: "incomplete" } as const; }
   }
   async readyMetadata(userId: string, id: string) { const asset = await this.media.findMedia(id, userId); return asset?.status === "ready" ? metadata(asset) : null; }
+  async readTaskArtifact(userId: string, id: string, maxBytes = 2 * 1024 * 1024) {
+    const asset = await this.media.findMedia(id, userId);
+    const source = asset?.extData.source;
+    const taskId = asset?.extData.taskId;
+    const taskRunId = asset?.extData.taskRunId;
+    const filename = asset?.extData.filename;
+    const supportedMime = asset?.mimeType === "text/html" || asset?.mimeType === "text/markdown" || asset?.mimeType === "text/plain";
+    if (!asset || asset.status !== "ready" || asset.mediaType !== "file" || source !== "task" || !supportedMime
+      || typeof taskId !== "string" || typeof taskRunId !== "string" || typeof filename !== "string") {
+      return { kind: "not_found" as const };
+    }
+    if (asset.bytes > maxBytes) return { kind: "too_large" as const };
+    const data = await this.oss.getObject(asset.objectKey);
+    if (data.byteLength > maxBytes) return { kind: "too_large" as const };
+    return {
+      kind: "ok" as const,
+      artifact: {
+        mediaId: asset.mediaId,
+        taskId,
+        taskRunId,
+        filename,
+        mimeType: asset.mimeType as "text/html" | "text/markdown" | "text/plain",
+        bytes: asset.bytes,
+        content: data.toString("utf8"),
+      },
+    };
+  }
   async readUrl(userId: string, id: string, variant: MediaVariant = "original") { const asset = await this.media.findMedia(id, userId); if (asset?.status !== "ready") return null; const resolvedVariant = asset.mediaType === "image" ? variant : "original"; return { url: this.oss.readUrl(asset.objectKey, resolvedVariant), expiresAt: new Date(Date.now() + 300_000).toISOString() }; }
   async redirectUrl(userId: string, id: string) { const asset = await this.media.findMedia(id, userId); return asset?.status === "ready" ? this.oss.readUrl(asset.objectKey) : null; }
 }

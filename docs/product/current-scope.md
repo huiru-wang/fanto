@@ -27,7 +27,7 @@
 
 当前 iOS 中间 Fanto Tab 通过 Agent Runtime 的 Session、History 与 SSE Stream 接口支持开发态多轮对话。它只恢复最近 10 条历史，在 Keychain 保存一个默认 Session ID；历史解码已能容忍 Pi 的结构化 message content，并重建可见文本及成功 `present_media` 的白名单媒体 metadata，同时兼容旧正文中的 `fanto-media://<mediaId>`。Assistant 文本使用原生 Markdown 渲染；图片以横向缩略图呈现并可全屏分页查看，语音可在会话中播放。iOS 只保存稳定媒体 metadata，实际展示时才读取短期签名地址。它不支持会话切换、新话题、跨设备恢复、来源引用、其他 Tool 产品效果或正式认证。Agent 网关若将 HTTP 转至 HTTPS，真机联调依赖系统信任该 HTTPS 证书；客户端不接受不受信任的证书。
 
-当前 H5 位于 `apps/h5`，覆盖测试所需的 Record 与 Agent 基础能力：查看 / 创建 / 语义搜索 Record，支持文字、JPEG/PNG/WebP 图片、M4A/MP3/WAV 音频、浏览器录音、发生时间选择，以及时间线图片缩略图和音频播放；同时支持恢复一个默认 Agent Session、兼容字符串或结构化 content 的历史消息、POST SSE 流式多轮对话和新建会话。Assistant 可见文本继续使用 Markdown；新媒体展示由原生 `present_media` Tool Result 驱动，图片和语音按类型分开渲染，图片使用固定 104×104 单行缩略图并可进入多图 Viewer 查看完整原图。旧 Session 中的 `fanto-media://<mediaId>` 仍保留兼容渲染。H5 会缓存短期媒体 URL、避免已完成历史消息随流式 delta 反复重载，并只在用户接近底部时自动跟随新内容。H5 不提供 Creation / Proposal 页面，也不提供正式登录。测试客户端固定使用 `user001`，Agent Bearer Token 被直接编译进 H5 bundle，因此只适用于受控测试环境。
+当前 H5 位于 `apps/h5`，覆盖测试所需的 Record、Agent 与 Task 基础能力：查看 / 创建 / 语义搜索 Record，支持文字、JPEG/PNG/WebP 图片、M4A/MP3/WAV 音频、浏览器录音、发生时间选择，以及时间线图片缩略图和音频播放；同时支持恢复一个默认 Agent Session、兼容字符串或结构化 content 的历史消息、POST SSE 流式多轮对话和新建会话。Assistant 可见文本继续使用 Markdown；新媒体展示由原生 `present_media` Tool Result 驱动，图片和语音按类型分开渲染，图片使用固定 104×104 单行缩略图并可进入多图 Viewer 查看完整原图。成功的 `create_task` Tool Result 会在当前 Assistant 消息中形成 Task Card，刷新历史后仍可恢复；H5 新增 Tasks 页面，可查看 Task 状态、TaskRun 列表、暂停 / 恢复 / 取消任务，并在运行中的 TaskRun 详情打开时轮询状态。完成的 TaskRun 可在域内直接预览 `text/html / text/markdown / text/plain` 产物；HTML 使用 sandboxed `iframe srcDoc`，Markdown 复用 Fanto Markdown 渲染，产物中的 `fanto-media://<mediaId>` 会先通过受保护 Media API 换取短期 OSS signed URL 后再展示。当前不提供 Worker Progress 阶段或内部执行历史。旧 Session 中的 `fanto-media://<mediaId>` 仍保留兼容渲染。H5 会缓存短期媒体 URL、避免已完成历史消息随流式 delta 反复重载，并只在用户接近底部时自动跟随新内容。H5 不提供 Creation / Proposal 页面，也不提供正式登录。测试客户端固定使用 `user001`，Agent Bearer Token 被直接编译进 H5 bundle，因此只适用于受控测试环境。
 
 ## Memory / Retrieval
 
@@ -67,7 +67,7 @@ Server 内嵌的 Agent Runtime 当前支持：
 - 创建持久 Session；
 - 基于同一 Session 的多轮流式执行；
 - Session 历史分页；
-- `create_task / update_task / get_task` Goal 模型的异步任务管理，以及 `/api/tasks` Task / TaskRun 查询与暂停、恢复、取消；
+- `create_task / update_task / get_task` Goal 模型的异步任务管理，以及 `/api/tasks` Task / TaskRun 查询与暂停、恢复、取消和 Task Artifact 域内预览；
 - Task / TaskRun 持久化在 PostgreSQL，由 5 分钟 Scheduler 按 WorkerPool 可用容量调度；
 - 每个 Session 使用 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>` 独立工作区；
 - Pi 内置 `read`、`write`、`edit`、`bash` 工具；
