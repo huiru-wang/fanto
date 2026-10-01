@@ -26,6 +26,8 @@ pnpm dev:server
 curl http://127.0.0.1:3000/health
 ```
 
+`/health` 会实际检查 PostgreSQL；数据库不可用时返回 503，当前没有独立 `/ready`。生产进程还会每 10 秒执行数据库健康检查，连续 3 次失败后主动退出，由 PM2 拉起新进程。
+
 启动时 Server 会执行当前空库 migration 基线。用户通过正式注册流程创建，不再自动创建演示用户。
 
 ## Agent Runtime
@@ -62,11 +64,11 @@ data/
 
 Business Server 使用 Supabase PostgreSQL；Agent Runtime 保持 SQLite，不共享业务数据库。
 
-## Schema 重置
+## Database Migration
 
-Server migration 当前只支持空 PostgreSQL schema 基线，不是历史 upgrade chain。需要使用新 schema 重建目标数据库时，应停止 Server、确认目标库数据可丢弃后重建目标 schema，再执行 migration。
+Server 使用 Kysely migration 管理 PostgreSQL schema。`src/bootstrap/main.ts` 在服务监听端口前自动执行 `runMigrations()`；生产部署脚本也会在重启 Server 前显式执行一次 migration，因此正常启动和 `pnpm deploy` 都会自动创建尚未存在的表和索引。已执行过的 migration 由 Kysely migration 元数据记录，不会在每次重启时重复执行。
 
-不要因为 migration 是“当前基线”就自动删除用户真实数据库。
+当前 `zz_project_domain_refactor` 不迁移旧脉络数据：它直接删除未使用的旧脉络相关表和 `entity_relations`，再创建 `projects`、`project_records` 及索引。执行生产 migration 前仍应确认目标环境与当前 schema 预期一致。
 
 ## 常用命令
 
@@ -77,8 +79,6 @@ pnpm db:migrate
 pnpm memory:rebuild
 # 兼容别名
 pnpm vector:rebuild
-
-pnpm --filter @fanto/server seed:creation-showcase
 ```
 
-`memory:rebuild` 会 reset 可重建的 Memory 派生索引，并按批次重新索引所有用户当前为 `processed` 的 Records；执行前应确认 Embedding 配置可用。它不会删除 Record / Media / Creation 等业务表。
+`memory:rebuild` 会 reset 可重建的 Memory 派生索引，并按批次重新索引所有用户当前为 `processed` 的 Records；执行前应确认 Embedding 配置可用。它不会删除 Record / Media / Project 等业务表。

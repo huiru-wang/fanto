@@ -1,6 +1,6 @@
 import Foundation
 
-struct Record: Identifiable, Hashable {
+struct Record: Identifiable, Hashable, Codable {
     let id: String
     let text: String
     let eventAt: Date

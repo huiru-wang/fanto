@@ -10,7 +10,7 @@
 
 ## 健康检查
 
-`GET /health` → `{ status: "ok", timestamp }`
+`GET /health` 表示整体服务可用性并检查 PostgreSQL。数据库可用时返回 `200 { status: "ok", database: "ok", timestamp }`；不可用时返回 `503 { status: "unavailable", database: "unavailable", timestamp }`。当前不提供独立 `/ready`。
 
 ## 认证
 
@@ -147,23 +147,17 @@ Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionI
 
 `GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Access JWT。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到原始媒体的短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，`variant` 默认为 `original`，图片可请求 `thumbnail`（OSS 实时宽 600、q80、WebP），音频无论 variant 都返回 original；非法 variant 返回 `400 INVALID_INPUT`。读取签名有效期为五分钟，客户端不应持久化，thumbnail / original 应分键缓存，并在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 对客户端上传的图片 / 音频返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`。Task Worker 生成的结果文件由 Server 内部直接上传，不经过 `/api/uploads`，其 `mediaType=file`，meta 额外返回 `bytes / filename`。所有 meta 都不包含 signed URL。
 
-## 脉络与待确认提案
+## Project
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/creation-kinds` | 所有类型目录 |
-| GET | `/api/creations/overview` | 当前用户最多 3 条 active 脉络及实际使用的类型 |
-| GET | `/api/creations?kindId=` | 当前用户的脉络列表；`kindId` 可选，提供时按类型筛选 |
-| GET | `/api/creations/:id` | 脉络详情；`summary` 为纯文本 |
-| GET | `/api/creations/:id/records?limit=20&cursor=` | 关联来源记录倒序分页，limit 为 1–100 |
-| GET | `/api/creation-proposals?status=pending_confirmation` | 当前用户待确认提案卡片 |
-| GET | `/api/creation-proposals/:id` | 提案详情与关联来源记录 |
-| POST | `/api/creation-proposals/:id/confirm` | 确认并创建/更新为长期跟踪脉络 |
-| POST | `/api/creation-proposals/:id/reject` | 将提案标记为暂不保留 |
+| GET | `/api/projects?status=&limit=&cursor=` | 当前用户 Project 列表；支持 `proposed / active / archived / rejected` 状态筛选和游标分页；不传 status 时返回 active + archived |
+| GET | `/api/projects/:id` | Project 详情，只返回 Project 本身 |
+| GET | `/api/projects/:id/records?limit=5&cursor=` | 按 `record_event_at DESC, record_id DESC` 游标分页，直接返回完整 Record |
+| POST | `/api/projects/:id/confirm` | `proposed -> active` |
+| POST | `/api/projects/:id/reject` | `proposed -> rejected` |
 
-`summary` 在 Creation 和 Proposal 的响应中均为可空的纯文本。当前服务只支持从空数据库创建的 schema，不提供旧 JSON 摘要或历史数据库的升级兼容。
-
-提案列表只支持 `pending_confirmation` 状态。确认使用事务创建或更新 Creation，并把来源 Record 关联迁移到该 Creation；若更新目标版本已变化，则返回 `VERSION_CONFLICT`。Creation 完整列表目前支持可选的类型筛选；尚未提供搜索、状态筛选或列表分页。
+Project 与待确认提议统一使用 `projects` 表，业务内容只存 `content`。`project_records` 冗余 Record 的 `event_at` 为 `record_event_at`，用于稳定索引分页。不提供 Record 批量查询接口。
 
 ## Agent Tasks
 

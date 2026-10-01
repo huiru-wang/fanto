@@ -90,9 +90,9 @@ task_plan_manage
 deliver_task_result
 ```
 
-当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media`、`preference_manage`、`collect_user_input` 与 `create_task / update_task / get_task`。`collect_user_input` 只用于会明显改变结果的用户决策，成功后 Harness 立即结束本轮等待下一条用户回答。唯一的后台 `task-worker` 配置 `task.enabled=true`、`web_search`、`task_plan_manage` 与 `deliver_task_result`，统一处理资料整理、HTML 页面和卡片、文本 / Markdown 文档、代码及工作区文件修改；默认 Task 超时 900 秒、最大 3600 秒、最多自动尝试 3 次。其产品/执行边界位于 `apps/server/src/agent/prompts/task-worker.ts`。Fanto 的认识与关系 Core 位于 `apps/server/src/agent/prompts/core.ts`，Main 操作规则与动态插槽位于 `apps/server/src/agent/prompts/operational.ts`。Main 模板使用 Character / Time / Preference / Current Tasks / Recent Memory；Worker 模板额外只引用 `{{task_execution_context}}`，因此技术执行信息与用户 Task Brief 物理分离。Tool 权限仍由 Agent definition 显式声明。
+当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media`、`preference_manage`、`collect_user_input` 与 `create_task / update_task / get_task`。`collect_user_input` 只用于会明显改变结果的用户决策，成功后 Harness 立即结束本轮等待下一条用户回答。唯一的后台 `task-worker` 配置 `task.enabled=true`、`web_search`、`task_plan_manage` 与 `deliver_task_result`，统一处理资料整理、HTML 页面和卡片、文本 / Markdown 文档、代码及工作区文件修改；默认 Task 超时 900 秒、最大 3600 秒、最多自动尝试 3 次。其产品/执行边界位于 `apps/server/src/agent/prompts/task-worker.ts`。Main 的认识、关系原则、操作规则与动态插槽已经合并在 `apps/server/src/agent/prompts/main.ts`。Main 模板使用 Character / Current Time / Preference / Current Tasks / Recent Memory；Worker 模板额外只引用 `{{task_execution_context}}`，因此技术执行信息与用户 Task Brief 物理分离。Tool 权限仍由 Agent definition 显式声明。
 
-Core 与 operational Prompt 在启动期按固定顺序合并为最终 `systemPrompt`，并参与 Agent revision 计算；修改 Prompt 后需要重启 Server。
+`systemPromptModule` 在启动期直接解析为对应 TypeScript Prompt 模块并参与 Agent revision 计算；当前 Main 直接加载 `main.ts`，修改 Prompt 后需要重启 Server。
 
 Skill 通过 ID 映射到与 `apps/server/agent.yaml` 同级的 `apps/server/skills/<id>/SKILL.md`。密钥不写入 YAML。
 

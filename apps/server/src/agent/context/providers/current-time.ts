@@ -52,6 +52,6 @@ export class CurrentTimeProvider {
     const input = createRunContext.read(context);
     const timeZone = resolveTimeZone(input.timeZone);
     const now = new Date();
-    return { slot: this.slot, content: `当前时间：${formatEventTime(now.toISOString(), timeZone)}（${timeZone}）\n今天：${formatDate(now, timeZone)} ${new Intl.DateTimeFormat("zh-CN", { timeZone, weekday: "long" }).format(now)}\n${formatLunarDate(now, timeZone)}` };
+    return { slot: this.slot, content: `今天：${formatDate(now, timeZone)} ${new Intl.DateTimeFormat("zh-CN", { timeZone, weekday: "long" }).format(now)}（${timeZone}）\n${formatLunarDate(now, timeZone)}` };
   }
 }

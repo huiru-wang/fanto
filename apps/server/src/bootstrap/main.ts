@@ -19,7 +19,7 @@ import { IdentityProviderRegistry } from "../domain/auth/identity-provider.js";
 import { AuthService } from "../domain/auth/index.js";
 import { RecordService, type Record } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
-import { CreationService, CreationProposalService } from "../domain/creations/index.js";
+import { ProjectService } from "../domain/projects/index.js";
 import { TaskService } from "../domain/tasks/index.js";
 import { createAgentRuntime } from "../agent/agent-runtime.js";
 import { TaskScheduler, TaskWorker, TaskWorkerPool } from "../task-runtime/index.js";
@@ -94,8 +94,7 @@ const services: ServerServices = {
   records,
   media,
   preferences,
-  creations: CreationService.create(db),
-  creationProposals: CreationProposalService.create(db),
+  projects: ProjectService.create(db, records),
   tasks,
   agent,
   healthCheck,

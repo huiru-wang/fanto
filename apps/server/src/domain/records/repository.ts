@@ -3,6 +3,7 @@ import type { SaveRecordContent } from "./content.js";
 export interface RecordRepository {
   create(input: { userId: string; source?: string; eventAt: string; value: SaveRecordContent }): Promise<Record | "invalid_media" | "invalid_content">;
   findById(id: string): Promise<Record | null>;
+  findByIds(userId: string, ids: string[]): Promise<Record[]>;
   findByUserId(userId: string, opts: { cursor?: string; limit: number }): Promise<Record[]>;
   updateContent(id: string, userId: string, input: { value: SaveRecordContent; expectedVersion: number }): Promise<Record | "not_found" | "conflict" | "invalid_media" | "invalid_content">;
   delete(id: string, userId: string, expectedVersion: number): Promise<Record | "not_found" | "conflict">;

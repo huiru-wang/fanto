@@ -16,7 +16,7 @@ pnpm --filter @fanto/server typecheck
 pnpm --filter @fanto/server test
 ```
 
-当前测试重点覆盖 Record Repository / HTTP、Memory Core、pgvector MemoryIndex、Creation HTTP、配置、MIME 与部分外部 Client 行为。需要数据库的集成测试仅在明确设置隔离的 `TEST_DATABASE_URL` 时运行。
+当前测试重点覆盖 Record Repository / HTTP、Memory Core、pgvector MemoryIndex、Project HTTP、配置、MIME 与部分外部 Client 行为。需要数据库的集成测试仅在明确设置隔离的 `TEST_DATABASE_URL` 时运行。
 
 涉及以下内容时还需要针对性验证：
 

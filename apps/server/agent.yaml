@@ -10,8 +10,7 @@ agents:
   - id: main
     model_id: deepseek/deepseek-v4-flash
     description: Fanto 面向用户的长期记忆对话 Agent
-    corePromptModule: core
-    systemPromptModule: operational
+    systemPromptModule: main
     tools: [record_get, record_list, record_search, present_media, preference_manage, collect_user_input, create_task, update_task, get_task]
     skills: []
     compaction:

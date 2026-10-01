@@ -6,6 +6,8 @@ struct RecordCalendarView: View {
     let showTimeline: () -> Void
     let addRecord: () -> Void
     @State private var weekAnchor: Date
+    @State private var monthAnchor: Date
+    @State private var presentation: CalendarPresentation = .week
     @State private var showingMonthYearPicker = false
     @Namespace private var calendarNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -23,6 +25,7 @@ struct RecordCalendarView: View {
         self.showTimeline = showTimeline
         self.addRecord = addRecord
         self._weekAnchor = State(initialValue: Calendar.current.sundayStart(containing: selectedDate.wrappedValue))
+        self._monthAnchor = State(initialValue: Calendar.current.startOfMonth(containing: selectedDate.wrappedValue))
     }
 
     var body: some View {
@@ -52,23 +55,40 @@ struct RecordCalendarView: View {
                 }
             }
 
-            WeekCalendarStrip(
-                dates: calendar.days(inWeekStarting: weekAnchor),
-                selectedDate: selectedDate,
-                hasRecords: hasRecords,
-                select: select,
-                namespace: calendarNamespace
-            )
+            ZStack(alignment: .top) {
+                if presentation == .week {
+                    WeekCalendarStrip(
+                        dates: calendar.days(inWeekStarting: weekAnchor),
+                        selectedDate: selectedDate,
+                        hasRecords: hasRecords,
+                        select: select,
+                        namespace: calendarNamespace
+                    )
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                } else {
+                    MonthCalendarGrid(
+                        dates: calendar.days(inMonthContaining: monthAnchor),
+                        monthDate: monthAnchor,
+                        selectedDate: selectedDate,
+                        hasRecords: hasRecords,
+                        select: select,
+                        namespace: calendarNamespace
+                    )
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                }
+            }
             .frame(maxWidth: .infinity, alignment: .top)
             .clipped()
             .contentShape(Rectangle())
             .simultaneousGesture(
                 DragGesture(minimumDistance: 18)
-                    .onEnded(handleCalendarSwipe)
+                    .onEnded(handleCalendarDrag)
             )
-            .accessibilityHint("向左或向右轻扫可切换周")
+            .accessibilityHint(presentation == .week ? "向左或向右轻扫可切换周，向下轻扫可展开月历" : "向左或向右轻扫可切换月，向上轻扫可收起为周历")
             .accessibilityAction(named: previousButtonTitle, previousPage)
             .accessibilityAction(named: nextButtonTitle, nextPage)
+            .accessibilityAction(named: presentation == .week ? "展开月历" : "收起为周历", togglePresentation)
+            .animation(calendarAnimation, value: presentation)
             .animation(calendarAnimation, value: displayAnchor)
         }
         .padding(.vertical, 4)
@@ -83,7 +103,7 @@ struct RecordCalendarView: View {
     }
 
     private var displayAnchor: Date {
-        weekAnchor
+        presentation == .week ? weekAnchor : monthAnchor
     }
 
     private var calendarAnimation: Animation {
@@ -91,11 +111,11 @@ struct RecordCalendarView: View {
     }
 
     private var previousButtonTitle: String {
-        "上一周"
+        presentation == .week ? "上一周" : "上个月"
     }
 
     private var nextButtonTitle: String {
-        "下一周"
+        presentation == .week ? "下一周" : "下个月"
     }
 
     private func hasRecords(on date: Date) -> Bool {
@@ -106,6 +126,10 @@ struct RecordCalendarView: View {
         withAnimation(calendarAnimation) {
             selectedDate = calendar.startOfDay(for: date)
             weekAnchor = calendar.sundayStart(containing: date)
+            monthAnchor = calendar.startOfMonth(containing: date)
+            if presentation == .month {
+                presentation = .week
+            }
         }
     }
 
@@ -129,16 +153,48 @@ struct RecordCalendarView: View {
         changePage(by: 1)
     }
 
-    private func handleCalendarSwipe(_ value: DragGesture.Value) {
+    private func togglePresentation() {
+        withAnimation(calendarAnimation) {
+            if presentation == .week {
+                monthAnchor = calendar.startOfMonth(containing: selectedDate)
+                presentation = .month
+            } else {
+                weekAnchor = calendar.sundayStart(containing: selectedDate)
+                presentation = .week
+            }
+        }
+    }
+
+    private func handleCalendarDrag(_ value: DragGesture.Value) {
         let horizontal = value.translation.width
         let vertical = value.translation.height
-        guard abs(horizontal) >= 44, abs(horizontal) > abs(vertical) else { return }
-        changePage(by: horizontal < 0 ? 1 : -1)
+        if abs(horizontal) > abs(vertical), abs(horizontal) >= 44 {
+            changePage(by: horizontal < 0 ? 1 : -1)
+        } else if abs(vertical) >= 44 {
+            switch presentation {
+            case .week where vertical > 0:
+                togglePresentation()
+            case .month where vertical < 0:
+                togglePresentation()
+            default:
+                break
+            }
+        }
     }
 
     private func changePage(by amount: Int) {
         withAnimation(calendarAnimation) {
             weekAnchor = calendar.date(byAdding: .day, value: 7 * amount, to: weekAnchor) ?? weekAnchor
+            if presentation == .week {
+                let nextDate = calendar.date(byAdding: .day, value: 7 * amount, to: selectedDate) ?? selectedDate
+                selectedDate = calendar.startOfDay(for: nextDate)
+                monthAnchor = calendar.startOfMonth(containing: selectedDate)
+            } else {
+                let nextDate = calendar.date(byAdding: .month, value: amount, to: selectedDate) ?? selectedDate
+                selectedDate = calendar.startOfDay(for: nextDate)
+                monthAnchor = calendar.startOfMonth(containing: selectedDate)
+                weekAnchor = calendar.sundayStart(containing: selectedDate)
+            }
         }
     }
 }

@@ -28,6 +28,11 @@ export class PostgresRecordRepository implements RecordRepository {
 
   async findById(id: string) { const row = await this.db.selectFrom("records").selectAll().where("record_id", "=", id).executeTakeFirst(); return row ? this.toEntity(row) : null; }
 
+  async findByIds(userId: string, ids: string[]) {
+    if (!ids.length) return [];
+    return (await this.db.selectFrom("records").selectAll().where("user_id", "=", userId).where("record_id", "in", ids).execute()).map(row => this.toEntity(row));
+  }
+
   async findByUserId(userId: string, opts: { cursor?: string; limit: number }) {
     let query = this.db.selectFrom("records").selectAll().where("user_id", "=", userId);
     if (opts.cursor) {
@@ -63,7 +68,7 @@ export class PostgresRecordRepository implements RecordRepository {
       const record = this.toEntity(row);
       const now = nowIso();
       for (const block of record.content.blocks) await this.unlink(trx, userId, block.mediaId, now);
-      await trx.deleteFrom("entity_relations").where("user_id", "=", userId).where("source_entity_id", "=", id).where("source_entity_type", "=", "record").execute();
+      await trx.deleteFrom("project_records").where("user_id", "=", userId).where("record_id", "=", id).execute();
       await trx.deleteFrom("records").where("record_id", "=", id).where("user_id", "=", userId).where("version", "=", expectedVersion).execute();
       return record;
     });

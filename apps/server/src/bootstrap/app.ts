@@ -7,13 +7,12 @@ import { bearerToken, requireUserId, runWithRequestPrincipal } from "../routes/r
 import { AuthError, type AuthService } from "../domain/auth/index.js";
 import { createAuthRoutes } from "../routes/auth.js";
 import { logAccess, logError } from "../infrastructure/logging/logger.js";
-import { createCreationReadRoutes } from "../routes/creations.js";
-import { createCreationProposalRoutes } from "../routes/proposals.js";
+import { createProjectRoutes } from "../routes/projects.js";
 import type { PreferenceService } from "../domain/preferences/index.js";
 import { createPreferenceRoutes } from "../routes/preferences.js";
 import { RecordService } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
-import { CreationService, CreationProposalService } from "../domain/creations/index.js";
+import type { ProjectService } from "../domain/projects/index.js";
 import type { TaskService } from "../domain/tasks/index.js";
 import type { AgentRuntime } from "../agent/agent-runtime.js";
 import { createSessionRoutes } from "../routes/agent/sessions.js";
@@ -50,8 +49,7 @@ export type ServerServices = {
   records: RecordService;
   media: MediaService;
   preferences?: PreferenceService;
-  creations?: CreationService;
-  creationProposals?: CreationProposalService;
+  projects?: ProjectService;
   tasks?: TaskService;
   agent?: AgentRuntime;
   healthCheck?: () => Promise<void>;
@@ -59,7 +57,7 @@ export type ServerServices = {
 
 export function createApp(services: ServerServices) {
   const app = new Hono();
-  const { auth, records: recordService, media: mediaService, preferences, creations: creationService, creationProposals: creationProposalService } = services;
+  const { auth, records: recordService, media: mediaService, preferences, projects: projectService } = services;
   app.onError((error, c) => {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });
     return c.json({ success: false, errorCode: "INTERNAL_ERROR", errorMsg: "Internal server error" }, 500);
@@ -110,8 +108,7 @@ export function createApp(services: ServerServices) {
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));
   if (preferences) app.route("/api/preferences", createPreferenceRoutes(preferences));
-  if (creationService) app.route("/api", createCreationReadRoutes(creationService));
-  if (creationProposalService) app.route("/api", createCreationProposalRoutes(creationProposalService));
+  if (projectService) app.route("/api", createProjectRoutes(projectService));
   if (services.tasks) app.route("/api", createTaskRoutes(services.tasks, mediaService));
   if (services.agent) {
     app.use("/api/agent/*", bodyLimit({ maxSize: 64 * 1024 }));

@@ -41,6 +41,7 @@ function createRepository(rows: Record[]) {
     },
     async create() { return record("created"); },
     async findById(id) { return record(id); },
+    async findByIds(_userId, ids) { return ids.map(record); },
     async updateContent(id) { return record(id); },
     async delete(id) { return record(id); },
     async claimPostprocess(input) { return record(input.recordId); },

@@ -41,7 +41,7 @@
 
 当前 `fanto` OSS Bucket 使用无地域属性（中国内地），默认 Region 为 `oss-rg-china-mainland`，公网 Endpoint 为 `https://oss-rg-china-mainland.aliyuncs.com`。生产环境应显式配置 `OSS_ENDPOINT`，避免误用地域型 Endpoint。
 
-Agent 的模型、Agent、Tool、Task capability 与 compaction 配置位于 `apps/server/agent.yaml`；`task.enabled=true` 的子 Agent 还定义 `defaultTimeoutSeconds / maxTimeoutSeconds`，最终 Task timeout 同时受 Server 全局最小/最大值约束。`corePromptModule` 和 `systemPromptModule` 引用 `apps/server/src/agent/prompts/` 中受限的 TypeScript Prompt 模块。配置和 Prompt 都在 Server 启动时加载，内容参与 Agent revision；修改后需要重启 Server。
+Agent 的模型、Agent、Tool、Task capability 与 compaction 配置位于 `apps/server/agent.yaml`；`task.enabled=true` 的子 Agent 还定义 `defaultTimeoutSeconds / maxTimeoutSeconds`，最终 Task timeout 同时受 Server 全局最小/最大值约束。`systemPromptModule` 引用 `apps/server/src/agent/prompts/` 中受限的 TypeScript Prompt 模块；当前 Main 使用 `main.ts`，Task Worker 使用 `task-worker.ts`。不再存在 `corePromptModule` 配置。配置和 Prompt 都在 Server 启动时加载，内容参与 Agent revision；修改后需要重启 Server。
 
 ## H5 线上测试认证
 

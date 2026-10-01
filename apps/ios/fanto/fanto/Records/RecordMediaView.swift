@@ -65,7 +65,7 @@ struct RecordMediaView: View {
         stopPlayback()
         Task {
             do {
-                let url = try await CreationAPIClient.shared.fetchMediaReadURL(id: audio.id, variant: .original)
+                let url = try await FantoAPIClient.shared.fetchMediaReadURL(id: audio.id, variant: .original)
                 guard !Task.isCancelled else { return }
                 let player = AVPlayer(url: url)
                 audioPlayer = player
@@ -152,7 +152,7 @@ private struct RecordImageThumbnail: View {
 
     private func loadReadURL() async {
         guard !Task.isCancelled else { return }
-        imageURL = try? await CreationAPIClient.shared.fetchMediaReadURL(id: photo.id, variant: .thumbnail)
+        imageURL = try? await FantoAPIClient.shared.fetchMediaReadURL(id: photo.id, variant: .thumbnail)
     }
 }
 
@@ -268,6 +268,6 @@ private struct RecordPhotoPage: View {
 
     private func loadReadURL() async {
         guard !Task.isCancelled else { return }
-        imageURL = try? await CreationAPIClient.shared.fetchMediaReadURL(id: photo.id, variant: .original)
+        imageURL = try? await FantoAPIClient.shared.fetchMediaReadURL(id: photo.id, variant: .original)
     }
 }

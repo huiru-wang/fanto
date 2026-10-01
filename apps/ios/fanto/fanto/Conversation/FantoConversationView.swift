@@ -3,6 +3,7 @@ import SwiftUI
 struct FantoConversationView: View {
     @Bindable var store: ConversationStore
     let taskDetailCache: TaskDetailCache
+    @State private var hasLeftHistoryTop = false
 
     var body: some View {
         NavigationStack {
@@ -27,6 +28,7 @@ struct FantoConversationView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 14) {
+                    historyPaginationHeader
                     if store.messages.isEmpty {
                         welcome
                     } else {
@@ -43,6 +45,15 @@ struct FantoConversationView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 18)
             }
+            .onScrollGeometryChange(for: Bool.self, of: { geometry in
+                geometry.contentOffset.y <= geometry.contentInsets.top + 4
+            }) { wasAtTop, isAtTop in
+                if !isAtTop {
+                    hasLeftHistoryTop = true
+                } else if hasLeftHistoryTop, !wasAtTop {
+                    Task { await store.loadEarlierHistory() }
+                }
+            }
             .safeAreaInset(edge: .top, spacing: 8) {
                 if let request = pendingUserInputRequest {
                     UserInputPrompt(request: request) { request, answers in
@@ -58,9 +69,55 @@ struct FantoConversationView: View {
             }
             .onChange(of: store.scrollAnchorID) { _, anchor in
                 guard let anchor else { return }
-                withAnimation(.easeOut(duration: 0.18)) {
-                    proxy.scrollTo(anchor, anchor: .bottom)
+                scrollToBottom(anchor, with: proxy, animated: true)
+            }
+            .onChange(of: store.historyRestoreAnchorID) { _, anchor in
+                guard let anchor else { return }
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    proxy.scrollTo(anchor, anchor: .top)
                 }
+                store.consumeHistoryRestoreAnchor(anchor)
+            }
+            .task(id: store.scrollAnchorID) {
+                guard let anchor = store.scrollAnchorID else { return }
+                await Task.yield()
+                scrollToBottom(anchor, with: proxy, animated: false)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var historyPaginationHeader: some View {
+        if store.isLoadingEarlierHistory {
+            ProgressView("正在加载更早对话")
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 4)
+        } else if let message = store.historyLoadEarlierError {
+            Button {
+                Task { await store.loadEarlierHistory() }
+            } label: {
+                Label("加载更早对话失败，点按重试", systemImage: "arrow.clockwise")
+                    .font(.subheadline.weight(.medium))
+            }
+            .buttonStyle(.bordered)
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, 4)
+            .accessibilityHint(message)
+        }
+    }
+
+    private func scrollToBottom(_ anchor: String, with proxy: ScrollViewProxy, animated: Bool) {
+        if animated {
+            withAnimation(.easeOut(duration: 0.18)) {
+                proxy.scrollTo(anchor, anchor: .bottom)
+            }
+        } else {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(anchor, anchor: .bottom)
             }
         }
     }

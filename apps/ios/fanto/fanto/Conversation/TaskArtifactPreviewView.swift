@@ -155,7 +155,7 @@ private enum TaskArtifactContentResolver {
 
         var resolved = content
         for mediaID in mediaIDs {
-            guard let url = try? await CreationAPIClient.shared.fetchMediaReadURL(id: mediaID) else { continue }
+            guard let url = try? await FantoAPIClient.shared.fetchMediaReadURL(id: mediaID) else { continue }
             resolved = resolved.replacingOccurrences(of: "fanto-media://\(mediaID)", with: url.absoluteString)
         }
         return resolved

@@ -6,7 +6,7 @@
 - `../../docs/domain/records.md`
 - `../../docs/domain/media.md`
 - `../../docs/domain/memory.md`
-- `../../docs/domain/creations.md`
+- `../../docs/domain/projects.md`
 - `../../docs/api/http-api.md`
 
 ## 目录边界

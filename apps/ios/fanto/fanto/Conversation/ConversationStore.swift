@@ -15,10 +15,15 @@ final class ConversationStore {
     var draft = ""
     var loadState: ConversationLoadState = .idle
     var scrollAnchorID: String?
+    private(set) var hasMoreHistory = false
+    private(set) var isLoadingEarlierHistory = false
+    private(set) var historyLoadEarlierError: String?
+    private(set) var historyRestoreAnchorID: String?
 
     private let client: AgentAPIClient
     private let persistence: AgentSessionPersistence
     private var sessionID: String?
+    private var historyNextCursor: Int?
     private var activeAssistantMessageID: String?
     private var activePrompt: String?
     private var pendingPresentedMedia: [PresentedMedia] = []
@@ -44,19 +49,10 @@ final class ConversationStore {
         do {
             if let storedID = try persistence.load(userID: client.userID, agentID: client.agentID) {
                 do {
-                    messages = try await client.fetchHistory(sessionID: storedID).map {
-                        ConversationMessage(
-                            id: $0.id,
-                            role: $0.role,
-                            text: $0.text,
-                            media: $0.media,
-                            activities: $0.activities,
-                            tasks: $0.tasks,
-                            userInputRequest: $0.userInputRequest,
-                            userInputResponse: $0.userInputResponse,
-                            state: .complete
-                        )
-                    }
+                    let page = try await client.fetchHistory(sessionID: storedID)
+                    messages = project(page.messages)
+                    hasMoreHistory = page.hasMore
+                    historyNextCursor = page.nextCursor
                     sessionID = storedID
                 } catch let error as AgentAPIError where error.invalidatesSession {
                     try persistence.clear(userID: client.userID, agentID: client.agentID)
@@ -88,6 +84,11 @@ final class ConversationStore {
         draft = ""
         loadState = .idle
         scrollAnchorID = nil
+        hasMoreHistory = false
+        isLoadingEarlierHistory = false
+        historyLoadEarlierError = nil
+        historyRestoreAnchorID = nil
+        historyNextCursor = nil
         localMessageSequence = 0
     }
 
@@ -165,6 +166,38 @@ final class ConversationStore {
         try persistence.save(createdID, userID: client.userID, agentID: client.agentID)
         sessionID = createdID
         messages = []
+        hasMoreHistory = false
+        historyNextCursor = nil
+    }
+
+    func loadEarlierHistory() async {
+        guard let sessionID,
+              hasMoreHistory,
+              let historyNextCursor,
+              !isLoadingEarlierHistory
+        else { return }
+
+        let visibleTopMessageID = messages.first?.id
+        isLoadingEarlierHistory = true
+        historyLoadEarlierError = nil
+        defer { isLoadingEarlierHistory = false }
+
+        do {
+            let page = try await client.fetchHistory(sessionID: sessionID, cursor: historyNextCursor)
+            let knownIDs = Set(messages.map(\.id))
+            let olderMessages = project(page.messages).filter { !knownIDs.contains($0.id) }
+            messages = olderMessages + messages
+            hasMoreHistory = page.hasMore
+            self.historyNextCursor = page.nextCursor
+            historyRestoreAnchorID = visibleTopMessageID
+        } catch {
+            historyLoadEarlierError = userVisibleError(for: error)
+        }
+    }
+
+    func consumeHistoryRestoreAnchor(_ id: String) {
+        guard historyRestoreAnchorID == id else { return }
+        historyRestoreAnchorID = nil
     }
 
     private func receive(_ event: AgentStreamEvent) {
@@ -257,6 +290,22 @@ final class ConversationStore {
     private func nextLocalMessageID() -> String {
         localMessageSequence += 1
         return "local-\(localMessageSequence)"
+    }
+
+    private func project(_ messages: [AgentHistoryMessage]) -> [ConversationMessage] {
+        messages.map {
+            ConversationMessage(
+                id: $0.id,
+                role: $0.role,
+                text: $0.text,
+                media: $0.media,
+                activities: $0.activities,
+                tasks: $0.tasks,
+                userInputRequest: $0.userInputRequest,
+                userInputResponse: $0.userInputResponse,
+                state: .complete
+            )
+        }
     }
 
     private func userVisibleError(for error: Error) -> String {

@@ -8,7 +8,7 @@
 apps/server/src/
 ├── bootstrap/       # 启动、配置、Hono 装配、迁移命令
 ├── routes/          # HTTP 输入、用户边界、响应映射
-├── domain/          # records / media / memory / preferences / creations / tasks
+├── domain/          # records / media / memory / preferences / projects / tasks
 ├── task-runtime/    # 5 分钟 Scheduler、WorkerPool、TaskWorker、结果发布
 ├── infrastructure/ # PostgreSQL、TTL cache、Memory adapter、外部 client、queue、logging、time
 ├── listeners/       # 进程内事件处理
@@ -39,8 +39,7 @@ flowchart LR
 | `/api/uploads`、`/api/media/:id`、`/api/media/:id/url` | Media |
 | `/api/records` | Record / Memory Search |
 | `/api/preferences` | User Preference |
-| `/api/creation-kinds`、`/api/creations` | Creation |
-| `/api/creation-proposals` | Proposal |
+| `/api/projects` | Project |
 | `/api/tasks` | Agent Task |
 
 具体契约见 [HTTP API](../api/http-api.md)。

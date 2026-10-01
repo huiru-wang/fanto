@@ -57,6 +57,12 @@ struct AgentHistoryMessage: Identifiable {
     let userInputResponse: FantoUserInputResponse?
 }
 
+struct AgentHistoryPage {
+    let messages: [AgentHistoryMessage]
+    let hasMore: Bool
+    let nextCursor: Int?
+}
+
 enum AgentStreamEvent {
     case processing(String)
     case delta(String)
@@ -82,12 +88,20 @@ struct AgentAPIClient {
         return response.sessionID
     }
 
-    func fetchHistory(sessionID: String) async throws -> [AgentHistoryMessage] {
+    func fetchHistory(sessionID: String, cursor: Int? = nil) async throws -> AgentHistoryPage {
         var components = URLComponents(url: baseURL.appending(path: "api/agent/sessions/\(sessionID)/history"), resolvingAgainstBaseURL: false)
-        components?.queryItems = [URLQueryItem(name: "limit", value: "10")]
+        var queryItems = [URLQueryItem(name: "limit", value: "10")]
+        if let cursor {
+            queryItems.append(URLQueryItem(name: "cursor", value: String(cursor)))
+        }
+        components?.queryItems = queryItems
         guard let url = components?.url else { throw AgentAPIError.invalidResponse }
         let response: HistoryResponse = try await request(url: url)
-        return projectHistory(response.messages)
+        return .init(
+            messages: projectHistory(response.messages),
+            hasMore: response.hasMore,
+            nextCursor: response.nextCursor
+        )
     }
 
     func fetchTaskDetails(taskID: String) async throws -> FantoTaskDetails {
@@ -276,7 +290,11 @@ private struct CreateSessionResponse: Decodable {
     enum CodingKeys: String, CodingKey { case sessionID = "sessionId" }
 }
 
-private struct HistoryResponse: Decodable { let messages: [HistoryMessage] }
+private struct HistoryResponse: Decodable {
+    let messages: [HistoryMessage]
+    let hasMore: Bool
+    let nextCursor: Int?
+}
 
 private struct HistoryMessage: Decodable {
     let id: String

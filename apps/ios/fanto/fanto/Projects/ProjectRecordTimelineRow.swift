@@ -1,7 +1,7 @@
 import SwiftUI
 
-struct CreationSourceTimelineRow: View {
-    let record: CreationSourceRecord
+struct ProjectRecordTimelineRow: View {
+    let record: Record
     let showsLineAfter: Bool
 
     var body: some View {
@@ -23,7 +23,7 @@ struct CreationSourceTimelineRow: View {
                 Text(record.text)
                     .font(.body)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(FantoDateText.timestamp(record.createdAt))
+                Text(FantoDateText.timestamp(record.eventAt))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

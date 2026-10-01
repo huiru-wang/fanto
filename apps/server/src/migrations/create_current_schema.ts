@@ -54,20 +54,14 @@ export async function up(db: Kysely<any>) {
     CREATE INDEX idx_task_runs_user_created ON task_runs(user_id, created_at DESC);
     CREATE TABLE vector_items (id SERIAL PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, type TEXT NOT NULL, outer_id TEXT NOT NULL, content TEXT NOT NULL, content_hash TEXT NOT NULL, status TEXT NOT NULL, error_code TEXT, event_at TEXT NOT NULL, indexed_at TEXT, created_at TEXT NOT NULL, embedding vector(768) NOT NULL);
     CREATE INDEX idx_vector_items_lookup ON vector_items(user_id, type, outer_id, status);
-    CREATE TABLE creation_kinds (kind_id TEXT PRIMARY KEY, owner_user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE, name TEXT NOT NULL, title TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE creations (id SERIAL PRIMARY KEY, creation_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, title TEXT NOT NULL, kind_id TEXT NOT NULL, session_id TEXT NOT NULL, summary TEXT NOT NULL, content TEXT NOT NULL, status TEXT NOT NULL, version INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE creation_proposals (id SERIAL PRIMARY KEY, proposal_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, creation_id TEXT, base_creation_version INTEGER, operation TEXT NOT NULL, session_id TEXT NOT NULL, title TEXT, kind_id TEXT, summary TEXT, content TEXT, ext_data TEXT, status TEXT NOT NULL, error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE TABLE entity_relations (relation_id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, source_entity_id TEXT NOT NULL, source_entity_type TEXT NOT NULL, target_entity_id TEXT NOT NULL, target_entity_type TEXT NOT NULL, relation_type TEXT NOT NULL, source_created_at TEXT NOT NULL, created_at TEXT NOT NULL, CONSTRAINT entity_relations_unique UNIQUE(user_id, source_entity_id, target_entity_id, relation_type));
-    CREATE INDEX idx_entity_relations_target_records ON entity_relations(user_id, target_entity_type, target_entity_id, relation_type, source_created_at DESC, source_entity_id DESC);
-    CREATE INDEX idx_entity_relations_source ON entity_relations(user_id, source_entity_type, source_entity_id, relation_type, target_entity_type, target_entity_id);
-    CREATE INDEX idx_creations_user_status_updated ON creations(user_id, status, updated_at DESC, creation_id DESC);
-    CREATE INDEX idx_creations_user_kind_status_updated ON creations(user_id, kind_id, status, updated_at DESC, creation_id DESC);
-    CREATE INDEX idx_creation_proposals_user_status_updated ON creation_proposals(user_id, status, updated_at DESC, proposal_id DESC);
-    CREATE UNIQUE INDEX idx_creation_kinds_system_name ON creation_kinds(name) WHERE owner_user_id IS NULL;
-    CREATE UNIQUE INDEX idx_creation_kinds_user_name ON creation_kinds(owner_user_id, name) WHERE owner_user_id IS NOT NULL;
+    CREATE TABLE projects (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, project_id UUID NOT NULL UNIQUE, user_id TEXT NOT NULL, title TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', status TEXT NOT NULL CHECK (status IN ('proposed','active','archived','rejected')), version INTEGER NOT NULL DEFAULT 1, ext_data JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL);
+    CREATE INDEX idx_projects_user_status_updated ON projects(user_id, status, updated_at DESC, project_id DESC);
+    CREATE TABLE project_records (id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY, user_id TEXT NOT NULL, project_id UUID NOT NULL, record_id TEXT NOT NULL, record_event_at TIMESTAMPTZ NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, UNIQUE(user_id, project_id, record_id));
+    CREATE INDEX idx_project_records_timeline ON project_records(user_id, project_id, record_event_at DESC, record_id DESC);
+    CREATE INDEX idx_project_records_record ON project_records(user_id, record_id);
   `.execute(db);
 }
 
 export async function down(db: Kysely<any>) {
-  await sql`DROP TABLE IF EXISTS entity_relations; DROP TABLE IF EXISTS creation_proposals; DROP TABLE IF EXISTS creations; DROP TABLE IF EXISTS creation_kinds; DROP TABLE IF EXISTS vector_items; DROP TABLE IF EXISTS task_runs; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS media_assets; DROP TABLE IF EXISTS user_preferences; DROP TABLE IF EXISTS records; DROP TABLE IF EXISTS auth_challenges; DROP TABLE IF EXISTS user_login_identities; DROP TABLE IF EXISTS users;`.execute(db);
+  await sql`DROP TABLE IF EXISTS project_records; DROP TABLE IF EXISTS projects; DROP TABLE IF EXISTS vector_items; DROP TABLE IF EXISTS task_runs; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS media_assets; DROP TABLE IF EXISTS user_preferences; DROP TABLE IF EXISTS records; DROP TABLE IF EXISTS auth_challenges; DROP TABLE IF EXISTS user_login_identities; DROP TABLE IF EXISTS users;`.execute(db);
 }

@@ -122,7 +122,7 @@ private struct ConversationImageThumbnail: View {
     private func loadReadURL() async {
         guard !Task.isCancelled else { return }
         do {
-            imageURL = try await CreationAPIClient.shared.fetchMediaReadURL(id: item.mediaID)
+            imageURL = try await FantoAPIClient.shared.fetchMediaReadURL(id: item.mediaID)
         } catch {
             failed = true
         }
@@ -243,7 +243,7 @@ private struct ConversationImagePage: View {
     private func loadReadURL() async {
         guard !Task.isCancelled else { return }
         do {
-            imageURL = try await CreationAPIClient.shared.fetchMediaReadURL(id: item.mediaID)
+            imageURL = try await FantoAPIClient.shared.fetchMediaReadURL(id: item.mediaID)
         } catch {
             failed = true
         }
@@ -339,7 +339,7 @@ private struct ConversationAudioTile: View {
     private func loadReadURL() async {
         guard !Task.isCancelled else { return }
         do {
-            let url = try await CreationAPIClient.shared.fetchMediaReadURL(id: item.mediaID)
+            let url = try await FantoAPIClient.shared.fetchMediaReadURL(id: item.mediaID)
             readURL = url
             playback.load(url: url)
         } catch {

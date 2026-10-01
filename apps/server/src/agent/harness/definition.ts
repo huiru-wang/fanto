@@ -3,8 +3,7 @@ import { readFileSync } from "node:fs";
 import { parseDocument } from "yaml";
 import { z } from "zod";
 import type { Models } from "@earendil-works/pi-ai";
-import { corePrompt } from "../prompts/core.js";
-import { operationalPrompt } from "../prompts/operational.js";
+import { mainPrompt } from "../prompts/main.js";
 import { taskWorkerPrompt } from "../prompts/task-worker.js";
 
 const tool = z.enum(["read", "write", "edit", "bash", "record_get", "record_list", "record_search", "web_search", "present_media", "preference_manage", "collect_user_input", "create_task", "update_task", "get_task", "task_plan_manage", "deliver_task_result"]);
@@ -25,9 +24,7 @@ const compaction = z.object({
 const partialDefinition = z.object({
   description: z.string().max(500).optional(),
   model_id: z.string().min(3).optional(),
-  systemPrompt: z.string().min(1).optional(),
-  systemPromptModule: z.enum(["operational", "task-worker"]).optional(),
-  corePromptModule: z.enum(["core"]).optional(),
+  systemPromptModule: z.enum(["main", "task-worker"]),
   tools: z.array(tool).optional(),
   skills: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)).optional(),
   task: taskConfig.optional(),
@@ -60,16 +57,7 @@ const definitionSchema = z.object({
 
 export type AgentDefinition = z.infer<typeof definitionSchema> & { revision: string };
 
-const promptModules = { core: corePrompt, operational: operationalPrompt, "task-worker": taskWorkerPrompt } as const;
-
-function assertPromptSource(
-  value: { systemPrompt?: string; systemPromptModule?: string },
-  label: string,
-): void {
-  if (value.systemPrompt && value.systemPromptModule) {
-    throw new Error(`Invalid agents.yaml ${label}: systemPrompt and systemPromptModule are mutually exclusive`);
-  }
-}
+const promptModules = { main: mainPrompt, "task-worker": taskWorkerPrompt } as const;
 
 export function readAgentDefinitions(
   path: string,
@@ -84,7 +72,6 @@ export function readAgentDefinitions(
   for (const agent of document.data.agents) {
     if (ids.has(agent.id)) throw new Error(`Duplicate agent id "${agent.id}"`);
     ids.add(agent.id);
-    assertPromptSource(agent, `agent "${agent.id}"`);
   }
   const configuredModels = new Map<string, { provider: string; model: string }>();
   for (const configured of document.data.models) {
@@ -97,12 +84,11 @@ export function readAgentDefinitions(
   }
 
   return document.data.agents.map(configured => {
-    const { id, model_id, systemPrompt, systemPromptModule, corePromptModule, ...overrides } = configured;
+    const { id, model_id, systemPromptModule, ...overrides } = configured;
     if (!model_id) throw new Error(`Invalid agents.yaml agent "${id}": model_id is required`);
     const configuredModel = configuredModels.get(model_id);
     if (!configuredModel) throw new Error(`Agent "${id}" references unknown model_id "${model_id}"`);
-    const resolvedPrompt = systemPrompt ?? (systemPromptModule ? promptModules[systemPromptModule] : undefined);
-    const core = corePromptModule ? promptModules[corePromptModule] : undefined;
+    const resolvedPrompt = promptModules[systemPromptModule];
     const merged = {
       ...overrides,
       id,
@@ -110,7 +96,7 @@ export function readAgentDefinitions(
       provider: configuredModel.provider,
       model: configuredModel.model,
       description: overrides.description ?? "",
-      systemPrompt: [core, resolvedPrompt].filter((prompt): prompt is string => Boolean(prompt)).join("\n\n"),
+      systemPrompt: resolvedPrompt,
       tools: overrides.tools ?? [],
       skills: overrides.skills ?? [],
       compaction: overrides.compaction,

@@ -44,7 +44,7 @@ struct ContinuousRecordTimelineView: View {
 
     private var header: some View {
         HStack(alignment: .center) {
-            Text("记录")
+            Text("时间线")
                 .font(.largeTitle.bold())
 
             Spacer()
@@ -130,7 +130,7 @@ private struct ContinuousTimelineRecordRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Text(record.eventAt.formatted(date: .omitted, time: .shortened))
+            Text(FantoDateText.time(record.eventAt))
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 56, alignment: .trailing)
@@ -170,6 +170,7 @@ private struct ContinuousTimelineRecordRow: View {
             }
             .padding(.bottom, 24)
         }
+        .offset(x: -8)
         .accessibilityElement(children: .combine)
     }
 }

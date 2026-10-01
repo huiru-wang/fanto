@@ -3,7 +3,7 @@ import SwiftUI
 enum AppTab: Hashable {
     case records
     case fanto
-    case creations
+    case projects
 }
 
 struct AppRootView: View {
@@ -24,8 +24,8 @@ struct AppRootView: View {
             Tab("Fanto", systemImage: "message", value: .fanto) {
                 FantoConversationView(store: conversationStore, taskDetailCache: taskDetailCache)
             }
-            Tab("脉络", systemImage: "point.3.connected.trianglepath.dotted", value: .creations) {
-                CreationsView()
+            Tab("脉络", systemImage: "point.3.connected.trianglepath.dotted", value: .projects) {
+                ProjectsView()
             }
         }
         .tint(FantoTheme.accent)

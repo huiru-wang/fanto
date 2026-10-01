@@ -45,10 +45,11 @@ struct AuthenticationGateView: View {
     }
 
     private func prepareApp(for user: AuthUser) async {
+        await fantoStore.restoreRecordSnapshot(for: user.userId)
         async let records: Void = fantoStore.loadRecords()
-        async let creations: Void = fantoStore.loadCreations()
+        async let projects: Void = fantoStore.loadProjects()
         async let conversation: Void = conversationStore.load()
-        _ = await (records, creations, conversation)
+        _ = await (records, projects, conversation)
 
         guard case let .signedIn(currentUser) = auth.state, currentUser.userId == user.userId else {
             return

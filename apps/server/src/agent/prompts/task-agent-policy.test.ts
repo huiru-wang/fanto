@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { operationalPrompt } from "./operational.js";
+import { mainPrompt } from "./main.js";
 import { taskWorkerPrompt } from "./task-worker.js";
 
 test("Main task delegation policy keeps implementation questions away from the user", () => {
-  assert.match(operationalPrompt, /照片如何嵌入/);
-  assert.match(operationalPrompt, /永远不要询问用户/);
-  assert.match(operationalPrompt, /output\.format 必须显式填写/);
-  assert.match(operationalPrompt, /不要传 mediaId/);
-  assert.match(operationalPrompt, /不用“默认策略”替用户做重要决定/);
+  assert.match(mainPrompt, /照片如何嵌入/);
+  assert.match(mainPrompt, /永远不要询问用户/);
+  assert.match(mainPrompt, /output\.format 必须显式填写/);
+  assert.match(mainPrompt, /不要传 mediaId/);
+  assert.match(mainPrompt, /不用“默认策略”替用户做重要决定/);
 });
 
 test("Task Worker policy treats artifacts as final products rather than developer handoffs", () => {

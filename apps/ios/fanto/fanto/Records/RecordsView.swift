@@ -5,19 +5,29 @@ struct RecordsView: View {
     @State private var showingComposer = false
     @State private var selectedDate = Calendar.current.startOfDay(for: .now)
     @State private var viewMode: RecordViewMode = .calendar
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let calendar = Calendar.current
 
     var body: some View {
         NavigationStack {
-            Group {
+            ZStack {
                 switch viewMode {
                 case .calendar:
                     calendarView
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .leading)),
+                            removal: .opacity.combined(with: .move(edge: .trailing))
+                        ))
                 case .timeline:
                     timelineView
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .trailing)),
+                            removal: .opacity.combined(with: .move(edge: .leading))
+                        ))
                 }
             }
+            .animation(reduceMotion ? nil : .smooth(duration: 0.28, extraBounce: 0), value: viewMode)
             .sheet(isPresented: $showingComposer) {
                 RecordComposerView { eventAt in
                     selectedDate = calendar.startOfDay(for: eventAt)
@@ -38,7 +48,7 @@ struct RecordsView: View {
                 RecordCalendarView(
                     selectedDate: $selectedDate,
                     records: store.records,
-                    showTimeline: { viewMode = .timeline },
+                    showTimeline: { switchView(to: .timeline) },
                     addRecord: { showingComposer = true }
                 )
                 timeline(date: selectedDate, records: dayRecords)
@@ -73,7 +83,7 @@ struct RecordsView: View {
                         hasMore: hasMore,
                         isLoadingMore: store.isLoadingMoreRecords,
                         loadMoreError: store.recordLoadMoreError,
-                        showCalendar: { viewMode = .calendar },
+                        showCalendar: { switchView(to: .calendar) },
                         addRecord: { showingComposer = true },
                         loadMore: { Task { await store.loadMoreRecords() } }
                     )
@@ -86,14 +96,14 @@ struct RecordsView: View {
 
     private var timelineHeader: some View {
         HStack(alignment: .center) {
-            Text("记录")
+            Text("时间线")
                 .font(.largeTitle.bold())
             Spacer()
             HStack(spacing: 8) {
                 CalendarActionButton(
                     title: "切换到日历模式",
                     systemImage: "calendar",
-                    action: { viewMode = .calendar }
+                    action: { switchView(to: .calendar) }
                 )
                 CalendarActionButton(
                     title: "添加记录",
@@ -131,9 +141,14 @@ struct RecordsView: View {
             RecordTimelineView(date: date, records: records)
         }
     }
+
+    private func switchView(to mode: RecordViewMode) {
+        guard viewMode != mode else { return }
+        viewMode = mode
+    }
 }
 
-private enum RecordViewMode {
+private enum RecordViewMode: Equatable {
     case calendar
     case timeline
 }

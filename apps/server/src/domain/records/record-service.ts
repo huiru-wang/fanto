@@ -85,6 +85,13 @@ export class RecordService {
     return record && record.userId === userId ? this.view(record) : null;
   }
 
+  async findMany(userId: string, ids: string[]) {
+    if (!ids.length) return [];
+    const rows = await this.records.findByIds(userId, [...new Set(ids)]);
+    const byId = new Map(rows.map(record => [record.id, this.view(record)]));
+    return ids.flatMap(id => { const record = byId.get(id); return record ? [record] : []; });
+  }
+
   async claimPostprocess(input: { recordId: string; userId: string; version: number; runId: string }) {
     const record = await this.records.claimPostprocess(input);
     if (record) this.invalidateList(input.userId);

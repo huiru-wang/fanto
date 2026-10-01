@@ -39,18 +39,18 @@ Record、Memory Index 与检索机制属于实现层；在产品关系上，这�
 ```mermaid
 flowchart TD
   R[Record<br/>原始记录] --> M[Memory<br/>对用户的理解]
-  R --> C[Creation<br/>长期脉络]
+  R --> C[Project<br/>长期脉络]
   M --> F[Fanto]
   C --> F
   F --> H[回应<br/>Conversation]
-  F --> D[发现<br/>Proposal]
+  F --> D[发现<br/>proposed Project]
   F --> P[授权后的主动介入]
 ```
 
 - **Record**：用户原始、真实、低负担的表达。
 - **Memory**：Fanto 对人物、偏好、经历、判断和上下文的理解；它是产品概念，不预设必须对应独立数据库实体。
-- **Proposal**：Fanto 发现的候选联系，让用户理解来源并决定是否继续。
-- **Creation**：值得长期跟踪的脉络，例如持续思考、研究方向、生活主题或可能性分支。
+- **proposed Project**：Fanto 发现的候选脉络，让用户理解来源并决定是否继续。
+- **Project**：值得长期跟踪的脉络，例如持续思考、研究方向、生活主题或可能性分支。
 - **Conversation**：Fanto 的一个出口，而不是产品本身。
 
 这张图描述长期方向，不代表所有链路已经在当前仓库中实现；当前能力以 [current-scope.md](current-scope.md) 为准。
@@ -84,7 +84,7 @@ Fanto 的能力不先按“搜索、总结、提醒、推荐”拆成功能菜�
 Fanto 的 MVP 价值最终需要回答三个问题：
 
 1. **它真的记得我吗？** 历史 Record 能否被准确、自然地重新使用。
-2. **它能发现有价值的联系吗？** Proposal / Creation 是否比单纯搜索更有长期价值。
+2. **它能发现有价值的联系吗？** proposed / active Project 是否比单纯搜索更有长期价值。
 3. **它知道什么时候闭嘴吗？** AI 的主动性是否足够克制，并让用户持续保持控制感。
 
 具体“当前已经做到哪里”始终以 [current-scope.md](current-scope.md) 为准。

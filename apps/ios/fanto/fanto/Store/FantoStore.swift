@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-enum CreationLoadState: Equatable {
+enum ProjectLoadState: Equatable {
     case idle
     case loading
     case loaded
@@ -15,67 +15,93 @@ enum RecordLoadState: Equatable {
     case failed(String)
 }
 
-enum ProposalLoadState: Equatable {
-    case idle
-    case loading
-    case loaded
-    case failed(String)
-}
-
 @Observable
 final class FantoStore {
     var records: [Record]
-    var proposals: [Proposal]
-    var creations: [Creation]
-    var creationKinds: [CreationKind]
+    var projects: [Project]
+    var proposedProjects: [Project]
     var recordLoadState: RecordLoadState = .idle
     private(set) var recordNextCursor: String?
     private(set) var isLoadingMoreRecords = false
     private(set) var recordLoadMoreError: String?
-    var creationLoadState: CreationLoadState = .idle
-    var proposalLoadState: ProposalLoadState = .idle
-    var proposalActionError: String?
+    var projectLoadState: ProjectLoadState = .idle
+    var proposedProjectLoadState: ProjectLoadState = .idle
+    var projectActionError: String?
+
+    private let recordSnapshotStore: RecordSnapshotStore
+    private var snapshotUserID: String?
 
     init(
         records: [Record] = [],
-        proposals: [Proposal] = [],
-        creations: [Creation] = [],
-        creationKinds: [CreationKind] = []
+        projects: [Project] = [],
+        proposedProjects: [Project] = [],
+        recordSnapshotStore: RecordSnapshotStore = .shared
     ) {
         self.records = records
-        self.proposals = proposals
-        self.creations = creations
-        self.creationKinds = creationKinds
+        self.projects = projects
+        self.proposedProjects = proposedProjects
+        self.recordSnapshotStore = recordSnapshotStore
     }
 
-    func loadCreations() async {
-        creationLoadState = .loading
-
+    func loadProjects() async {
+        projectLoadState = .loading
         do {
-            let overview = try await CreationAPIClient.shared.fetchOverview()
-            creations = overview.tracking
-            creationKinds = overview.kinds
-            creationLoadState = .loaded
+            projects = try await FantoAPIClient.shared.fetchProjects(status: .active).projects
+            projectLoadState = .loaded
         } catch {
-            creationLoadState = .failed(error.localizedDescription)
+            projectLoadState = .failed(error.localizedDescription)
         }
+        await loadProposedProjects()
+    }
 
-        await loadProposals()
+    func loadProposedProjects() async {
+        proposedProjectLoadState = .loading
+        do {
+            proposedProjects = try await FantoAPIClient.shared.fetchProjects(status: .proposed).projects
+            proposedProjectLoadState = .loaded
+        } catch {
+            proposedProjects = []
+            proposedProjectLoadState = .failed(error.localizedDescription)
+        }
+    }
+
+    func accept(_ project: Project) async -> Bool {
+        do {
+            _ = try await FantoAPIClient.shared.confirmProject(id: project.id)
+            proposedProjects.removeAll { $0.id == project.id }
+            await loadProjects()
+            return true
+        } catch {
+            projectActionError = error.localizedDescription
+            return false
+        }
+    }
+
+    func decline(_ project: Project) async -> Bool {
+        do {
+            _ = try await FantoAPIClient.shared.rejectProject(id: project.id)
+            proposedProjects.removeAll { $0.id == project.id }
+            return true
+        } catch {
+            projectActionError = error.localizedDescription
+            return false
+        }
     }
 
     func loadRecords() async {
         guard recordLoadState != .loading, !isLoadingMoreRecords else { return }
-        recordLoadState = .loading
+        if records.isEmpty { recordLoadState = .loading }
         recordLoadMoreError = nil
         recordNextCursor = nil
 
         do {
-            let page = try await CreationAPIClient.shared.fetchRecords()
+            let page = try await FantoAPIClient.shared.fetchRecords()
             records = orderedUniqueRecords(page.records)
             recordNextCursor = page.nextCursor
             recordLoadState = .loaded(hasMore: page.hasMore)
+            await saveRecordSnapshot()
         } catch {
-            recordLoadState = .failed(error.localizedDescription)
+            recordLoadState = records.isEmpty ? .failed(error.localizedDescription) : .loaded(hasMore: false)
         }
     }
 
@@ -91,88 +117,82 @@ final class FantoStore {
         defer { isLoadingMoreRecords = false }
 
         do {
-            let page = try await CreationAPIClient.shared.fetchRecords(cursor: recordNextCursor)
+            let page = try await FantoAPIClient.shared.fetchRecords(cursor: recordNextCursor)
             records = orderedUniqueRecords(records + page.records)
             self.recordNextCursor = page.nextCursor
             recordLoadState = .loaded(hasMore: page.hasMore)
+            await saveRecordSnapshot()
         } catch {
             recordLoadMoreError = error.localizedDescription
-        }
-    }
-
-    func loadProposals() async {
-        proposalLoadState = .loading
-
-        do {
-            proposals = try await CreationAPIClient.shared.fetchProposals()
-            proposalLoadState = .loaded
-        } catch {
-            proposals = []
-            proposalLoadState = .failed(error.localizedDescription)
-        }
-    }
-
-    func accept(_ proposal: Proposal) async -> Bool {
-        do {
-            try await CreationAPIClient.shared.confirmProposal(id: proposal.id)
-            proposals.removeAll { $0.id == proposal.id }
-            await loadCreations()
-            return true
-        } catch {
-            proposalActionError = error.localizedDescription
-            return false
-        }
-    }
-
-    func decline(_ proposal: Proposal) async -> Bool {
-        do {
-            try await CreationAPIClient.shared.rejectProposal(id: proposal.id)
-            proposals.removeAll { $0.id == proposal.id }
-            return true
-        } catch {
-            proposalActionError = error.localizedDescription
-            return false
         }
     }
 
     func addRecord(text: String, location: String?, eventAt: Date) {
         records.append(Record(text: text, eventAt: eventAt, location: location))
         records = orderedUniqueRecords(records)
+        saveRecordSnapshotInBackground()
+    }
+
+    func restoreRecordSnapshot(for userID: String) async {
+        guard snapshotUserID != userID else { return }
+        snapshotUserID = userID
+        let cachedRecords = await recordSnapshotStore.load(for: userID)
+        guard !cachedRecords.isEmpty else { return }
+        records = orderedUniqueRecords(cachedRecords)
+        if recordLoadState == .idle { recordLoadState = .loaded(hasMore: false) }
     }
 
     func resetUserData() {
+        if let snapshotUserID {
+            Task { [recordSnapshotStore] in await recordSnapshotStore.clear(for: snapshotUserID) }
+        }
         records = []
-        proposals = []
-        creations = []
-        creationKinds = []
+        projects = []
+        proposedProjects = []
         recordLoadState = .idle
         recordNextCursor = nil
         isLoadingMoreRecords = false
         recordLoadMoreError = nil
-        creationLoadState = .idle
-        proposalLoadState = .idle
-        proposalActionError = nil
+        projectLoadState = .idle
+        proposedProjectLoadState = .idle
+        projectActionError = nil
+        snapshotUserID = nil
     }
 
     private func orderedUniqueRecords(_ candidates: [Record]) -> [Record] {
         var seen = Set<String>()
         return candidates
-            .sorted {
-                $0.eventAt == $1.eventAt ? $0.id > $1.id : $0.eventAt > $1.eventAt
-            }
+            .sorted { $0.eventAt == $1.eventAt ? $0.id > $1.id : $0.eventAt > $1.eventAt }
             .filter { seen.insert($0.id).inserted }
+    }
+
+    private func saveRecordSnapshot() async {
+        guard let snapshotUserID else { return }
+        await recordSnapshotStore.save(records, for: snapshotUserID)
+    }
+
+    private func saveRecordSnapshotInBackground() {
+        guard let snapshotUserID else { return }
+        let records = records
+        let snapshotStore = recordSnapshotStore
+        Task { await snapshotStore.save(records, for: snapshotUserID) }
     }
 }
 
 extension FantoStore {
     static let preview: FantoStore = {
-        let store = FantoStore(
-            creations: [
-                Creation(kind: .thread, title: "关于有边界的投入", summary: "不是减少投入，而是让投入能被自己选择。", updatedAt: .now, sourceCount: 6, nextStep: "查看最近的变化")
-            ],
-            creationKinds: [.thread]
+        let project = Project(
+            id: UUID().uuidString,
+            title: "关于有边界的投入",
+            content: "不是减少投入，而是让投入能被自己选择。",
+            status: .active,
+            version: 1,
+            createdAt: .now,
+            updatedAt: .now
         )
-        store.creationLoadState = .loaded
+        let store = FantoStore(projects: [project])
+        store.projectLoadState = .loaded
+        store.proposedProjectLoadState = .loaded
         store.recordLoadState = .loaded(hasMore: false)
         return store
     }()
