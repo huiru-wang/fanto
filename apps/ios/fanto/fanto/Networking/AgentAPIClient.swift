@@ -91,10 +91,13 @@ struct AgentAPIClient {
     }
 
     func fetchTaskDetails(taskID: String) async throws -> FantoTaskDetails {
-        async let taskResponse: FantoTaskDetail = request(path: "api/tasks/\(taskID)", method: "GET", body: Optional<String>.none)
-        async let runsResponse: TaskRunsResponse = request(path: "api/tasks/\(taskID)/runs", method: "GET", body: Optional<String>.none)
-        let (task, runs) = try await (taskResponse, runsResponse)
-        return FantoTaskDetails(task: task, latestRun: runs.data.first)
+        let response: TaskDetailResponse = try await request(path: "api/tasks/\(taskID)", method: "GET")
+        let runs: TaskRunsResponse? = try? await request(path: "api/tasks/\(taskID)/runs", method: "GET")
+        return FantoTaskDetails(task: response.task, runs: runs?.data ?? [])
+    }
+
+    func fetchTaskArtifactPreview(mediaID: String) async throws -> FantoTaskArtifactPreview {
+        try await request(path: "api/tasks/artifacts/\(mediaID)/preview", method: "GET")
     }
 
     func stream(sessionID: String, message: String, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
@@ -193,12 +196,25 @@ struct AgentAPIClient {
         try await request(url: baseURL.appending(path: path), method: method, body: body)
     }
 
-    private func request<Response: Decodable>(url: URL) async throws -> Response {
-        try await request(url: url, method: "GET", body: Optional<String>.none)
+    private func request<Response: Decodable>(path: String, method: String) async throws -> Response {
+        try await request(url: baseURL.appending(path: path), method: method)
     }
 
-    private func request<Response: Decodable, Body: Encodable>(url: URL, method: String, body: Body?) async throws -> Response {
+    private func request<Response: Decodable>(url: URL) async throws -> Response {
+        try await request(url: url, method: "GET")
+    }
+
+    private func request<Response: Decodable>(url: URL, method: String) async throws -> Response {
+        let request = try await makeRequest(url: url, method: method)
+        return try await decodeResponse(from: request)
+    }
+
+    private func request<Response: Decodable, Body: Encodable>(url: URL, method: String, body: Body) async throws -> Response {
         let request = try await makeRequest(url: url, method: method, body: body)
+        return try await decodeResponse(from: request)
+    }
+
+    private func decodeResponse<Response: Decodable>(from request: URLRequest) async throws -> Response {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw AgentAPIError.invalidResponse }
         guard (200 ... 299).contains(http.statusCode) else { throw AgentAPIError.httpStatus(http.statusCode) }
@@ -213,16 +229,19 @@ struct AgentAPIClient {
         try await makeRequest(url: baseURL.appending(path: path), method: method, body: body)
     }
 
-    private func makeRequest<Body: Encodable>(url: URL, method: String, body: Body?) async throws -> URLRequest {
+    private func makeRequest(url: URL, method: String) async throws -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method
         let token = try await AuthSession.shared.accessToken()
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Trace-Id")
+        return request
+    }
+
+    private func makeRequest<Body: Encodable>(url: URL, method: String, body: Body) async throws -> URLRequest {
+        var request = try await makeRequest(url: url, method: method)
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let body {
-            request.httpBody = try JSONEncoder().encode(body)
-        }
+        request.httpBody = try JSONEncoder().encode(body)
         return request
     }
 }
@@ -338,6 +357,24 @@ private struct StreamToolResult: Decodable {
     }
 }
 private struct StreamFailure: Decodable { let error: String }
+private nonisolated struct TaskDetailResponse: Decodable {
+    let task: FantoTaskDetail
+
+    private enum CodingKeys: String, CodingKey { case task, data }
+
+    init(from decoder: Decoder) throws {
+        if let direct = try? FantoTaskDetail(from: decoder) {
+            task = direct
+            return
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        if let value = try? container.decode(FantoTaskDetail.self, forKey: .task) {
+            task = value
+            return
+        }
+        task = try container.decode(FantoTaskDetail.self, forKey: .data)
+    }
+}
 private nonisolated struct TaskRunsResponse: Decodable { let data: [FantoTaskRun] }
 
 private func projectHistory(_ entries: [HistoryMessage]) -> [AgentHistoryMessage] {

@@ -3,76 +3,30 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 TARGET="${1:-all}"
-
-LOG_DIR="$ROOT/logs"
-RUN_DIR="$ROOT/run"
-SERVER_DIR="$ROOT/apps/server"
+SERVER_ENV="$ROOT/apps/server/.env"
 PUBLISH_H5="$ROOT/deploy/manual/publish-h5.sh"
-
-mkdir -p "$LOG_DIR" "$RUN_DIR"
+PM2_CONFIG="$ROOT/ecosystem.config.cjs"
 
 usage() {
   echo "Usage: $0 [server|h5|all]"
 }
 
-is_running() {
-  local name="$1"
-  local pid_file="$RUN_DIR/$name.pid"
-
-  if [[ ! -f "$pid_file" ]]; then
-    return 1
-  fi
-
-  local pid
-  pid="$(cat "$pid_file")"
-
-  if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-    return 0
-  fi
-
-  rm -f "$pid_file"
-  return 1
-}
-
-require_env() {
-  local name="$1"
-  local env_file="$2"
-
-  if [[ ! -f "$env_file" ]]; then
-    echo "[ERROR] $name env file not found: $env_file"
+require_pm2() {
+  command -v pm2 >/dev/null 2>&1 || {
+    echo "[ERROR] pm2 is not installed. Run: $ROOT/deploy/manual/setup-runtime.sh" >&2
     exit 1
-  fi
+  }
 }
 
 start_server() {
-  if is_running server; then
-    echo "[SKIP] server already running (pid=$(cat "$RUN_DIR/server.pid"))"
-    return
-  fi
-
-  local env_file="$SERVER_DIR/.env"
-  require_env server "$env_file"
-
-  echo "[START] server"
-
-  (
-    cd "$SERVER_DIR"
-    nohup node --env-file=.env --import tsx src/bootstrap/main.ts       >> "$LOG_DIR/server.log" 2>&1 &
-    echo $! > "$RUN_DIR/server.pid"
-  )
-
-  local pid
-  pid="$(cat "$RUN_DIR/server.pid")"
-  sleep 1
-
-  if kill -0 "$pid" 2>/dev/null; then
-    echo "[OK] server started (pid=$pid)"
-  else
-    rm -f "$RUN_DIR/server.pid"
-    echo "[ERROR] server failed to start"
-    tail -n 50 "$LOG_DIR/server.log" 2>/dev/null || true
-    exit 1
-  fi
+  [[ -f "$SERVER_ENV" ]] || { echo "[ERROR] server env file not found: $SERVER_ENV" >&2; exit 1; }
+  [[ -f "$PM2_CONFIG" ]] || { echo "[ERROR] PM2 config not found: $PM2_CONFIG" >&2; exit 1; }
+  require_pm2
+  mkdir -p "$ROOT/logs"
+  echo "[START] fanto-server via PM2"
+  pm2 startOrReload "$PM2_CONFIG" --only fanto-server --update-env
+  pm2 save --force >/dev/null
+  echo "[OK] fanto-server managed by PM2"
 }
 
 start_h5() {
@@ -80,12 +34,8 @@ start_h5() {
 }
 
 case "$TARGET" in
-  server)
-    start_server
-    ;;
-  h5)
-    start_h5
-    ;;
+  server) start_server ;;
+  h5) start_h5 ;;
   all)
     start_server
     start_h5

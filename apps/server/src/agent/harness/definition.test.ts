@@ -32,10 +32,9 @@ test("agent.yaml exposes task management and the single task-worker", () => {
   assert.ok(worker?.tools.includes("deliver_task_result"));
   assert.match(worker?.systemPrompt ?? "", /Fanto 的后台执行 Agent/);
   assert.match(worker?.systemPrompt ?? "", /task_plan_manage/);
-  assert.deepEqual(registry.taskAgents(), [
-    {
-      id: "task-worker",
-      description: "处理所有需要后台独立完成并交付文件的任务，包括资料整理、HTML 页面和卡片、文本与 Markdown 文档、代码及工作区文件修改；需要可预览页面、文件、报告或耗时处理时使用。",
-    },
-  ]);
+  const taskAgents = registry.taskAgents();
+  assert.equal(taskAgents.length, 1);
+  assert.equal(taskAgents[0]?.id, "task-worker");
+  assert.match(taskAgents[0]?.description ?? "", /最终仅可交付 text、markdown 或 html 文件/);
+  assert.match(taskAgents[0]?.description ?? "", /不要创建后台任务/);
 });

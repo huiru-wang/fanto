@@ -1,40 +1,89 @@
+import AVFoundation
 import SwiftUI
 
 struct RecordMediaView: View {
     let media: RecordMedia
     @State private var selectedPhoto: RecordPhoto?
+    @State private var audioPlayer: AVPlayer?
+    @State private var playingAudioID: String?
+    @State private var audioError: String?
 
     var body: some View {
-        switch media {
-        case let .photos(photos):
-            HStack(spacing: 8) {
-                ForEach(photos.prefix(3)) { photo in
-                    RecordImageThumbnail(
-                        photo: photo,
-                        position: (photos.firstIndex { $0.id == photo.id } ?? 0) + 1,
-                        count: photos.count,
-                        onSelect: { selectedPhoto = photo }
+        VStack(alignment: .leading, spacing: 10) {
+            if let audio = media.audio {
+                Button {
+                    togglePlayback(audio)
+                } label: {
+                    Label(
+                        Duration.seconds(audio.duration).formatted(.time(pattern: .minuteSecond)),
+                        systemImage: playingAudioID == audio.id ? "stop.fill" : "play.fill"
                     )
                 }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(photos.count) 张图片")
-            .fullScreenCover(item: $selectedPhoto) { photo in
-                RecordPhotoViewer(photos: photos, initiallySelected: photo)
-            }
-
-        case let .audio(duration):
-            Button {
-                // Playback will be connected to the persisted audio asset in the media integration.
-            } label: {
-                Label(Duration.seconds(duration).formatted(.time(pattern: .minuteSecond)), systemImage: "play.fill")
-            }
                 .buttonStyle(.bordered)
                 .tint(FantoTheme.accent)
-                .accessibilityLabel("播放录音")
-                .accessibilityValue("时长 \(Duration.seconds(duration).formatted(.time(pattern: .minuteSecond)))")
+                .accessibilityLabel(playingAudioID == audio.id ? "停止录音" : "播放录音")
+                .accessibilityValue("时长 \(Duration.seconds(audio.duration).formatted(.time(pattern: .minuteSecond)))")
+            }
+
+            if !media.photos.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(media.photos.prefix(3)) { photo in
+                        RecordImageThumbnail(
+                            photo: photo,
+                            position: (media.photos.firstIndex { $0.id == photo.id } ?? 0) + 1,
+                            count: media.photos.count,
+                            onSelect: { selectedPhoto = photo }
+                        )
+                    }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(media.photos.count) 张图片")
+                .fullScreenCover(item: $selectedPhoto) { photo in
+                    RecordPhotoViewer(photos: media.photos, initiallySelected: photo)
+                }
+            }
+        }
+        .alert("无法播放录音", isPresented: Binding(
+            get: { audioError != nil },
+            set: { if !$0 { audioError = nil } }
+        )) {
+            Button("好", role: .cancel) { audioError = nil }
+        } message: {
+            Text(audioError ?? "请稍后重试。")
+        }
+        .onDisappear {
+            stopPlayback()
         }
     }
+
+    private func togglePlayback(_ audio: RecordAudio) {
+        if playingAudioID == audio.id {
+            stopPlayback()
+            return
+        }
+
+        stopPlayback()
+        Task {
+            do {
+                let url = try await CreationAPIClient.shared.fetchMediaReadURL(id: audio.id, variant: .original)
+                guard !Task.isCancelled else { return }
+                let player = AVPlayer(url: url)
+                audioPlayer = player
+                playingAudioID = audio.id
+                player.play()
+            } catch {
+                audioError = error.localizedDescription
+            }
+        }
+    }
+
+    private func stopPlayback() {
+        audioPlayer?.pause()
+        audioPlayer?.seek(to: .zero)
+        audioPlayer = nil
+        playingAudioID = nil
+    }
+
 }
 
 private struct RecordImageThumbnail: View {

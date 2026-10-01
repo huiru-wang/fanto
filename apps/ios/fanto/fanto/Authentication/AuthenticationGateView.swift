@@ -3,6 +3,9 @@ import SwiftUI
 struct AuthenticationGateView: View {
     @Environment(FantoStore.self) private var fantoStore
     @State private var auth = AuthenticationStore.shared
+    @State private var conversationStore = ConversationStore()
+    @State private var taskDetailCache = TaskDetailCache()
+    @State private var preparedUserID: String?
 
     var body: some View {
         Group {
@@ -11,13 +14,15 @@ struct AuthenticationGateView: View {
                 restoringView
             case .signedOut:
                 AuthenticationEntryView(auth: auth)
-            case .signedIn:
-                AppRootView()
-                    .task {
-                        async let records: Void = fantoStore.loadRecords()
-                        async let creations: Void = fantoStore.loadCreations()
-                        _ = await (records, creations)
-                    }
+            case let .signedIn(user):
+                if preparedUserID == user.userId {
+                    AppRootView(conversationStore: conversationStore, taskDetailCache: taskDetailCache)
+                } else {
+                    StartupExperienceView()
+                        .task(id: user.userId) {
+                            await prepareApp(for: user)
+                        }
+                }
             }
         }
         .task { await auth.restore() }
@@ -28,18 +33,26 @@ struct AuthenticationGateView: View {
         .onChange(of: auth.state) { oldValue, newValue in
             if case .signedIn = oldValue, case .signedOut = newValue {
                 fantoStore.resetUserData()
+                conversationStore.reset()
+                taskDetailCache.reset()
+                preparedUserID = nil
             }
         }
     }
 
     private var restoringView: some View {
-        VStack(spacing: 16) {
-            ProgressView()
-            Text("正在恢复登录状态")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+        StartupExperienceView()
+    }
+
+    private func prepareApp(for user: AuthUser) async {
+        async let records: Void = fantoStore.loadRecords()
+        async let creations: Void = fantoStore.loadCreations()
+        async let conversation: Void = conversationStore.load()
+        _ = await (records, creations, conversation)
+
+        guard case let .signedIn(currentUser) = auth.state, currentUser.userId == user.userId else {
+            return
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
+        preparedUserID = user.userId
     }
 }

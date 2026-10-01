@@ -77,6 +77,20 @@ final class ConversationStore {
         Task { await load() }
     }
 
+    func reset() {
+        runTask?.cancel()
+        runTask = nil
+        sessionID = nil
+        activeAssistantMessageID = nil
+        activePrompt = nil
+        pendingPresentedMedia = []
+        messages = []
+        draft = ""
+        loadState = .idle
+        scrollAnchorID = nil
+        localMessageSequence = 0
+    }
+
     func send() {
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return }

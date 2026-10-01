@@ -16,7 +16,7 @@
 
 | 能力 | 数据来源 | 当前状态 |
 | --- | --- | --- |
-| Record 列表 / 日历 / Timeline | `GET /api/records?limit=10` | Client 已接 |
+| Record 列表 / 日历 / 连续时间线 | `GET /api/records?limit=30&cursor=` | Client 已接分页 |
 | 新建 Record | 本地 `FantoStore.addRecord` | 仅本地，不持久化到 Server |
 | 媒体写入 | UI / model 占位 | 未形成 Server 上传链路 |
 | Creation 概览 | `GET /api/creations/overview` | Client 已接 |
@@ -29,14 +29,14 @@
 | Fanto 最近历史 | `GET /api/agent/sessions/:id/history?limit=10` | 已接 iOS 客户端流程 |
 | Fanto 文本流式回复 | `POST /api/agent/stream` | 已接 iOS 客户端流程 |
 
-Record 当前首批读取 10 条，客户端据此生成日历标记和 Timeline；服务端返回 `nextCursor`，客户端后续连续时间线会基于该 cursor 继续加载更早记录。
+Record 首批读取 30 条，客户端据此生成日历标记和两种视图；服务端返回 `nextCursor`，连续时间线在滚动到底部时基于 cursor 自动读取并追加更早记录。追加页会按 Record ID 去重并按事件时间倒序排列；追加失败保留已显示记录并在底部提供重试。
 
 
 ## Google 登录与账号状态
 
 App 启动后先进入认证 Gate：
 
-- Keychain 中存在仍有效的 Fanto access token 时直接进入主界面；
+- Keychain 中存在仍有效的 Fanto access token 时先显示与登录页一致的品牌启动页，再进入主界面；启动页使用 Fanto IP、`Pieces become something.` 和浅色渐变背景，并在显示期间并发预读取 Record、Creation / Proposal 与 Fanto 最近会话。读取失败不会阻塞进入主界面，对应页面保留既有失败与重试状态；
 - access token 临近过期时，使用 Keychain 中的 refresh token 调用 `POST /api/auth/tokens/refresh`，成功后原子替换整对 token；
 - refresh token 过期、无效或用户被禁用时清理本地认证状态并回到登录页；
 - access / refresh token 均保存在 Keychain，业务 token 不写入 `UserDefaults`；
@@ -58,13 +58,13 @@ Apple 登录使用系统 `AuthenticationServices`，Xcode target 通过 `fanto/f
 
 ## Fanto 对话
 
-Fanto 位于根导航中间，只使用一个默认长期 Agent Session，不提供会话列表、切换或“开始新话题”。iOS 以当前认证用户的 `user_id` 和 `main` Agent 为键将 Session ID 保存到 Keychain；App 根导航出现后即开始预加载 Fanto Session 与最近 10 条历史，切入 Fanto 时若尚未完成才显示加载态。仅在本地没有 ID，或服务端明确返回 Session 不存在 / 无权访问时创建新的 Session。
+Fanto 位于根导航中间，只使用一个默认长期 Agent Session，不提供会话列表、切换或“开始新话题”。iOS 以当前认证用户的 `user_id` 和 `main` Agent 为键将 Session ID 保存到 Keychain；认证后的品牌启动页会预加载 Fanto Session 与最近 10 条历史，根导航中的加载任务仅作为兜底，切入 Fanto 时若仍未完成才显示加载态。仅在本地没有 ID，或服务端明确返回 Session 不存在 / 无权访问时创建新的 Session。
 
-流式回复通过 SSE 增量追加到当前助手消息。客户端按 SSE 原始字节流保留事件分隔，避免丢失连续的 `delta`；`turn_start`、`message_start` 与可见 Tool Presentation 会被投影为进行中的进度条目，工具结束后更新为成功或失败状态。成功的 `present_media` Tool Result 会暂存至本轮 `done`，再合并进助手消息；历史恢复同样通过服务端 `messages` 投影重建文本、活动、媒体、任务与用户澄清卡片。`collect_user_input` 会渲染为原生表单，支持单选、多选、文本和“其他”输入；提交结果携带服务端要求的内部 interaction 标记继续同一 Session，但客户端只显示为“你的补充”卡片。`create_task` 会显示任务卡片；轻点以系统 Sheet 打开详情，读取现有 Task / TaskRun 接口并以 Markdown 显示目标、要求、完成标准、计划和结果。iOS 不提供独立任务管理页。旧会话正文中的 `fanto-media://<mediaId>` 图片和链接也会兼容投影为同类媒体。图片和语音分组呈现：图片使用横向缩略图，轻点后全屏分页查看；语音可在会话中播放。客户端只保存稳定的媒体 metadata，展示时才通过媒体读取接口取得短期签名地址，并在资源加载失败后刷新一次。界面覆盖加载、等待、流式生成、停止和失败重试；发送任务无论正常结束、失败或被意外取消，都会将占位消息收敛到明确终态，避免停留在等待状态。空回复也会明确失败并提供重试。同一 Session 未完成回复时不能并发发送。助手消息复用 Creation 页面共用的原生 Markdown 视图渲染标题、段落与内联 Markdown。
+流式回复通过 SSE 增量追加到当前助手消息。客户端按 SSE 原始字节流保留事件分隔，避免丢失连续的 `delta`；`turn_start`、`message_start` 与可见 Tool Presentation 会被投影为进行中的进度条目，工具结束后更新为成功或失败状态。成功的 `present_media` Tool Result 会暂存至本轮 `done`，再合并进助手消息；历史恢复同样通过服务端 `messages` 投影重建文本、活动、媒体、任务与用户澄清卡片。`collect_user_input` 会在导航区域下方以逐题原生提示呈现，支持单选、多选、文本和“其他”输入；`required: false` 的问题允许跳过。提交结果携带服务端要求的内部 interaction 标记继续同一 Session，并以“已提交表单”的用户卡片显示。`create_task` 会显示任务卡片；轻点以系统 Sheet 打开详情，读取现有 Task / TaskRun 接口并以 Markdown 显示目标、要求、完成标准和计划。最近一次有交付成果的 completed Run 会显示成果文件卡片，轻点后在同一 Sheet 的导航栈内预览：HTML 使用非持久化 Web 视图，Markdown 与纯文本使用原生阅读视图；预览前会将交付内容里的 `fanto-media://` 引用替换为当前用户短期可访问的媒体 URL。已完成任务的详情和成果预览只在当前账号的本次 App 运行期间缓存在内存；再次查看优先命中缓存，用户手动点击刷新才重新请求，认证失效或切换账号时清空。iOS 不提供独立任务管理页。旧会话正文中的 `fanto-media://<mediaId>` 图片和链接也会兼容投影为同类媒体。图片和语音分组呈现：图片使用横向缩略图，轻点后全屏分页查看；语音可在会话中播放。客户端只保存稳定的媒体 metadata，展示时才通过媒体读取接口取得短期签名地址，并在资源加载失败后刷新一次。界面覆盖加载、等待、流式生成、停止和失败重试；发送任务无论正常结束、失败或被意外取消，都会将占位消息收敛到明确终态，避免停留在等待状态。空回复也会明确失败并提供重试。同一 Session 未完成回复时不能并发发送。助手消息复用 Creation 页面共用的原生 Markdown 视图渲染标题、段落与内联 Markdown。
 
 ## Record UI
 
-Record 日历以周日为一周起点，周视图 / 月视图共享同一日期选择状态。轻点顶部“月 · 年”会以系统 sheet 打开年月滚轮，确认后保留可用的当月日期并同步周历 / 月历定位。日历区域横滑可按当前视图切换前后周或前后月；视觉翻页箭头不显示，但 VoiceOver 保留等价操作。音频 Record 当前主要显示播放入口和时长；图片缩略图按需通过媒体读取接口取得短期签名地址。轻点缩略图会全屏展示图片；多张图片可左右分页切换。签名地址只保留在视图运行态，图片请求失败时会刷新地址并重试一次。
+Record 提供日历与连续时间线两种视图。日历以周日为一周起点，顶部的时间线按钮切换至连续时间线，添加按钮保持可用；轻点顶部“月 · 年”会以系统 sheet 打开年月滚轮，确认后保留可用的当月日期并同步周历定位。日历区域横滑可切换前后周；视觉翻页箭头不显示，但 VoiceOver 保留等价操作。连续时间线按本地日历日倒序分组，日期标题在滚动时保持可见，右上日历按钮可返回日历视图。音频 Record 当前主要显示播放入口和时长；图片缩略图按需通过媒体读取接口取得短期签名地址。轻点缩略图会全屏展示图片；多张图片可左右分页切换。签名地址只保留在视图运行态，图片请求失败时会刷新地址并重试一次。
 
 运行态 Record 直接从 `content.blocks` 构建图片与音频展示，不依赖额外 `media[]` 投影。图片缩略图请求 `/api/media/:id/url?variant=thumbnail`，全屏查看请求 `variant=original`；音频时长直接读取 audio block 的 `durationMs`。
 

@@ -8,6 +8,7 @@ private enum TaskDetailLoadState {
 
 struct TaskDetailSheet: View {
     let task: FantoTaskSummary
+    let cache: TaskDetailCache
     @Environment(\.dismiss) private var dismiss
     @State private var loadState: TaskDetailLoadState = .loading
 
@@ -57,10 +58,15 @@ struct TaskDetailSheet: View {
                             } else {
                                 markdownSection("计划", "任务开始执行后会在这里显示计划。")
                             }
-                            if let result = details.latestRun?.result {
-                                markdownSection("结果", result.summary)
+                            if let delivery = details.latestDelivery, let result = delivery.result {
+                                deliverySection(result)
+                                markdownSection("结果摘要", result.summary)
+                            } else if details.latestRun?.status == "completed" {
+                                markdownSection("结果", "任务已完成，但没有可预览的交付成果。")
+                            } else if details.latestRun != nil {
+                                markdownSection("结果", "任务正在执行，完成后会在这里出现交付成果。")
                             } else {
-                                markdownSection("结果", "任务尚未生成结果。")
+                                markdownSection("结果", "任务等待开始执行。")
                             }
                         }
                         .padding()
@@ -73,8 +79,16 @@ struct TaskDetailSheet: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成") { dismiss() }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        Task { await load(forceRefresh: true) }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .accessibilityLabel("刷新任务详情")
+                }
             }
-            .task(id: task.taskID) { await load() }
+            .task(id: task.taskID) { await load(forceRefresh: false) }
         }
     }
 
@@ -94,6 +108,20 @@ struct TaskDetailSheet: View {
         }
     }
 
+    private func deliverySection(_ result: FantoTaskRunResult) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("交付成果")
+            ForEach(result.artifacts) { artifact in
+                NavigationLink {
+                    TaskArtifactPreviewView(artifact: artifact, cache: cache)
+                } label: {
+                    TaskArtifactRow(artifact: artifact)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
     private func sectionTitle(_ title: String) -> some View {
         Text(title)
             .font(.headline)
@@ -105,10 +133,17 @@ struct TaskDetailSheet: View {
     }
 
     @MainActor
-    private func load() async {
+    private func load(forceRefresh: Bool) async {
+        let userID = AgentAPIClient.shared.userID
+        if !forceRefresh, let cached = cache.details(taskID: task.taskID, userID: userID) {
+            loadState = .loaded(cached)
+            return
+        }
         loadState = .loading
         do {
-            loadState = .loaded(try await AgentAPIClient.shared.fetchTaskDetails(taskID: task.taskID))
+            let details = try await AgentAPIClient.shared.fetchTaskDetails(taskID: task.taskID)
+            cache.store(details, taskID: task.taskID, userID: userID)
+            loadState = .loaded(details)
         } catch {
             loadState = .failed((error as? LocalizedError)?.errorDescription ?? "请稍后重试。")
         }

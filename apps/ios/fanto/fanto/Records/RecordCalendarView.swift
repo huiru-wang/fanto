@@ -3,22 +3,26 @@ import SwiftUI
 struct RecordCalendarView: View {
     @Binding private var selectedDate: Date
     let records: [Record]
+    let showTimeline: () -> Void
     let addRecord: () -> Void
     @State private var weekAnchor: Date
-    @State private var monthAnchor: Date
-    @State private var presentation: CalendarPresentation = .week
     @State private var showingMonthYearPicker = false
     @Namespace private var calendarNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let calendar = Calendar.current
 
-    init(selectedDate: Binding<Date>, records: [Record], addRecord: @escaping () -> Void) {
+    init(
+        selectedDate: Binding<Date>,
+        records: [Record],
+        showTimeline: @escaping () -> Void,
+        addRecord: @escaping () -> Void
+    ) {
         self._selectedDate = selectedDate
         self.records = records
+        self.showTimeline = showTimeline
         self.addRecord = addRecord
         self._weekAnchor = State(initialValue: Calendar.current.sundayStart(containing: selectedDate.wrappedValue))
-        self._monthAnchor = State(initialValue: Calendar.current.startOfMonth(containing: selectedDate.wrappedValue))
     }
 
     var body: some View {
@@ -40,36 +44,21 @@ struct RecordCalendarView: View {
                 Spacer()
                 HStack(spacing: 8) {
                     CalendarActionButton(
-                        title: presentation == .week ? "展开月历" : "收起月历",
-                        systemImage: presentation == .week ? "calendar" : "rectangle.compress.vertical",
-                        action: togglePresentation
+                        title: "切换到时间线模式",
+                        systemImage: "list.bullet",
+                        action: showTimeline
                     )
-                    CalendarActionButton(title: "新建记录", systemImage: "square.and.pencil", action: addRecord)
+                    CalendarActionButton(title: "添加记录", systemImage: "square.and.pencil", action: addRecord)
                 }
             }
 
-            ZStack(alignment: .top) {
-                if presentation == .week {
-                    WeekCalendarStrip(
-                        dates: calendar.days(inWeekStarting: weekAnchor),
-                        selectedDate: selectedDate,
-                        hasRecords: hasRecords,
-                        select: select,
-                        namespace: calendarNamespace
-                    )
-                    .transition(reduceMotion ? .opacity : .identity)
-                } else {
-                    MonthCalendarGrid(
-                        dates: calendar.days(inMonthContaining: monthAnchor),
-                        monthDate: monthAnchor,
-                        selectedDate: selectedDate,
-                        hasRecords: hasRecords,
-                        select: select,
-                        namespace: calendarNamespace
-                    )
-                    .transition(reduceMotion ? .opacity : .identity)
-                }
-            }
+            WeekCalendarStrip(
+                dates: calendar.days(inWeekStarting: weekAnchor),
+                selectedDate: selectedDate,
+                hasRecords: hasRecords,
+                select: select,
+                namespace: calendarNamespace
+            )
             .frame(maxWidth: .infinity, alignment: .top)
             .clipped()
             .contentShape(Rectangle())
@@ -77,10 +66,9 @@ struct RecordCalendarView: View {
                 DragGesture(minimumDistance: 18)
                     .onEnded(handleCalendarSwipe)
             )
-            .accessibilityHint("向左或向右轻扫可切换\(presentation == .week ? "周" : "月")")
+            .accessibilityHint("向左或向右轻扫可切换周")
             .accessibilityAction(named: previousButtonTitle, previousPage)
             .accessibilityAction(named: nextButtonTitle, nextPage)
-            .animation(calendarAnimation, value: presentation)
             .animation(calendarAnimation, value: displayAnchor)
         }
         .padding(.vertical, 4)
@@ -95,7 +83,7 @@ struct RecordCalendarView: View {
     }
 
     private var displayAnchor: Date {
-        presentation == .week ? weekAnchor : monthAnchor
+        weekAnchor
     }
 
     private var calendarAnimation: Animation {
@@ -103,11 +91,11 @@ struct RecordCalendarView: View {
     }
 
     private var previousButtonTitle: String {
-        presentation == .week ? "上一周" : "上个月"
+        "上一周"
     }
 
     private var nextButtonTitle: String {
-        presentation == .week ? "下一周" : "下个月"
+        "下一周"
     }
 
     private func hasRecords(on date: Date) -> Bool {
@@ -118,10 +106,6 @@ struct RecordCalendarView: View {
         withAnimation(calendarAnimation) {
             selectedDate = calendar.startOfDay(for: date)
             weekAnchor = calendar.sundayStart(containing: date)
-            monthAnchor = calendar.startOfMonth(containing: date)
-            if presentation == .month {
-                presentation = .week
-            }
         }
     }
 
@@ -135,18 +119,6 @@ struct RecordCalendarView: View {
         components.day = min(currentDay, dayRange.count)
         guard let date = calendar.date(from: components) else { return }
         select(date)
-    }
-
-    private func togglePresentation() {
-        withAnimation(calendarAnimation) {
-            if presentation == .week {
-                monthAnchor = calendar.startOfMonth(containing: weekAnchor)
-                presentation = .month
-            } else {
-                weekAnchor = calendar.sundayStart(containing: selectedDate)
-                presentation = .week
-            }
-        }
     }
 
     private func previousPage() {
@@ -166,11 +138,7 @@ struct RecordCalendarView: View {
 
     private func changePage(by amount: Int) {
         withAnimation(calendarAnimation) {
-            if presentation == .week {
-                weekAnchor = calendar.date(byAdding: .day, value: 7 * amount, to: weekAnchor) ?? weekAnchor
-            } else {
-                monthAnchor = calendar.date(byAdding: .month, value: amount, to: monthAnchor) ?? monthAnchor
-            }
+            weekAnchor = calendar.date(byAdding: .day, value: 7 * amount, to: weekAnchor) ?? weekAnchor
         }
     }
 }

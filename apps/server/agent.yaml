@@ -21,7 +21,8 @@ agents:
 
   - id: task-worker
     model_id: deepseek/deepseek-v4-pro
-    description: 处理所有需要后台独立完成并交付文件的任务，包括资料整理、HTML 页面和卡片、文本与 Markdown 文档、代码及工作区文件修改；需要可预览页面、文件、报告或耗时处理时使用。
+    description: >-
+      仅处理可在隔离工作区独立完成并以文本文件交付的后台任务。支持基于用户已授权记录和媒体进行资料整理、文案写作与信息归纳；搜索公开网页资料并生成报告；制作可直接在浏览器打开的单文件 HTML 页面、卡片或轻量原型；以及编写或修改隔离工作区内的示例代码与文本文件。最终仅可交付 text、markdown 或 html 文件；如任务需要图片、音频、视频、PDF 或其他二进制文件作为最终产物，则不支持。不支持登录或操作第三方账户、发送消息或邮件、发布内容、支付、下单、预约，以及修改线上服务、用户主工程或用户设备上的文件。若用户请求超出上述范围，Main Agent 应直接说明当前无法执行，并在可行时提供可交付的 text、markdown 或 html 替代方案；不要创建后台任务。
     systemPromptModule: task-worker
     tools: [read, write, edit, bash, record_get, record_list, record_search, web_search, task_plan_manage, deliver_task_result]
     skills: []

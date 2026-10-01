@@ -29,6 +29,9 @@ final class FantoStore {
     var creations: [Creation]
     var creationKinds: [CreationKind]
     var recordLoadState: RecordLoadState = .idle
+    private(set) var recordNextCursor: String?
+    private(set) var isLoadingMoreRecords = false
+    private(set) var recordLoadMoreError: String?
     var creationLoadState: CreationLoadState = .idle
     var proposalLoadState: ProposalLoadState = .idle
     var proposalActionError: String?
@@ -61,14 +64,39 @@ final class FantoStore {
     }
 
     func loadRecords() async {
+        guard recordLoadState != .loading, !isLoadingMoreRecords else { return }
         recordLoadState = .loading
+        recordLoadMoreError = nil
+        recordNextCursor = nil
 
         do {
             let page = try await CreationAPIClient.shared.fetchRecords()
-            records = page.records
+            records = orderedUniqueRecords(page.records)
+            recordNextCursor = page.nextCursor
             recordLoadState = .loaded(hasMore: page.hasMore)
         } catch {
             recordLoadState = .failed(error.localizedDescription)
+        }
+    }
+
+    func loadMoreRecords() async {
+        guard case let .loaded(hasMore) = recordLoadState,
+              hasMore,
+              let recordNextCursor,
+              !isLoadingMoreRecords
+        else { return }
+
+        isLoadingMoreRecords = true
+        recordLoadMoreError = nil
+        defer { isLoadingMoreRecords = false }
+
+        do {
+            let page = try await CreationAPIClient.shared.fetchRecords(cursor: recordNextCursor)
+            records = orderedUniqueRecords(records + page.records)
+            self.recordNextCursor = page.nextCursor
+            recordLoadState = .loaded(hasMore: page.hasMore)
+        } catch {
+            recordLoadMoreError = error.localizedDescription
         }
     }
 
@@ -109,7 +137,7 @@ final class FantoStore {
 
     func addRecord(text: String, location: String?, eventAt: Date) {
         records.append(Record(text: text, eventAt: eventAt, location: location))
-        records.sort { $0.eventAt > $1.eventAt }
+        records = orderedUniqueRecords(records)
     }
 
     func resetUserData() {
@@ -118,9 +146,21 @@ final class FantoStore {
         creations = []
         creationKinds = []
         recordLoadState = .idle
+        recordNextCursor = nil
+        isLoadingMoreRecords = false
+        recordLoadMoreError = nil
         creationLoadState = .idle
         proposalLoadState = .idle
         proposalActionError = nil
+    }
+
+    private func orderedUniqueRecords(_ candidates: [Record]) -> [Record] {
+        var seen = Set<String>()
+        return candidates
+            .sorted {
+                $0.eventAt == $1.eventAt ? $0.id > $1.id : $0.eventAt > $1.eventAt
+            }
+            .filter { seen.insert($0.id).inserted }
     }
 }
 

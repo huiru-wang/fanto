@@ -118,9 +118,8 @@ export function RecordComposer({ onCreated }: { onCreated: (record: RecordItem) 
   const submit = async () => {
     if (saving) return;
     const value = text.trim();
-    const hasAudio = media.some(item => item.kind === "audio");
-    if (!value && !hasAudio) {
-      setError(media.length ? "只有图片时，请补充一点文字" : "写点文字，或者添加一段语音");
+    if (!value && media.length === 0) {
+      setError("写点文字，或添加图片、语音");
       return;
     }
     if (!eventAt || Number.isNaN(new Date(eventAt).getTime())) {
@@ -165,7 +164,7 @@ export function RecordComposer({ onCreated }: { onCreated: (record: RecordItem) 
     }
   };
 
-  const canSave = !!text.trim() || media.some(item => item.kind === "audio");
+  const canSave = !!text.trim() || media.length > 0;
 
   return (
     <section className="record-composer panel">

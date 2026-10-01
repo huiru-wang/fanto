@@ -54,6 +54,7 @@ export type ServerServices = {
   creationProposals?: CreationProposalService;
   tasks?: TaskService;
   agent?: AgentRuntime;
+  healthCheck?: () => Promise<void>;
 };
 
 export function createApp(services: ServerServices) {
@@ -95,7 +96,16 @@ export function createApp(services: ServerServices) {
       throw cause;
     }
   });
-  app.get("/health", c => c.json({ status: "ok", timestamp: nowIso() }));
+  app.get("/health", async c => {
+    try {
+      await services.healthCheck?.();
+      return c.json({ status: "ok", database: "ok", timestamp: nowIso() });
+    } catch (cause) {
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      logError("health", "Health check failed", { error: error.message });
+      return c.json({ status: "unavailable", database: "unavailable", timestamp: nowIso() }, 503);
+    }
+  });
   if (auth) app.route("/api", createAuthRoutes(auth));
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));

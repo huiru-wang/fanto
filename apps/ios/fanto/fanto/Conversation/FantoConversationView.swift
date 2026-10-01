@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FantoConversationView: View {
     @Bindable var store: ConversationStore
+    let taskDetailCache: TaskDetailCache
 
     var body: some View {
         NavigationStack {
@@ -30,17 +31,27 @@ struct FantoConversationView: View {
                         welcome
                     } else {
                         ForEach(store.messages) { message in
-                            ConversationMessageBubble(message: message) {
-                                store.retryLastMessage()
-                            } submitUserInput: { request, answers in
-                                store.submitUserInput(request: request, answers: answers)
-                            }
+                            ConversationMessageBubble(
+                                message: message,
+                                retry: store.retryLastMessage,
+                                taskDetailCache: taskDetailCache
+                            )
                             .id(message.id)
                         }
                     }
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 18)
+            }
+            .safeAreaInset(edge: .top, spacing: 8) {
+                if let request = pendingUserInputRequest {
+                    UserInputPrompt(request: request) { request, answers in
+                        store.submitUserInput(request: request, answers: answers)
+                    }
+                    .padding(.horizontal)
+                    .id(request.interactionID)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 composer
@@ -52,6 +63,13 @@ struct FantoConversationView: View {
                 }
             }
         }
+    }
+
+    private var pendingUserInputRequest: FantoUserInputRequest? {
+        store.messages.reversed().compactMap { message -> FantoUserInputRequest? in
+            guard let request = message.userInputRequest, !request.isResolved else { return nil }
+            return request
+        }.first
     }
 
     private var welcome: some View {
@@ -71,6 +89,7 @@ struct FantoConversationView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(.thinMaterial, in: Capsule())
+                .disabled(pendingUserInputRequest != nil)
                 .accessibilityLabel("输入消息")
 
             Button {
@@ -86,7 +105,7 @@ struct FantoConversationView: View {
                     .foregroundStyle(.white)
                     .background(store.isResponding || !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? FantoTheme.accent : Color.secondary, in: Circle())
             }
-            .disabled(!store.isResponding && store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(!store.isResponding && (pendingUserInputRequest != nil || store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
             .accessibilityLabel(store.isResponding ? "停止生成" : "发送消息")
         }
         .padding(.horizontal)
@@ -98,7 +117,7 @@ struct FantoConversationView: View {
 private struct ConversationMessageBubble: View {
     let message: ConversationMessage
     let retry: () -> Void
-    let submitUserInput: (FantoUserInputRequest, [String]) -> Void
+    let taskDetailCache: TaskDetailCache
     @State private var selectedTask: FantoTaskSummary?
 
     private var legacyMedia: LegacyConversationMedia {
@@ -119,9 +138,6 @@ private struct ConversationMessageBubble: View {
                 if message.role == .assistant {
                     ConversationMediaPresentation(items: displayedMedia)
                     taskCards
-                    if let request = message.userInputRequest {
-                        UserInputFormCard(request: request, submit: submitUserInput)
-                    }
                 }
                 stateText
             }
@@ -134,7 +150,7 @@ private struct ConversationMessageBubble: View {
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
         .accessibilityElement(children: .contain)
         .sheet(item: $selectedTask) { task in
-            TaskDetailSheet(task: task)
+            TaskDetailSheet(task: task, cache: taskDetailCache)
         }
     }
 
@@ -239,13 +255,16 @@ private struct UserInputResponseCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Label("你的补充", systemImage: "checkmark.circle.fill")
+            Label("已提交表单", systemImage: "checkmark.circle.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.white.opacity(0.82))
             Text(response.content)
+                .font(.subheadline)
                 .textSelection(.enabled)
                 .foregroundStyle(.white)
         }
+        .padding(10)
+        .background(.white.opacity(0.13), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 

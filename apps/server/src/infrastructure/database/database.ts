@@ -11,24 +11,52 @@ import type { DB } from "./schema.js";
 import { logError, logInfo } from "../logging/logger.js";
 
 export function createDatabase(databaseUrl: string): Kysely<DB> {
+  const pool = new Pool({
+    connectionString: databaseUrl,
+    ssl: { rejectUnauthorized: false },
+    max: 10,
+    min: 0,
+    connectionTimeoutMillis: 15_000,
+    idleTimeoutMillis: 60_000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 30_000,
+    allowExitOnIdle: false,
+  });
+
+  // pg-pool emits errors from idle clients when a long-lived connection is
+  // interrupted by the network or the remote pooler. Without a listener this
+  // is an uncaught EventEmitter error and Node terminates the whole process.
+  // pg-pool already removes the broken client, so logging is sufficient and a
+  // later query can establish a fresh connection.
+  pool.on("error", error => {
+    logError("database", "Unexpected PostgreSQL idle client error", {
+      code: (error as NodeJS.ErrnoException).code,
+      message: error.message,
+    });
+  });
+
   return new Kysely<DB>({
-    dialect: new PostgresDialect({
-      pool: new Pool({
-        connectionString: databaseUrl,
-        ssl: { rejectUnauthorized: false },
-        max: 10,
-        min: 1,
-        connectionTimeoutMillis: 15_000,
-        idleTimeoutMillis: 300_000,
-        keepAlive: true,
-        keepAliveInitialDelayMillis: 30_000,
-      }),
-    }),
+    dialect: new PostgresDialect({ pool }),
   });
 }
 
 export async function warmDatabase(db: Kysely<DB>): Promise<void> {
   await sql`SELECT 1`.execute(db);
+}
+
+export async function checkDatabaseHealth(db: Kysely<DB>, timeoutMs = 5_000): Promise<void> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      warmDatabase(db),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`Database health check timed out after ${timeoutMs}ms`)), timeoutMs);
+        timeout.unref();
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 /** 动态加载 migrations 目录下的 .ts/.js 文件 */

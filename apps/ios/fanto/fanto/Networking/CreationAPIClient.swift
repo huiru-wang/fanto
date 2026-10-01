@@ -55,9 +55,12 @@ struct CreationAPIClient {
         return CreationOverview(tracking: tracking, kinds: kinds)
     }
 
-    func fetchRecords() async throws -> RecordPage {
+    func fetchRecords(cursor: String? = nil, limit: Int = 30) async throws -> RecordPage {
         var components = URLComponents(url: baseURL.appending(path: "api/records"), resolvingAgainstBaseURL: false)
-        components?.queryItems = [URLQueryItem(name: "limit", value: "10")]
+        components?.queryItems = [URLQueryItem(name: "limit", value: String(limit))]
+        if let cursor {
+            components?.queryItems?.append(URLQueryItem(name: "cursor", value: cursor))
+        }
         guard let url = components?.url else { throw CreationAPIError.invalidBaseURL }
         let response: RecordsPayload = try await request(url: url)
         return RecordPage(
@@ -453,14 +456,14 @@ private extension Record {
         let images = blocks
             .filter { $0.type == "image" }
             .map { RecordPhoto(id: $0.mediaID) }
-        let audio = blocks.first { $0.type == "audio" }
-        let media: RecordMedia? = if let audio {
-            RecordMedia.audio(duration: TimeInterval(audio.durationMs ?? 0) / 1_000)
-        } else if !images.isEmpty {
-            RecordMedia.photos(images)
-        } else {
-            nil
+        let audio = blocks.first { $0.type == "audio" }.map { block in
+            RecordAudio(
+                id: block.mediaID,
+                duration: TimeInterval(block.durationMs ?? 0) / 1_000
+            )
         }
+        let parsedMedia = RecordMedia(photos: images, audio: audio)
+        let media = parsedMedia.isEmpty ? nil : parsedMedia
 
         self.init(id: payload.id, text: payload.content.text, eventAt: payload.eventAt, media: media)
     }

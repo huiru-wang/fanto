@@ -19,133 +19,151 @@ private struct UserInputDraft {
             return labels.isEmpty ? nil : labels.joined(separator: "、")
         }
     }
+
+    func answerOrSkipped(for question: FantoUserInputQuestion) -> String? {
+        answer(for: question) ?? (question.isRequired ? nil : "未填写")
+    }
 }
 
-struct UserInputFormCard: View {
+struct UserInputPrompt: View {
     let request: FantoUserInputRequest
     let submit: (FantoUserInputRequest, [String]) -> Void
 
+    @State private var currentIndex = 0
     @State private var draft = UserInputDraft()
 
-    private var answers: [String]? {
-        let values = request.questions.compactMap { draft.answer(for: $0) }
-        return values.count == request.questions.count ? values : nil
-    }
+    private var question: FantoUserInputQuestion { request.questions[currentIndex] }
+    private var canContinue: Bool { draft.answerOrSkipped(for: question) != nil }
+    private var isLastQuestion: Bool { currentIndex == request.questions.count - 1 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: request.isResolved ? "checkmark.circle.fill" : "questionmark.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(request.isResolved ? .green : FantoTheme.accent)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(request.isResolved ? "已补充信息" : request.title)
-                        .font(.headline)
-                    if let description = request.description, !description.isEmpty {
-                        Text(description)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "questionmark.circle.fill")
+                    .foregroundStyle(FantoTheme.accent)
+                Text(request.title)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text("\(currentIndex + 1)/\(request.questions.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
             }
 
-            if !request.isResolved {
-                ForEach(request.questions) { question in
-                    questionView(question)
-                }
-
-                Button {
-                    guard let answers else { return }
-                    submit(request, answers)
-                } label: {
-                    Text("提交")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(answers == nil)
-                .accessibilityHint("提交后会继续这段对话")
+            if let description = request.description, !description.isEmpty, currentIndex == 0 {
+                Text(description)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-        }
-        .padding(16)
-        .background(.background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(FantoTheme.accent.opacity(request.isResolved ? 0.18 : 0.32), lineWidth: 1)
-        }
-        .accessibilityElement(children: .contain)
-    }
 
-    @ViewBuilder
-    private func questionView(_ question: FantoUserInputQuestion) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
             Text(question.label)
                 .font(.subheadline.weight(.semibold))
                 .fixedSize(horizontal: false, vertical: true)
 
-            switch question.type {
-            case .text:
-                if question.multiline == true {
-                    TextField(question.placeholder ?? "请输入", text: textBinding(for: question.id), axis: .vertical)
-                        .lineLimit(3 ... 6)
-                        .textFieldStyle(.roundedBorder)
-                } else {
-                    TextField(question.placeholder ?? "请输入", text: textBinding(for: question.id))
-                        .lineLimit(1)
-                        .textFieldStyle(.roundedBorder)
+            questionContent
+
+            HStack(spacing: 10) {
+                if currentIndex > 0 {
+                    Button("上一题") {
+                        withAnimation(.easeInOut(duration: 0.16)) { currentIndex -= 1 }
+                    }
+                    .buttonStyle(.bordered)
                 }
-            case .singleSelect:
-                optionList(question, allowsMultipleSelection: false)
-            case .multiSelect:
-                optionList(question, allowsMultipleSelection: true)
+
+                Spacer()
+
+                Button(isLastQuestion ? "提交" : "下一题") { advance() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canContinue)
             }
+        }
+        .padding(14)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(FantoTheme.accent.opacity(0.24), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.08), radius: 12, y: 5)
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder
+    private var questionContent: some View {
+        switch question.type {
+        case .text:
+            if question.multiline == true {
+                TextField(question.placeholder ?? "请输入", text: textBinding(for: question.id), axis: .vertical)
+                    .lineLimit(2 ... 4)
+                    .textFieldStyle(.roundedBorder)
+            } else {
+                TextField(question.placeholder ?? "请输入", text: textBinding(for: question.id))
+                    .textFieldStyle(.roundedBorder)
+            }
+        case .singleSelect:
+            optionList(allowsMultipleSelection: false)
+        case .multiSelect:
+            optionList(allowsMultipleSelection: true)
         }
     }
 
     @ViewBuilder
-    private func optionList(_ question: FantoUserInputQuestion, allowsMultipleSelection: Bool) -> some View {
-        VStack(spacing: 8) {
+    private func optionList(allowsMultipleSelection: Bool) -> some View {
+        VStack(spacing: 6) {
             ForEach(question.options ?? []) { option in
                 Button {
-                    updateSelection(option.value, for: question.id, allowsMultipleSelection: allowsMultipleSelection)
+                    updateSelection(option.value, allowsMultipleSelection: allowsMultipleSelection)
+                    if !allowsMultipleSelection, question.allowOther != true { advance() }
                 } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: isSelected(option.value, questionID: question.id)
+                    HStack(spacing: 8) {
+                        Image(systemName: isSelected(option.value)
                             ? (allowsMultipleSelection ? "checkmark.square.fill" : "largecircle.fill.circle")
                             : (allowsMultipleSelection ? "square" : "circle"))
-                            .foregroundStyle(isSelected(option.value, questionID: question.id) ? FantoTheme.accent : .secondary)
+                            .foregroundStyle(isSelected(option.value) ? FantoTheme.accent : .secondary)
                         Text(option.label)
+                            .font(.footnote)
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(isSelected(option.value, questionID: question.id) ? FantoTheme.softAccent : Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(isSelected(option.value) ? FantoTheme.softAccent : Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .accessibilityValue(isSelected(option.value, questionID: question.id) ? "已选择" : "未选择")
+                .accessibilityValue(isSelected(option.value) ? "已选择" : "未选择")
             }
 
             if question.allowOther == true {
-                TextField("其他，请填写", text: otherBinding(for: question.id), axis: .vertical)
-                    .lineLimit(1 ... 3)
+                TextField("其他，请填写", text: otherBinding(for: question.id))
+                    .font(.footnote)
                     .textFieldStyle(.roundedBorder)
             }
         }
     }
 
-    private func isSelected(_ value: String, questionID: String) -> Bool {
-        draft.selections[questionID]?.contains(value) == true
+    private func advance() {
+        guard canContinue else { return }
+        if isLastQuestion {
+            let answers = request.questions.compactMap { draft.answerOrSkipped(for: $0) }
+            guard answers.count == request.questions.count else { return }
+            submit(request, answers)
+        } else {
+            withAnimation(.easeInOut(duration: 0.16)) { currentIndex += 1 }
+        }
     }
 
-    private func updateSelection(_ value: String, for questionID: String, allowsMultipleSelection: Bool) {
+    private func isSelected(_ value: String) -> Bool {
+        draft.selections[question.id]?.contains(value) == true
+    }
+
+    private func updateSelection(_ value: String, allowsMultipleSelection: Bool) {
         if allowsMultipleSelection {
-            var values = draft.selections[questionID] ?? []
+            var values = draft.selections[question.id] ?? []
             if values.contains(value) { values.remove(value) } else { values.insert(value) }
-            draft.selections[questionID] = values
+            draft.selections[question.id] = values
         } else {
-            draft.selections[questionID] = draft.selections[questionID] == [value] ? [] : [value]
+            draft.selections[question.id] = draft.selections[question.id] == [value] ? [] : [value]
         }
     }
 

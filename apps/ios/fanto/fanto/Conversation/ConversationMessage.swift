@@ -46,8 +46,11 @@ nonisolated struct FantoUserInputQuestion: Identifiable, Decodable, Equatable {
     let label: String
     let options: [FantoUserInputOption]?
     let allowOther: Bool?
+    let required: Bool?
     let placeholder: String?
     let multiline: Bool?
+
+    var isRequired: Bool { required ?? true }
 }
 
 nonisolated struct FantoUserInputRequest: Identifiable, Decodable, Equatable {

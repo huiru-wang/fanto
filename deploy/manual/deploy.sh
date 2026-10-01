@@ -51,8 +51,8 @@ fail() {
   exit 1
 }
 
-for command in node pnpm curl; do
-  command -v "$command" >/dev/null 2>&1 || fail "missing required command: $command"
+for command in node pnpm curl pm2; do
+  command -v "$command" >/dev/null 2>&1 || fail "missing required command: $command (run deploy/manual/setup-runtime.sh once on a new server)"
 done
 
 [[ -f "$SERVER_ENV" ]] || fail "missing server production env: $SERVER_ENV"
@@ -107,8 +107,7 @@ echo "[3/7] Running database migrations"
   node --env-file=.env --import tsx src/bootstrap/migrate.ts
 )
 
-echo "[4/7] Restarting Server"
-"$ROOT/deploy/manual/stop.sh" server || true
+echo "[4/7] Reloading Server via PM2"
 "$ROOT/deploy/manual/start.sh" server
 
 echo "[5/7] Publishing H5"
