@@ -44,7 +44,7 @@ type RecordListDetails = {
 type RecordSearchDetails = {
   data: Array<{
     recordId: string;
-    sourceType: "record_text" | "image" | "audio";
+    sourceType: "record_text" | "record_location" | "image" | "audio";
     mediaId: string | null;
     snippet: string;
     distance: number;
@@ -78,6 +78,7 @@ export function buildRecordPreview(record: AgentRecord, maxLength = 500): string
     ...record.content.blocks.flatMap((block: any) => {
       if (block.type === "image" && block.description?.trim()) return [`图片描述：${block.description.trim()}`];
       if (block.type === "audio" && block.transcription?.trim()) return [`音频转写：${block.transcription.trim()}`];
+      if (block.type === "location") return [`地点：${block.name}`];
       return [];
     }),
   ].filter(Boolean);

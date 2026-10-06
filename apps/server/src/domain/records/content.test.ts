@@ -12,6 +12,22 @@ test("Record accepts a media-only entry", () => {
   });
 });
 
+test("Record accepts one validated location", () => {
+  assert.deepEqual(parseSaveRecord({
+    text: "在外滩散步",
+    media: [],
+    location: { name: "外滩", latitude: 31.24001, longitude: 121.49032 },
+  }).location, { name: "外滩", latitude: 31.24001, longitude: 121.49032 });
+});
+
+test("Record rejects invalid location coordinates", () => {
+  assert.throws(() => parseSaveRecord({
+    text: "地点不对",
+    media: [],
+    location: { name: "外滩", latitude: 91, longitude: 121.49032 },
+  }));
+});
+
 test("Record rejects an entry without text or media", () => {
   assert.throws(() => parseSaveRecord({ text: "  ", media: [] }));
 });

@@ -177,19 +177,33 @@ private struct RecordContentPayload: Decodable {
 
 private struct RecordContentBlockPayload: Decodable {
     let type: String
-    let mediaId: String
+    let mediaId: String?
     let durationMs: Int?
+    let name: String?
+    let latitude: Double?
+    let longitude: Double?
 }
 
 private extension Record {
     init(_ payload: RecordPayload) {
         let blocks = payload.content.blocks ?? []
-        let images = blocks.filter { $0.type == "image" }.map { RecordPhoto(id: $0.mediaId) }
-        let audio = blocks.first { $0.type == "audio" }.map { block in
-            RecordAudio(id: block.mediaId, duration: TimeInterval(block.durationMs ?? 0) / 1_000)
+        let images = blocks.compactMap { block in
+            block.type == "image" && block.mediaId != nil ? RecordPhoto(id: block.mediaId!) : nil
+        }
+        let audio = blocks.first { $0.type == "audio" && $0.mediaId != nil }.map { block in
+            RecordAudio(id: block.mediaId!, duration: TimeInterval(block.durationMs ?? 0) / 1_000)
+        }
+        let location: RecordLocation?
+        if let block = blocks.first(where: { $0.type == "location" }),
+           let name = block.name,
+           let latitude = block.latitude,
+           let longitude = block.longitude {
+            location = RecordLocation(name: name, latitude: latitude, longitude: longitude)
+        } else {
+            location = nil
         }
         let parsedMedia = RecordMedia(photos: images, audio: audio)
-        self.init(id: payload.id, text: payload.content.text, eventAt: payload.eventAt, media: parsedMedia.isEmpty ? nil : parsedMedia)
+        self.init(id: payload.id, text: payload.content.text, eventAt: payload.eventAt, location: location, media: parsedMedia.isEmpty ? nil : parsedMedia)
     }
 }
 

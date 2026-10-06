@@ -26,7 +26,7 @@ export function registerRecordPostprocessListener(
 
     let completed;
     try {
-      const assets = await media.findOwnedByIds(task.userId, record.content.blocks.map(block => block.mediaId));
+      const assets = await media.findOwnedByIds(task.userId, record.content.blocks.flatMap(block => block.type === "location" ? [] : [block.mediaId]));
       const byId = new Map(assets.filter(asset => asset.status === "ready" && asset.extData.recordId === task.recordId).map(asset => [asset.mediaId, asset]));
       const imageJobs = record.content.blocks.filter(block => block.type === "image").flatMap(block => {
         const asset = byId.get(block.mediaId);

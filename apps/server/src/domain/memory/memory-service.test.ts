@@ -44,8 +44,21 @@ test("record memory builder ignores blocks without semantic text", () => {
   );
 });
 
+test("record memory builder indexes a location name without coordinates", () => {
+  const documents = buildRecordMemoryDocuments(record({
+    content: {
+      text: "",
+      blocks: [{ type: "location", name: "外滩", latitude: 31.24001, longitude: 121.49032 }],
+    },
+  }));
+  assert.deepEqual(documents.map(item => [item.sourceType, item.sourceId, item.mediaId, item.content]), [
+    ["record_location", "record-1", null, "地点：外滩"],
+  ]);
+});
+
 test("memory source ids preserve media-to-record association", () => {
   assert.deepEqual(parseMemorySource("record_text", "record-1"), { recordId: "record-1", mediaId: null });
+  assert.deepEqual(parseMemorySource("record_location", "record-1"), { recordId: "record-1", mediaId: null });
   assert.deepEqual(parseMemorySource("image", "record-1:image-1"), { recordId: "record-1", mediaId: "image-1" });
   assert.deepEqual(parseMemorySource("audio", "record-1:audio-1"), { recordId: "record-1", mediaId: "audio-1" });
 });

@@ -4,8 +4,9 @@ import { RecordService } from "../domain/records/index.js";
 import { requireUserId } from "./request-user.js";
 
 const media = z.array(z.unknown());
-const createInput = z.object({ text: z.string(), media, source: z.string().max(100).optional(), eventAt: z.string().datetime({ offset: true }) }).strict();
-const updateInput = z.object({ text: z.string(), media, expectedVersion: z.number().int().positive() }).strict();
+const location = z.object({ name: z.string(), latitude: z.number(), longitude: z.number() }).strict();
+const createInput = z.object({ text: z.string(), media, location: location.optional(), source: z.string().max(100).optional(), eventAt: z.string().datetime({ offset: true }) }).strict();
+const updateInput = z.object({ text: z.string(), media, location: location.nullable().optional(), expectedVersion: z.number().int().positive() }).strict();
 const deleteInput = z.object({ expectedVersion: z.number().int().positive() }).strict();
 const searchInput = z.object({ query: z.string().trim().min(1), limit: z.number().int().min(1).max(20).optional().default(10) }).strict();
 const envelope = (result: unknown) => ({ success: true, result, errorCode: null, errorMsg: null });

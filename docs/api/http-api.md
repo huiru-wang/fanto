@@ -45,9 +45,9 @@
 | DELETE | `/api/records/:id` | 以 expectedVersion 硬删除记录 |
 | POST | `/api/records/search` | 当前用户 Record 语义搜索 |
 
-`POST /api/records/search` 的每个命中返回 `recordId`、`sourceType` (`record_text` / `image` / `audio`)、可选 `mediaId`、`snippet`、原始 Record 的 `eventAt` 和向量 `distance`；图片和音频命中仍关联回原 Record。
+`POST /api/records/search` 的每个命中返回 `recordId`、`sourceType` (`record_text` / `record_location` / `image` / `audio`)、可选 `mediaId`、`snippet`、原始 Record 的 `eventAt` 和向量 `distance`；图片和音频命中仍关联回原 Record。
 
-创建体：`{ text, media, eventAt, source? }`；更新体：`{ text, media, expectedVersion }`；删除体：`{ expectedVersion }`。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。保存 Record 时，音频 capture 中已有的 `durationMs` 会写入对应 audio block；后置处理完成后，图片 description、音频 transcription 与 ASR metadata 写回 `content.blocks`。Record 读取不再查询 `media_assets`，也不返回冗余 `media[]`。删除会解除媒体的 Record 绑定、移除 Record 的向量记忆与来源关联，但不会删除媒体文件本身；已排队的后置任务因找不到 Record 而失效。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
+创建体：`{ text, media, location?, eventAt, source? }`；更新体：`{ text, media, location?, expectedVersion }`；删除体：`{ expectedVersion }`。`location` 为 `{ name, latitude, longitude }`；创建时省略表示无地点，更新时省略保留原地点、`null` 删除、对象替换。坐标固定为 WGS-84。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。保存 Record 时，音频 capture 中已有的 `durationMs` 会写入对应 audio block；后置处理完成后，图片 description、音频 transcription 与 ASR metadata 写回 `content.blocks`。Record 读取不再查询 `media_assets`，也不返回冗余 `media[]`。删除会解除媒体的 Record 绑定、移除 Record 的向量记忆与来源关联，但不会删除媒体文件本身；已排队的后置任务因找不到 Record 而失效。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
 
 列表结果：`{ data, hasMore, nextCursor, pageSize }`。`nextCursor` 只应在 `hasMore=true` 时使用。
 
@@ -64,7 +64,7 @@
 - 当前用户只来自验证后的 Access JWT `sub`，请求体不能传 `userId`；
 - 搜索通过 Memory 模块在当前用户范围内执行 pgvector 查询；
 - 返回 `{ data: [{ recordId, sourceType, mediaId, snippet, eventAt, distance }] }`；
-- `sourceType` 为 `record_text` / `image` / `audio`，媒体命中通过 `mediaId` 关联具体图片或音频；
+- `sourceType` 为 `record_text` / `record_location` / `image` / `audio`，媒体命中通过 `mediaId` 关联具体图片或音频；
 - `distance` 是 pgvector 原始向量距离，仅用于检索相关性判断，不代表已经校准的产品置信度或概率。
 
 ### Record 后置处理与返回字段

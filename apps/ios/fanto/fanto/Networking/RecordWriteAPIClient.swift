@@ -78,13 +78,14 @@ struct RecordWriteAPIClient {
         return ticket.mediaId
     }
 
-    func createRecord(text: String, mediaIds: [String], eventAt: Date) async throws {
+    func createRecord(text: String, mediaIds: [String], location: RecordLocation?, eventAt: Date) async throws {
         let _: CreatedRecordPayload = try await authenticatedRequest(
             url: baseURL.appending(path: "api/records"),
             method: "POST",
             body: CreateRecordRequestPayload(
                 text: text,
                 media: mediaIds.map { .init(mediaId: $0) },
+                location: location,
                 source: "ios",
                 eventAt: Self.iso8601Formatter.string(from: eventAt)
             )
@@ -150,6 +151,7 @@ private struct CreateRecordRequestPayload: Encodable {
 
     let text: String
     let media: [MediaReference]
+    let location: RecordLocation?
     let source: String
     let eventAt: String
 }

@@ -69,14 +69,16 @@ export function formatRecentRecord(record: AgentRecord, timeZone: string | undef
     `内容: ${truncateMemoryText(record.content.text, RECORD_TEXT_LIMIT) || "（无文字）"}`,
   ];
   if (record.content.blocks.length > 0) {
-    lines.push("媒体:");
+    lines.push("上下文:");
     for (const block of record.content.blocks) {
       if (block.type === "image") {
         const description = truncateMemoryText(block.description, MEDIA_TEXT_LIMIT);
         lines.push(`- 图片: mediaId=${block.mediaId}${description ? `；描述=${description}` : ""}`);
-      } else {
+      } else if (block.type === "audio") {
         const transcription = truncateMemoryText(block.transcription, MEDIA_TEXT_LIMIT);
         lines.push(`- 音频: mediaId=${block.mediaId}${transcription ? `；转写=${transcription}` : ""}`);
+      } else {
+        lines.push(`- 地点: ${block.name}`);
       }
     }
   }

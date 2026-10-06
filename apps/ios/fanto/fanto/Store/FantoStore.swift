@@ -127,7 +127,7 @@ final class FantoStore {
         }
     }
 
-    func addRecord(text: String, location: String?, eventAt: Date) {
+    func addRecord(text: String, location: RecordLocation?, eventAt: Date) {
         records.append(Record(text: text, eventAt: eventAt, location: location))
         records = orderedUniqueRecords(records)
         saveRecordSnapshotInBackground()

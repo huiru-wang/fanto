@@ -22,7 +22,11 @@ struct RecordComposerView: View {
     @State private var isSaving = false
     @State private var showingPhotoPicker = false
     @State private var showingDatePicker = false
+    @State private var showingLocationEditor = false
     @State private var errorMessage: String?
+    @State private var location: RecordLocation?
+    @State private var locationEnabled = true
+    @StateObject private var locationCoordinator = RecordLocationCoordinator()
 
     private let recordingTimer = Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()
 
@@ -39,6 +43,7 @@ struct RecordComposerView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     dateCard
+                    locationCard
                     textCard
                     photoSection
                     audioSection
@@ -93,6 +98,12 @@ struct RecordComposerView: View {
                 }
                 .presentationDetents([.medium])
             }
+            .sheet(isPresented: $showingLocationEditor) {
+                RecordLocationEditorView(initialLocation: location) { selectedLocation in
+                    locationEnabled = true
+                    location = selectedLocation
+                }
+            }
             .alert("无法完成操作", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
@@ -105,9 +116,17 @@ struct RecordComposerView: View {
                 guard let startedAt = recordingStartedAt, audioRecorder?.isRecording == true else { return }
                 recordingDuration = now.timeIntervalSince(startedAt)
             }
+            .onChange(of: locationCoordinator.suggestion) { _, suggestion in
+                guard locationEnabled, let suggestion else { return }
+                location = suggestion
+            }
+            .onAppear {
+                if locationEnabled { locationCoordinator.start() }
+            }
             .onDisappear {
                 stopRecording(discard: true)
                 audioPlayer?.stop()
+                locationCoordinator.stop()
             }
         }
     }
@@ -138,6 +157,103 @@ struct RecordComposerView: View {
         }
         .buttonStyle(.plain)
         .background(cardBackground)
+    }
+
+    @ViewBuilder
+    private var locationCard: some View {
+        HStack(spacing: 15) {
+            Image(systemName: "location")
+                .font(.system(size: 20, weight: .medium))
+                .foregroundStyle(FantoTheme.accent)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 3) {
+                if let location {
+                    Text(location.name)
+                        .font(.system(size: 17))
+                        .lineLimit(1)
+                    Text(String(format: "%.6f, %.6f", location.latitude, location.longitude))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    switch locationCoordinator.state {
+                    case .locating:
+                        Text("正在获取当前位置")
+                            .font(.system(size: 17))
+                        Text("可继续编辑记录，不必等待")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .denied:
+                        Text("定位未开启")
+                            .font(.system(size: 17))
+                        Text("可在设置中允许访问位置，或手动添加地点")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .unavailable:
+                        Text("未能获取当前位置")
+                            .font(.system(size: 17))
+                        Text("可重试或手动添加地点")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .idle:
+                        Text("未添加地点")
+                            .font(.system(size: 17))
+                    }
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            if location != nil {
+                Button("编辑") {
+                    locationCoordinator.stop()
+                    showingLocationEditor = true
+                }
+                .font(.subheadline.weight(.medium))
+                Button {
+                    locationEnabled = false
+                    location = nil
+                    locationCoordinator.stop()
+                } label: {
+                    Image(systemName: "xmark")
+                        .frame(width: 30, height: 30)
+                }
+                .accessibilityLabel("移除地点")
+            } else if locationCoordinator.state == .denied {
+                Button("去设置") { openLocationSettings() }
+                    .font(.subheadline.weight(.medium))
+                Button("手动添加") {
+                    locationCoordinator.stop()
+                    showingLocationEditor = true
+                }
+                .font(.subheadline.weight(.medium))
+            } else {
+                if locationCoordinator.state == .unavailable {
+                    Button("重试") {
+                        locationEnabled = true
+                        locationCoordinator.start()
+                    }
+                }
+                if locationCoordinator.state != .locating {
+                    Button("手动添加") {
+                        locationCoordinator.stop()
+                        showingLocationEditor = true
+                    }
+                    .font(.subheadline.weight(.medium))
+                }
+                if locationCoordinator.state == .idle {
+                    Button("定位") {
+                        locationEnabled = true
+                        locationCoordinator.start()
+                    }
+                    .font(.subheadline.weight(.medium))
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(cardBackground)
+        .accessibilityElement(children: .combine)
     }
 
     private var textCard: some View {
@@ -472,6 +588,7 @@ struct RecordComposerView: View {
             try await RecordWriteAPIClient.shared.createRecord(
                 text: text.trimmingCharacters(in: .whitespacesAndNewlines),
                 mediaIds: mediaIds,
+                location: locationEnabled ? location : nil,
                 eventAt: eventAt
             )
             await store.loadRecords()
@@ -490,6 +607,11 @@ struct RecordComposerView: View {
     private func waveformHeight(at index: Int) -> CGFloat {
         let pattern: [CGFloat] = [5, 11, 17, 8, 14, 19, 10, 6, 16, 12, 18, 8]
         return pattern[index % pattern.count]
+    }
+
+    private func openLocationSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 }
 

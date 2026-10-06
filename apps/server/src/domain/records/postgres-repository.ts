@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { DB } from "../../infrastructure/database/schema.js";
 import type { RecordRepository } from "./repository.js";
 import type { Record } from "./record.js";
-import type { RecordContent } from "@fanto/shared";
+import type { AudioContentBlock, ImageContentBlock, RecordContent } from "@fanto/shared";
 import type { SaveRecordContent } from "./content.js";
 import { nowIso } from "../../infrastructure/time.js";
 import { decodeRecordCursor } from "./cursor.js";
@@ -19,7 +19,8 @@ export class PostgresRecordRepository implements RecordRepository {
       const blocks = await this.blocks(trx, input.userId, input.value);
       if (typeof blocks === "string") return blocks;
       const now = nowIso();
-      const row = { record_id: randomUUID(), user_id: input.userId, source: input.source ?? "home", content: JSON.stringify({ text: input.value.text, blocks }), version: 1, status: "pending", task_id: null, event_at: input.eventAt, created_at: now, updated_at: now };
+      const location = input.value.location ? normalizedLocation(input.value.location) : null;
+      const row = { record_id: randomUUID(), user_id: input.userId, source: input.source ?? "home", content: JSON.stringify({ text: input.value.text, blocks }), version: 1, status: "pending", task_id: null, location_latitude: location?.latitude ?? null, location_longitude: location?.longitude ?? null, event_at: input.eventAt, created_at: now, updated_at: now };
       await trx.insertInto("records").values(row).execute();
       await this.link(trx, input.userId, input.value.media.map(item => item.mediaId), row.record_id);
       return this.toEntity(row);
@@ -50,10 +51,11 @@ export class PostgresRecordRepository implements RecordRepository {
       if (previous.status === "processing") return "conflict";
       const blocks = await this.blocks(trx, userId, input.value, id);
       if (typeof blocks === "string") return blocks;
-      const oldIds = (JSON.parse(previous.content) as RecordContent).blocks.map(block => block.mediaId);
+      const oldIds = (JSON.parse(previous.content) as RecordContent).blocks.flatMap(block => block.type === "location" ? [] : [block.mediaId]);
       const newIds = input.value.media.map(item => item.mediaId);
       const now = nowIso();
-      const row = await trx.updateTable("records").set({ content: JSON.stringify({ text: input.value.text, blocks }), version: sql<number>`version + 1`, status: "updated", task_id: null, updated_at: now }).where("record_id", "=", id).returningAll().executeTakeFirstOrThrow();
+      const location = input.value.location ? normalizedLocation(input.value.location) : null;
+      const row = await trx.updateTable("records").set({ content: JSON.stringify({ text: input.value.text, blocks }), location_latitude: location?.latitude ?? null, location_longitude: location?.longitude ?? null, version: sql<number>`version + 1`, status: "updated", task_id: null, updated_at: now }).where("record_id", "=", id).returningAll().executeTakeFirstOrThrow();
       await this.link(trx, userId, newIds, id);
       for (const mediaId of oldIds.filter(mediaId => !newIds.includes(mediaId))) await this.unlink(trx, userId, mediaId, now);
       return this.toEntity(row);
@@ -67,7 +69,7 @@ export class PostgresRecordRepository implements RecordRepository {
       if (row.version !== expectedVersion) return "conflict";
       const record = this.toEntity(row);
       const now = nowIso();
-      for (const block of record.content.blocks) await this.unlink(trx, userId, block.mediaId, now);
+      for (const block of record.content.blocks) if (block.type !== "location") await this.unlink(trx, userId, block.mediaId, now);
       await trx.deleteFrom("project_records").where("user_id", "=", userId).where("record_id", "=", id).execute();
       await trx.deleteFrom("records").where("record_id", "=", id).where("user_id", "=", userId).where("version", "=", expectedVersion).execute();
       return record;
@@ -88,6 +90,7 @@ export class PostgresRecordRepository implements RecordRepository {
       const audio = new Map(input.audio.map(item => [item.mediaId, item]));
       content.blocks = content.blocks.map(block => {
         if (block.type === "image") return images.has(block.mediaId) ? { ...block, description: images.get(block.mediaId) } : block;
+        if (block.type === "location") return block;
         const result = audio.get(block.mediaId);
         if (!result) return block;
         return {
@@ -111,14 +114,15 @@ export class PostgresRecordRepository implements RecordRepository {
     const assets = ids.length ? await trx.selectFrom("media_assets").selectAll().where("user_id", "=", userId).where("media_id", "in", ids).execute() : [];
     if (assets.length !== ids.length || assets.some(asset => asset.status !== "ready" || ext(asset.ext_data).recordId && ext(asset.ext_data).recordId !== recordId)) return "invalid_media";
     const byId = new Map(assets.map(asset => [asset.media_id, asset]));
-    return value.media.map(item => {
+    const mediaBlocks: Array<ImageContentBlock | AudioContentBlock> = value.media.map(item => {
       const asset = byId.get(item.mediaId)!;
-      if (asset.media_type === "image") return { type: "image", mediaId: item.mediaId };
+      if (asset.media_type === "image") return { type: "image" as const, mediaId: item.mediaId };
       const durationMs = ext(asset.ext_data).capture?.durationMs;
       return typeof durationMs === "number" && Number.isFinite(durationMs) && durationMs > 0
-        ? { type: "audio", mediaId: item.mediaId, durationMs }
-        : { type: "audio", mediaId: item.mediaId };
+        ? { type: "audio" as const, mediaId: item.mediaId, durationMs }
+        : { type: "audio" as const, mediaId: item.mediaId };
     });
+    return value.location ? [...mediaBlocks, { type: "location" as const, ...normalizedLocation(value.location) }] : mediaBlocks;
   }
 
   private async link(trx: Kysely<DB>, userId: string, ids: string[], recordId: string) {
@@ -134,4 +138,12 @@ export class PostgresRecordRepository implements RecordRepository {
   }
 
   private toEntity(row: any): Record { return { extData: null, id: row.record_id, userId: row.user_id, source: row.source, content: JSON.parse(row.content), version: row.version, status: row.status, taskId: row.task_id, eventAt: row.event_at, createdAt: row.created_at, updatedAt: row.updated_at }; }
+}
+
+function normalizedLocation(location: { name: string; latitude: number; longitude: number }) {
+  return {
+    name: location.name.trim(),
+    latitude: Number(location.latitude.toFixed(6)),
+    longitude: Number(location.longitude.toFixed(6)),
+  };
 }

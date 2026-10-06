@@ -53,6 +53,8 @@ export interface RecordsTable {
   version: number;
   status: string;
   task_id: string | null;
+  location_latitude: number | null;
+  location_longitude: number | null;
   event_at: string;
   created_at: string;
   updated_at: string;

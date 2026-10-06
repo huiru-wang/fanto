@@ -17,7 +17,7 @@
 | 能力 | 数据来源 | 当前状态 |
 | --- | --- | --- |
 | Record 列表 / 日历 / 连续时间线 | `GET /api/records?limit=30&cursor=` | Client 已接分页 |
-| 新建 Record | 媒体上传后调用 `POST /api/records`，再刷新列表 | Client 已接 |
+| 新建 Record | 打开编辑器即尝试一次当前位置定位并给出地点建议；媒体上传后调用 `POST /api/records`，再刷新列表 | Client 已接 |
 | 媒体写入 | `POST /api/media/upload-intents` 后上传文件 | Client 已接 |
 | active Project 列表 | `GET /api/projects?status=active` | Client 已接 |
 | proposed Project 列表 | `GET /api/projects?status=proposed` | Client 已接 |

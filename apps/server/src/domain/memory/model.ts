@@ -1,4 +1,4 @@
-export type MemorySourceType = "record_text" | "image" | "audio";
+export type MemorySourceType = "record_text" | "record_location" | "image" | "audio";
 
 export type MemoryRef = {
   userId: string;

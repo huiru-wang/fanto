@@ -159,7 +159,7 @@ private struct ContinuousTimelineRecordRow: View {
                 }
 
                 if let location = record.location {
-                    Label(location, systemImage: "location")
+                    Label(location.name, systemImage: "location")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -21,9 +21,16 @@ export type AudioContentBlock = {
   asr?: AudioAsrMetadata;
 };
 
+export type LocationContentBlock = {
+  type: "location";
+  name: string;
+  latitude: number;
+  longitude: number;
+};
+
 export type RecordContent = {
   text: string;
-  blocks: Array<ImageContentBlock | AudioContentBlock>;
+  blocks: Array<ImageContentBlock | AudioContentBlock | LocationContentBlock>;
 };
 
 export function isAudioContentBlock(block: RecordContent["blocks"][number]): block is AudioContentBlock {

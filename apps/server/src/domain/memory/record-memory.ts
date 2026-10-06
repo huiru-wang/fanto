@@ -34,6 +34,9 @@ export function buildRecordMemoryDocuments(record: Record): MemoryDocument[] {
   }
 
   for (const block of record.content.blocks) {
+    if (block.type === "location") {
+      documents.push(document(record, "record_location", record.id, null, `地点：${block.name}`));
+    }
     if (block.type === "image" && block.description?.trim()) {
       const content = `图片描述：${block.description.trim()}`;
       documents.push(document(record, "image", mediaSourceId(record.id, block.mediaId), block.mediaId, content));
@@ -48,7 +51,7 @@ export function buildRecordMemoryDocuments(record: Record): MemoryDocument[] {
 }
 
 export function parseMemorySource(sourceType: MemorySourceType, sourceId: string): { recordId: string; mediaId: string | null } {
-  if (sourceType === "record_text") return { recordId: sourceId, mediaId: null };
+  if (sourceType === "record_text" || sourceType === "record_location") return { recordId: sourceId, mediaId: null };
   const separator = sourceId.indexOf(":");
   if (separator <= 0 || separator === sourceId.length - 1) throw new Error(`Invalid ${sourceType} memory source id`);
   return { recordId: sourceId.slice(0, separator), mediaId: sourceId.slice(separator + 1) };

@@ -29,16 +29,22 @@ export class RecordService {
     return new RecordService(new PostgresRecordRepository(db), queue, memory, listCache);
   }
 
-  async create(userId: string, input: { text: string; media: unknown[]; source?: string; eventAt: string }) {
-    const record = await this.records.create({ userId, source: input.source, eventAt: new Date(input.eventAt).toISOString(), value: parseSaveRecord({ text: input.text, media: input.media }) });
+  async create(userId: string, input: { text: string; media: unknown[]; location?: unknown; source?: string; eventAt: string }) {
+    const record = await this.records.create({ userId, source: input.source, eventAt: new Date(input.eventAt).toISOString(), value: parseSaveRecord({ text: input.text, media: input.media, location: input.location }) });
     if (typeof record === "string") return { kind: record } as const;
     this.invalidateList(record.userId);
     this.queue.publish({ userId: record.userId, recordId: record.id, version: record.version });
     return { kind: "ok", record: this.view(record) } as const;
   }
 
-  async update(userId: string, id: string, input: { text: string; media: unknown[]; expectedVersion: number }) {
-    const record = await this.records.updateContent(id, userId, { value: parseSaveRecord({ text: input.text, media: input.media }), expectedVersion: input.expectedVersion });
+  async update(userId: string, id: string, input: { text: string; media: unknown[]; location?: unknown; expectedVersion: number }) {
+    const current = await this.records.findById(id);
+    if (!current || current.userId !== userId) return { kind: "not_found" } as const;
+    const existing = current.content.blocks.find(block => block.type === "location");
+    const location = input.location === undefined && existing
+      ? { name: existing.name, latitude: existing.latitude, longitude: existing.longitude }
+      : input.location;
+    const record = await this.records.updateContent(id, userId, { value: parseSaveRecord({ text: input.text, media: input.media, location }), expectedVersion: input.expectedVersion });
     if (record === "conflict") return { kind: "conflict", current: await this.find(userId, id) } as const;
     if (typeof record === "string") return { kind: record } as const;
     this.invalidateList(record.userId);

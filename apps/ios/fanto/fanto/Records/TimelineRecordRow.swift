@@ -31,7 +31,7 @@ struct TimelineRecordRow: View {
                     Text(FantoDateText.timestamp(record.eventAt))
                     if let location = record.location {
                         Text("·")
-                        Label(location, systemImage: "location")
+                        Label(location.name, systemImage: "location")
                     }
                 }
                 .font(.caption)
