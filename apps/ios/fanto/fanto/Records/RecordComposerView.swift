@@ -43,10 +43,10 @@ struct RecordComposerView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     dateCard
-                    locationCard
                     textCard
                     photoSection
                     audioSection
+                    locationCard
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
