@@ -1,5 +1,4 @@
 import type { MediaService } from "../domain/media/index.js";
-import type { PreferenceCategory, PreferenceService, UserPreference } from "../domain/preferences/index.js";
 import type { RecordService } from "../domain/records/index.js";
 import type { DelegateTaskInput, DelegateTaskResult, TaskAgentPolicy, TaskPlanAction, TaskRunPlan, TaskRunPlanInput, TaskService, UpdateTaskInput } from "../domain/tasks/index.js";
 import type { TaskDeliveryInput, TaskResultPublisher } from "../task-runtime/result-publisher.js";
@@ -19,9 +18,6 @@ export type AgentRecord = NonNullable<Awaited<ReturnType<RecordService["find"]>>
 export type AgentRecordList = Awaited<ReturnType<RecordService["list"]>>;
 export type AgentRecordSearch = { data: Awaited<ReturnType<RecordService["search"]>> };
 export type AgentMediaMetadata = NonNullable<Awaited<ReturnType<MediaService["readyMetadata"]>>>;
-export type AgentPreference = UserPreference;
-export type AgentPreferenceList = { data: AgentPreference[] };
-export type AgentPreferenceCategory = PreferenceCategory;
 
 export type AgentBusinessServices = {
   getRecord(context: AgentRequestContext, recordId: string): Promise<AgentRecord>;
@@ -29,10 +25,6 @@ export type AgentBusinessServices = {
   searchRecords(context: AgentRequestContext, input: { query: string; limit: number }): Promise<AgentRecordSearch>;
   searchWeb(context: AgentRequestContext, query: string): Promise<WebSearchResult>;
   getMediaMetadata(context: AgentRequestContext, mediaId: string): Promise<AgentMediaMetadata>;
-  listPreferences(context: AgentRequestContext): Promise<AgentPreferenceList>;
-  createPreference(context: AgentRequestContext, input: { category: AgentPreferenceCategory; content: string; source: { sessionId: string; messageId: string; quote: string } }): Promise<{ preference: AgentPreference; reused: boolean }>;
-  updatePreference(context: AgentRequestContext, preferenceId: string, input: { expectedVersion: number; category: AgentPreferenceCategory; content: string; source: { sessionId: string; messageId: string; quote: string } }): Promise<AgentPreference>;
-  deletePreference(context: AgentRequestContext, preferenceId: string, expectedVersion: number): Promise<{ preferenceId: string }>;
   createTask(context: AgentRequestContext, input: DelegateTaskInput): Promise<DelegateTaskResult>;
   updateTask(context: AgentRequestContext, taskId: string, input: UpdateTaskInput): Promise<unknown>;
   getTask(context: AgentRequestContext, taskId: string): Promise<unknown>;
@@ -51,7 +43,6 @@ async function withRunAbort<T>(context: AgentRequestContext, operation: () => Pr
 export function createAgentBusinessServices(services: {
   records: RecordService;
   media: MediaService;
-  preferences: PreferenceService;
   tasks: TaskService;
   resolveTaskAgent(agentId: string): TaskAgentPolicy | undefined;
   taskResultPublisher?: TaskResultPublisher;
@@ -72,22 +63,6 @@ export function createAgentBusinessServices(services: {
       const media = await withRunAbort(context, () => services.media.readyMetadata(context.userId, mediaId));
       if (!media) throw new Error("Media not found or not accessible");
       return media;
-    },
-    async listPreferences(context) { return { data: await withRunAbort(context, () => services.preferences.list(context.userId)) }; },
-    async createPreference(context, input) {
-      const result = await withRunAbort(context, () => services.preferences.create({ userId: context.userId, ...input }));
-      if (result.kind === "limit_reached") throw new Error("Preference limit reached");
-      return result;
-    },
-    async updatePreference(context, preferenceId, input) {
-      const result = await withRunAbort(context, () => services.preferences.update({ userId: context.userId, preferenceId, ...input }));
-      if (result.kind !== "ok") throw new Error(result.kind === "not_found" ? "Preference not found" : "Preference was changed by another request");
-      return result.preference;
-    },
-    async deletePreference(context, preferenceId, expectedVersion) {
-      const result = await withRunAbort(context, () => services.preferences.delete({ userId: context.userId, preferenceId, expectedVersion }));
-      if (result.kind !== "ok") throw new Error(result.kind === "not_found" ? "Preference not found" : "Preference was changed by another request");
-      return { preferenceId: result.preference.preferenceId };
     },
     async createTask(context, input) {
       const policy = services.resolveTaskAgent(input.agentId);

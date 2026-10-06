@@ -9,9 +9,6 @@ export async function up(db: Kysely<any>) {
     CREATE INDEX idx_records_user_event ON records(user_id, event_at, record_id);
     CREATE INDEX idx_records_map_lat ON records(user_id, location_latitude) WHERE location_latitude IS NOT NULL;
     CREATE INDEX idx_records_map_lon ON records(user_id, location_longitude) WHERE location_longitude IS NOT NULL;
-    CREATE TABLE user_preferences (id SERIAL PRIMARY KEY, preference_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, category TEXT NOT NULL, content TEXT NOT NULL, source_session_id TEXT NOT NULL, source_message_id TEXT NOT NULL, source_quote TEXT NOT NULL, version INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-    CREATE INDEX idx_user_preferences_user_updated ON user_preferences(user_id, updated_at, preference_id);
-    CREATE INDEX idx_user_preferences_user_category_content ON user_preferences(user_id, category, content);
     CREATE TABLE media_assets (id SERIAL PRIMARY KEY, media_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, object_key TEXT NOT NULL UNIQUE, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, status TEXT NOT NULL, ext_data TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE INDEX idx_media_assets_user_created ON media_assets(user_id, created_at);
     CREATE TABLE tasks (
@@ -65,5 +62,5 @@ export async function up(db: Kysely<any>) {
 }
 
 export async function down(db: Kysely<any>) {
-  await sql`DROP TABLE IF EXISTS project_records; DROP TABLE IF EXISTS projects; DROP TABLE IF EXISTS vector_items; DROP TABLE IF EXISTS task_runs; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS media_assets; DROP TABLE IF EXISTS user_preferences; DROP TABLE IF EXISTS records; DROP TABLE IF EXISTS auth_challenges; DROP TABLE IF EXISTS user_login_identities; DROP TABLE IF EXISTS users;`.execute(db);
+  await sql`DROP TABLE IF EXISTS project_records; DROP TABLE IF EXISTS projects; DROP TABLE IF EXISTS vector_items; DROP TABLE IF EXISTS task_runs; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS media_assets; DROP TABLE IF EXISTS records; DROP TABLE IF EXISTS auth_challenges; DROP TABLE IF EXISTS user_login_identities; DROP TABLE IF EXISTS users;`.execute(db);
 }

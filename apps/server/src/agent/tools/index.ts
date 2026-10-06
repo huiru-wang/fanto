@@ -16,7 +16,6 @@ import { createTaskPlanManageTool } from "./task-plan-manage.js";
 import { createCollectUserInputTool } from "./user-input.js";
 import { createWebSearchTool } from "./web-search.js";
 import { createPresentMediaTool } from "./media.js";
-import { createPreferenceManageTool } from "./preferences.js";
 import { createRecordGetTool, createRecordListTool, createRecordSearchTool } from "./records.js";
 import type { FantoTool, ToolPresentationConfig } from "./types.js";
 
@@ -37,7 +36,6 @@ export function createTools(
       case "record_search": return createRecordSearchTool(fanto);
       case "web_search": return createWebSearchTool(fanto);
       case "present_media": return createPresentMediaTool(fanto);
-      case "preference_manage": return createPreferenceManageTool(fanto);
       case "collect_user_input": return createCollectUserInputTool();
       case "create_task": return createCreateTaskTool(fanto, taskAgents);
       case "update_task": return createUpdateTaskTool(fanto);

@@ -20,7 +20,7 @@ flowchart LR
 
 Fanto 当前有一个后端服务，并有 iOS 与 H5 两类客户端入口：
 
-1. **Business Server**：Record、Record Retrieval、Media、User Preference、Project、Agent Task，以及内嵌的 Agent Runtime。
+1. **Business Server**：Record、Record Retrieval、Media、Project、Agent Task，以及内嵌的 Agent Runtime。
 
 Agent Runtime 的 Session 与工作区仍独立于业务数据；其 Tool 和 Context Provider 通过 `business-services.ts` 调用领域 Service，不经过 Server Route 或内部 HTTP。H5 生产构建由 Nginx 提供静态文件，所有 `/api/*` 请求均转发到 Business Server。
 
@@ -32,7 +32,6 @@ Business Server 使用 Supabase PostgreSQL 保存：
 - records；
 - media_assets；
 - vector_items + pgvector embedding；
-- user_preferences；
 - projects、project_records；
 - tasks；
 - task_runs。

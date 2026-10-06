@@ -10,7 +10,7 @@ type RecordClient = Pick<AgentBusinessServices, "listRecords" | "searchRecords">
 type SearchHit = AgentRecordSearch["data"][number];
 export type RecordContextMode = "recent" | "relevant";
 const rewriteResult = z.object({ queries: z.array(z.string().trim().min(1)).max(2) }).strict();
-const RECENT_RECORD_LIMIT = 10;
+const RECENT_RECORD_LIMIT = 2;
 const RECORD_TEXT_LIMIT = 300;
 const MEDIA_TEXT_LIMIT = 160;
 

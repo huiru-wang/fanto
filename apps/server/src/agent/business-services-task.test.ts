@@ -7,7 +7,6 @@ test("createTask derives identity and provenance from Run context", async () => 
   const services = createAgentBusinessServices({
     records: {} as never,
     media: {} as never,
-    preferences: {} as never,
     webSearch: { search: async () => ({ query: "q", summary: "s", sources: [] }) } as never,
     tasks: {
       delegate: async (context: any, input: any, policy: any) => {

@@ -25,6 +25,6 @@ Record 创建或更新后的图片理解与音频转写完成，并成功写回�
 
 ## Agent 使用
 
-每次 main Agent Run 开始前，`RecordContextProvider` 读取最近 10 条 Record，注入 `recent_records`。主题相关的历史仍由模型调用 `record_search` 主动查询。最近记录只是原始背景，不能表示 Fanto 已形成长期认识。
+每次 main Agent Run 开始前，`RecordContextProvider` 读取最近 2 条 Record，注入 `recent_records`。主题相关的历史仍由模型调用 `record_search` 主动查询。最近记录只是原始背景，不能表示 Fanto 已形成长期认识。
 
-Fanto 的独立长期 Memory 尚未实现；已明确保存的长期偏好仍由 [User Preferences](preferences.md) 管理。
+Fanto 的独立长期 Memory 尚未实现。

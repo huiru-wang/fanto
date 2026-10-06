@@ -104,35 +104,6 @@
 
 Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒体 URL 不嵌入 Record，而是按 `mediaId` 从 Media API 临时获取。
 
-## User Preferences
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/preferences` | 当前用户最多 20 条长期偏好，按最近更新时间倒序 |
-| POST | `/api/preferences` | 创建明确长期偏好；完全相同的 category + content 会复用并刷新来源 |
-| PATCH | `/api/preferences/:id` | 以 expectedVersion 更新偏好 |
-| DELETE | `/api/preferences/:id` | 以 expectedVersion 删除偏好 |
-
-category 取值为 `communication | scenario | lifestyle`。创建体：
-
-```json
-{
-  "category": "communication",
-  "content": "技术方案详细展开，包含流程和实现细节",
-  "source": {
-    "sessionId": "session-id",
-    "messageId": "pi-entry-id",
-    "quote": "以后技术方案详细一点"
-  }
-}
-```
-
-更新体在此基础上增加 `expectedVersion`；删除体为 `{ "expectedVersion": 3 }`。
-
-`preference_id` 是 API / Agent Tool 使用的业务 UUID，数据库自增 `id` 不对外。更新和删除按当前用户、业务 ID 和版本共同校验；不存在返回 `404 NOT_FOUND`，版本过期返回 `409 VERSION_CONFLICT`，创建第 21 条不同 Preference 返回 `409 PREFERENCE_LIMIT_REACHED`。
-
-Preference 来源字段用于追溯用户明确表达。Agent Tool 的 `sessionId / messageId` 来自当前 Run Context，`quote` 必须是当前用户消息中的连续原文。Preference 的 content 和 source quote 会在 Business Server access log 中脱敏。
-
 ## 上传与媒体
 
 | 方法 | 路径 | 说明 |
@@ -219,7 +190,7 @@ Worker 最终将主结果写为 `result.md` / `result.txt` / `result.html`，再
 
 ## Agent Runtime
 
-Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 仍使用独立 SQLite，不与业务 PostgreSQL 共用。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、最多 20 条 User Preference、当前 Task 摘要和最近 10 条紧凑 Recent Records，再填充 System Prompt；Recent Records 通过 `listRecords(limit=10)` 读取，可命中 Record 首页缓存，不执行 Query Rewrite 或向量搜索，记录时间按请求时区展示。Record Tool、Preference Provider / Tool、`present_media` 与 Task Tool 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
+Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 仍使用独立 SQLite，不与业务 PostgreSQL 共用。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、当前 Task 摘要和最近 10 条紧凑 Recent Records，再填充 System Prompt；Recent Records 通过 `listRecords(limit=10)` 读取，可命中 Record 首页缓存，不执行 Query Rewrite 或向量搜索，记录时间按请求时区展示。Record Tool、`present_media` 与 Task Tool 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
 
 ```text
 Authorization: Bearer <ACCESS_TOKEN>

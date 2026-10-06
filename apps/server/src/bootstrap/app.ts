@@ -8,8 +8,6 @@ import { AuthError, type AuthService } from "../domain/auth/index.js";
 import { createAuthRoutes } from "../routes/auth.js";
 import { logAccess, logError } from "../infrastructure/logging/logger.js";
 import { createProjectRoutes } from "../routes/projects.js";
-import type { PreferenceService } from "../domain/preferences/index.js";
-import { createPreferenceRoutes } from "../routes/preferences.js";
 import { RecordService } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
 import type { ProjectService } from "../domain/projects/index.js";
@@ -27,16 +25,7 @@ const redact = (value: unknown): unknown => {
     /authorization|password|secret|token|key|nonce|display.?hint|email/i.test(key) ? [key, "[REDACTED]"] : [key, redact(item)],
   ));
 };
-const redactPreferenceData = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(redactPreferenceData);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value).map(([key, item]) =>
-    /^(content|quote|sourceQuote|source_quote)$/i.test(key) ? [key, "[REDACTED]"] : [key, redactPreferenceData(item)],
-  ));
-};
-export const logSafeBody = (path: string, value: unknown) => path.startsWith("/api/preferences")
-  ? redactPreferenceData(redact(value))
-  : /^\/api\/media\/[^/]+\/url$/.test(path)
+export const logSafeBody = (path: string, value: unknown) => /^\/api\/media\/[^/]+\/url$/.test(path)
     ? "[REDACTED]"
   : redact(value);
 const jsonBody = async (response: Response, path: string) => {
@@ -48,7 +37,6 @@ export type ServerServices = {
   auth?: AuthService;
   records: RecordService;
   media: MediaService;
-  preferences?: PreferenceService;
   projects?: ProjectService;
   tasks?: TaskService;
   agent?: AgentRuntime;
@@ -57,7 +45,7 @@ export type ServerServices = {
 
 export function createApp(services: ServerServices) {
   const app = new Hono();
-  const { auth, records: recordService, media: mediaService, preferences, projects: projectService } = services;
+  const { auth, records: recordService, media: mediaService, projects: projectService } = services;
   app.onError((error, c) => {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });
     return c.json({ success: false, errorCode: "INTERNAL_ERROR", errorMsg: "Internal server error" }, 500);
@@ -107,7 +95,6 @@ export function createApp(services: ServerServices) {
   if (auth) app.route("/api", createAuthRoutes(auth));
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));
-  if (preferences) app.route("/api/preferences", createPreferenceRoutes(preferences));
   if (projectService) app.route("/api", createProjectRoutes(projectService));
   if (services.tasks) app.route("/api", createTaskRoutes(services.tasks, mediaService));
   if (services.agent) {

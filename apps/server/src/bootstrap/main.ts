@@ -9,7 +9,6 @@ import { OssStorage } from "../infrastructure/clients/oss-client.js";
  import { registerRecordPostprocessListener } from "../listeners/record-postprocess.listener.js";
 import { createApp, type ServerServices } from "./app.js";
 import { logError, logInfo } from "../infrastructure/logging/logger.js";
-import { PreferenceService, type UserPreference } from "../domain/preferences/index.js";
 import { JwtTokenService } from "../infrastructure/auth/jwt-token-service.js";
 import { GoogleIdentityProvider } from "../infrastructure/auth/providers/google-identity-provider.js";
 import { AppleIdentityProvider } from "../infrastructure/auth/providers/apple-identity-provider.js";
@@ -49,13 +48,8 @@ const recordListCache = new TtlCache<string, { records: Record[]; hasMoreAfterTo
   ttlMs: CACHE_TTL_MS,
   maxEntries: 2_000,
 });
-const preferenceListCache = new TtlCache<string, UserPreference[]>({
-  ttlMs: CACHE_TTL_MS,
-  maxEntries: 10_000,
-});
 const oss = new OssStorage(config.oss);
 const media = MediaService.create(db, oss);
-const preferences = PreferenceService.create(db, preferenceListCache);
 const embeddings = new EmbeddingsClient(
   config.dashscope.apiKey,
   config.dashscope.baseUrl,
@@ -70,7 +64,7 @@ const tasks = new TaskService(db, {
   minSeconds: config.tasks.timeoutMinSeconds,
   maxSeconds: config.tasks.timeoutMaxSeconds,
 });
-const agent = createAgentRuntime({ records, media, preferences, tasks, ...config.agent });
+const agent = createAgentRuntime({ records, media, tasks, ...config.agent });
 const taskWorker = new TaskWorker(tasks, agent.registry, agent.sessions);
 const taskWorkerPool = new TaskWorkerPool(config.tasks.workerConcurrency, taskWorker);
 const taskScheduler = new TaskScheduler(tasks, taskWorkerPool, config.tasks.schedulerIntervalMs);
@@ -91,7 +85,6 @@ const services: ServerServices = {
   auth,
   records,
   media,
-  preferences,
   projects: ProjectService.create(db, records),
   tasks,
   agent,

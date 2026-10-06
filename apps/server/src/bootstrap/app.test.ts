@@ -49,16 +49,7 @@ test("media URL route validates and forwards the requested variant", async () =>
   assert.equal((await invalid.json() as { errorCode: string }).errorCode, "INVALID_INPUT");
 });
 
-test("preference access logging redacts preference content and source quotes", () => {
-  assert.deepEqual(logSafeBody("/api/preferences", {
-    content: "技术方案详细展开",
-    source: { sessionId: "s1", messageId: "m1", quote: "以后技术方案详细一点" },
-    result: { sourceQuote: "以后技术方案详细一点", category: "communication" },
-  }), {
-    content: "[REDACTED]",
-    source: { sessionId: "s1", messageId: "m1", quote: "[REDACTED]" },
-    result: { sourceQuote: "[REDACTED]", category: "communication" },
-  });
+test("access logging preserves ordinary request bodies and redacts signed media URLs", () => {
   assert.deepEqual(logSafeBody("/api/records", { content: "普通记录" }), { content: "普通记录" });
   assert.equal(
     logSafeBody("/api/media/550e8400-e29b-41d4-a716-446655440000/url", { url: "https://oss.example?signature=secret" }),

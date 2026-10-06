@@ -1,6 +1,5 @@
 import { dirname, resolve } from "node:path";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-import type { PreferenceService } from "../domain/preferences/index.js";
 import type { RecordService } from "../domain/records/index.js";
 import type { MediaService } from "../domain/media/index.js";
 import type { TaskService } from "../domain/tasks/index.js";
@@ -16,7 +15,6 @@ export type AgentRuntime = { registry: AgentRegistry; sessions: AgentSessionMana
 export function createAgentRuntime(input: {
   records: RecordService;
   media: MediaService;
-  preferences: PreferenceService;
   tasks: TaskService;
   sessionDatabasePath: string;
   workspaceRoot: string;

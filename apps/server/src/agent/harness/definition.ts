@@ -6,7 +6,7 @@ import type { Models } from "@earendil-works/pi-ai";
 import { mainPrompt } from "../prompts/main.js";
 import { taskWorkerPrompt } from "../prompts/task-worker.js";
 
-const tool = z.enum(["read", "write", "edit", "bash", "record_get", "record_list", "record_search", "web_search", "present_media", "preference_manage", "collect_user_input", "create_task", "update_task", "get_task", "task_plan_manage", "deliver_task_result"]);
+const tool = z.enum(["read", "write", "edit", "bash", "record_get", "record_list", "record_search", "web_search", "present_media", "collect_user_input", "create_task", "update_task", "get_task", "task_plan_manage", "deliver_task_result"]);
 const taskConfig = z.discriminatedUnion("enabled", [
   z.object({ enabled: z.literal(false) }).strict(),
   z.object({

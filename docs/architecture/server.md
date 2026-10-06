@@ -8,7 +8,7 @@
 apps/server/src/
 ├── bootstrap/       # 启动、配置、Hono 装配、迁移命令
 ├── routes/          # HTTP 输入、用户边界、响应映射
-├── domain/          # records（含 retrieval）/ media / preferences / projects / tasks
+├── domain/          # records（含 retrieval）/ media / projects / tasks
 ├── task-runtime/    # 5 分钟 Scheduler、WorkerPool、TaskWorker、结果发布
 ├── infrastructure/ # PostgreSQL、TTL cache、外部 client、queue、logging、time
 ├── listeners/       # 进程内事件处理
@@ -38,7 +38,6 @@ flowchart LR
 | --- | --- |
 | `/api/uploads`、`/api/media/:id`、`/api/media/:id/url` | Media |
 | `/api/records` | Record / Record Retrieval Search |
-| `/api/preferences` | User Preference |
 | `/api/projects` | Project |
 | `/api/tasks` | Agent Task |
 
@@ -48,8 +47,7 @@ flowchart LR
 
 - 用户 active 状态：24 小时 TTL；
 - Record 首页：按 userId 缓存前 10 条，24 小时 TTL；只有无 cursor 且 limit ≤ 10 命中；
-- User Preferences：按 userId 缓存前 20 条，24 小时 TTL；
-- Record / Preference 的成功写入会同步删除对应用户缓存，Record 后置处理的状态与内容写入也会删除 Record 首页缓存。
+- Record 写入与后置处理的状态、内容写入会立即删除对应用户首页缓存。
 
 这些缓存是单进程缓存；未来 Business Server 多实例部署时，如需跨实例即时失效，应切换到共享缓存或增加失效广播。
 
