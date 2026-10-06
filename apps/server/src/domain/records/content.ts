@@ -11,7 +11,7 @@ const location = z.object({
   longitude: z.number().finite().min(-180).max(180),
 }).strict();
 
-export const SaveRecordSchema = z.object({ text: z.string().max(20_000), media: z.array(z.object({ mediaId: z.string().uuid() }).strict()).max(4), location: location.nullable().optional() }).strict().superRefine((value, ctx) => {
+export const SaveRecordSchema = z.object({ text: z.string().max(20_000), media: z.array(z.object({ mediaId: z.string().uuid() }).strict()).max(5), location: location.nullable().optional() }).strict().superRefine((value, ctx) => {
   if (!value.text.trim() && value.media.length === 0) ctx.addIssue({ code: "custom", message: "text and media cannot both be empty" });
   if (new Set(value.media.map((item) => item.mediaId)).size !== value.media.length) ctx.addIssue({ code: "custom", message: "mediaId must be unique" });
 });

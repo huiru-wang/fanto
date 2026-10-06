@@ -32,10 +32,10 @@ flowchart TD
   RC --> SP
   SP --> CHAR[CharacterProvider]
   SP --> PREF[PreferenceProvider]
-  SP --> MEM[MemoryProvider / recent]
+  SP --> REC[RecordContextProvider / recent]
   SP --> TEX[TaskExecutionContextProvider]
   PREF --> B[Agent Business Services]
-  MEM --> B
+  REC --> B
   RUN --> PI
   PI --> TC[transform_context / messages view]
 
@@ -90,7 +90,7 @@ task_plan_manage
 deliver_task_result
 ```
 
-当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media`、`preference_manage`、`collect_user_input` 与 `create_task / update_task / get_task`。`collect_user_input` 只用于会明显改变结果的用户决策，成功后 Harness 立即结束本轮等待下一条用户回答。唯一的后台 `task-worker` 配置 `task.enabled=true`、`web_search`、`task_plan_manage` 与 `deliver_task_result`，统一处理资料整理、HTML 页面和卡片、文本 / Markdown 文档、代码及工作区文件修改；默认 Task 超时 900 秒、最大 3600 秒、最多自动尝试 3 次。其产品/执行边界位于 `apps/server/src/agent/prompts/task-worker.ts`。Main 的认识、关系原则、操作规则与动态插槽已经合并在 `apps/server/src/agent/prompts/main.ts`。Main 模板使用 Character / Current Time / Preference / Current Tasks / Recent Memory；Worker 模板额外只引用 `{{task_execution_context}}`，因此技术执行信息与用户 Task Brief 物理分离。Tool 权限仍由 Agent definition 显式声明。
+当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media`、`preference_manage`、`collect_user_input` 与 `create_task / update_task / get_task`。`collect_user_input` 只用于会明显改变结果的用户决策，成功后 Harness 立即结束本轮等待下一条用户回答。唯一的后台 `task-worker` 配置 `task.enabled=true`、`web_search`、`task_plan_manage` 与 `deliver_task_result`，统一处理资料整理、HTML 页面和卡片、文本 / Markdown 文档、代码及工作区文件修改；默认 Task 超时 900 秒、最大 3600 秒、最多自动尝试 3 次。其产品/执行边界位于 `apps/server/src/agent/prompts/task-worker.ts`。Main 的认识、关系原则、操作规则与动态插槽已经合并在 `apps/server/src/agent/prompts/main.ts`。Main 模板使用 Character / Current Time / Preference / Current Tasks / Recent Records；Worker 模板额外只引用 `{{task_execution_context}}`，因此技术执行信息与用户 Task Brief 物理分离。Tool 权限仍由 Agent definition 显式声明。
 
 `systemPromptModule` 在启动期直接解析为对应 TypeScript Prompt 模块并参与 Agent revision 计算；当前 Main 直接加载 `main.ts`，修改 Prompt 后需要重启 Server。
 
@@ -102,16 +102,16 @@ Skill 通过 ID 映射到与 `apps/server/agent.yaml` 同级的 `apps/server/ski
 
 `harness/build-runtime.ts` 在创建 Harness 时注册 System Prompt 回调。首次回调从 Run Context 解析模板引用的 `{{slot}}`，只选择被引用的自声明 Provider 并行执行，得到 `{ slot, content }` 后填充模板。缺少 Provider、空内容或普通 Provider 失败填 `（无）`；取消会中止 Run。结果按 run 缓存，所以该 Run 后续 turn 不再解析模板或运行 IO。
 
-只有 Prompt 实际引用的 Context 插槽才会触发 Provider。Main 使用 Character / Time / Preference / Current Tasks / Recent Memory；`task-worker` 只使用 `TaskExecutionContextProvider` 获取当前 Task 的 output format、内部主文件名、Record references、时区与已保存 Plan，不自动注入 Preference / Recent Memory。
+只有 Prompt 实际引用的 Context 插槽才会触发 Provider。Main 使用 Character / Time / Preference / Current Tasks / Recent Records；`task-worker` 只使用 `TaskExecutionContextProvider` 获取当前 Task 的 output format、内部主文件名、Record references、时区与已保存 Plan，不自动注入 Preference / Recent Records。
 
 - CharacterProvider 返回当前默认 `natural` 表达风格，不使用数据库。
 - CurrentTimeProvider 以请求的 `X-Time-Zone` 生成当前日期、时间和星期；缺失或无效时使用 UTC。
 - PreferenceProvider 读取当前用户最多 20 条已保存 Preference；热路径命中 Preference 读缓存。
 - TaskProvider 读取当前用户 Task 摘要，使 Main Agent 在同一 Session 内可引用既有 `taskId`；完整 TaskRun 状态仍需调用 `get_task`。
 - TaskExecutionContextProvider 仅在 Worker Run 中读取当前 Task / TaskRun，将 output format、内部主文件名、`references.recordIds`、时区与 `ext_data.plan` 注入 Worker System Prompt；这些内容不进入用户 Task Brief。
-- MemoryProvider 当前使用代码内固定的 `recent` 模式，调用 `listRecords(limit=10)` 且不传 cursor，因此可直接命中 Record 首页前 10 条缓存；Run 前不再调用额外模型或向量搜索。
-- Recent Memory 只包含真实 `recordId`、时间、截断正文，以及媒体的真实 `mediaId` 和截断图片描述 / 音频转写。已给出的 `mediaId` 可直接用于 `present_media`；需要完整内容时使用 `record_get`，需要主题相关历史时由主模型主动使用 `record_search`。
-- `PiQueryRewriter` 与 MemoryProvider 的 `relevant` 模式仍保留在代码中，但 main Agent 当前不使用，也不通过 Agent 配置切换。
+- RecordContextProvider 当前使用代码内固定的 `recent` 模式，调用 `listRecords(limit=10)` 且不传 cursor，因此可直接命中 Record 首页前 10 条缓存；Run 前不再调用额外模型或向量搜索。
+- Recent Records 只包含真实 `recordId`、时间、截断正文，以及媒体的真实 `mediaId` 和截断图片描述 / 音频转写。已给出的 `mediaId` 可直接用于 `present_media`；需要完整内容时使用 `record_get`，需要主题相关历史时由主模型主动使用 `record_search`。
+- `PiQueryRewriter` 与 RecordContextProvider 的 `relevant` 模式仍保留在代码中，但 main Agent 当前不使用，也不通过 Agent 配置切换。
 
 `transform_context` 已在 Harness Hook 中接入，当前默认 pass。它只允许返回 messages 请求视图，可用于裁剪、重排、注入或脱敏；不会写回 transcript，也不能修改 System Prompt。后续 Tool / Model turn 不重新执行 Provider，也不会因为 `preference_manage` 成功而刷新本轮 Context。
 

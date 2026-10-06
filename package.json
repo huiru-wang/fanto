@@ -13,9 +13,7 @@
     "deploy:nginx": "bash deploy/manual/deploy.sh --nginx",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "db:migrate": "pnpm --filter @fanto/server db:migrate",
-    "memory:rebuild": "pnpm --filter @fanto/server memory:rebuild",
-    "vector:rebuild": "pnpm memory:rebuild"
+    "db:migrate": "pnpm --filter @fanto/server db:migrate"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

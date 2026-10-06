@@ -2,6 +2,8 @@ import CoreLocation
 import Foundation
 
 enum RecordLocationFormatter {
+    // MKAddressRepresentations does not expose district or ISO country code yet.
+    // Keep the MapKit item's placemark for the structured Record location contract.
     static func location(from placemark: CLPlacemark, name explicitName: String? = nil, fallbackName: String) -> RecordLocation {
         RecordLocation(
             name: clean(explicitName) ?? clean(placemark.name) ?? fallbackName,

@@ -1,6 +1,7 @@
 import CoreLocation
 import Combine
 import Foundation
+import MapKit
 
 @MainActor
 final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationManagerDelegate {
@@ -15,7 +16,7 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
     @Published private(set) var suggestion: RecordLocation?
 
     private let manager = CLLocationManager()
-    private var geocoder = CLGeocoder()
+    private var reverseRequest: MKReverseGeocodingRequest?
     private var locationUnknownRetryCount = 0
 
     override init() {
@@ -45,7 +46,8 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
 
     func stop() {
         manager.stopUpdatingLocation()
-        geocoder.cancelGeocode()
+        reverseRequest?.cancel()
+        reverseRequest = nil
         if state == .locating { state = .idle }
     }
 
@@ -84,19 +86,30 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
     }
 
     private func reverseGeocode(_ location: CLLocation) async {
+        guard let request = MKReverseGeocodingRequest(location: location) else {
+            useCoordinateFallback(location)
+            return
+        }
+        reverseRequest?.cancel()
+        reverseRequest = request
         do {
-            guard let placemark = try await geocoder.reverseGeocodeLocation(location).first else {
+            guard let placemark = try await request.mapItems.first?.placemark else {
+                guard reverseRequest === request else { return }
                 useCoordinateFallback(location)
                 return
             }
+            guard reverseRequest === request else { return }
             suggestion = RecordLocationFormatter.location(from: placemark, fallbackName: "当前位置")
+            reverseRequest = nil
             state = .idle
         } catch {
+            guard reverseRequest === request else { return }
             useCoordinateFallback(location)
         }
     }
 
     private func useCoordinateFallback(_ location: CLLocation) {
+        reverseRequest = nil
         suggestion = RecordLocation(
             name: "当前位置",
             latitude: location.coordinate.latitude,

@@ -11,7 +11,7 @@
 - 峰值 DAU：约 1,000
 - 活跃用户平均：30 条 Record / 月，约 360 条 / 年
 - Record 中约 40% 含图片或音频
-- Memory 按 `record_text / image / audio` 原子单元独立索引
+- Record Retrieval 按 `record_text / image / audio` 原子单元独立索引
 - 当前 Embedding：768 维
 - 媒体二进制存 OSS，不进入关系数据库
 - 图片生产环境应压缩后上传，容量估算按平均约 1.5 MB / 张，而不是接口 50 MB 上限

@@ -1,12 +1,12 @@
-export type MemorySourceType = "record_text" | "record_location" | "image" | "audio";
+export type RecordIndexSourceType = "record_text" | "record_location" | "image" | "audio";
 
-export type MemoryRef = {
+export type RecordIndexRef = {
   userId: string;
-  sourceType: MemorySourceType;
+  sourceType: RecordIndexSourceType;
   sourceId: string;
 };
 
-export type MemoryDocument = MemoryRef & {
+export type RecordIndexDocument = RecordIndexRef & {
   recordId: string;
   mediaId: string | null;
   eventAt: string;
@@ -14,14 +14,14 @@ export type MemoryDocument = MemoryRef & {
   contentHash: string;
 };
 
-export type MemoryIndexHit = MemoryRef & {
+export type RecordIndexHit = RecordIndexRef & {
   eventAt: string;
   content: string;
   distance: number;
 };
 
-export type MemorySearchResult = {
-  sourceType: MemorySourceType;
+export type RecordSearchResult = {
+  sourceType: RecordIndexSourceType;
   sourceId: string;
   recordId: string;
   mediaId: string | null;

@@ -10,106 +10,155 @@ struct RecordLocationEditorView: View {
     @State private var query = ""
     @State private var results: [MKMapItem] = []
     @State private var selectedLocation: RecordLocation?
+    @State private var selectedCoordinate: CLLocationCoordinate2D?
     @State private var cameraPosition: MapCameraPosition
     @State private var isSearching = false
     @State private var isResolvingMapPoint = false
     @State private var errorMessage: String?
     @StateObject private var locationCoordinator = RecordLocationCoordinator()
+    @FocusState private var searchFocused: Bool
 
-    private let geocoder = CLGeocoder()
+    @State private var reverseRequest: MKReverseGeocodingRequest?
 
-    init(initialLocation: RecordLocation?, onSave: @escaping (RecordLocation) -> Void) {
+    @MainActor init(initialLocation: RecordLocation?, onSave: @escaping (RecordLocation) -> Void) {
         self.initialLocation = initialLocation
         self.onSave = onSave
         _selectedLocation = State(initialValue: initialLocation)
-        _cameraPosition = State(initialValue: initialLocation.map(Self.cameraPosition(for:)) ?? .automatic)
+        _selectedCoordinate = State(initialValue: initialLocation.map {
+            CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
+        })
+        _cameraPosition = State(initialValue: initialLocation.map(Self.cameraPosition(for:)) ?? .userLocation(fallback: .automatic))
     }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                        TextField("搜索地点或地址", text: $query)
+                            .focused($searchFocused)
+                            .submitLabel(.search)
+                            .onSubmit { searchFocused = false; Task { await search() } }
+                        if !query.isEmpty {
+                            Button("清除搜索", systemImage: "xmark.circle.fill") { query = "" }
+                                .labelStyle(.iconOnly)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 48)
+                    .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 14))
+
                     MapReader { proxy in
                         Map(position: $cameraPosition) {
                             UserAnnotation()
-                            if let selectedLocation {
-                                Marker(selectedLocation.name, coordinate: coordinate(for: selectedLocation))
+                            if let selectedCoordinate {
+                                Marker(selectedLocation?.name ?? "地图选点", coordinate: selectedCoordinate)
                             }
                         }
+                        .mapControls { MapCompass() }
                         .onTapGesture { screenPoint in
                             guard let coordinate = proxy.convert(screenPoint, from: .local) else { return }
+                            searchFocused = false
                             Task { await selectMapPoint(coordinate) }
                         }
                     }
-                    .frame(height: 260)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                    Button {
-                        locationCoordinator.start()
-                    } label: {
-                        Label(
-                            locationCoordinator.state == .locating ? "正在获取当前位置" : "使用当前位置",
-                            systemImage: "location.fill"
-                        )
+                    .frame(height: 330)
+                    .clipShape(.rect(cornerRadius: 18))
+                    .overlay(alignment: .bottom) {
+                        Text(isResolvingMapPoint ? "正在确认地图位置" : "轻点地图选择地点")
+                            .font(.caption.weight(.medium))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.regularMaterial, in: Capsule())
+                            .padding(.bottom, 12)
+                            .allowsHitTesting(false)
                     }
-                    .disabled(locationCoordinator.state == .locating)
+                    .accessibilityLabel("地点地图")
+                    .accessibilityHint("轻点地图选点，也可以使用搜索结果")
 
-                    if isResolvingMapPoint {
-                        ProgressView("正在确认地图位置")
-                    } else {
-                        Text("轻点地图可选取位置")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Section("编辑地点") {
-                    HStack {
-                        TextField("地点、地址或 POI", text: $query)
-                            .textInputAutocapitalization(.never)
-                            .submitLabel(.search)
-                            .onSubmit { Task { await search() } }
-                        Button("搜索") { Task { await search() } }
-                            .disabled(query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSearching)
-                    }
-
-                    if isSearching {
-                        ProgressView("正在搜索")
-                    }
-
-                    ForEach(results, id: \.self) { item in
-                        Button {
-                            apply(item)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(location(for: item).name)
-                                    .foregroundStyle(.primary)
-                                let administrativeText = RecordLocationFormatter.administrativeText(for: location(for: item))
-                                if !administrativeText.isEmpty {
-                                    Text(administrativeText)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if let selectedLocation {
-                    Section("已选地点") {
-                        Text(selectedLocation.name)
-                        let administrativeText = RecordLocationFormatter.administrativeText(for: selectedLocation)
-                        if !administrativeText.isEmpty {
-                            Text(administrativeText)
+                    if let selectedLocation {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("已选地点")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            HStack(spacing: 12) {
+                                Image(systemName: "mappin")
+                                    .foregroundStyle(.tint)
+                                    .frame(width: 36, height: 36)
+                                    .background(Color.accentColor.opacity(0.1), in: Circle())
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(selectedLocation.name).font(.subheadline.weight(.semibold))
+                                    let administrativeText = RecordLocationFormatter.administrativeText(for: selectedLocation)
+                                    if !administrativeText.isEmpty {
+                                        Text(administrativeText)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.tint)
+                                    .accessibilityHidden(true)
+                            }
+                            .padding(14)
+                            .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 16))
                         }
-                        Text(String(format: "%.6f, %.6f", selectedLocation.latitude, selectedLocation.longitude))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    }
+
+                    if locationCoordinator.state != .denied {
+                        Button("使用当前位置", systemImage: "location.fill") {
+                            locationCoordinator.start()
+                        }
+                        .disabled(locationCoordinator.state == .locating)
+                    }
+
+                    if !query.isEmpty {
+                        HStack {
+                            Text("搜索结果")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if isSearching { ProgressView().controlSize(.mini) }
+                        }
+                        ForEach(results, id: \.self) { item in
+                            Button {
+                                searchFocused = false
+                                apply(item)
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "mappin.circle")
+                                        .font(.title3)
+                                        .foregroundStyle(.secondary)
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(location(for: item).name).foregroundStyle(.primary)
+                                        let administrativeText = RecordLocationFormatter.administrativeText(for: location(for: item))
+                                        if !administrativeText.isEmpty {
+                                            Text(administrativeText)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .frame(minHeight: 56)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            Divider()
+                        }
                     }
                 }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 32)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .background(.background)
             .navigationTitle("编辑地点")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -118,7 +167,7 @@ struct RecordLocationEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成", action: save)
-                        .disabled(selectedLocation == nil)
+                        .disabled(selectedLocation == nil || isResolvingMapPoint)
                 }
             }
             .alert("无法保存地点", isPresented: Binding(
@@ -133,6 +182,19 @@ struct RecordLocationEditorView: View {
                 guard let suggestion else { return }
                 select(suggestion)
             }
+            .task(id: query) {
+                guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    results = []
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(350))
+                if !Task.isCancelled { await search() }
+            }
+            .onDisappear {
+                reverseRequest?.cancel()
+                reverseRequest = nil
+                locationCoordinator.stop()
+            }
         }
     }
 
@@ -140,13 +202,17 @@ struct RecordLocationEditorView: View {
         isSearching = true
         errorMessage = nil
         defer { isSearching = false }
+        let searchedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !searchedQuery.isEmpty else { results = []; return }
         let request = MKLocalSearch.Request()
-        request.naturalLanguageQuery = query
+        request.naturalLanguageQuery = searchedQuery
         request.resultTypes = [.address, .pointOfInterest]
         do {
-            results = try await MKLocalSearch(request: request).start().mapItems
+            let matches = try await MKLocalSearch(request: request).start().mapItems
+            guard !Task.isCancelled, query.trimmingCharacters(in: .whitespacesAndNewlines) == searchedQuery else { return }
+            results = matches
         } catch {
-            errorMessage = "暂时无法搜索地点，请稍后重试。"
+            if !Task.isCancelled { errorMessage = "暂时无法搜索地点，请稍后重试。" }
         }
     }
 
@@ -159,24 +225,38 @@ struct RecordLocationEditorView: View {
 
     private func selectMapPoint(_ coordinate: CLLocationCoordinate2D) async {
         guard CLLocationCoordinate2DIsValid(coordinate) else { return }
+        reverseRequest?.cancel()
+        selectedLocation = nil
+        selectedCoordinate = coordinate
         isResolvingMapPoint = true
         defer { isResolvingMapPoint = false }
 
         let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
+        guard let request = MKReverseGeocodingRequest(location: location) else {
+            select(RecordLocation(name: "地图选点", latitude: coordinate.latitude, longitude: coordinate.longitude))
+            return
+        }
+        reverseRequest = request
         do {
-            let placemark = try await geocoder.reverseGeocodeLocation(location).first
+            let placemark = try await request.mapItems.first?.placemark
+            guard selectedCoordinate?.latitude == coordinate.latitude,
+                  selectedCoordinate?.longitude == coordinate.longitude else { return }
             if let placemark {
-                select(RecordLocationFormatter.location(from: placemark, fallbackName: "地图选点"))
-            } else {
-                select(RecordLocation(name: "地图选点", latitude: coordinate.latitude, longitude: coordinate.longitude))
-            }
+                var resolved = RecordLocationFormatter.location(from: placemark, fallbackName: "地图选点")
+                resolved.latitude = coordinate.latitude
+                resolved.longitude = coordinate.longitude
+                select(resolved)
+            } else { select(RecordLocation(name: "地图选点", latitude: coordinate.latitude, longitude: coordinate.longitude)) }
         } catch {
+            guard selectedCoordinate?.latitude == coordinate.latitude,
+                  selectedCoordinate?.longitude == coordinate.longitude else { return }
             select(RecordLocation(name: "地图选点", latitude: coordinate.latitude, longitude: coordinate.longitude))
         }
     }
 
     private func select(_ location: RecordLocation) {
         selectedLocation = location
+        selectedCoordinate = coordinate(for: location)
         cameraPosition = Self.cameraPosition(for: location)
     }
 

@@ -34,7 +34,7 @@ Record 是用户原始记录，是 Fanto 个人数据的基础事实之一。它
 保存约束：
 
 - text 最长 20,000 字；
-- 最多 4 个媒体；
+- 最多 5 个媒体；
 - 同一 Record 中 mediaId 不可重复；
 - 媒体必须 ready、属于当前用户，且不能被其他 Record 占用；
 - 地点名称为 1–200 字；行政区展示字段为可选的 1–100 字，`countryCode` 为可选的两个字母 ISO 国家代码；纬度范围为 -90 至 90，经度范围为 -180 至 180；
@@ -71,7 +71,7 @@ stateDiagram-v2
 
 ## 后置理解
 
-Record 创建 / 更新后会触发 [Media](media.md) 理解与 [Memory](memory.md) 索引：
+Record 创建 / 更新后会触发 [Media](media.md) 理解与 [Record Retrieval](record-retrieval.md) 索引：
 
 ```text
 Record save
@@ -79,12 +79,12 @@ Record save
 → Vision / ASR
 → completePostprocess
 → processed Record
-→ MemoryService.replaceRecord
+→ RecordRetrievalService.replaceRecord
 ```
 
 图片描述写回 image block；音频转写正文与 ASR 状态 / 模型 / 语言 / 情绪 / 完成时间写回 audio block。Record 的读取数据因此由 `records.content.blocks` 自包含；旧 task 不能覆盖已经变化的版本。
 
-Memory 是派生能力。Record 已经成功变成 `processed` 后，如果 Embedding 或 Memory Index 写入失败，不会把 Record 回滚到 pending；当前没有持久重试，索引可通过 Memory rebuild 恢复。
+Record Retrieval 是派生能力。Record 已经成功变成 `processed` 后，如果 Embedding 或索引写入失败，不会把 Record 回滚到 pending；当前没有持久重试、补偿或批量重建入口。
 
 ## 删除
 

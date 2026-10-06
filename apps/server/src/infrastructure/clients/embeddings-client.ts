@@ -1,4 +1,4 @@
-import type { EmbeddingProvider } from "../../domain/memory/embedding-provider.js";
+import type { EmbeddingProvider } from "../../domain/records/retrieval/embedding-provider.js";
 
 export class EmbeddingsClient implements EmbeddingProvider {
   constructor(private apiKey: string, private baseUrl: string, private model: string, private dimension: number) {}

@@ -9,15 +9,13 @@ import { OssStorage } from "../infrastructure/clients/oss-client.js";
  import { registerRecordPostprocessListener } from "../listeners/record-postprocess.listener.js";
 import { createApp, type ServerServices } from "./app.js";
 import { logError, logInfo } from "../infrastructure/logging/logger.js";
-import { MemoryService } from "../domain/memory/index.js";
-import { PostgresMemoryIndex } from "../infrastructure/memory/postgres-memory-index.js";
 import { PreferenceService, type UserPreference } from "../domain/preferences/index.js";
 import { JwtTokenService } from "../infrastructure/auth/jwt-token-service.js";
 import { GoogleIdentityProvider } from "../infrastructure/auth/providers/google-identity-provider.js";
 import { AppleIdentityProvider } from "../infrastructure/auth/providers/apple-identity-provider.js";
 import { IdentityProviderRegistry } from "../domain/auth/identity-provider.js";
 import { AuthService } from "../domain/auth/index.js";
-import { RecordService, type Record } from "../domain/records/index.js";
+import { PostgresRecordIndex, RecordRetrievalService, RecordService, type Record } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
 import { ProjectService } from "../domain/projects/index.js";
 import { TaskService } from "../domain/tasks/index.js";
@@ -64,10 +62,10 @@ const embeddings = new EmbeddingsClient(
   config.dashscope.embeddingModel,
   config.dashscope.embeddingDimension,
 );
-const memoryIndex = new PostgresMemoryIndex(db);
-const memory = new MemoryService(memoryIndex, embeddings);
+const recordIndex = new PostgresRecordIndex(db);
+const retrieval = new RecordRetrievalService(recordIndex, embeddings);
 const queue = new RecordPostprocessQueue();
-const records = RecordService.create(db, queue, memory, recordListCache);
+const records = RecordService.create(db, queue, retrieval, recordListCache);
 const tasks = new TaskService(db, {
   minSeconds: config.tasks.timeoutMinSeconds,
   maxSeconds: config.tasks.timeoutMaxSeconds,
@@ -86,7 +84,7 @@ registerRecordPostprocessListener(
   oss,
   new QwenImageUnderstanding(config.dashscope.apiKey, config.dashscope.baseUrl, config.dashscope.visionModel),
   new QwenAudioTranscription(config.dashscope.apiKey, config.dashscope.baseUrl, config.dashscope.asrModel),
-  memory,
+  retrieval,
 );
 
 const services: ServerServices = {

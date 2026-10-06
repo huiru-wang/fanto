@@ -12,6 +12,14 @@ test("Record accepts a media-only entry", () => {
   });
 });
 
+test("Record accepts five images and rejects a sixth", () => {
+  const media = Array.from({ length: 5 }, (_, index) => ({
+    mediaId: `ce2f5608-b2ce-4c1e-a28e-cb0c225494d${index}`,
+  }));
+  assert.equal(parseSaveRecord({ text: "", media }).media.length, 5);
+  assert.throws(() => parseSaveRecord({ text: "", media: [...media, { mediaId: "ce2f5608-b2ce-4c1e-a28e-cb0c225494d8" }] }));
+});
+
 test("Record accepts one validated location", () => {
   assert.deepEqual(parseSaveRecord({
     text: "在外滩散步",

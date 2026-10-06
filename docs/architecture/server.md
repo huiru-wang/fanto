@@ -8,15 +8,15 @@
 apps/server/src/
 ├── bootstrap/       # 启动、配置、Hono 装配、迁移命令
 ├── routes/          # HTTP 输入、用户边界、响应映射
-├── domain/          # records / media / memory / preferences / projects / tasks
+├── domain/          # records（含 retrieval）/ media / preferences / projects / tasks
 ├── task-runtime/    # 5 分钟 Scheduler、WorkerPool、TaskWorker、结果发布
-├── infrastructure/ # PostgreSQL、TTL cache、Memory adapter、外部 client、queue、logging、time
+├── infrastructure/ # PostgreSQL、TTL cache、外部 client、queue、logging、time
 ├── listeners/       # 进程内事件处理
 ├── migrations/      # 当前空库 schema 基线
 └── scripts/         # 演示数据等运维脚本
 ```
 
-每个 Domain 以 `index.ts` 作为模块外入口，采用 `model.ts`、`repository.ts`、`postgres-repository.ts`（需要持久化时）和 `*-service.ts` 的统一组织方式。Route 只能调用相应 Service，Repository 不对模块外暴露。Memory 通过 Domain 内的 `MemoryService + MemoryIndex / EmbeddingProvider` 边界编排，当前 pgvector 实现位于 `infrastructure/memory/`。外部 OSS、图片理解、音频转写与 Embedding 通过 infrastructure adapter 适配。
+每个 Domain 以 `index.ts` 作为模块外入口，采用 `model.ts`、`repository.ts`、`postgres-repository.ts`（需要持久化时）和 `*-service.ts` 的统一组织方式。Route 只能调用相应 Service，Repository 不对模块外暴露。Record Retrieval 通过 Record domain 内的 `RecordRetrievalService + RecordIndex / EmbeddingProvider` 边界编排，pgvector 实现也位于该 domain。外部 OSS、图片理解、音频转写与 Embedding 通过 infrastructure adapter 适配。
 
 ## HTTP 请求路径
 
@@ -37,7 +37,7 @@ flowchart LR
 | 路由 | 领域 |
 | --- | --- |
 | `/api/uploads`、`/api/media/:id`、`/api/media/:id/url` | Media |
-| `/api/records` | Record / Memory Search |
+| `/api/records` | Record / Record Retrieval Search |
 | `/api/preferences` | User Preference |
 | `/api/projects` | Project |
 | `/api/tasks` | Agent Task |
@@ -71,7 +71,7 @@ sequenceDiagram
   participant L as Postprocess Listener
   participant R as Record Repository
   participant AI as Vision / ASR
-  participant M as MemoryService
+  participant I as RecordRetrievalService
 
   HTTP->>S: create / update
   S->>Q: publish(userId, recordId, version)
@@ -84,12 +84,12 @@ sequenceDiagram
   end
   L->>R: completePostprocess
   R-->>L: processed Record
-  L->>M: replaceRecord(processed Record)
+  L->>I: replaceRecord(processed Record)
 ```
 
-图片与音频任务可以部分失败；图片 description、音频 transcription 与 ASR metadata 都写回对应 Record block，不再把 ASR 结果复制到 Media `ext_data`。只有完成当前 Record 版本的 postprocess 后才会把最终 Record 交给 Memory。
+图片与音频任务可以部分失败；图片 description、音频 transcription 与 ASR metadata 都写回对应 Record block，不再把 ASR 结果复制到 Media `ext_data`。只有完成当前 Record 版本的 postprocess 后才会把最终 Record 交给 Record Retrieval。
 
-Record 已成功变成 `processed` 后，Memory / Embedding 失败只记录错误，不会重新 release Record；索引属于可重建派生数据。该队列仍是进程内机制，服务进程退出时未完成任务不会恢复，也没有持久 retry。
+Record 已成功变成 `processed` 后，索引或 Embedding 失败只记录错误，不会重新 release Record；索引是派生数据。该队列仍是进程内机制，服务进程退出时未完成任务不会恢复，也没有持久 retry、补偿或批量重建入口。
 
 ## 数据库与 migration
 

@@ -76,9 +76,4 @@ Server 使用 Kysely migration 管理 PostgreSQL schema。`src/bootstrap/main.ts
 pnpm typecheck
 pnpm test
 pnpm db:migrate
-pnpm memory:rebuild
-# 兼容别名
-pnpm vector:rebuild
 ```
-
-`memory:rebuild` 会 reset 可重建的 Memory 派生索引，并按批次重新索引所有用户当前为 `processed` 的 Records；执行前应确认 Embedding 配置可用。它不会删除 Record / Media / Project 等业务表。

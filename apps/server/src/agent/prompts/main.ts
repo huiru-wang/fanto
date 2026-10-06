@@ -56,7 +56,7 @@ export const mainPrompt = String.raw`# Fanto Core
 
 只有媒体确实补充当前回答、与话题高度相关且不会突兀或重复时才展示。不要因为检索恰好命中、用户正在讨论抽象问题，或同一媒体已经展示过而调用。
 
-只传 Record Tools 或 Recent Memory 实际返回的真实 mediaId，不构造 ID，也不传媒体类型、尺寸、URL 或布局。Recent Memory 中已经给出的真实 mediaId 可以直接用于 present_media；只有需要更完整的记录内容时才调用 record_get(recordId)。调用后自然继续回答，不输出媒体链接或解释工具调用。
+只传 Record Tools 或 Recent Records 实际返回的真实 mediaId，不构造 ID，也不传媒体类型、尺寸、URL 或布局。Recent Records 中已经给出的真实 mediaId 可以直接用于 present_media；只有需要更完整的记录内容时才调用 record_get(recordId)。调用后自然继续回答，不输出媒体链接或解释工具调用。
 
 ---
 
@@ -74,7 +74,7 @@ export const mainPrompt = String.raw`# Fanto Core
 
 在提问前依次判断：
 1. 当前对话是否已经给过答案；
-2. Recent Memory 或 Record Tools 是否能够找到答案；
+2. Recent Records 或 Record Tools 是否能够找到答案；
 3. 这是否只是技术实现问题，能否由 Fanto 自己决定；
 4. 缺失信息是否真的会显著改变最终结果。
 
@@ -121,13 +121,13 @@ references 只传已经确认与任务直接相关的真实 Record ID。不要�
 
 {{user_preferences}}
 
-## Recent Memory
+## Recent Records
 
 以下是用户最近的记录，按时间从近到远提供。它们只是近期背景，不保证与当前问题相关；无关时忽略，较早的状态也不一定仍然成立。
 
 每条记录可能包含真实 recordId、正文摘要以及媒体的真实 mediaId 和简短描述。需要完整记录时使用 record_get(recordId)；需要展示其中已经给出的媒体时，可直接调用 present_media；需要寻找与当前主题相关但不在近期记录中的历史时，主动使用 record_search。
 
-{{recent_memory}}
+{{recent_records}}
 
 ## Current Time
 

@@ -9,7 +9,7 @@ Fanto 是一个建立在长期个人记录之上的陪伴型个人智能。用�
 Fanto 目前处于 MVP 阶段，仓库包含：
 
 - `apps/server`：Hono + TypeScript 服务，负责业务领域，以及内嵌的 Pi Agent Runtime（Session、流式执行、工作区与内置工具）。
-- `apps/ios/fanto`：SwiftUI iOS 客户端，已实现 Record 读取、Creation / Proposal 主要链路与 Fanto 单 Session 对话代码；当前演示用户与公网 allowlist 尚未对齐。
+- `apps/ios/fanto`：SwiftUI iOS 客户端，已接入 Google / Apple 登录、Record 读写、Project 浏览与决策，以及 Fanto 单 Session 对话。
 - `apps/h5`：React + Vite 响应式测试客户端，支持多模态 Record、语义搜索、Fanto 多轮对话、Markdown 与媒体消息渲染。
 - `packages/shared`：TypeScript 共享 API / Record 类型。
 

@@ -74,12 +74,13 @@ Current State 文档只描述**当前最终仓库状态**。它不仅包括 `doc
 5. 只在用户行为、API contract、Domain 语义、数据生命周期、架构 / 安全 / 可靠性边界或配置方式变化时更新 Current Docs；纯重构和等价实现通常无需改文档。
 6. `docs/product/current-scope.md` 只在产品 Capability 变化时更新，不作为 changelog。
 7. 单次 feature 中顺手更新部分文档，不等于完成 Documentation Impact Review。只有 `reviewed_through..HEAD` 的全部增量和所有受影响 Current State 文档都检查完成后，才能把 checkpoint 推进到本次已审查到的 commit；checkpoint 与本次文档修正应一起提交。checkpoint 表示“reviewed through”，不表示每个 commit 都产生过文档修改。
+8. Current State 文档保持简洁：只保留当前能力、调用契约、数据边界、运行约束和必要的排障入口；不记录实现过程、历史方案或 `plan/` 内容。同一事实只保留一个权威说明，其余位置链接引用。更新时先删除重复内容；仍过长再按职责拆分，不在单页持续堆叠细节。
 
 常见代码到文档的检查关系：
 
 - `apps/server/src/domain/records/**`、Record routes → `docs/domain/records.md`、必要时 `docs/api/http-api.md`
 - `apps/server/src/domain/media/**`、媒体 Client → `docs/domain/media.md`
-- `apps/server/src/domain/memory/**`、向量脚本 → `docs/domain/memory.md`
+- `apps/server/src/domain/records/retrieval/**` → `docs/domain/record-retrieval.md`
 - `apps/server/src/domain/creations/**` → `docs/domain/creations.md`
 - `apps/server/src/agent/**`、`apps/server/src/routes/agent/**` → `docs/architecture/agent-runtime.md`，必要时根 `README.md`
 - `apps/h5/**` → `docs/product/current-scope.md`、`docs/engineering/local-development.md`、`docs/architecture/overview.md`，必要时根 `README.md`

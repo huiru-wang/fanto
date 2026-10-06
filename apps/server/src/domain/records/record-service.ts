@@ -3,12 +3,12 @@ import { decodeRecordCursor, encodeRecordCursor } from "./cursor.js";
 import type { RecordRepository } from "./repository.js";
 import { PostgresRecordRepository } from "./postgres-repository.js";
 import type { RecordPostprocessQueue } from "../../infrastructure/queue/record-postprocess-queue.js";
-import type { MemoryService } from "../memory/memory-service.js";
+import type { RecordRetrievalService } from "./retrieval/record-retrieval-service.js";
 import type { Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
 import type { Record } from "./record.js";
 
-type RecordMemory = Pick<MemoryService, "searchRecords" | "removeRecord">;
+type RecordRetrieval = Pick<RecordRetrievalService, "searchRecords" | "removeRecord">;
 type RecordListCacheValue = { records: Record[]; hasMoreAfterTopTen: boolean };
 type RecordListCache = {
   getOrLoad(key: string, loader: () => Promise<RecordListCacheValue>): Promise<RecordListCacheValue>;
@@ -21,12 +21,12 @@ export class RecordService {
   constructor(
     private readonly records: RecordRepository,
     private readonly queue: RecordPostprocessQueue,
-    private readonly memory?: RecordMemory,
+    private readonly retrieval?: RecordRetrieval,
     private readonly listCache?: RecordListCache,
   ) {}
 
-  static create(db: Kysely<DB>, queue: RecordPostprocessQueue, memory?: RecordMemory, listCache?: RecordListCache) {
-    return new RecordService(new PostgresRecordRepository(db), queue, memory, listCache);
+  static create(db: Kysely<DB>, queue: RecordPostprocessQueue, retrieval?: RecordRetrieval, listCache?: RecordListCache) {
+    return new RecordService(new PostgresRecordRepository(db), queue, retrieval, listCache);
   }
 
   async create(userId: string, input: { text: string; media: unknown[]; location?: unknown; source?: string; eventAt: string }) {
@@ -56,7 +56,7 @@ export class RecordService {
     const current = await this.records.findById(id);
     if (!current || current.userId !== userId) return { kind: "not_found" } as const;
     if (current.version !== expectedVersion) return { kind: "conflict", current: this.view(current) } as const;
-    if (this.memory) await this.memory.removeRecord({ userId, recordId: id });
+    if (this.retrieval) await this.retrieval.removeRecord({ userId, recordId: id });
     const deleted = await this.records.delete(id, userId, expectedVersion);
     if (deleted === "conflict") return { kind: "conflict", current: await this.find(userId, id) } as const;
     if (typeof deleted === "string") return { kind: deleted } as const;
@@ -82,8 +82,8 @@ export class RecordService {
   }
 
   async search(userId: string, query: string, limit: number) {
-    if (!this.memory) return [];
-    return this.memory.searchRecords({ userId, query, limit });
+    if (!this.retrieval) return [];
+    return this.retrieval.searchRecords({ userId, query, limit });
   }
 
   async find(userId: string, id: string) {

@@ -3,12 +3,12 @@ import type { AudioTranscriptionClient } from "../infrastructure/clients/audio-c
 import type { ImageUnderstanding } from "../infrastructure/clients/image-client.js";
 import type { OssStorage } from "../infrastructure/clients/oss-client.js";
 import type { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
-import type { MemoryService } from "../domain/memory/index.js";
+import type { RecordRetrievalService } from "../domain/records/index.js";
 import type { MediaService } from "../domain/media/index.js";
 import type { RecordService } from "../domain/records/index.js";
 import { logError } from "../infrastructure/logging/logger.js";
 
-type RecordMemory = Pick<MemoryService, "replaceRecord">;
+type RecordRetrieval = Pick<RecordRetrievalService, "replaceRecord">;
 
 export function registerRecordPostprocessListener(
   queue: RecordPostprocessQueue,
@@ -17,7 +17,7 @@ export function registerRecordPostprocessListener(
   oss: OssStorage,
   image: ImageUnderstanding,
   audio: AudioTranscriptionClient,
-  memory: RecordMemory,
+  retrieval: RecordRetrieval,
 ) {
   queue.on(async task => {
     const runId = randomUUID();
@@ -84,9 +84,9 @@ export function registerRecordPostprocessListener(
     if (!completed) return;
 
     try {
-      await memory.replaceRecord(completed);
+      await retrieval.replaceRecord(completed);
     } catch (error) {
-      logError("record-postprocess", "Memory indexing failed", {
+      logError("record-postprocess", "Record indexing failed", {
         recordId: task.recordId,
         userId: task.userId,
         error: error instanceof Error ? error.message : String(error),
