@@ -186,13 +186,13 @@ struct RecordComposerView: View {
                     case .denied:
                         Text("定位未开启")
                             .font(.system(size: 17))
-                        Text("可在设置中允许访问位置，或手动添加地点")
+                        Text("可在设置中允许访问位置，或编辑地点")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     case .unavailable:
                         Text("未能获取当前位置")
                             .font(.system(size: 17))
-                        Text("可重试或手动添加地点")
+                        Text("可重试或编辑地点")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     case .idle:
@@ -222,7 +222,7 @@ struct RecordComposerView: View {
             } else if locationCoordinator.state == .denied {
                 Button("去设置") { openLocationSettings() }
                     .font(.subheadline.weight(.medium))
-                Button("手动添加") {
+                Button("编辑") {
                     locationCoordinator.stop()
                     showingLocationEditor = true
                 }
@@ -235,7 +235,7 @@ struct RecordComposerView: View {
                     }
                 }
                 if locationCoordinator.state != .locating {
-                    Button("手动添加") {
+                    Button("编辑") {
                         locationCoordinator.stop()
                         showingLocationEditor = true
                     }

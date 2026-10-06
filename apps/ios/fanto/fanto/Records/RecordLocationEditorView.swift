@@ -7,26 +7,22 @@ struct RecordLocationEditorView: View {
     let initialLocation: RecordLocation?
     let onSave: (RecordLocation) -> Void
 
-    @State private var name: String
-    @State private var latitude: String
-    @State private var longitude: String
     @State private var query = ""
     @State private var results: [MKMapItem] = []
+    @State private var selectedLocation: RecordLocation?
     @State private var isSearching = false
     @State private var errorMessage: String?
 
     init(initialLocation: RecordLocation?, onSave: @escaping (RecordLocation) -> Void) {
         self.initialLocation = initialLocation
         self.onSave = onSave
-        _name = State(initialValue: initialLocation?.name ?? "")
-        _latitude = State(initialValue: initialLocation.map { String(format: "%.6f", $0.latitude) } ?? "")
-        _longitude = State(initialValue: initialLocation.map { String(format: "%.6f", $0.longitude) } ?? "")
+        _selectedLocation = State(initialValue: initialLocation)
     }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("搜索地点") {
+                Section("编辑地点") {
                     HStack {
                         TextField("地点、地址或 POI", text: $query)
                             .textInputAutocapitalization(.never)
@@ -57,12 +53,13 @@ struct RecordLocationEditorView: View {
                     }
                 }
 
-                Section("地点详情") {
-                    TextField("地点名称", text: $name)
-                    TextField("纬度", text: $latitude)
-                        .keyboardType(.decimalPad)
-                    TextField("经度", text: $longitude)
-                        .keyboardType(.decimalPad)
+                if let selectedLocation {
+                    Section("已选地点") {
+                        Text(selectedLocation.name)
+                        Text(String(format: "%.6f, %.6f", selectedLocation.latitude, selectedLocation.longitude))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .navigationTitle("编辑地点")
@@ -73,6 +70,7 @@ struct RecordLocationEditorView: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成", action: save)
+                        .disabled(selectedLocation == nil)
                 }
             }
             .alert("无法保存地点", isPresented: Binding(
@@ -88,6 +86,7 @@ struct RecordLocationEditorView: View {
 
     private func search() async {
         isSearching = true
+        errorMessage = nil
         defer { isSearching = false }
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = query
@@ -102,24 +101,15 @@ struct RecordLocationEditorView: View {
     private func apply(_ item: MKMapItem) {
         let coordinate = item.placemark.coordinate
         guard CLLocationCoordinate2DIsValid(coordinate) else { return }
-        name = item.name ?? item.placemark.title ?? ""
-        latitude = String(format: "%.6f", coordinate.latitude)
-        longitude = String(format: "%.6f", coordinate.longitude)
+        let name = item.name ?? item.placemark.title ?? ""
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        selectedLocation = RecordLocation(name: name, latitude: coordinate.latitude, longitude: coordinate.longitude)
         results = []
     }
 
     private func save() {
-        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanName.isEmpty,
-              let parsedLatitude = Double(latitude),
-              let parsedLongitude = Double(longitude),
-              (-90 ... 90).contains(parsedLatitude),
-              (-180 ... 180).contains(parsedLongitude)
-        else {
-            errorMessage = "请输入地点名称和有效的经纬度。"
-            return
-        }
-        onSave(RecordLocation(name: cleanName, latitude: parsedLatitude, longitude: parsedLongitude))
+        guard let selectedLocation else { return }
+        onSave(selectedLocation)
         dismiss()
     }
 }

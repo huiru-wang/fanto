@@ -16,6 +16,7 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
 
     private let manager = CLLocationManager()
     private var geocoder = CLGeocoder()
+    private var locationUnknownRetryCount = 0
 
     override init() {
         super.init()
@@ -25,6 +26,11 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
 
     func start() {
         suggestion = nil
+        locationUnknownRetryCount = 0
+        guard CLLocationManager.locationServicesEnabled() else {
+            state = .unavailable
+            return
+        }
         switch manager.authorizationStatus {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
@@ -61,6 +67,14 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        let nsError = error as NSError
+        if nsError.domain == kCLErrorDomain,
+           nsError.code == CLError.locationUnknown.rawValue,
+           locationUnknownRetryCount == 0 {
+            locationUnknownRetryCount += 1
+            manager.requestLocation()
+            return
+        }
         state = .unavailable
     }
 
@@ -72,20 +86,29 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
     private func reverseGeocode(_ location: CLLocation) async {
         do {
             guard let placemark = try await geocoder.reverseGeocodeLocation(location).first else {
-                state = .unavailable
+                useCoordinateFallback(location)
                 return
             }
             let components = [placemark.name, placemark.locality, placemark.administrativeArea]
                 .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
             guard let name = components.first else {
-                state = .unavailable
+                useCoordinateFallback(location)
                 return
             }
             suggestion = RecordLocation(name: name, latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
             state = .idle
         } catch {
-            state = .unavailable
+            useCoordinateFallback(location)
         }
+    }
+
+    private func useCoordinateFallback(_ location: CLLocation) {
+        suggestion = RecordLocation(
+            name: "当前位置",
+            latitude: location.coordinate.latitude,
+            longitude: location.coordinate.longitude
+        )
+        state = .idle
     }
 }
