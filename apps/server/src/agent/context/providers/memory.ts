@@ -1,5 +1,6 @@
 import type { Context } from "@earendil-works/pi-agent-core";
 import type { Models } from "@earendil-works/pi-ai";
+import { formatLocationContext } from "@fanto/shared";
 import { z } from "zod";
 import type { AgentBusinessServices, AgentRecord, AgentRecordSearch } from "../../business-services.js";
 import { createRunContext, type RunData } from "../run-context.js";
@@ -78,7 +79,7 @@ export function formatRecentRecord(record: AgentRecord, timeZone: string | undef
         const transcription = truncateMemoryText(block.transcription, MEDIA_TEXT_LIMIT);
         lines.push(`- 音频: mediaId=${block.mediaId}${transcription ? `；转写=${transcription}` : ""}`);
       } else {
-        lines.push(`- 地点: ${block.name}`);
+        lines.push(`- ${formatLocationContext(block)}`);
       }
     }
   }

@@ -180,6 +180,11 @@ private struct RecordContentBlockPayload: Decodable {
     let mediaId: String?
     let durationMs: Int?
     let name: String?
+    let countryCode: String?
+    let country: String?
+    let province: String?
+    let city: String?
+    let district: String?
     let latitude: Double?
     let longitude: Double?
 }
@@ -198,7 +203,16 @@ private extension Record {
            let name = block.name,
            let latitude = block.latitude,
            let longitude = block.longitude {
-            location = RecordLocation(name: name, latitude: latitude, longitude: longitude)
+            location = RecordLocation(
+                name: name,
+                countryCode: block.countryCode,
+                country: block.country,
+                province: block.province,
+                city: block.city,
+                district: block.district,
+                latitude: latitude,
+                longitude: longitude
+            )
         } else {
             location = nil
         }

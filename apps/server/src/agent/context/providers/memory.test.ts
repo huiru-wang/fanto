@@ -101,3 +101,26 @@ test("recent memory formatting keeps ids intact and truncates long semantic text
   assert.ok(audioLine.endsWith("…"));
   assert.equal(truncateMemoryText("x".repeat(301), 300), `${"x".repeat(300)}…`);
 });
+
+test("recent memory formats a structured location as semantic context", () => {
+  const formatted = formatRecentRecord({
+    ...record(),
+    content: {
+      text: "假期结束后回家",
+      blocks: [{
+        type: "location",
+        name: "万科·金草公寓",
+        countryCode: "CN",
+        country: "中国",
+        province: "浙江省",
+        city: "杭州市",
+        district: "上城区",
+        latitude: 30.311147,
+        longitude: 120.214973,
+      }],
+    },
+  }, "Asia/Shanghai");
+
+  assert.match(formatted, /- 地点：中国 浙江省 杭州市 上城区 万科·金草公寓/);
+  assert.doesNotMatch(formatted, /30\.311147/);
+});

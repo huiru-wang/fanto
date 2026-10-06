@@ -8,7 +8,7 @@
 - 根导航使用系统 `TabView`，当前为“记录 / Fanto / 脉络”三个 Tab；认证页不属于 Tab 导航。
 - 优先使用系统导航、Sheet、语义颜色与原生交互，不用自定义覆盖层替代系统组件。
 - 运行态数据应以 Server API 为准；Preview 可以使用样例数据，但不能把 Preview / 本地样例包装成已经接入的真实能力。
-- “新建记录”打开后会尝试一次前台定位并给出可编辑地点建议；用户可关闭定位，或通过搜索结果、地图选点与当前位置编辑地点。地点卡位于编辑器底部，展示保存的坐标。媒体上传后创建 Server Record，并以最新列表刷新本地 Store；缓存不能替代服务端事实来源。
+- “新建记录”打开后会尝试一次前台定位并给出可编辑地点建议；用户可关闭定位，或通过搜索结果、地图选点与当前位置编辑地点。地点保留本体、国家、省/州、城市、区和坐标；地点卡位于编辑器底部，展示地点本体、行政区和坐标。媒体上传后创建 Server Record，并以最新列表刷新本地 Store；缓存不能替代服务端事实来源。
 - API Client 使用 HTTPS 公网域名；正式运行态身份统一来自 Fanto access JWT，不再允许客户端通过 `x-user-id` 或固定测试 token 指定用户。
 - Google 登录依赖 `Supporting/Info-*.plist` 中的 iOS Client ID、Server Client ID 与 reversed URL scheme；占位值只能用于未配置构建，真机登录前必须替换。
 - Apple 登录依赖 `fanto/fanto.entitlements` 中的 Sign in with Apple capability；Server 的 `APPLE_ALLOWED_CLIENT_IDS` 必须包含 iOS Bundle ID。

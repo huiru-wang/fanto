@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import type { Context } from "@earendil-works/pi-agent-core";
+import { formatLocationContext } from "@fanto/shared";
 import type { AgentBusinessServices, AgentRecord } from "../business-services.js";
 import { createRunContext } from "../context/index.js";
 import { formatEventTime } from "../context/providers/current-time.js";
@@ -78,7 +79,7 @@ export function buildRecordPreview(record: AgentRecord, maxLength = 500): string
     ...record.content.blocks.flatMap((block: any) => {
       if (block.type === "image" && block.description?.trim()) return [`图片描述：${block.description.trim()}`];
       if (block.type === "audio" && block.transcription?.trim()) return [`音频转写：${block.transcription.trim()}`];
-      if (block.type === "location") return [`地点：${block.name}`];
+      if (block.type === "location") return [formatLocationContext(block)];
       return [];
     }),
   ].filter(Boolean);

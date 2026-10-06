@@ -46,7 +46,7 @@ Memory 不再把整条 Record 的文本、图片描述和音频转写拼成一�
 record_text: 用户记录：<text>
 image:       图片描述：<image description>
 audio:       音频转写：<audio transcription>
-record_location: 地点：<location name>
+record_location: 地点：<country> <province> <city> <district> <location name>
 ```
 
 每个非空单元独立生成 embedding 与 SHA-256 `content_hash`。文本单元直接以 `recordId` 标识；图片和音频单元使用内部可逆 source ID 关联 `recordId + mediaId`，因此搜索命中媒体内容后仍可回到所属 Record。Record 更新时只重建发生变化的原子单元，并移除已不存在的旧媒体单元。
@@ -107,7 +107,7 @@ LIMIT $3
 - `removeRecord({ userId, recordId })`；
 - `searchRecords({ userId, query, limit })`。
 
-当前 Memory 的业务来源只接入 Record；一个 Record 内部再拆成 `record_text` / `record_location` / `image` / `audio` 四类原子检索单元。地点仅索引其名称，不索引精确坐标。接口结构允许以后增加 Project 或 Conversation summary，但这些能力尚未存在。
+当前 Memory 的业务来源只接入 Record；一个 Record 内部再拆成 `record_text` / `record_location` / `image` / `audio` 四类原子检索单元。地点索引按国家、省/州、城市、区、地点本体顺序拼接全部可用的语义字段，不索引精确坐标。接口结构允许以后增加 Project 或 Conversation summary，但这些能力尚未存在。
 
 ## HTTP Search
 

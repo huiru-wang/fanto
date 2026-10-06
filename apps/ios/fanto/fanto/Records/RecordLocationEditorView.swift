@@ -82,10 +82,11 @@ struct RecordLocationEditorView: View {
                             apply(item)
                         } label: {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(item.name ?? "未命名地点")
+                                Text(location(for: item).name)
                                     .foregroundStyle(.primary)
-                                if let title = item.placemark.title, !title.isEmpty {
-                                    Text(title)
+                                let administrativeText = RecordLocationFormatter.administrativeText(for: location(for: item))
+                                if !administrativeText.isEmpty {
+                                    Text(administrativeText)
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -97,6 +98,12 @@ struct RecordLocationEditorView: View {
                 if let selectedLocation {
                     Section("已选地点") {
                         Text(selectedLocation.name)
+                        let administrativeText = RecordLocationFormatter.administrativeText(for: selectedLocation)
+                        if !administrativeText.isEmpty {
+                            Text(administrativeText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                         Text(String(format: "%.6f, %.6f", selectedLocation.latitude, selectedLocation.longitude))
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -146,9 +153,7 @@ struct RecordLocationEditorView: View {
     private func apply(_ item: MKMapItem) {
         let coordinate = item.placemark.coordinate
         guard CLLocationCoordinate2DIsValid(coordinate) else { return }
-        let name = item.name ?? item.placemark.title ?? ""
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        select(RecordLocation(name: name, latitude: coordinate.latitude, longitude: coordinate.longitude))
+        select(location(for: item))
         results = []
     }
 
@@ -160,10 +165,11 @@ struct RecordLocationEditorView: View {
         let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         do {
             let placemark = try await geocoder.reverseGeocodeLocation(location).first
-            let name = [placemark?.name, placemark?.locality, placemark?.administrativeArea]
-                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .first(where: { !$0.isEmpty }) ?? "地图选点"
-            select(RecordLocation(name: name, latitude: coordinate.latitude, longitude: coordinate.longitude))
+            if let placemark {
+                select(RecordLocationFormatter.location(from: placemark, fallbackName: "地图选点"))
+            } else {
+                select(RecordLocation(name: "地图选点", latitude: coordinate.latitude, longitude: coordinate.longitude))
+            }
         } catch {
             select(RecordLocation(name: "地图选点", latitude: coordinate.latitude, longitude: coordinate.longitude))
         }
@@ -172,6 +178,14 @@ struct RecordLocationEditorView: View {
     private func select(_ location: RecordLocation) {
         selectedLocation = location
         cameraPosition = Self.cameraPosition(for: location)
+    }
+
+    private func location(for item: MKMapItem) -> RecordLocation {
+        RecordLocationFormatter.location(
+            from: item.placemark,
+            name: item.name,
+            fallbackName: "未命名地点"
+        )
     }
 
     private func coordinate(for location: RecordLocation) -> CLLocationCoordinate2D {

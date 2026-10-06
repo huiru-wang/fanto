@@ -172,6 +172,13 @@ struct RecordComposerView: View {
                     Text(location.name)
                         .font(.system(size: 17))
                         .lineLimit(1)
+                    let administrativeText = RecordLocationFormatter.administrativeText(for: location)
+                    if !administrativeText.isEmpty {
+                        Text(administrativeText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                     Text(String(format: "%.6f, %.6f", location.latitude, location.longitude))
                         .font(.caption)
                         .foregroundStyle(.secondary)

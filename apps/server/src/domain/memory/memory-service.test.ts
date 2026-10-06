@@ -44,16 +44,23 @@ test("record memory builder ignores blocks without semantic text", () => {
   );
 });
 
-test("record memory builder indexes a location name without coordinates", () => {
+test("record memory builder indexes a full location without coordinates", () => {
   const documents = buildRecordMemoryDocuments(record({
     content: {
       text: "",
-      blocks: [{ type: "location", name: "外滩", latitude: 31.24001, longitude: 121.49032 }],
+      blocks: [{ type: "location", name: "万科·金草公寓", countryCode: "CN", country: "中国", province: "浙江省", city: "杭州市", district: "上城区", latitude: 30.311147, longitude: 120.214973 }],
     },
   }));
   assert.deepEqual(documents.map(item => [item.sourceType, item.sourceId, item.mediaId, item.content]), [
-    ["record_location", "record-1", null, "地点：外滩"],
+    ["record_location", "record-1", null, "地点：中国 浙江省 杭州市 上城区 万科·金草公寓"],
   ]);
+});
+
+test("record memory keeps legacy locations readable", () => {
+  const documents = buildRecordMemoryDocuments(record({
+    content: { text: "", blocks: [{ type: "location", name: "外滩", latitude: 31.24001, longitude: 121.49032 }] },
+  }));
+  assert.equal(documents[0]?.content, "地点：外滩");
 });
 
 test("memory source ids preserve media-to-record association", () => {

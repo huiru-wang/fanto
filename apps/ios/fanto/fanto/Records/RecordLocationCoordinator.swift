@@ -89,14 +89,7 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
                 useCoordinateFallback(location)
                 return
             }
-            let components = [placemark.name, placemark.locality, placemark.administrativeArea]
-                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-            guard let name = components.first else {
-                useCoordinateFallback(location)
-                return
-            }
-            suggestion = RecordLocation(name: name, latitude: location.coordinate.latitude, longitude: location.coordinate.longitude)
+            suggestion = RecordLocationFormatter.location(from: placemark, fallbackName: "当前位置")
             state = .idle
         } catch {
             useCoordinateFallback(location)

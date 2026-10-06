@@ -2,6 +2,11 @@ import { z } from "zod";
 
 const location = z.object({
   name: z.string().trim().min(1).max(200),
+  countryCode: z.string().trim().regex(/^[A-Za-z]{2}$/).optional(),
+  country: z.string().trim().min(1).max(100).optional(),
+  province: z.string().trim().min(1).max(100).optional(),
+  city: z.string().trim().min(1).max(100).optional(),
+  district: z.string().trim().min(1).max(100).optional(),
   latitude: z.number().finite().min(-90).max(90),
   longitude: z.number().finite().min(-180).max(180),
 }).strict();

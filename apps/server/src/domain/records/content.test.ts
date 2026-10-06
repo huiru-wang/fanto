@@ -20,6 +20,40 @@ test("Record accepts one validated location", () => {
   }).location, { name: "外滩", latitude: 31.24001, longitude: 121.49032 });
 });
 
+test("Record accepts structured administrative areas for a location", () => {
+  assert.deepEqual(parseSaveRecord({
+    text: "假期结束后回家",
+    media: [],
+    location: {
+      name: "万科·金草公寓",
+      countryCode: "cn",
+      country: "中国",
+      province: "浙江省",
+      city: "杭州市",
+      district: "上城区",
+      latitude: 30.311147,
+      longitude: 120.214973,
+    },
+  }).location, {
+    name: "万科·金草公寓",
+    countryCode: "cn",
+    country: "中国",
+    province: "浙江省",
+    city: "杭州市",
+    district: "上城区",
+    latitude: 30.311147,
+    longitude: 120.214973,
+  });
+});
+
+test("Record rejects an invalid country code", () => {
+  assert.throws(() => parseSaveRecord({
+    text: "地点不对",
+    media: [],
+    location: { name: "外滩", countryCode: "CHN", latitude: 31.24001, longitude: 121.49032 },
+  }));
+});
+
 test("Record rejects invalid location coordinates", () => {
   assert.throws(() => parseSaveRecord({
     text: "地点不对",

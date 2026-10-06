@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { formatLocationContext } from "@fanto/shared";
 import type { Record } from "../records/record.js";
 import type { MemoryDocument, MemorySourceType } from "./model.js";
 
@@ -35,7 +36,7 @@ export function buildRecordMemoryDocuments(record: Record): MemoryDocument[] {
 
   for (const block of record.content.blocks) {
     if (block.type === "location") {
-      documents.push(document(record, "record_location", record.id, null, `地点：${block.name}`));
+      documents.push(document(record, "record_location", record.id, null, formatLocationContext(block)));
     }
     if (block.type === "image" && block.description?.trim()) {
       const content = `图片描述：${block.description.trim()}`;

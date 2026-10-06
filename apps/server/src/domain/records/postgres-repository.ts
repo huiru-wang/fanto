@@ -140,9 +140,14 @@ export class PostgresRecordRepository implements RecordRepository {
   private toEntity(row: any): Record { return { extData: null, id: row.record_id, userId: row.user_id, source: row.source, content: JSON.parse(row.content), version: row.version, status: row.status, taskId: row.task_id, eventAt: row.event_at, createdAt: row.created_at, updatedAt: row.updated_at }; }
 }
 
-function normalizedLocation(location: { name: string; latitude: number; longitude: number }) {
+function normalizedLocation(location: { name: string; countryCode?: string; country?: string; province?: string; city?: string; district?: string; latitude: number; longitude: number }) {
   return {
     name: location.name.trim(),
+    ...(location.countryCode?.trim() ? { countryCode: location.countryCode.trim().toUpperCase() } : {}),
+    ...(location.country?.trim() ? { country: location.country.trim() } : {}),
+    ...(location.province?.trim() ? { province: location.province.trim() } : {}),
+    ...(location.city?.trim() ? { city: location.city.trim() } : {}),
+    ...(location.district?.trim() ? { district: location.district.trim() } : {}),
     latitude: Number(location.latitude.toFixed(6)),
     longitude: Number(location.longitude.toFixed(6)),
   };
