@@ -1,3 +1,4 @@
+import { isInternalAgent } from "../../creative-runtime/model.js";
 import { Hono } from "hono";
 import type { AgentRegistry } from "../../agent/harness/registry.js";
 import { AgentSessionManager } from "../../agent/harness/session-manager.js";
@@ -14,6 +15,7 @@ export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSess
     const traceId = traceIdSchema.safeParse(c.req.header("x-trace-id"));
     if (!body.success || !traceId.success) return c.json({ error: "agentId or x-trace-id is invalid" }, 400);
     const definition = registry.get(body.data.agentId);
+    if (definition && isInternalAgent(definition.id)) return c.json({ error: "Agent is internal" }, 403);
     if (!definition) return c.json({ error: "Agent not found" }, 404);
     const session = await sessions.create(definition, userId);
     return c.json({ success: true, result: { sessionId: session.id, agentId: session.agentId, createdAt: new Date().toISOString(), traceId: traceId.data } }, 201);

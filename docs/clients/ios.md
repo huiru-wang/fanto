@@ -20,10 +20,11 @@
 | 新建 Record | 打开编辑器即尝试一次当前位置定位并给出地点建议；媒体上传后调用 `POST /api/records`，再刷新列表 | Client 已接 |
 | 媒体写入 | `POST /api/uploads` 申请凭据，直传后调用 `POST /api/uploads/:mediaId/complete` | Client 已接 |
 | active Project 列表 | `GET /api/projects?status=active` | Client 已接 |
-| proposed Project 列表 | `GET /api/projects?status=proposed` | Client 已接 |
-| Project 详情 | `GET /api/projects/:id` | Client 已接 |
-| Project 关联 Record | `GET /api/projects/:id/records?limit=5&cursor=` | Client 已接分页，接口直接返回完整 Record |
-| proposed Project confirm / reject | 对应 POST 接口 | 已接 |
+| pending Proposal 列表 | `GET /api/proposals?status=pending` | Client 已接 |
+| Project 详情 | `GET /api/projects/:id` | 正文、总数与最多 5 条参考记录 |
+| Proposal 参考 Record | `GET /api/proposals/:id/records?limit=5&cursor=` | Client 已接分页，直接返回完整 Record |
+| Proposal accept / reject | `/api/proposals/:id/accept`、`/reject` | 已接，接受后刷新项目 |
+| Project 归档 | `POST /api/projects/:id/archive` | 以详情版本归档 |
 | Fanto 默认长期会话 | `POST /api/agent/sessions` | Client 已接 |
 | Fanto 最近历史 | `GET /api/agent/sessions/:id/history?limit=10` | 已接 iOS 客户端流程 |
 | Fanto 文本流式回复 | `POST /api/agent/stream` | 已接 iOS 客户端流程 |
@@ -61,6 +62,12 @@ Fanto 位于根导航中间，只使用一个默认长期 Agent Session，不提
 
 流式回复通过 SSE 增量追加到当前助手消息。客户端按 SSE 原始字节流保留事件分隔，避免丢失连续的 `delta`；`turn_start`、`message_start` 与可见 Tool Presentation 会被投影为进行中的进度条目，工具结束后更新为成功或失败状态。成功的 `present_media` Tool Result 会暂存至本轮 `done`，再合并进助手消息；历史恢复同样通过服务端 `messages` 投影重建文本、活动、媒体、任务与用户澄清卡片。`collect_user_input` 会在导航区域下方以逐题原生提示呈现，支持单选、多选、文本和“其他”输入；`required: false` 的问题允许跳过。提交结果携带服务端要求的内部 interaction 标记继续同一 Session，并以“已提交表单”的用户卡片显示。`create_task` 会显示任务卡片；轻点以系统 Sheet 打开详情，读取现有 Task / TaskRun 接口并以 Markdown 显示目标、要求、完成标准和计划。最近一次有交付成果的 completed Run 会显示成果文件卡片，轻点后在同一 Sheet 的导航栈内预览：HTML 使用非持久化 Web 视图，Markdown 与纯文本使用原生阅读视图；预览前会将交付内容里的 `fanto-media://` 引用替换为当前用户短期可访问的媒体 URL。已完成任务的详情和成果预览只在当前账号的本次 App 运行期间缓存在内存；再次查看优先命中缓存，用户手动点击刷新才重新请求，认证失效或切换账号时清空。iOS 不提供独立任务管理页。旧会话正文中的 `fanto-media://<mediaId>` 图片和链接也会兼容投影为同类媒体。图片和语音分组呈现：图片使用横向缩略图，轻点后全屏分页查看；语音可在会话中播放。客户端只保存稳定的媒体 metadata，展示时才通过媒体读取接口取得短期签名地址，并在资源加载失败后刷新一次。界面覆盖加载、等待、流式生成、停止和失败重试；发送任务无论正常结束、失败或被意外取消，都会将占位消息收敛到明确终态，避免停留在等待状态。空回复也会明确失败并提供重试。同一 Session 未完成回复时不能并发发送。助手消息复用 Project 页面共用的原生 Markdown 视图渲染标题、段落与内联 Markdown。
 
+## 脉络 UI
+
+提议与项目分别使用 Proposal / Project 模型。建议详情展示 reason、idea、plan 和分页参考记录；项目摘要使用 summary，详情直接读取正文和最近参考记录，不请求独立 Project records 接口。列表续读至完整结果并按 ID 去重。归档需确认，版本冲突不会覆盖服务器内容。
+
+正文使用 Swift Markdown 语法树原生渲染标题、段落、列表、引用、表格、删除线、源码和连续图片组；图片可全屏分页，签名地址失败后刷新一次。仅项目正文启用 html-preview，受限非持久化 WebView 禁用脚本、桥接、导航与外部资源；浏览器解析 HTML / CSS 后，内部图片请求由 fanto-media Scheme Handler 读取。预览可手动刷新，普通 HTML 围栏保留源码。当前没有创作 Agent，接受后不承诺立即生成成果。
+
 ## Record UI
 
 Record 提供日历与连续时间线两种视图。日历以周日为一周起点，默认显示单行周历；顶部的时间线按钮切换至连续时间线，添加按钮保持可用。切换使用轻微的淡入与水平移动过渡，并在“减少动态效果”开启时取消该过渡。周历向下滑展开月历，月历上滑收回当前选中日期所在周；两种形态横滑分别切换前后周与前后月，并同步更新选中日期。轻点顶部“月 · 年”会以系统 sheet 打开年月滚轮，确认后保留可用的当月日期并同步定位。视觉翻页箭头不显示，但 VoiceOver 保留等价的翻页与展开/收起动作。连续时间线按本地日历日倒序分组，日期标题在滚动时保持可见，右上日历按钮可返回日历视图。新建编辑器可在中文日期选择页设置发生日期与时间，顶部显示所选值；打开后会先尝试前台定位。地点可从搜索结果、地图选点或当前位置确定，并保存地点本体、国家、省/州、城市、区和坐标。地点卡紧接正文与图片，使用本体作为主标题、行政区作为副标题；拒绝定位时仍可搜索或地图选点，不阻止保存。创建页支持文字与最多 5 张图片，图片轮播末尾的加号是唯一图片添加入口，不提供录音入口。音频 Record 当前主要显示播放入口和时长；图片缩略图按需通过媒体读取接口取得短期签名地址。轻点缩略图会全屏展示图片；多张图片可左右分页切换。签名地址只保留在视图运行态，图片请求失败时会刷新地址并重试一次。
@@ -78,3 +85,5 @@ Record 提供日历与连续时间线两种视图。日历以周日为一周起�
 ## Preview
 
 SwiftUI Preview 可以使用 `FantoStore.preview` 样例数据。Preview 数据只用于界面开发，不代表运行态 Server 已具备对应自动生成能力。
+
+脉络页可见期间每五秒刷新待确认建议，不提供后台提议分析的提问或回答表单；进入项目详情每两秒查询最新创作状态，显示排队、生图、整理与失败，完成后刷新正文与项目列表。等待后台登记最长三十秒，连续跟进最长二十分钟；离开详情取消跟进，重新进入或手动刷新继续查询。

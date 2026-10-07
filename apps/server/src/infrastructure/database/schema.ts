@@ -58,29 +58,47 @@ export interface RecordsTable {
   event_at: string;
   created_at: string;
   updated_at: string;
+  embedding: unknown | null;
 }
 
 export interface ProjectsTable {
-  id: Generated<string>;
+  embedding: string | null;
   project_id: string;
   user_id: string;
+  session_id: string | null;
   title: string;
+  summary: string;
+  cover_media_id: string | null;
   content: string;
-  status: "proposed" | "active" | "archived" | "rejected";
+  status: "active" | "archived";
   version: number;
-  ext_data: unknown;
   created_at: Date;
   updated_at: Date;
 }
 
-export interface ProjectRecordsTable {
-  id: Generated<string>;
+export interface ProposalsTable {
+  proposal_id: string;
+  session_id: string | null;
   user_id: string;
-  project_id: string;
+  type: "create" | "extend";
+  target_project_id: string | null;
+  title: string;
+  proposed_summary: string | null;
+  content: unknown;
+  status: "pending" | "accepted" | "rejected";
+  result_project_id: string | null;
+  created_at: Date;
+  updated_at: Date;
+  resolved_at: Date | null;
+}
+
+export interface RecordLinksTable {
+  user_id: string;
+  outer_id: string;
+  type: "project" | "proposal";
   record_id: string;
   record_event_at: Date;
   created_at: Date;
-  updated_at: Date;
 }
 
 export interface MediaAssetsTable {
@@ -133,19 +151,37 @@ export interface TaskRunsTable {
   updated_at: Date;
 }
 
-export interface VectorItemsTable {
-  id: Generated<number>;
+export interface MemoriesTable {
+  memory_id: string;
   user_id: string;
-  type: string;
-  outer_id: string;
+  kind: "profile" | "goal" | "guidance";
   content: string;
-  content_hash: string;
-  status: string;
-  error_code: string | null;
-  event_at: string;
-  indexed_at: string | null;
-  created_at: string;
   embedding: unknown;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface ProposalRunsTable {
+  run_id: string; user_id: string; record_id: string; record_version: number;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  proposal_id: string | null; outcome: unknown; read_record_ids: unknown;
+  agent_session_id: string | null; lease_token: string | null; lease_expires_at: Date | null;
+  attempts: number; error_code: string | null; created_at: Date; updated_at: Date;
+}
+export interface CreationRunsTable {
+  execution_plan: unknown;
+  run_id: string; user_id: string; proposal_id: string; project_id: string;
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  base_project_version: number | null; agent_session_id: string | null;
+  lease_token: string | null; lease_expires_at: Date | null; progress: unknown;
+  published_project_version: number | null; attempts: number; error_code: string | null;
+  accepted_at: Date; created_at: Date; updated_at: Date;
+}
+export interface CreationImageStepsTable {
+  run_id: string; image_index: number; fingerprint: string;
+  status: "requested" | "response" | "saved" | "failed" | "unknown";
+  media_id: string; metadata: unknown; recovery_ciphertext: string | null; recovery_expires_at: Date | null;
+  error_code: string | null; created_at: Date; updated_at: Date;
 }
 
 export interface DB {
@@ -153,10 +189,14 @@ export interface DB {
   user_login_identities: UserLoginIdentitiesTable;
   auth_challenges: AuthChallengesTable;
   records: RecordsTable;
+  proposal_runs: ProposalRunsTable;
+  creation_runs: CreationRunsTable;
+  creation_image_steps: CreationImageStepsTable;
   projects: ProjectsTable;
-  project_records: ProjectRecordsTable;
+  proposals: ProposalsTable;
+  record_links: RecordLinksTable;
   media_assets: MediaAssetsTable;
-  vector_items: VectorItemsTable;
+  memories: MemoriesTable;
   tasks: TasksTable;
   task_runs: TaskRunsTable;
 }

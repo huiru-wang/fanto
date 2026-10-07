@@ -1,11 +1,16 @@
+import type { CreativeService } from "../creative-runtime/service.js";
+import type { CreativeAuthority, ImageInput, PublishInput } from "../creative-runtime/model.js";
+import type { CreateProposalInput } from "../domain/projects/index.js";
 import type { MediaService } from "../domain/media/index.js";
 import type { RecordService } from "../domain/records/index.js";
 import type { DelegateTaskInput, DelegateTaskResult, TaskAgentPolicy, TaskPlanAction, TaskRunPlan, TaskRunPlanInput, TaskService, UpdateTaskInput } from "../domain/tasks/index.js";
 import type { TaskDeliveryInput, TaskResultPublisher } from "../task-runtime/result-publisher.js";
+import type { Memory, MemoryKind, MemorySearchResult, MemoryService } from "../domain/memory/index.js";
 import type { DeepSeekWebSearchClient, WebSearchResult } from "./web/deepseek-web-search.js";
 
 export type AgentRequestContext = {
   userId: string;
+  creative?: CreativeAuthority;
   traceId?: string;
   signal?: AbortSignal;
   sessionId?: string;
@@ -18,9 +23,17 @@ export type AgentRecord = NonNullable<Awaited<ReturnType<RecordService["find"]>>
 export type AgentRecordList = Awaited<ReturnType<RecordService["list"]>>;
 export type AgentRecordSearch = { data: Awaited<ReturnType<RecordService["search"]>> };
 export type AgentMediaMetadata = NonNullable<Awaited<ReturnType<MediaService["readyMetadata"]>>>;
+export type AgentMemory = Omit<Memory, "userId">;
+export type AgentMemorySearch = Omit<MemorySearchResult, "userId">;
 
 export type AgentBusinessServices = {
-  getRecord(context: AgentRequestContext, recordId: string): Promise<AgentRecord>;
+  creativeContext?(context: AgentRequestContext): ReturnType<CreativeService["context"]>;
+  readProject?(context: AgentRequestContext, input: Parameters<CreativeService["readProject"]>[1]): ReturnType<CreativeService["readProject"]>;
+  createProposal?(context: AgentRequestContext, input: CreateProposalInput): ReturnType<CreativeService["createProposal"]>;
+  generateImage?(context: AgentRequestContext, input: ImageInput): ReturnType<CreativeService["generateImage"]>;
+  prepareCreation?(context: AgentRequestContext, input: Parameters<CreativeService["prepare"]>[1]): ReturnType<CreativeService["prepare"]>;
+  publishCreation?(context: AgentRequestContext, input: PublishInput): ReturnType<CreativeService["publish"]>;
+  readRecords(context: AgentRequestContext, input: { recordIds?: string[]; query?: string }): Promise<AgentRecord[]>;
   listRecords(context: AgentRequestContext, input: { limit: number; cursor?: string }): Promise<AgentRecordList>;
   searchRecords(context: AgentRequestContext, input: { query: string; limit: number }): Promise<AgentRecordSearch>;
   searchWeb(context: AgentRequestContext, query: string): Promise<WebSearchResult>;
@@ -29,6 +42,11 @@ export type AgentBusinessServices = {
   updateTask(context: AgentRequestContext, taskId: string, input: UpdateTaskInput): Promise<unknown>;
   getTask(context: AgentRequestContext, taskId: string): Promise<unknown>;
   listTasks(context: AgentRequestContext): Promise<unknown>;
+  listMemories(context: AgentRequestContext, input?: { kind?: MemoryKind }): Promise<AgentMemory[]>;
+  searchMemories(context: AgentRequestContext, input: { query: string; limit: number }): Promise<AgentMemorySearch[]>;
+  createMemory(context: AgentRequestContext, input: { kind: MemoryKind; content: string }): Promise<AgentMemory>;
+  updateMemory(context: AgentRequestContext, memoryId: string, input: { kind: MemoryKind; content: string }): Promise<AgentMemory>;
+  deleteMemory(context: AgentRequestContext, memoryId: string): Promise<void>;
   manageTaskPlan(context: AgentRequestContext, input: { action: TaskPlanAction; plan: TaskRunPlanInput }): Promise<TaskRunPlan>;
   deliverTaskResult(context: AgentRequestContext, input: TaskDeliveryInput): Promise<{ mediaId: string; result: unknown }>;
 };
@@ -42,17 +60,27 @@ async function withRunAbort<T>(context: AgentRequestContext, operation: () => Pr
 
 export function createAgentBusinessServices(services: {
   records: RecordService;
+  creative?: CreativeService;
   media: MediaService;
   tasks: TaskService;
+  memories: MemoryService;
   resolveTaskAgent(agentId: string): TaskAgentPolicy | undefined;
   taskResultPublisher?: TaskResultPublisher;
   webSearch: DeepSeekWebSearchClient;
 }): AgentBusinessServices {
+  const creative = () => { if (!services.creative) throw new Error("CREATIVE_AGENT_DISABLED"); return services.creative; };
   return {
-    async getRecord(context, recordId) {
-      const record = await withRunAbort(context, () => services.records.find(context.userId, recordId));
-      if (!record) throw new Error("Record not found or not accessible");
-      return record;
+    creativeContext: context => creative().context(context),
+    readProject: (context, input) => creative().readProject(context, input),
+    createProposal: (context, input) => creative().createProposal(context, input),
+    generateImage: (context, input) => creative().generateImage(context, input),
+    prepareCreation: (context, input) => creative().prepare(context, input),
+    publishCreation: (context, input) => creative().publish(context, input),
+    async readRecords(context, input) {
+      if (context.creative) return withRunAbort(context, () => creative().readRecords(context, input));
+      const recordIds = input.recordIds
+        ?? (await withRunAbort(context, () => services.records.search(context.userId, input.query!, 3))).map(result => result.recordId);
+      return withRunAbort(context, () => services.records.findMany(context.userId, recordIds));
     },
     listRecords: (context, input) => withRunAbort(context, () => services.records.list(context.userId, input.cursor, input.limit)),
     async searchRecords(context, input) {
@@ -91,6 +119,29 @@ export function createAgentBusinessServices(services: {
     },
     async listTasks(context) {
       return { data: await withRunAbort(context, () => services.tasks.list(context.userId)) };
+    },
+    async listMemories(context, input = {}) {
+      const memories = await withRunAbort(context, () => services.memories.list(context.userId, input));
+      return memories.map(({ userId: _userId, ...memory }) => memory);
+    },
+    async searchMemories(context, input) {
+      const memories = await withRunAbort(context, () => services.memories.search(context.userId, input.query, input.limit));
+      return memories.map(({ userId: _userId, ...memory }) => memory);
+    },
+    async createMemory(context, input) {
+      const memory = await withRunAbort(context, () => services.memories.create(context.userId, input));
+      const { userId: _userId, ...result } = memory;
+      return result;
+    },
+    async updateMemory(context, memoryId, input) {
+      const memory = await withRunAbort(context, () => services.memories.update(context.userId, memoryId, input));
+      if (!memory) throw new Error("Memory not found or not accessible");
+      const { userId: _userId, ...result } = memory;
+      return result;
+    },
+    async deleteMemory(context, memoryId) {
+      const deleted = await withRunAbort(context, () => services.memories.remove(context.userId, memoryId));
+      if (!deleted) throw new Error("Memory not found or not accessible");
     },
     async manageTaskPlan(context, input) {
       const taskContext = context.task;

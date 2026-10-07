@@ -44,7 +44,7 @@ export function createTaskPlanManageTool(
     description: [
       "在资料理解充分后、开始制作结果前建立用户可读的执行计划。",
       "首次使用 action=create；如果后续发现计划需要调整，使用 action=update 整体替换计划。",
-      "计划只写用户能理解的工作阶段，不写 record_get、bash、文件路径、mediaId、fanto-media、deliver_task_result 等内部执行细节。",
+      "计划只写用户能理解的工作阶段，不写 record_read、bash、文件路径、mediaId、fanto-media、deliver_task_result 等内部执行细节。",
       "暂不需要逐步更新完成状态。",
     ].join("\n"),
     parameters: schema,

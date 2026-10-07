@@ -6,7 +6,13 @@ struct ProjectPage {
     let nextCursor: String?
 }
 
-struct ProjectRecordPage {
+struct ProposalPage {
+    let proposals: [Proposal]
+    let hasMore: Bool
+    let nextCursor: String?
+}
+
+struct ProposalRecordPage {
     let records: [Record]
     let hasMore: Bool
     let nextCursor: String?
@@ -42,6 +48,11 @@ struct FantoAPIClient {
 
     private let baseURL = URL(string: "https://fanto.robinverse.me")!
 
+    func fetchCreation(projectID: String) async throws -> ProjectCreation? {
+        let response: ProjectCreationEnvelope = try await request(path: "api/projects/\(projectID)/creation")
+        return response.creation
+    }
+
     func fetchProjects(status: ProjectStatus? = nil, cursor: String? = nil, limit: Int = 100) async throws -> ProjectPage {
         var components = URLComponents(url: baseURL.appending(path: "api/projects"), resolvingAgainstBaseURL: false)
         var items = [URLQueryItem(name: "limit", value: String(limit))]
@@ -53,26 +64,47 @@ struct FantoAPIClient {
         return ProjectPage(projects: response.data.map(Project.init), hasMore: response.hasMore, nextCursor: response.nextCursor)
     }
 
-    func fetchProject(id: String) async throws -> Project {
-        Project(try await request(path: "api/projects/\(id)") as ProjectPayload)
+    func fetchProject(id: String) async throws -> ProjectDetail {
+        let payload: ProjectPayload = try await request(path: "api/projects/\(id)")
+        return ProjectDetail(project: Project(payload), recordCount: payload.recordCount ?? 0, referenceRecords: (payload.referenceRecords ?? []).map(Record.init))
     }
 
-    func fetchProjectRecords(id: String, cursor: String? = nil, limit: Int = 5) async throws -> ProjectRecordPage {
-        var components = URLComponents(url: baseURL.appending(path: "api/projects/\(id)/records"), resolvingAgainstBaseURL: false)
+    func fetchProposals(cursor: String? = nil, limit: Int = 100) async throws -> ProposalPage {
+        var components = URLComponents(url: baseURL.appending(path: "api/proposals"), resolvingAgainstBaseURL: false)
+        var items = [URLQueryItem(name: "status", value: "pending"), URLQueryItem(name: "limit", value: String(limit))]
+        if let cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }
+        components?.queryItems = items
+        guard let url = components?.url else { throw FantoAPIError.invalidBaseURL }
+        let response: ProposalsPayload = try await request(url: url)
+        return ProposalPage(proposals: response.data.map(Proposal.init), hasMore: response.hasMore, nextCursor: response.nextCursor)
+    }
+
+    func fetchProposal(id: String) async throws -> Proposal {
+        Proposal(try await request(path: "api/proposals/\(id)") as ProposalPayload)
+    }
+
+    func fetchProposalRecords(id: String, cursor: String? = nil, limit: Int = 5) async throws -> ProposalRecordPage {
+        var components = URLComponents(url: baseURL.appending(path: "api/proposals/\(id)/records"), resolvingAgainstBaseURL: false)
         var items = [URLQueryItem(name: "limit", value: String(limit))]
         if let cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }
         components?.queryItems = items
         guard let url = components?.url else { throw FantoAPIError.invalidBaseURL }
-        let response: ProjectRecordsPayload = try await request(url: url)
-        return ProjectRecordPage(records: response.data.map(Record.init), hasMore: response.hasMore, nextCursor: response.nextCursor)
+        let response: ProposalRecordsPayload = try await request(url: url)
+        return ProposalRecordPage(records: response.data.map(Record.init), hasMore: response.hasMore, nextCursor: response.nextCursor)
     }
 
-    func confirmProject(id: String) async throws -> Project {
-        Project(try await request(path: "api/projects/\(id)/confirm", method: "POST") as ProjectPayload)
+    func acceptProposal(id: String) async throws -> String {
+        let response: AcceptedProposalPayload = try await request(path: "api/proposals/\(id)/accept", method: "POST")
+        return response.resultProjectId
     }
 
-    func rejectProject(id: String) async throws -> Project {
-        Project(try await request(path: "api/projects/\(id)/reject", method: "POST") as ProjectPayload)
+    func rejectProposal(id: String) async throws {
+        let _: ResolvedProposalPayload = try await request(path: "api/proposals/\(id)/reject", method: "POST")
+    }
+
+    func archiveProject(id: String, expectedVersion: Int) async throws {
+        let body = try JSONEncoder().encode(["expectedVersion": expectedVersion])
+        let _: ProjectPayload = try await request(path: "api/projects/\(id)/archive", method: "POST", body: body)
     }
 
     func fetchRecords(cursor: String? = nil, limit: Int = 30) async throws -> RecordPage {
@@ -93,13 +125,17 @@ struct FantoAPIClient {
         return readURL
     }
 
-    private func request<Response: Decodable>(path: String, method: String = "GET") async throws -> Response {
-        try await request(url: baseURL.appending(path: path), method: method)
+    private func request<Response: Decodable>(path: String, method: String = "GET", body: Data? = nil) async throws -> Response {
+        try await request(url: baseURL.appending(path: path), method: method, body: body)
     }
 
-    private func request<Response: Decodable>(url: URL, method: String = "GET") async throws -> Response {
+    private func request<Response: Decodable>(url: URL, method: String = "GET", body: Data? = nil) async throws -> Response {
         var request = URLRequest(url: url)
         request.httpMethod = method
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
         let token = try await AuthSession.shared.accessToken()
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -139,7 +175,11 @@ private struct ProjectsPayload: Decodable {
 private struct ProjectPayload: Decodable {
     let projectId: String
     let title: String
-    let content: String
+    let summary: String
+    let coverMediaId: String?
+    let content: String?
+    let recordCount: Int?
+    let referenceRecords: [RecordPayload]?
     let status: ProjectStatus
     let version: Int
     let createdAt: Date
@@ -148,15 +188,38 @@ private struct ProjectPayload: Decodable {
 
 private extension Project {
     init(_ payload: ProjectPayload) {
-        self.init(id: payload.projectId, title: payload.title, content: payload.content, status: payload.status, version: payload.version, createdAt: payload.createdAt, updatedAt: payload.updatedAt)
+        self.init(id: payload.projectId, title: payload.title, summary: payload.summary, coverMediaID: payload.coverMediaId, content: payload.content ?? "", status: payload.status, version: payload.version, createdAt: payload.createdAt, updatedAt: payload.updatedAt)
     }
 }
 
-private struct ProjectRecordsPayload: Decodable {
+private struct ProposalRecordsPayload: Decodable {
     let data: [RecordPayload]
     let hasMore: Bool
     let nextCursor: String?
 }
+
+private struct ProposalsPayload: Decodable {
+    let data: [ProposalPayload]
+    let hasMore: Bool
+    let nextCursor: String?
+}
+private struct ProposalPayload: Decodable {
+    let proposalId: String
+    let type: ProposalType
+    let targetProjectId: String?
+    let title: String
+    let content: ProposalContent
+    let status: ProposalStatus
+    let resultProjectId: String?
+    let createdAt: Date
+}
+private extension Proposal {
+    init(_ payload: ProposalPayload) {
+        self.init(id: payload.proposalId, type: payload.type, targetProjectID: payload.targetProjectId, title: payload.title, content: payload.content, status: payload.status, resultProjectID: payload.resultProjectId, createdAt: payload.createdAt)
+    }
+}
+private struct AcceptedProposalPayload: Decodable { let resultProjectId: String }
+private struct ResolvedProposalPayload: Decodable { let proposal: ProposalPayload }
 
 private struct RecordsPayload: Decodable {
     let data: [RecordPayload]
@@ -235,3 +298,25 @@ private extension ISO8601DateFormatter {
         return formatter
     }()
 }
+
+struct ProjectCreation: Decodable {
+    let status: String
+    let progress: Progress
+    let errorCode: String?
+    struct Progress: Decodable {
+        let stage: String?
+        let completedImages: Int?
+        let imageCount: Int?
+    }
+    var isPending: Bool { status == "queued" || status == "running" }
+    var label: String {
+        switch status {
+        case "queued": "创作正在排队"
+        case "running": progress.stage == "writing" ? "正在整理图文" : (progress.imageCount == nil ? "正在准备创作" : "正在创作图片 · \(progress.completedImages ?? 0)/\(progress.imageCount ?? 0)")
+        case "completed": "创作已完成"
+        case "failed": errorCode == "IMAGE_RESULT_UNKNOWN" ? "生成结果未能确认，这次创作已暂停" : "这次创作未完成，已生成的图片会保留"
+        default: "创作已停止"
+        }
+    }
+}
+private struct ProjectCreationEnvelope: Decodable { let creation: ProjectCreation? }

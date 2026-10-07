@@ -1,36 +1,40 @@
 import Foundation
 
 enum ProjectStatus: String, Codable, Hashable {
-    case proposed
-    case active
-    case archived
-    case rejected
-
-    var title: String {
-        switch self {
-        case .proposed: "等待确认"
-        case .active: "跟踪中"
-        case .archived: "已归档"
-        case .rejected: "已拒绝"
-        }
-    }
-
-    var symbol: String {
-        switch self {
-        case .proposed: "sparkles"
-        case .active: "circle.dashed"
-        case .archived: "archivebox"
-        case .rejected: "xmark.circle"
-        }
-    }
+    case active, archived
+    var title: String { self == .active ? "创作成果" : "已归档" }
+    var symbol: String { self == .active ? "book.closed" : "archivebox" }
 }
-
 struct Project: Identifiable, Hashable {
     let id: String
     let title: String
+    let summary: String
+    var coverMediaID: String? = nil
     let content: String
     let status: ProjectStatus
     let version: Int
     let createdAt: Date
     let updatedAt: Date
+}
+struct ProjectDetail {
+    let project: Project
+    let recordCount: Int
+    let referenceRecords: [Record]
+}
+enum ProposalType: String, Codable, Hashable { case create, extend }
+enum ProposalStatus: String, Codable, Hashable { case pending, accepted, rejected }
+struct ProposalContent: Codable, Hashable {
+    let reason: String
+    let idea: String
+    let plan: [String]
+}
+struct Proposal: Identifiable, Hashable {
+    let id: String
+    let type: ProposalType
+    let targetProjectID: String?
+    let title: String
+    let content: ProposalContent
+    let status: ProposalStatus
+    let resultProjectID: String?
+    let createdAt: Date
 }

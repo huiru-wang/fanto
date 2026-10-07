@@ -1,7 +1,7 @@
-import { sql, type Kysely } from "kysely";
+import { sql, type Transaction, type Kysely } from "kysely";
 import { randomUUID } from "node:crypto";
 import type { DB } from "../../infrastructure/database/schema.js";
-import type { RecordRepository } from "./repository.js";
+import type { RecordReadOptions, RecordRepository, RecordSavedHook } from "./repository.js";
 import type { Record } from "./record.js";
 import type { AudioContentBlock, ImageContentBlock, RecordContent } from "@fanto/shared";
 import type { SaveRecordContent } from "./content.js";
@@ -10,9 +10,10 @@ import { decodeRecordCursor } from "./cursor.js";
 
 type ExtData = { recordId?: string | null; capture?: { width?: number | null; height?: number | null; durationMs?: number | null } };
 const ext = (value: string | null): ExtData => value ? JSON.parse(value) as ExtData : {};
+const vectorLiteral = (embedding: number[]) => JSON.stringify(embedding);
 
 export class PostgresRecordRepository implements RecordRepository {
-  constructor(private db: Kysely<DB>) {}
+  constructor(private db: Kysely<DB>, private readonly cleanupLinks: (userId: string, recordId: string, transaction: Transaction<DB>) => Promise<void>, private readonly onSaved?: RecordSavedHook) {}
 
   async create(input: { userId: string; source?: string; eventAt: string; value: SaveRecordContent }): Promise<Record | "invalid_media" | "invalid_content"> {
     return this.db.transaction().execute(async trx => {
@@ -20,18 +21,21 @@ export class PostgresRecordRepository implements RecordRepository {
       if (typeof blocks === "string") return blocks;
       const now = nowIso();
       const location = input.value.location ? normalizedLocation(input.value.location) : null;
-      const row = { record_id: randomUUID(), user_id: input.userId, source: input.source ?? "home", content: JSON.stringify({ text: input.value.text, blocks }), version: 1, status: "pending", task_id: null, location_latitude: location?.latitude ?? null, location_longitude: location?.longitude ?? null, event_at: input.eventAt, created_at: now, updated_at: now };
+      const row = { record_id: randomUUID(), user_id: input.userId, source: input.source ?? "home", content: JSON.stringify({ text: input.value.text, blocks }), version: 1, status: "pending", task_id: null, location_latitude: location?.latitude ?? null, location_longitude: location?.longitude ?? null, event_at: input.eventAt, created_at: now, updated_at: now, embedding: null };
       await trx.insertInto("records").values(row).execute();
       await this.link(trx, input.userId, input.value.media.map(item => item.mediaId), row.record_id);
+      await this.onSaved?.(input.userId, row.record_id, row.version, trx);
       return this.toEntity(row);
     });
   }
 
   async findById(id: string) { const row = await this.db.selectFrom("records").selectAll().where("record_id", "=", id).executeTakeFirst(); return row ? this.toEntity(row) : null; }
 
-  async findByIds(userId: string, ids: string[]) {
+  async findByIds(userId: string, ids: string[], options: RecordReadOptions = {}) {
     if (!ids.length) return [];
-    return (await this.db.selectFrom("records").selectAll().where("user_id", "=", userId).where("record_id", "in", ids).execute()).map(row => this.toEntity(row));
+    const query = (options.transaction ?? this.db).selectFrom("records").selectAll().where("user_id", "=", userId).where("record_id", "in", ids).orderBy("record_id");
+    if (options.lock && !options.transaction) throw new Error("Record locks require a transaction");
+    return (await (options.lock ? query.forUpdate() : query).execute()).map(row => this.toEntity(row));
   }
 
   async findByUserId(userId: string, opts: { cursor?: string; limit: number }) {
@@ -45,7 +49,7 @@ export class PostgresRecordRepository implements RecordRepository {
 
   async updateContent(id: string, userId: string, input: { value: SaveRecordContent; expectedVersion: number }): Promise<Record | "not_found" | "conflict" | "invalid_media" | "invalid_content"> {
     return this.db.transaction().execute(async trx => {
-      const previous = await trx.selectFrom("records").selectAll().where("record_id", "=", id).where("user_id", "=", userId).executeTakeFirst();
+      const previous = await trx.selectFrom("records").selectAll().where("record_id", "=", id).where("user_id", "=", userId).forUpdate().executeTakeFirst();
       if (!previous) return "not_found";
       if (previous.version !== input.expectedVersion) return "conflict";
       if (previous.status === "processing") return "conflict";
@@ -55,22 +59,23 @@ export class PostgresRecordRepository implements RecordRepository {
       const newIds = input.value.media.map(item => item.mediaId);
       const now = nowIso();
       const location = input.value.location ? normalizedLocation(input.value.location) : null;
-      const row = await trx.updateTable("records").set({ content: JSON.stringify({ text: input.value.text, blocks }), location_latitude: location?.latitude ?? null, location_longitude: location?.longitude ?? null, version: sql<number>`version + 1`, status: "updated", task_id: null, updated_at: now }).where("record_id", "=", id).returningAll().executeTakeFirstOrThrow();
+      const row = await trx.updateTable("records").set({ content: JSON.stringify({ text: input.value.text, blocks }), location_latitude: location?.latitude ?? null, location_longitude: location?.longitude ?? null, version: sql<number>`version + 1`, status: "updated", task_id: null, updated_at: now, embedding: null }).where("record_id", "=", id).returningAll().executeTakeFirstOrThrow();
       await this.link(trx, userId, newIds, id);
       for (const mediaId of oldIds.filter(mediaId => !newIds.includes(mediaId))) await this.unlink(trx, userId, mediaId, now);
+      await this.onSaved?.(userId, row.record_id, row.version, trx);
       return this.toEntity(row);
     });
   }
 
   async delete(id: string, userId: string, expectedVersion: number): Promise<Record | "not_found" | "conflict"> {
     return this.db.transaction().execute(async trx => {
-      const row = await trx.selectFrom("records").selectAll().where("record_id", "=", id).where("user_id", "=", userId).executeTakeFirst();
+      const row = await trx.selectFrom("records").selectAll().where("record_id", "=", id).where("user_id", "=", userId).forUpdate().executeTakeFirst();
       if (!row) return "not_found";
       if (row.version !== expectedVersion) return "conflict";
       const record = this.toEntity(row);
       const now = nowIso();
       for (const block of record.content.blocks) if (block.type !== "location") await this.unlink(trx, userId, block.mediaId, now);
-      await trx.deleteFrom("project_records").where("user_id", "=", userId).where("record_id", "=", id).execute();
+      await this.cleanupLinks(userId, id, trx);
       await trx.deleteFrom("records").where("record_id", "=", id).where("user_id", "=", userId).where("version", "=", expectedVersion).execute();
       return record;
     });
@@ -107,6 +112,20 @@ export class PostgresRecordRepository implements RecordRepository {
 
   async releasePostprocess(input: { recordId: string; userId: string; version: number; runId: string }): Promise<void> {
     await this.db.updateTable("records").set({ status: "pending", task_id: null, updated_at: nowIso() }).where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).execute();
+  }
+
+  async writeEmbedding(input: { recordId: string; userId: string; version: number; embedding: number[] }): Promise<boolean> {
+    const result = await sql`UPDATE records SET embedding = ${vectorLiteral(input.embedding)}::vector
+      WHERE record_id = ${input.recordId} AND user_id = ${input.userId}
+        AND version = ${input.version} AND status = 'processed'`.execute(this.db);
+    return Number(result.numUpdatedOrDeletedRows) === 1;
+  }
+
+  async searchByEmbedding(input: { userId: string; embedding: number[]; limit: number }): Promise<Array<{ record: Record; distance: number }>> {
+    const rows = await sql<any>`SELECT *, (embedding <-> ${vectorLiteral(input.embedding)}::vector)::float8 AS distance
+      FROM records WHERE user_id = ${input.userId} AND status = 'processed' AND embedding IS NOT NULL
+      ORDER BY embedding <-> ${vectorLiteral(input.embedding)}::vector LIMIT ${input.limit}`.execute(this.db);
+    return rows.rows.map(row => ({ record: this.toEntity(row), distance: Number(row.distance) }));
   }
 
   private async blocks(trx: Kysely<DB>, userId: string, value: SaveRecordContent, recordId?: string): Promise<RecordContent["blocks"] | "invalid_media" | "invalid_content"> {

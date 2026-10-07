@@ -6,7 +6,7 @@
 
 | 组件 | 当前状态 |
 | --- | --- |
-| Server | 可运行，负责 Record、Record Retrieval、Media、Project、Agent Task |
+| Server | 可运行，负责 Record、Record Retrieval、Memory、Media、Proposal / Project、Agent Task |
 | Agent Runtime | 内嵌 Server，负责 Context Runtime、Agent Session、流式执行、子 Agent 执行与工作区 |
 | iOS | 客户端代码链路已实现；Google / Apple 登录、Record 读取、Project 与 Fanto 单 Session 对话均已接公网 HTTPS API |
 | H5 | 可运行；提供响应式多模态 Record、语义搜索、Markdown / 媒体消息与 Fanto 多轮对话测试客户端，适配 PC / iPad / 手机 |
@@ -31,25 +31,27 @@
 
 ## Record Retrieval
 
-Server 已经会为处理完成的 Record 构建向量索引。用户文本、图片描述和音频转写不会再拼成一个 embedding，而是分别作为 `record_text`、`image`、`audio` 原子单元独立索引；媒体单元仍保留与原 Record / mediaId 的关联。
+Server 会为处理完成的 Record 构建一个整体向量。用户正文、地点和图片 description 按固定顺序组成完整文本后生成 `records.embedding`；一条 Record 只有一个向量，不进行 chunk 或媒体级单元索引。
 
-Record postprocess 成功后把最终 processed Record 交给 `RecordRetrievalService`，由 Record domain 内的 `PostgresRecordIndex` 提供 pgvector 派生索引。独立的 Fanto Memory 尚未实现。
+Record postprocess 成功后把最终 processed Record 交给 `RecordRetrievalService`，由 Record domain 内的 `PostgresRecordRepository` 写入 `records.embedding`。
 
 `POST /api/records/search` 已注册，可对当前用户 Record 做语义搜索。pgvector 查询在 SQL 层按 `user_id` 限定当前用户，并在读取 metadata 时保持用户归属校验。
 
-Agent Runtime 已通过 Business Services 接入 `record_get`、`record_list`、`record_search` 三个只读 Record Tool，并提供 `present_media` 展示 Tool；`main` 还可以通过 `collect_user_input` 采集真正必要的用户决策，并通过 `create_task / update_task / get_task` 管理后台 Agent Task。`main` 在每次 Agent Run 前执行一次 `RecordContextProvider`，固定读取最近 10 条 Record 的缓存窗口，注入截断正文、真实 `recordId`、媒体 `mediaId` 及截断图片描述 / 音频转写，不在 Run 前执行 Query Rewrite 或向量搜索。需要主题相关历史时由主模型主动调用 `record_search`。LLM 不传 `userId`；所有业务读取身份都来自当前 Session 的 Run Context。
+Agent Runtime 已通过 Business Services 接入唯一的只读 Record Tool `record_read`，并提供 `present_media` 展示 Tool；`record_read(recordIds)` 读取已知的完整 Record，`record_read(query)` 语义检索后返回最多 3 条完整 Record。`main` 还可以通过 `collect_user_input` 采集真正必要的用户决策，并通过 `create_task / update_task / get_task` 管理后台 Agent Task。`main` 在每次 Agent Run 前执行一次 `RecordContextProvider`，固定读取最近 10 条 Record 的缓存窗口，注入截断正文、真实 `recordId`、媒体 `mediaId` 及截断图片描述 / 音频转写，不在 Run 前执行 Query Rewrite 或向量搜索。LLM 不传 `userId`；所有业务读取身份都来自当前 Session 的 Run Context。
 
-## Project
+## Memory
 
-当前 Server 已支持：
+Server 已提供独立于 Record 的 Fanto Memory。`memories` 是用户隔离的业务表，保存 `profile`（稳定背景或习惯）、`goal`（长期目标或进行中事项）和 `guidance`（长期沟通或协作方式）三种纯文本记忆，并在创建、更新时同步写入 768 维 pgvector。Memory 不从 Record 或对话自动提取。
 
-- Project 列表与状态筛选；
-- Project 详情；
-- Project 关联 Record 的游标分页，接口直接返回完整 Record；
-- `proposed -> active` 的 confirm；
-- `proposed -> rejected` 的 reject。
+主 Agent 只通过 `memory_manage` 管理和检索 Memory。每轮自动注入全部 `guidance`；`profile` 和 `goal` 由主模型在当前问题确实需要时通过语义搜索查询。用户必须明确提出记住、修改或遗忘，模型才可以写入、更新或删除。
 
-Project 和待确认提议统一为同一实体；Project 与 Record 使用专用 `project_records` 关系表，不再使用旧的类型目录、独立提议表或通用 entity relation。当前运行入口**不会自动分析 Record 并生成 proposed Project**。
+## Proposal / Project
+
+Project summary 在创建、更新时同步生成 768 维向量；proposal-agent 使用 project_read(search) 检索同用户 active 项目，再通过 get 核对候选以提出延续建议。summary 描述真实来源、主体、主题与成果边界，创作发布时与实际成果同步校正。
+
+Server 支持独立 Proposal 的查询、参考记录分页与接受 / 拒绝，以及 Project 摘要列表、详情、版本保护更新和单向归档。接受 create 建立项目，接受 extend 为同用户 active 项目添加去重后的参考记录。Project 保存 summary 和 Markdown 当前成果，图片二进制存 OSS；详见 [Domain](../domain/projects.md)。
+
+iOS 已改用 Proposal 接口展示建议、计划和参考记录，接受后刷新项目；项目详情展示图文成果、静态 HTML 预览和参考记录摘要。没有外部创建提议接口；启用 Creative Runtime 后自动分析记录，并在用户接受支持的创作提议后生成图文成果。
 
 ## Agent Runtime
 
@@ -63,17 +65,18 @@ Server 内嵌的 Agent Runtime 当前支持：
 - Task / TaskRun 持久化在 PostgreSQL，由 5 分钟 Scheduler 按 WorkerPool 可用容量调度；
 - 每个 Session 使用 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>` 独立工作区；
 - Pi 内置 `read`、`write`、`edit`、`bash` 工具；
-- `record_get`、`record_list`、`record_search` 三个只读 Record Tool；
+- `record_read` 唯一的只读 Record Tool，支持按真实 `recordIds` 读取，或按 `query` 检索后返回完整 Record；
+- `memory_manage` 唯一的 Memory Tool，提供 list / search / create / update / delete action；
 - `web_search` 公开网页检索 Tool，仅开放给后台 Task Worker；复用 DeepSeek Anthropic 兼容接口的服务端 Web Search，并把检索来源 URL 返回给 Worker；
 - `present_media` 媒体展示 Tool；
 - `collect_user_input` 结构化澄清 Tool；只有缺少会明显改变结果的用户决策时使用，成功调用后结束当前 Main Run 等待用户回答；
 - `create_task` 后台任务 Tool；当前唯一 `task-worker` 由系统自动选择，LLM 不接触 Worker 路由、timeout、mediaId 或文件协议，`output.format` 必填，关联资料只传 `references.recordIds`；
 - `update_task / get_task` 后台任务管理 Tool；
 - 唯一的 `task-worker` 后台子 Agent，统一处理资料整理、文件、HTML 页面和代码工作；Worker 必须先用 `task_plan_manage(create/update)` 将用户可读 Plan 写入 `task_runs.ext_data.plan`，之后才允许 write/edit/bash/交付，并通过 `deliver_task_result` 完成最终文件交付；单个 TaskRun 最多自动尝试 3 次；
-- Run 前一次性 Context Runtime（Character / Current Time / Current Tasks / Recent Records）；
+- Run 前一次性 Context Runtime（Character / Current Time / Current Tasks / 已保存 guidance / Recent Records）；
 - Skill 文件加载。
 
-它不直接访问 Fanto 业务数据库；Record Tool、`present_media` 与 Task Tool 统一通过 `business-services.ts` 调用相应领域 Service，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启三个只读 Record Tool、`present_media`、`collect_user_input` 与 `create_task / update_task / get_task`；唯一的 `task-worker` 可读取用户 Record、在需要当前或公开事实时通过 `web_search` 查询网页、通过 `task_plan_manage` 保存执行计划、使用文件和 bash 工具，并通过 `deliver_task_result` 交付最终成品。Main 只负责理解 What / Why，Worker 自主负责 How；Task Brief 不再携带文件路径、媒体协议等执行细节。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 的认识、关系原则、工具与 Markdown / Media 规则已经合并在 `apps/server/src/agent/prompts/main.ts`；每轮还会注入 Character、当前时区下的时间、当前 Task 摘要与近期记录；相关历史由主 Agent 按需搜索。
+它不直接访问 Fanto 业务数据库；Record、Memory、`present_media` 与 Task Tool 统一通过 `business-services.ts` 调用相应领域 Service，并从当前 Run Context 获取用户身份。当前 `main` 是 Fanto 面向用户的长期对话 Agent，开启唯一的 `record_read`、`memory_manage`、`present_media`、`collect_user_input` 与 `create_task / update_task / get_task`；唯一的 `task-worker` 可读取用户 Record、在需要当前或公开事实时通过 `web_search` 查询网页、通过 `task_plan_manage` 保存执行计划、使用文件和 bash 工具，并通过 `deliver_task_result` 交付最终成品。Main 只负责理解 What / Why，Worker 自主负责 How；Task Brief 不再携带文件路径、媒体协议等执行细节。媒体展示仍以 Pi 原生 Tool Call / Tool Result 保存在 Session 中，不组装新的最终消息结构。`main` 的认识、关系原则、工具与 Markdown / Media 规则已经合并在 `apps/server/src/agent/prompts/main.ts`；每轮还会注入 Character、当前时区下的时间、当前 Task 摘要、已保存 guidance 与近期记录；相关历史由主 Agent 按需搜索。
 
 ## 当前基础设施边界
 
@@ -83,3 +86,5 @@ Server 内嵌的 Agent Runtime 当前支持：
 - iOS 使用 HTTPS 公网域名，并通过 Google / Apple 登录换取 Fanto Token；Server 与内嵌 Agent Runtime 共用同一认证边界。
 - H5 仍属于受控测试客户端，可通过构建时测试 refresh token 建立会话；它调用 `/api/auth/tokens/refresh` 获取 Access JWT，而不是内置 Agent 静态 Token。
 - Agent Runtime 使用与 Server 相同的 Bearer Token 鉴权，并使用验证后的 JWT `sub` 绑定 Session；bash 的宿主机执行仍只适合开发环境，生产环境需要真正的容器或微虚拟机隔离。
+
+启用 Creative Runtime 后，新 Record 自动经过价值、创意与已有项目关联判断，产生可接受 / 拒绝的 Proposal；缺少必要信息或主体不明确时静默不提议，不询问用户。当前执行范围是角色扮演图文：用户接受后编辑原图、保存 ready Media，并发布 Markdown Project 成果；extend 在保留已有正文的基础上追加。其他风格、写真集、纪念册和 Three.js 等尚不作为独立执行意图。运行与恢复边界见 [创作运行](../architecture/creative-runtime.md)。

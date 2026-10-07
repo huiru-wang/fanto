@@ -1,36 +1,34 @@
+import { ProjectService } from "../../projects/index.js";
 import type { Record } from "../record.js";
+import { PostgresRecordRepository } from "../postgres-repository.js";
+import type { RecordRepository } from "../repository.js";
 import type { EmbeddingProvider } from "./embedding-provider.js";
-import type { RecordIndex } from "./record-index.js";
-import type { RecordIndexRef, RecordSearchResult } from "./model.js";
-import { buildRecordIndexDocuments, parseRecordIndexSource } from "./record-document.js";
-
-const refKey = (ref: RecordIndexRef) => `${ref.sourceType}:${ref.sourceId}`;
+import type { RecordSearchResult } from "./model.js";
+import { buildRecordEmbeddingText, recordSearchPreview } from "./record-document.js";
+import type { Kysely } from "kysely";
+import type { DB } from "../../../infrastructure/database/schema.js";
 
 export class RecordRetrievalService {
-  constructor(private readonly index: RecordIndex, private readonly embeddings: EmbeddingProvider) {}
+  constructor(private readonly records: Pick<RecordRepository, "writeEmbedding" | "searchByEmbedding">, private readonly embeddings: EmbeddingProvider) {}
 
-  async replaceRecord(record: Record): Promise<void> {
-    const documents = buildRecordIndexDocuments(record);
-    const existing = await this.index.listRecordRefs(record.userId, record.id);
-    const desired = new Set(documents.map(refKey));
-    for (const ref of existing) if (!desired.has(refKey(ref))) await this.index.remove(ref);
-    for (const document of documents) {
-      if (await this.index.isCurrent(document, document.contentHash, document.eventAt)) continue;
-      await this.index.replace(document, await this.embeddings.embed(document.content));
-    }
+  static create(db: Kysely<DB>, embeddings: EmbeddingProvider): RecordRetrievalService {
+    return new RecordRetrievalService(new PostgresRecordRepository(db, ProjectService.removeRecordReferences), embeddings);
   }
 
-  async removeRecord(input: { userId: string; recordId: string }): Promise<void> {
-    const refs = await this.index.listRecordRefs(input.userId, input.recordId);
-    await Promise.all(refs.map(ref => this.index.remove(ref)));
+  async replaceRecord(record: Record): Promise<void> {
+    const content = buildRecordEmbeddingText(record);
+    if (!content) return;
+    await this.records.writeEmbedding({
+      userId: record.userId,
+      recordId: record.id,
+      version: record.version,
+      embedding: await this.embeddings.embed(content),
+    });
   }
 
   async searchRecords(input: { userId: string; query: string; limit: number }): Promise<RecordSearchResult[]> {
     const embedding = await this.embeddings.embed(input.query);
-    const hits = await this.index.search({ userId: input.userId, sourceTypes: ["record_text", "image", "audio"], embedding, limit: input.limit });
-    return hits.map(hit => {
-      const source = parseRecordIndexSource(hit.sourceType, hit.sourceId);
-      return { sourceType: hit.sourceType, sourceId: hit.sourceId, recordId: source.recordId, mediaId: source.mediaId, snippet: hit.content.slice(0, 1_000), distance: hit.distance, eventAt: hit.eventAt };
-    });
+    const hits = await this.records.searchByEmbedding({ userId: input.userId, embedding, limit: input.limit });
+    return hits.map(({ record, distance }) => ({ recordId: record.id, eventAt: record.eventAt, preview: recordSearchPreview(record), distance }));
   }
 }

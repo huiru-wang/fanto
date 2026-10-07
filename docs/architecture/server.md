@@ -8,15 +8,15 @@
 apps/server/src/
 ├── bootstrap/       # 启动、配置、Hono 装配、迁移命令
 ├── routes/          # HTTP 输入、用户边界、响应映射
-├── domain/          # records（含 retrieval）/ media / projects / tasks
+├── domain/          # records（含 retrieval）/ memory / media / projects / tasks
 ├── task-runtime/    # 5 分钟 Scheduler、WorkerPool、TaskWorker、结果发布
 ├── infrastructure/ # PostgreSQL、TTL cache、外部 client、queue、logging、time
 ├── listeners/       # 进程内事件处理
-├── migrations/      # 当前空库 schema 基线
+├── migrations/      # 空库 schema 基线与 PostgreSQL 增量迁移
 └── scripts/         # 演示数据等运维脚本
 ```
 
-每个 Domain 以 `index.ts` 作为模块外入口，采用 `model.ts`、`repository.ts`、`postgres-repository.ts`（需要持久化时）和 `*-service.ts` 的统一组织方式。Route 只能调用相应 Service，Repository 不对模块外暴露。Record Retrieval 通过 Record domain 内的 `RecordRetrievalService + RecordIndex / EmbeddingProvider` 边界编排，pgvector 实现也位于该 domain。外部 OSS、图片理解、音频转写与 Embedding 通过 infrastructure adapter 适配。
+每个 Domain 以 `index.ts` 作为模块外入口，采用 `model.ts`、`repository.ts`、`postgres-repository.ts`（需要持久化时）和 `*-service.ts` 的统一组织方式。Route 只能调用相应 Service，Repository 不对模块外暴露。Record Retrieval 通过 Record domain 内的 `RecordRetrievalService + EmbeddingProvider` 编排，并直接读写 `records.embedding`；Memory 以独立 `memories` 业务表保存用户明确指定的长期文本记忆。外部 OSS、图片理解、音频转写与 Embedding 通过 infrastructure adapter 适配。
 
 ## HTTP 请求路径
 
@@ -38,7 +38,8 @@ flowchart LR
 | --- | --- |
 | `/api/uploads`、`/api/media/:id`、`/api/media/:id/url` | Media |
 | `/api/records` | Record / Record Retrieval Search |
-| `/api/projects` | Project |
+| `/api/projects` | Project 查询、更新与归档 |
+| `/api/proposals` | Proposal 查询、参考记录与决策 |
 | `/api/tasks` | Agent Task |
 
 具体契约见 [HTTP API](../api/http-api.md)。
@@ -87,7 +88,7 @@ sequenceDiagram
 
 图片与音频任务可以部分失败；图片 description、音频 transcription 与 ASR metadata 都写回对应 Record block，不再把 ASR 结果复制到 Media `ext_data`。只有完成当前 Record 版本的 postprocess 后才会把最终 Record 交给 Record Retrieval。
 
-Record 已成功变成 `processed` 后，索引或 Embedding 失败只记录错误，不会重新 release Record；索引是派生数据。该队列仍是进程内机制，服务进程退出时未完成任务不会恢复，也没有持久 retry、补偿或批量重建入口。
+Record 已成功变成 `processed` 后，Embedding 失败只记录错误，不会重新 release Record；`records.embedding` 是派生字段。该队列仍是进程内机制，服务进程退出时未完成任务不会恢复，也没有持久 retry、补偿或批量重建入口。
 
 ## 数据库与 migration
 
@@ -95,4 +96,6 @@ Record 已成功变成 `processed` 后，索引或 Embedding 失败只记录错�
 
 `create_current_schema.ts` 仍是面向空数据库的当前 schema 基线。对已经执行过基线的现有数据库，必须新增按文件名顺序执行的前向 migration；当前 Task System 使用 `z_task_system_schema.ts` 幂等创建 `tasks / task_runs`。不要修改已经执行过的 migration 来假装完成线上升级。
 
-向量索引存储在同一业务数据库，但属于派生数据；`vector_items.embedding` 是 768 维 pgvector，查询从 SQL 层按 `user_id` 限定当前用户。
+向量数据存储在同一业务数据库。`records.embedding` 是整条 Record 的 768 维 pgvector 派生字段；`memories.embedding` 是用户明确保存的 Memory 业务数据。两类查询都从 SQL 层按 `user_id` 限定当前用户。
+
+Creative Runtime 由同一进程装配，启用时登记 Record 版本分析、扫描接受提议并执行两类内部 Agent。公开分析 / 进度路由只调用 CreativeService，Tool / Provider 仍只走 Business Services。持久化执行状态与租约独立于业务 Domain 和进程内 Record 后置队列，见 [创作运行](creative-runtime.md)。

@@ -34,7 +34,7 @@ export async function buildRuntime(session: Session, definition: AgentDefinition
   if (!model) throw new Error(`Unknown model: ${definition.provider}/${definition.model}`);
   const tools = createTools(definition.tools, workspace, dependencies.fanto, dependencies.taskAgents);
   const systemPrompt = createSystemPrompt({
-    template: definition.systemPrompt,
+    template: definition.systemPrompt + (definition.id === "creator-agent" ? "\n\n" + dependencies.skills.load(definition.skills).map(s => s.content).join("\n\n") : ""),
     providers: createContextProviders({ fanto: dependencies.fanto }),
   });
   const { harness } = await AgentHarness.create<ExecutionToolContext>({

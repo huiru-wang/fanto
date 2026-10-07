@@ -1,8 +1,10 @@
+import type { CreativeService } from "../creative-runtime/service.js";
 import { dirname, resolve } from "node:path";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { RecordService } from "../domain/records/index.js";
 import type { MediaService } from "../domain/media/index.js";
 import type { TaskService } from "../domain/tasks/index.js";
+import type { MemoryService } from "../domain/memory/index.js";
 import { createAgentBusinessServices } from "./business-services.js";
 import { AgentRegistry } from "./harness/registry.js";
 import { AgentSessionManager } from "./harness/session-manager.js";
@@ -14,8 +16,10 @@ export type AgentRuntime = { registry: AgentRegistry; sessions: AgentSessionMana
 
 export function createAgentRuntime(input: {
   records: RecordService;
+  creative?: CreativeService;
   media: MediaService;
   tasks: TaskService;
+  memories: MemoryService;
   sessionDatabasePath: string;
   workspaceRoot: string;
   definitionPath: string;

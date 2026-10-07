@@ -43,6 +43,21 @@
 
 Agent 的模型、Agent、Tool、Task capability 与 compaction 配置位于 `apps/server/agent.yaml`；`task.enabled=true` 的子 Agent 还定义 `defaultTimeoutSeconds / maxTimeoutSeconds`，最终 Task timeout 同时受 Server 全局最小/最大值约束。`systemPromptModule` 引用 `apps/server/src/agent/prompts/` 中受限的 TypeScript Prompt 模块；当前 Main 使用 `main.ts`，Task Worker 使用 `task-worker.ts`。不再存在 `corePromptModule` 配置。配置和 Prompt 都在 Server 启动时加载，内容参与 Agent revision；修改后需要重启 Server。
 
+## 创作 Agent
+
+默认关闭，设置 `CREATIVE_ENABLED=true` 后，Record 分析与接受后的创作由同一 Server 进程执行。需要可用的 DeepSeek、Qwen 与 OSS 服务端凭据；不在客户端保存密钥。配置修改后重启 Server。
+
+| 变量 | 默认 / 用途 |
+| --- | --- |
+| `CREATIVE_ENABLED` | `false`；仅接受 true / false |
+| `CREATIVE_INTERVAL_MS` / `CREATIVE_WORKERS` | `2000` / `1`，扫描周期与总执行并发 |
+| `CREATIVE_PROPOSAL_TIMEOUT_MS` / `CREATIVE_CREATOR_TIMEOUT_MS` | `120000` / `900000`，完整 Agent 回合超时 |
+| `CREATIVE_IMAGE_ENDPOINT` | 默认 DASHSCOPE_BASE_URL 同主机的原生 `/api/v1/services/aigc/multimodal-generation/generation` |
+| `CREATIVE_IMAGE_API_KEY` | 缺省使用 DASHSCOPE_API_KEY |
+| `CREATIVE_IMAGE_MODEL` / `CREATIVE_IMAGE_TIMEOUT_MS` | `qwen-image-3.0-pro` / `300000`，单次生图超时 |
+
+`agent.yaml` 中 proposal-agent / creator-agent 使用各自 Prompt，creator-agent 自动注入 roleplay-article Skill。当前仅角色扮演图文可执行，不执行 Three.js 等其他创意。运行语义见 [创作运行](../architecture/creative-runtime.md)。
+
 ## H5 线上测试认证
 
 线上 H5 可通过 `apps/h5/.env` 的以下构建时变量，以预置 refresh token 建立测试用户会话：
@@ -59,3 +74,5 @@ H5 启动时调用现有 `/api/auth/tokens/refresh`，在 `sessionStorage` 保�
 - 不把真实密钥提交到 Git。
 - 不在 iOS 或其他客户端内放模型 / OSS Secret。
 - 文档和日志示例不得包含真实 Authorization。
+
+Project summary / query 向量化复用 `DASHSCOPE_BASE_URL`、`DASHSCOPE_API_KEY`、`DASHSCOPE_EMBEDDING_MODEL` 和固定 768 维配置，与 Record / Memory 使用同一 Client；请求超时 30 秒。模型切换时已有向量须重新生成，不能混用不同模型的向量。Project 创建及摘要更新依赖向量服务成功。

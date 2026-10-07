@@ -19,7 +19,8 @@
 - [Record](domain/records.md)：原始记录、状态、版本和时间语义。
 - [Media](domain/media.md)：上传、OSS、图片理解与音频转写。
 - [Record Retrieval](domain/record-retrieval.md)：Record 索引、检索与派生数据边界。
-- [Project](domain/projects.md)：长期脉络、待确认状态和 Record 关联。
+- [Memory](domain/memory.md)：用户明确保存的长期记忆、检索与 Agent 使用边界。
+- [Proposal / Project](domain/projects.md)：创意建议、成果、决策事务和 Record 关联。
 
 ## 客户端与接口
 
@@ -46,3 +47,5 @@
 > 截至这个 commit 的仓库变化，已经判断过它们是否需要反映到 Current Docs。
 
 具体执行规则见根目录 [AGENTS.md](../AGENTS.md)。
+
+- [创作运行](architecture/creative-runtime.md)：自动提议、接受后创作与付费图片恢复。

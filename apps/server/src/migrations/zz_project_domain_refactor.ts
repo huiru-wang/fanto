@@ -2,6 +2,9 @@ import { sql, type Kysely } from "kysely";
 
 /** Replace the unused Creation/Proposal schema with the Project domain. No legacy data is migrated. */
 export async function up(db: Kysely<any>) {
+  // The current empty-database baseline already includes the new Project domain.
+  const current = await sql`SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'projects' AND column_name = 'summary'`.execute(db);
+  if (current.rows.length) return;
   await sql`
     DROP TABLE IF EXISTS entity_relations;
     DROP TABLE IF EXISTS creation_proposals;

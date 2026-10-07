@@ -50,9 +50,8 @@ export async function listRecords(cursor?: string | null): Promise<RecordPage> {
 
 export type RecordSearchHit = {
   recordId: string;
-  sourceType: "record_text" | "image" | "audio";
-  mediaId?: string | null;
-  snippet: string;
+  eventAt: string;
+  preview: string;
   distance: number;
 };
 

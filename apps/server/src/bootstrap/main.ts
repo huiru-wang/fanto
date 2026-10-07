@@ -1,3 +1,6 @@
+import { CreativeService } from "../creative-runtime/service.js";
+import { CreativeRunner } from "../creative-runtime/runner.js";
+import { CreativeImageClient } from "../infrastructure/clients/creative-image-client.js";
 import { serve } from "@hono/node-server";
 import { loadConfig, loadEnv } from "./config.js";
 import { checkDatabaseHealth, createDatabase, runMigrations } from "../infrastructure/database/database.js";
@@ -6,7 +9,7 @@ import { QwenAudioTranscription } from "../infrastructure/clients/audio-client.j
 import { EmbeddingsClient } from "../infrastructure/clients/embeddings-client.js";
 import { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import { OssStorage } from "../infrastructure/clients/oss-client.js";
- import { registerRecordPostprocessListener } from "../listeners/record-postprocess.listener.js";
+import { registerRecordPostprocessListener } from "../listeners/record-postprocess.listener.js";
 import { createApp, type ServerServices } from "./app.js";
 import { logError, logInfo } from "../infrastructure/logging/logger.js";
 import { JwtTokenService } from "../infrastructure/auth/jwt-token-service.js";
@@ -14,10 +17,11 @@ import { GoogleIdentityProvider } from "../infrastructure/auth/providers/google-
 import { AppleIdentityProvider } from "../infrastructure/auth/providers/apple-identity-provider.js";
 import { IdentityProviderRegistry } from "../domain/auth/identity-provider.js";
 import { AuthService } from "../domain/auth/index.js";
-import { PostgresRecordIndex, RecordRetrievalService, RecordService, type Record } from "../domain/records/index.js";
+import { RecordRetrievalService, RecordService, type Record } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
-import { ProjectService } from "../domain/projects/index.js";
+import { ProjectService, ProposalService } from "../domain/projects/index.js";
 import { TaskService } from "../domain/tasks/index.js";
+import { MemoryService } from "../domain/memory/index.js";
 import { createAgentRuntime } from "../agent/agent-runtime.js";
 import { TaskScheduler, TaskWorker, TaskWorkerPool } from "../task-runtime/index.js";
 import { TtlCache } from "../infrastructure/cache/ttl-cache.js";
@@ -56,15 +60,19 @@ const embeddings = new EmbeddingsClient(
   config.dashscope.embeddingModel,
   config.dashscope.embeddingDimension,
 );
-const recordIndex = new PostgresRecordIndex(db);
-const retrieval = new RecordRetrievalService(recordIndex, embeddings);
+const retrieval = RecordRetrievalService.create(db, embeddings);
+const memories = MemoryService.create(db, embeddings);
 const queue = new RecordPostprocessQueue();
-const records = RecordService.create(db, queue, retrieval, recordListCache);
+const records = RecordService.create(db, queue, retrieval, recordListCache, config.creative.enabled ? CreativeService.enqueueRecord : undefined);
 const tasks = new TaskService(db, {
   minSeconds: config.tasks.timeoutMinSeconds,
   maxSeconds: config.tasks.timeoutMaxSeconds,
 });
-const agent = createAgentRuntime({ records, media, tasks, ...config.agent });
+const projects = ProjectService.create(db, records, media, embeddings);
+const proposals = ProposalService.create(db, records, media, embeddings);
+const creative = config.creative.enabled ? new CreativeService(db, records, projects, proposals, media, new CreativeImageClient(config.creative.image), userId => auth.assertActiveUser(userId)) : undefined;
+const agent = createAgentRuntime({ records, media, tasks, memories, creative, ...config.agent });
+const creativeRunner = creative ? new CreativeRunner(creative, records, agent, config.creative) : undefined;
 const taskWorker = new TaskWorker(tasks, agent.registry, agent.sessions);
 const taskWorkerPool = new TaskWorkerPool(config.tasks.workerConcurrency, taskWorker);
 const taskScheduler = new TaskScheduler(tasks, taskWorkerPool, config.tasks.schedulerIntervalMs);
@@ -81,11 +89,15 @@ registerRecordPostprocessListener(
   retrieval,
 );
 
+creativeRunner?.start();
+
 const services: ServerServices = {
   auth,
   records,
   media,
-  projects: ProjectService.create(db, records),
+  projects,
+  proposals,
+  creative,
   tasks,
   agent,
   healthCheck,
@@ -142,6 +154,7 @@ const shutdown = async (signal: string) => {
   await new Promise<void>((resolve, reject) => {
     server.close(error => error ? reject(error) : resolve());
   });
+  await creativeRunner?.stop();
   await agent.close();
   await db.destroy();
   process.exit(0);

@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		A10000013056094D00FF4826 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = A10000113056094D00FF4826 /* GoogleSignIn */; };
 		A10000023056094D00FF4826 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A10000123056094D00FF4826 /* GoogleSignInSwift */; };
+		A20000013056094D00FF4826 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = A20000113056094D00FF4826 /* Markdown */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +29,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A20000013056094D00FF4826 /* Markdown in Frameworks */,
 				A10000013056094D00FF4826 /* GoogleSignIn in Frameworks */,
 				A10000023056094D00FF4826 /* GoogleSignInSwift in Frameworks */,
 			);
@@ -72,6 +74,7 @@
 			);
 			name = fanto;
 			packageProductDependencies = (
+				A20000113056094D00FF4826 /* Markdown */,
 				A10000113056094D00FF4826 /* GoogleSignIn */,
 				A10000123056094D00FF4826 /* GoogleSignInSwift */,
 			);
@@ -109,6 +112,7 @@
 			mainGroup = E7DF35793056094D00FF4826;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				A20000213056094D00FF4826 /* XCRemoteSwiftPackageReference "swift-markdown" */,
 				A10000213056094D00FF4826 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -363,6 +367,14 @@
 				minimumVersion = 9.0.0;
 			};
 		};
+		A20000213056094D00FF4826 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swiftlang/swift-markdown";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.6.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -375,6 +387,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A10000213056094D00FF4826 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignInSwift;
+		};
+		A20000113056094D00FF4826 /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A20000213056094D00FF4826 /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

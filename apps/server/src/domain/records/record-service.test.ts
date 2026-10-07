@@ -47,6 +47,8 @@ function createRepository(rows: Record[]) {
     async claimPostprocess(input) { return record(input.recordId); },
     async completePostprocess(input) { return record(input.recordId); },
     async releasePostprocess() {},
+    async writeEmbedding() { return true; },
+    async searchByEmbedding() { return []; },
   };
   return { repo, listCalls };
 }

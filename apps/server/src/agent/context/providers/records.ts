@@ -66,7 +66,7 @@ export class RecordContextProvider {
     if (queries.length === 0) return { slot: this.slot, content: "" };
     const searches = await Promise.all(queries.map(query => this.client.searchRecords({ userId: input.userId, traceId: input.traceId, signal: context.abortSignal }, { query, limit: 4 })));
     const records = dedupeRecords(searches.flatMap(result => result.data)).slice(0, 2);
-    return { slot: this.slot, content: records.map((record, index) => `记录 ${index + 1}：\nrecordId：${record.recordId}\n- 记录：${record.snippet}\n- 时间：${formatEventTime(record.eventAt, input.timeZone)}${record.mediaId ? "\n- 可能有可展示媒体：是" : ""}`).join("\n\n") };
+    return { slot: this.slot, content: records.map((record, index) => `记录 ${index + 1}：\nrecordId：${record.recordId}\n- 记录：${record.preview}\n- 时间：${formatEventTime(record.eventAt, input.timeZone)}`).join("\n\n") };
   }
 }
 

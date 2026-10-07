@@ -1,3 +1,5 @@
+import type { CreativeService } from "../creative-runtime/service.js";
+import { createCreativeRoutes } from "../routes/creative.js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { nowIso } from "../infrastructure/time.js";
@@ -7,10 +9,10 @@ import { bearerToken, requireUserId, runWithRequestPrincipal } from "../routes/r
 import { AuthError, type AuthService } from "../domain/auth/index.js";
 import { createAuthRoutes } from "../routes/auth.js";
 import { logAccess, logError } from "../infrastructure/logging/logger.js";
-import { createProjectRoutes } from "../routes/projects.js";
+import { createProjectRoutes, createProposalRoutes } from "../routes/projects.js";
 import { RecordService } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
-import type { ProjectService } from "../domain/projects/index.js";
+import type { ProjectService, ProposalService } from "../domain/projects/index.js";
 import type { TaskService } from "../domain/tasks/index.js";
 import type { AgentRuntime } from "../agent/agent-runtime.js";
 import { createSessionRoutes } from "../routes/agent/sessions.js";
@@ -34,10 +36,12 @@ const jsonBody = async (response: Response, path: string) => {
 };
 
 export type ServerServices = {
+  creative?: CreativeService;
   auth?: AuthService;
   records: RecordService;
   media: MediaService;
   projects?: ProjectService;
+  proposals?: ProposalService;
   tasks?: TaskService;
   agent?: AgentRuntime;
   healthCheck?: () => Promise<void>;
@@ -51,6 +55,7 @@ export function createApp(services: ServerServices) {
     return c.json({ success: false, errorCode: "INTERNAL_ERROR", errorMsg: "Internal server error" }, 500);
   });
   app.use("*", cors({ origin: "*", allowHeaders: ["Authorization", "Content-Type", "X-Client-Fingerprint", "X-Trace-Id", "X-Time-Zone"], allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] }));
+  app.use("/api/projects/*", bodyLimit({ maxSize: 13 * 1024 * 1024, onError: c => c.json({ success: false, result: null, errorCode: "CONTENT_TOO_LARGE", errorMsg: "Content too large" }, 413) }));
   app.use("/api/*", async (c, next) => {
     const requestBody = c.req.header("content-type")?.includes("application/json")
       ? await c.req.raw.clone().json().then(value => logSafeBody(c.req.path, value)).catch(() => null)
@@ -95,7 +100,9 @@ export function createApp(services: ServerServices) {
   if (auth) app.route("/api", createAuthRoutes(auth));
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));
+  if (services.creative) app.route("/api", createCreativeRoutes(services.creative));
   if (projectService) app.route("/api", createProjectRoutes(projectService));
+  if (services.proposals) app.route("/api", createProposalRoutes(services.proposals));
   if (services.tasks) app.route("/api", createTaskRoutes(services.tasks, mediaService));
   if (services.agent) {
     app.use("/api/agent/*", bodyLimit({ maxSize: 64 * 1024 }));

@@ -3,6 +3,7 @@ import { createRunContext } from "./run-context.js";
 
 export type SystemPromptProvider = {
   readonly slot: string;
+  readonly required?: boolean;
   build(context: Context): Promise<{ slot: string; content: string }>;
 };
 
@@ -44,6 +45,7 @@ export function createSystemPrompt(options: {
         if (result.slot !== slot) throw new Error(`Provider returned unexpected slot: ${result.slot}`);
         data.slots.values.set(slot, result.content);
       } catch (cause) {
+        if (provider.required) throw cause;
         if (context.abortSignal?.aborted) throw context.abortSignal.reason ?? cause;
         console.warn(`[context] ${slot} provider failed`, cause instanceof Error ? cause.message : String(cause));
         data.slots.values.set(slot, "");

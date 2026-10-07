@@ -19,10 +19,10 @@ export class OssStorage {
     if (typeof content === "string") return Buffer.from(content);
     throw new Error("OSS object content is unavailable");
   }
-  readUrl(key: string, variant: MediaVariant = "original") {
+  readUrl(key: string, variant: MediaVariant = "original", expiresSeconds = 300) {
     return this.client.signatureUrl(key, {
       method: "GET",
-      expires: 300,
+      expires: expiresSeconds,
       ...(variant === "thumbnail" ? { process: THUMBNAIL_PROCESS } : {}),
     });
   }

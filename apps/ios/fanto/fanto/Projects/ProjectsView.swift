@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ProjectsView: View {
     @Environment(FantoStore.self) private var store
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var isVisible = false
 
     var body: some View {
         NavigationStack {
@@ -19,7 +21,17 @@ struct ProjectsView: View {
                 }
             }
             .navigationDestination(for: Project.self, destination: ProjectDetailView.init)
+            .navigationDestination(for: Proposal.self, destination: ProposalDetailView.init)
             .navigationTitle("脉络")
+            .onAppear { isVisible = true }
+            .onDisappear { isVisible = false }
+            .task(id: isVisible && scenePhase == .active) {
+                guard isVisible && scenePhase == .active else { return }
+                while !Task.isCancelled {
+                    await store.refreshCreativeSuggestions()
+                    do { try await Task.sleep(for: .seconds(5)) } catch { return }
+                }
+            }
             .alert("操作未完成", isPresented: Binding(
                 get: { store.projectActionError != nil },
                 set: { if !$0 { store.projectActionError = nil } }
@@ -33,13 +45,13 @@ struct ProjectsView: View {
 
     @ViewBuilder
     private var content: some View {
-        if store.projects.isEmpty && store.proposedProjects.isEmpty {
+        if store.projects.isEmpty && store.proposals.isEmpty && store.proposalLoadState == .loaded {
             ContentUnavailableView("还没有脉络", systemImage: "point.3.connected.trianglepath.dotted", description: Text("当一些记录彼此呼应时，新的脉络便会在这里长出来。"))
         } else {
             List {
                 proposedSection
                 if !store.projects.isEmpty {
-                    Section("继续跟踪") {
+                    Section("创作成果") {
                         ForEach(store.projects) { project in
                             NavigationLink(value: project) { ProjectRow(project: project) }
                         }
@@ -53,10 +65,10 @@ struct ProjectsView: View {
 
     @ViewBuilder
     private var proposedSection: some View {
-        switch store.proposedProjectLoadState {
+        switch store.proposalLoadState {
         case .idle:
             EmptyView()
-        case .loaded where store.proposedProjects.isEmpty:
+        case .loaded where store.proposals.isEmpty:
             EmptyView()
         case .loading:
             Section("等待你的确认") { ProgressView("正在读取建议") }
@@ -64,13 +76,19 @@ struct ProjectsView: View {
             Section("等待你的确认") {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(message).font(.caption).foregroundStyle(.secondary)
-                    Button("重新加载") { Task { await store.loadProposedProjects() } }
+                    Button("重新加载") { Task { await store.loadProposals() } }
                 }
             }
         case .loaded:
             Section("等待你的确认") {
-                ForEach(store.proposedProjects) { project in
-                    NavigationLink(value: project) { ProjectRow(project: project) }
+                ForEach(store.proposals) { proposal in
+                    NavigationLink(value: proposal) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(proposal.title).font(.headline)
+                            Text(proposal.content.idea).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
+                            Label(proposal.type == .create ? "新的创作建议" : "继续创作", systemImage: "sparkles").font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
         }

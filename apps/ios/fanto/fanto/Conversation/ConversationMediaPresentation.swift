@@ -28,22 +28,16 @@ private struct ConversationImageRail: View {
     @State private var selectedImage: PresentedMedia?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("图片")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        ConversationImageThumbnail(item: item, position: index + 1, count: items.count) {
-                            selectedImage = item
-                        }
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    ConversationImageThumbnail(item: item, position: index + 1, count: items.count) {
+                        selectedImage = item
                     }
                 }
             }
-            .scrollIndicators(.hidden)
         }
+        .scrollIndicators(.hidden)
         .fullScreenCover(item: $selectedImage) { image in
             ConversationImageViewer(items: items, initiallySelected: image)
         }

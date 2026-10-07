@@ -7,8 +7,8 @@ struct ProjectRow: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(project.title)
                 .font(.headline)
-            if !project.content.isEmpty {
-                Text(project.content)
+            if !project.summary.isEmpty {
+                Text(project.summary)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(3)

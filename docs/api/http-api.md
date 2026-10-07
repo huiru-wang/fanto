@@ -45,9 +45,9 @@
 | DELETE | `/api/records/:id` | 以 expectedVersion 硬删除记录 |
 | POST | `/api/records/search` | 当前用户 Record 语义搜索 |
 
-`POST /api/records/search` 的每个命中返回 `recordId`、`sourceType` (`record_text` / `record_location` / `image` / `audio`)、可选 `mediaId`、`snippet`、原始 Record 的 `eventAt` 和向量 `distance`；图片和音频命中仍关联回原 Record。
+`POST /api/records/search` 的每个命中返回 `recordId`、原始 Record 的 `eventAt`、从完整 Record 内容构建的 `preview` 和向量 `distance`。
 
-创建体：`{ text, media, location?, eventAt, source? }`；更新体：`{ text, media, location?, expectedVersion }`；删除体：`{ expectedVersion }`。`location` 为 `{ name, countryCode?, country?, province?, city?, district?, latitude, longitude }`；`countryCode` 为 ISO 3166-1 alpha-2，两位字母，其他行政区字段均可选。创建时省略表示无地点，更新时省略保留原地点、`null` 删除、对象替换。坐标固定为 WGS-84。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`，最多 5 项。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。保存 Record 时，音频 capture 中已有的 `durationMs` 会写入对应 audio block；后置处理完成后，图片 description、音频 transcription 与 ASR metadata 写回 `content.blocks`。Record 读取不再查询 `media_assets`，也不返回冗余 `media[]`。删除会解除媒体的 Record 绑定、移除 Record 的向量记忆与来源关联，但不会删除媒体文件本身；已排队的后置任务因找不到 Record 而失效。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
+创建体：`{ text, media, location?, eventAt, source? }`；更新体：`{ text, media, location?, expectedVersion }`；删除体：`{ expectedVersion }`。`location` 为 `{ name, countryCode?, country?, province?, city?, district?, latitude, longitude }`；`countryCode` 为 ISO 3166-1 alpha-2，两位字母，其他行政区字段均可选。创建时省略表示无地点，更新时省略保留原地点、`null` 删除、对象替换。坐标固定为 WGS-84。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`，最多 5 项。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。保存 Record 时，音频 capture 中已有的 `durationMs` 会写入对应 audio block；后置处理完成后，图片 description、音频 transcription 与 ASR metadata 写回 `content.blocks`。Record 读取不再查询 `media_assets`，也不返回冗余 `media[]`。删除会解除媒体的 Record 绑定并删除包含向量字段的 Record 行，但不会删除媒体文件本身；已排队的后置任务因找不到 Record 而失效。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
 
 列表结果：`{ data, hasMore, nextCursor, pageSize }`。`nextCursor` 只应在 `hasMore=true` 时使用。
 
@@ -63,8 +63,7 @@
 - `limit` 默认 10，范围 1–20；
 - 当前用户只来自验证后的 Access JWT `sub`，请求体不能传 `userId`；
 - 搜索通过 Record Retrieval 在当前用户范围内执行 pgvector 查询；
-- 返回 `{ data: [{ recordId, sourceType, mediaId, snippet, eventAt, distance }] }`；
-- `sourceType` 为 `record_text` / `record_location` / `image` / `audio`，媒体命中通过 `mediaId` 关联具体图片或音频；
+- 返回 `{ data: [{ recordId, eventAt, preview, distance }] }`；
 - `distance` 是 pgvector 原始向量距离，仅用于检索相关性判断，不代表已经校准的产品置信度或概率。
 
 ### Record 后置处理与返回字段
@@ -118,17 +117,42 @@ Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒�
 
 `GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Access JWT。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到原始媒体的短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，`variant` 默认为 `original`，图片可请求 `thumbnail`（OSS 实时宽 600、q80、WebP），音频无论 variant 都返回 original；非法 variant 返回 `400 INVALID_INPUT`。读取签名有效期为五分钟，客户端不应持久化，thumbnail / original 应分键缓存，并在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 对客户端上传的图片 / 音频返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`。Task Worker 生成的结果文件由 Server 内部直接上传，不经过 `/api/uploads`，其 `mediaType=file`，meta 额外返回 `bytes / filename`。所有 meta 都不包含 signed URL。
 
-## Project
+## Proposal / Project
+
+Proposal 的列表、详情和决策响应包含 `sessionId: string | null`，表示生成提议的内部 Agent 会话，仅供追踪；不能通过公共 Session / 历史接口访问该会话。
+
+所有接口按 Access JWT 的 userId 隔离。列表响应为 `{ data, hasMore, nextCursor, pageSize }`，limit 默认 20、最大 100，必须为正整数；Proposal 参考记录默认 5。实体时间为 ISO 8601，空字段明确返回 null。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/api/projects?status=&limit=&cursor=` | 当前用户 Project 列表；支持 `proposed / active / archived / rejected` 状态筛选和游标分页；不传 status 时返回 active + archived |
-| GET | `/api/projects/:id` | Project 详情，只返回 Project 本身 |
-| GET | `/api/projects/:id/records?limit=5&cursor=` | 按 `record_event_at DESC, record_id DESC` 游标分页，直接返回完整 Record |
-| POST | `/api/projects/:id/confirm` | `proposed -> active` |
-| POST | `/api/projects/:id/reject` | `proposed -> rejected` |
+| GET | `/api/proposals?type=&status=&targetProjectId=&limit=&cursor=` | type 为 create / extend，status 为 pending / accepted / rejected；默认不过滤 |
+| GET | `/api/proposals/:id` | 提议详情及 referenceRecordCount |
+| GET | `/api/proposals/:id/records?limit=&cursor=` | 完整参考 Record，按 eventAt / recordId 倒序分页 |
+| POST | `/api/proposals/:id/accept` | 返回 `{ proposal, resultProjectId, addedRecordCount }`；同决策重试新增数为 0 |
+| POST | `/api/proposals/:id/reject` | 返回 `{ proposal }`，同决策幂等 |
+| GET | `/api/projects?status=&limit=&cursor=` | 默认 active，可选 archived；摘要列表不含 content |
+| GET | `/api/projects/:id` | 完整 Project，包含 recordCount / referenceRecords（最近最多 5 条） |
+| PATCH | `/api/projects/:id` | `{ expectedVersion, title?, summary?, coverMediaId?, content? }`，返回 Project |
+| POST | `/api/projects/:id/archive` | `{ expectedVersion }`，返回 Project；重复归档幂等 |
 
-Project 与待确认提议统一使用 `projects` 表，业务内容只存 `content`。`project_records` 冗余 Record 的 `event_at` 为 `record_event_at`，用于稳定索引分页。不提供 Record 批量查询接口。
+Project 包含 projectId / userId / sessionId / title / summary / coverMediaId / content / status / version / createdAt / updatedAt。Proposal 包含 proposalId / userId / sessionId / type / targetProjectId / title / proposedSummary / content / status / resultProjectId / createdAt / updatedAt / resolvedAt。内容与事务语义以 [Domain](../domain/projects.md) 为准。
+
+PATCH 不接受身份、状态、Session、版本或时间字段；缺省保持不变，content 空字符串清空正文，coverMediaId null 清空封面。title 最长 200，summary 最长 2000，正文最大 2 MiB UTF-8；请求体先受 13 MiB 限制，以允许 JSON 转义开销。接受 / 拒绝无需请求体。接受 create 或修改 summary 时若向量生成失败，返回 `503 EMBEDDING_UNAVAILABLE`，业务写入不生效。Proposal content.creation 使用 `{ objective, context?, constraints?, successCriteria? }`；Proposal 摘要返回 `proposedSummary`（数据库列名为 `proposed_summary`），不提供 `summary` 别名。Proposal 创建、Project 全量 Record 分页与 Project 语义搜索 仅为内部 Service 能力。
+
+错误：400 INVALID_INPUT / INVALID_CURSOR，404 NOT_FOUND（含跨用户），409 INVALID_STATE / VERSION_CONFLICT / REFERENCE_RECORDS_UNAVAILABLE / MEDIA_NOT_READY，413 CONTENT_TOO_LARGE。游标绑定用户、父实体、查询类型与过滤条件；不能跨查询复用。
+
+## 创作分析与进度
+
+仅启用 Creative Runtime 时注册，使用同一 access JWT 与用户隔离。响应沿用 success / result / errorCode / errorMsg envelope。
+
+| 方法 | 路径 | 返回 / 输入 |
+| --- | --- | --- |
+| GET | `/api/records/:id/proposal-analysis` | 当前 Record 版本的 `{ analysis: { status, outcome, errorCode } | null }` |
+| GET | `/api/projects/:id/creation` | `{ creation: { creationRunId, proposalId, projectId, status, progress, errorCode, publishedProjectVersion, updatedAt } | null }` |
+
+status 为 queued / running / completed / failed / cancelled。analysis.outcome 为 proposal_created（带 proposalId）或 no_proposal（带 reason）；completed 不一定产生提议。progress 包含 stage，及可选 completedImages / imageCount。接受后后台登记可能有短暂延迟，creation=null 不代表失败。
+
+提议分析静默执行；无价值、信息不足或主体不明确时直接不提议，没有提问或补充回答接口。Record / Project 不属于当前用户时为 404，输入错误为 400。请求不允许指定身份、Agent、Run 或 Session。内部 proposal-agent / creator-agent 的公共创建、stream 和历史访问均为 403。
 
 ## Agent Tasks
 

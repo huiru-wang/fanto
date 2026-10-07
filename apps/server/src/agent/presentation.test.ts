@@ -2,18 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { projectHistory, resolveToolPresentation } from "./presentation.js";
 import { createPresentMediaTool } from "./tools/media.js";
-import { createRecordSearchTool } from "./tools/records.js";
+import { createRecordReadTool } from "./tools/records.js";
 
 test("tool declarations own their presentation configuration", () => {
-  const recordSearch = createRecordSearchTool({} as any);
+  const recordRead = createRecordReadTool({} as any);
   const presentMedia = createPresentMediaTool({} as any);
 
-  assert.deepEqual(resolveToolPresentation(recordSearch.presentation, "start"), {
+  assert.deepEqual(resolveToolPresentation(recordRead.presentation, "start"), {
     visible: true,
     displayContent: "🤔 正在回忆...",
     animation: "thinking",
   });
-  assert.deepEqual(resolveToolPresentation(recordSearch.presentation, "end", "succeeded"), {
+  assert.deepEqual(resolveToolPresentation(recordRead.presentation, "end", "succeeded"), {
     visible: true,
     displayContent: "💡 想起来了",
   });
@@ -36,7 +36,7 @@ test("history preserves assistant text-tool-text boundaries using tool declarati
       message: {
         role: "toolResult",
         toolCallId: "call-1",
-        toolName: "record_search",
+        toolName: "record_read",
         content: [{ type: "text", text: "ok" }],
         isError: false,
       },
@@ -52,7 +52,7 @@ test("history preserves assistant text-tool-text boundaries using tool declarati
       message: { role: "user", content: "上次是什么时候？" },
     },
   ] as any;
-  const tools = [createRecordSearchTool({} as any)];
+  const tools = [createRecordReadTool({} as any)];
 
   assert.deepEqual(projectHistory(entries, tools), [
     {

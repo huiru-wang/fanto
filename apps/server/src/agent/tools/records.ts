@@ -1,25 +1,18 @@
 import { Type } from "typebox";
 import type { Context } from "@earendil-works/pi-agent-core";
-import { formatLocationContext } from "@fanto/shared";
 import type { AgentBusinessServices, AgentRecord } from "../business-services.js";
 import { createRunContext } from "../context/index.js";
 import { formatEventTime } from "../context/providers/current-time.js";
 import type { FantoTool } from "./types.js";
 
-type RecordClient = Pick<AgentBusinessServices, "getRecord" | "listRecords" | "searchRecords">;
+type RecordClient = Pick<AgentBusinessServices, "readRecords">;
 
-const recordGetSchema = Type.Object({
-  recordId: Type.String({ minLength: 1, description: "已知记录的标识。只能使用其他记录能力实际返回的标识。" }),
-}, { additionalProperties: false });
-
-const recordListSchema = Type.Object({
-  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "这次想回顾多少条最近记录；默认 10 条。" })),
-  cursor: Type.Optional(Type.String({ minLength: 1, description: "继续查看上一批记录中更早的内容时，使用上次返回的 nextCursor。" })),
-}, { additionalProperties: false });
-
-const recordSearchSchema = Type.Object({
-  query: Type.String({ minLength: 1, description: "帮助回想过去主题、经历、人物、事件或想法的一句自然线索。" }),
-  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "最多带回多少条相关线索；默认 10 条。" })),
+const recordReadSchema = Type.Object({
+  recordIds: Type.Optional(Type.Array(
+    Type.String({ minLength: 1, description: "当前上下文、任务引用或此前真实返回的 Record ID。" }),
+    { minItems: 1, maxItems: 5, description: "已知且需要完整读取的 Record ID，最多 5 个。" },
+  )),
+  query: Type.Optional(Type.String({ minLength: 1, maxLength: 1000, description: "用于回想过去主题、经历、人物、事件或想法的一句自然线索。" })),
 }, { additionalProperties: false });
 
 type RecordGetDetails = {
@@ -30,33 +23,14 @@ type RecordGetDetails = {
   content: AgentRecord["content"];
 };
 
-type RecordListDetails = {
-  data: Array<{
-    recordId: string;
-    eventAt: string;
-    source: string;
-    status: AgentRecord["status"];
-    preview: string;
-  }>;
-  hasMore: boolean;
-  nextCursor: string | null;
-};
-
-type RecordSearchDetails = {
-  data: Array<{
-    recordId: string;
-    sourceType: "record_text" | "record_location" | "image" | "audio";
-    mediaId: string | null;
-    snippet: string;
-    distance: number;
-    eventAt: string;
-  }>;
-};
+type RecordReadDetails = { records: RecordGetDetails[] };
 
 function requestContext(context: Context) {
   const metadata = createRunContext.read(context);
   return {
     userId: metadata.userId,
+    sessionId: metadata.sessionId,
+    creative: metadata.creative,
     traceId: metadata.traceId,
     signal: context.abortSignal,
   };
@@ -73,113 +47,37 @@ function asToolResult<T>(details: T) {
   };
 }
 
-export function buildRecordPreview(record: AgentRecord, maxLength = 500): string {
-  const parts = [
-    record.content.text.trim(),
-    ...record.content.blocks.flatMap((block: any) => {
-      if (block.type === "image" && block.description?.trim()) return [`图片描述：${block.description.trim()}`];
-      if (block.type === "audio" && block.transcription?.trim()) return [`音频转写：${block.transcription.trim()}`];
-      if (block.type === "location") return [formatLocationContext(block)];
-      return [];
-    }),
-  ].filter(Boolean);
-  const preview = parts.join("\n");
-  if (preview.length <= maxLength) return preview;
-  if (maxLength <= 1) return preview.slice(0, maxLength);
-  return `${preview.slice(0, maxLength - 1)}…`;
+function readInput(params: { recordIds?: string[]; query?: string }): { recordIds?: string[]; query?: string } {
+  const query = params.query?.trim();
+  const recordIds = params.recordIds?.map(recordId => recordId.trim());
+  if (recordIds?.some(recordId => !recordId)) throw new Error("record_read recordIds must not contain empty values");
+  if (Boolean(recordIds) === Boolean(query)) throw new Error("record_read requires exactly one of recordIds or query");
+  return recordIds ? { recordIds: [...new Set(recordIds)] } : { query };
 }
 
-export function createRecordGetTool(client: RecordClient): FantoTool<typeof recordGetSchema, RecordGetDetails> {
+export function createRecordReadTool(client: RecordClient): FantoTool<typeof recordReadSchema, RecordReadDetails> {
   return {
-    name: "record_get",
-    label: "补全一段记忆",
+    name: "record_read",
+    label: "读取用户记录",
     presentation: {
       visible: true,
       start: { displayContent: "🤔 正在回忆...", animation: "thinking" },
       succeeded: { displayContent: "💡 想起来了" },
       failed: { displayContent: "这次没能回想起来" },
     },
-    description: "当已经知道某一条记录，并且需要其中更完整的文字、图片描述或音频转写来可靠回答时使用。不要用它盲目寻找过去的事。",
-    parameters: recordGetSchema,
+    description: "读取与当前问题相关的用户 Record。\n\n已知需要读取的真实 Record ID 时，传 recordIds；它必须来自当前上下文、任务引用或此前真实返回的信息。\n需要回想某个主题、经历、人物、事件或想法时，传 query；系统会先找最相关的 Record，再返回完整内容。\n\nrecordIds 与 query 必须且只能提供一个。不要传 limit。\nquery 结果最多返回 3 条完整 Record；recordIds 最多读取 5 条。\n近期 Record 已在上下文中提供。不要为了浏览或重复读取近期内容调用此工具。",
+    parameters: recordReadSchema,
     executionMode: "parallel",
     replay: "safe",
     async execute(_toolCallId, params, _onUpdate, _toolContext, _invocation, context) {
-      const record = await client.getRecord(requestContext(context), params.recordId);
-      return asToolResult({
+      const records = await client.readRecords(requestContext(context), readInput(params));
+      return asToolResult({ records: records.map(record => ({
         recordId: record.id,
         eventAt: displayEventTime(record.eventAt, context),
         source: record.source,
         status: record.status,
         content: record.content,
-      });
+      })) });
     },
   };
-}
-
-export function createRecordListTool(client: RecordClient): FantoTool<typeof recordListSchema, RecordListDetails> {
-  return {
-    name: "record_list",
-    label: "按时间回顾记录",
-    presentation: {
-      visible: true,
-      start: { displayContent: "🤔 正在回忆...", animation: "thinking" },
-      succeeded: { displayContent: "💡 想起来了" },
-      failed: { displayContent: "这次没能回想起来" },
-    },
-    description: "当需要回顾用户最近记录过什么、或按时间梳理一段近况时使用。若要回想某个具体主题、经历或想法，使用 record_search。",
-    parameters: recordListSchema,
-    executionMode: "parallel",
-    replay: "safe",
-    async execute(_toolCallId, params, _onUpdate, _toolContext, _invocation, context) {
-      const result = await client.listRecords(requestContext(context), {
-        limit: params.limit ?? 10,
-        cursor: params.cursor,
-      });
-      return asToolResult({
-        data: result.data.map(record => ({
-          recordId: record.id,
-          eventAt: displayEventTime(record.eventAt, context),
-          source: record.source,
-          status: record.status,
-          preview: buildRecordPreview(record),
-        })),
-        hasMore: result.hasMore,
-        nextCursor: result.nextCursor,
-      });
-    },
-  };
-}
-
-export function createRecordSearchTool(client: RecordClient): FantoTool<typeof recordSearchSchema, RecordSearchDetails> {
-  return {
-    name: "record_search",
-    label: "回想相关记录",
-    presentation: {
-      visible: true,
-      start: { displayContent: "🤔 正在回忆...", animation: "thinking" },
-      succeeded: { displayContent: "💡 想起来了" },
-      failed: { displayContent: "这次没能回想起来" },
-    },
-    description: "当当前对话需要回想用户过去有关某个主题、经历、人物、事件或想法的内容时使用。若只是按时间浏览最近记录，使用 record_list。",
-    parameters: recordSearchSchema,
-    executionMode: "parallel",
-    replay: "safe",
-    async execute(_toolCallId, params, _onUpdate, _toolContext, _invocation, context) {
-      const query = params.query.trim();
-      if (!query) throw new Error("record_search query must not be empty");
-      const result = await client.searchRecords(requestContext(context), {
-        query,
-        limit: params.limit ?? 10,
-      });
-      return asToolResult({ data: result.data.map(record => ({ ...record, eventAt: displayEventTime(record.eventAt, context) })) });
-    },
-  };
-}
-
-export function createRecordTools(client: RecordClient): FantoTool[] {
-  return [
-    createRecordGetTool(client),
-    createRecordListTool(client),
-    createRecordSearchTool(client),
-  ];
 }

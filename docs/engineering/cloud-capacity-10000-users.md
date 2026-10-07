@@ -11,7 +11,7 @@
 - 峰值 DAU：约 1,000
 - 活跃用户平均：30 条 Record / 月，约 360 条 / 年
 - Record 中约 40% 含图片或音频
-- Record Retrieval 按 `record_text / image / audio` 原子单元独立索引
+- Record Retrieval 每条 processed Record 只保存一个整体向量
 - 当前 Embedding：768 维
 - 媒体二进制存 OSS，不进入关系数据库
 - 图片生产环境应压缩后上传，容量估算按平均约 1.5 MB / 张，而不是接口 50 MB 上限
@@ -25,7 +25,7 @@
 | 峰值 DAU | 1,000 | 用于 QPS / 并发估算 |
 | Business 关系库 | **100 GB** | User、Record、Media metadata、Project 等 |
 | Agent Session 数据 | **50 GB** | 对话、Tool Call / Result、Task 等 |
-| 向量容量 | **50 GB** | 768 维，目标支撑约 200 万级 vectors |
+| 向量容量 | **20 GB** | 768 维，每条 Record 一个向量，保留索引与增长余量 |
 | OSS 对象存储 | **2 TB** | 图片 / 音频为首年主要存储成本 |
 | OSS 可扩容目标 | **5 TB+** | 媒体量增长时直接扩容 |
 | Business API 峰值 QPS | **50 QPS** | 第一阶段留有较大余量 |
@@ -46,7 +46,7 @@
 - Record 与 content JSON
 - Media metadata
 - User / Identity
-- Project / ProjectRecord
+- Project / Proposal / RecordLink
 - 数据库索引、膨胀与运维余量
 
 如果未来迁移 PostgreSQL，首年不需要按大规模分库分表设计。
@@ -61,7 +61,7 @@
 
 包含 metadata、索引与存储开销后，可按 **5～8 KB / vector** 估算。
 
-10,000 注册用户、约 3,000 MAU 的首年目标下，预计约 **100～200 万向量以内**，因此 **50 GB** 足够，并保留明显余量。
+10,000 注册用户、约 3,000 MAU 的首年目标下，若每位活跃用户平均 360 条 Record，预计约 **108 万向量**；20 GB 足够，并保留明显余量。
 
 首年没有必要为向量检索单独建设复杂的分布式基础设施。
 

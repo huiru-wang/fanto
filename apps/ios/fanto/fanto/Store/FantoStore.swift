@@ -19,13 +19,13 @@ enum RecordLoadState: Equatable {
 final class FantoStore {
     var records: [Record]
     var projects: [Project]
-    var proposedProjects: [Project]
+    var proposals: [Proposal]
     var recordLoadState: RecordLoadState = .idle
     private(set) var recordNextCursor: String?
     private(set) var isLoadingMoreRecords = false
     private(set) var recordLoadMoreError: String?
     var projectLoadState: ProjectLoadState = .idle
-    var proposedProjectLoadState: ProjectLoadState = .idle
+    var proposalLoadState: ProjectLoadState = .idle
     var projectActionError: String?
 
     private let recordSnapshotStore: RecordSnapshotStore
@@ -34,41 +34,61 @@ final class FantoStore {
     init(
         records: [Record] = [],
         projects: [Project] = [],
-        proposedProjects: [Project] = [],
+        proposals: [Proposal] = [],
         recordSnapshotStore: RecordSnapshotStore = .shared
     ) {
         self.records = records
         self.projects = projects
-        self.proposedProjects = proposedProjects
+        self.proposals = proposals
         self.recordSnapshotStore = recordSnapshotStore
     }
 
     func loadProjects() async {
         projectLoadState = .loading
         do {
-            projects = try await FantoAPIClient.shared.fetchProjects(status: .active).projects
+            var cursor: String?
+            var loaded: [Project] = []
+            repeat {
+                let page = try await FantoAPIClient.shared.fetchProjects(status: .active, cursor: cursor)
+                loaded += page.projects
+                cursor = page.hasMore ? page.nextCursor : nil
+            } while cursor != nil
+            var seen = Set<String>()
+            projects = loaded.filter { seen.insert($0.id).inserted }
             projectLoadState = .loaded
         } catch {
             projectLoadState = .failed(error.localizedDescription)
         }
-        await loadProposedProjects()
+        await loadProposals()
     }
 
-    func loadProposedProjects() async {
-        proposedProjectLoadState = .loading
+    func refreshCreativeSuggestions() async {
+        await loadProposals(silent: true)
+    }
+
+    func loadProposals(silent: Bool = false) async {
+        if !silent { proposalLoadState = .loading }
         do {
-            proposedProjects = try await FantoAPIClient.shared.fetchProjects(status: .proposed).projects
-            proposedProjectLoadState = .loaded
+            var cursor: String?
+            var loaded: [Proposal] = []
+            repeat {
+                let page = try await FantoAPIClient.shared.fetchProposals(cursor: cursor)
+                loaded += page.proposals
+                cursor = page.hasMore ? page.nextCursor : nil
+            } while cursor != nil
+            var seen = Set<String>()
+            proposals = loaded.filter { seen.insert($0.id).inserted }
+            proposalLoadState = .loaded
         } catch {
-            proposedProjects = []
-            proposedProjectLoadState = .failed(error.localizedDescription)
+            if !silent { proposals = [] }
+            proposalLoadState = .failed(error.localizedDescription)
         }
     }
 
-    func accept(_ project: Project) async -> Bool {
+    func accept(_ proposal: Proposal) async -> Bool {
         do {
-            _ = try await FantoAPIClient.shared.confirmProject(id: project.id)
-            proposedProjects.removeAll { $0.id == project.id }
+            _ = try await FantoAPIClient.shared.acceptProposal(id: proposal.id)
+            proposals.removeAll { $0.id == proposal.id }
             await loadProjects()
             return true
         } catch {
@@ -77,10 +97,10 @@ final class FantoStore {
         }
     }
 
-    func decline(_ project: Project) async -> Bool {
+    func decline(_ proposal: Proposal) async -> Bool {
         do {
-            _ = try await FantoAPIClient.shared.rejectProject(id: project.id)
-            proposedProjects.removeAll { $0.id == project.id }
+            _ = try await FantoAPIClient.shared.rejectProposal(id: proposal.id)
+            proposals.removeAll { $0.id == proposal.id }
             return true
         } catch {
             projectActionError = error.localizedDescription
@@ -148,13 +168,13 @@ final class FantoStore {
         }
         records = []
         projects = []
-        proposedProjects = []
+        proposals = []
         recordLoadState = .idle
         recordNextCursor = nil
         isLoadingMoreRecords = false
         recordLoadMoreError = nil
         projectLoadState = .idle
-        proposedProjectLoadState = .idle
+        proposalLoadState = .idle
         projectActionError = nil
         snapshotUserID = nil
     }
@@ -184,6 +204,7 @@ extension FantoStore {
         let project = Project(
             id: UUID().uuidString,
             title: "关于有边界的投入",
+            summary: "记录生活中的选择与投入。",
             content: "不是减少投入，而是让投入能被自己选择。",
             status: .active,
             version: 1,
@@ -192,7 +213,7 @@ extension FantoStore {
         )
         let store = FantoStore(projects: [project])
         store.projectLoadState = .loaded
-        store.proposedProjectLoadState = .loaded
+        store.proposalLoadState = .loaded
         store.recordLoadState = .loaded(hasMore: false)
         return store
     }()

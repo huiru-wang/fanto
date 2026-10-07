@@ -35,6 +35,14 @@ export class PostgresMediaRepository {
     return asset(row);
   }
 
+  async createReadyImage(input: { mediaId: string; userId: string; objectKey: string; mimeType: string; bytes: number; extData: Record<string, unknown> }) {
+    const now = nowIso();
+    await this.db.insertInto("media_assets").values({ media_id: input.mediaId, user_id: input.userId, object_key: input.objectKey, media_type: "image", mime_type: input.mimeType, bytes: input.bytes, status: "ready", ext_data: JSON.stringify(input.extData), created_at: now, updated_at: now }).onConflict(oc => oc.column("media_id").doNothing()).execute();
+    const saved = await this.findMedia(input.mediaId, input.userId);
+    if (!saved || saved.status !== "ready" || saved.mediaType !== "image" || saved.extData.creationRunId !== input.extData.creationRunId || saved.extData.imageIndex !== input.extData.imageIndex) throw new Error("Generated media registration conflict");
+    return saved;
+  }
+
   async complete(id: string, userId: string, capture: Record<string, unknown>) {
     return this.db.transaction().execute(async trx => {
       const row = await trx.selectFrom("media_assets").selectAll().where("media_id", "=", id).where("user_id", "=", userId).executeTakeFirst();
@@ -47,5 +55,5 @@ export class PostgresMediaRepository {
   }
 
   async findMedia(id: string, userId: string) { const row = await this.db.selectFrom("media_assets").selectAll().where("media_id", "=", id).where("user_id", "=", userId).executeTakeFirst(); return row ? asset(row) : null; }
-  async findMediaByIds(ids: string[], userId: string) { if (!ids.length) return []; return (await this.db.selectFrom("media_assets").selectAll().where("user_id", "=", userId).where("media_id", "in", ids).execute()).map(asset); }
+  async findMediaByIds(ids: string[], userId: string, database: Kysely<DB> = this.db) { if (!ids.length) return []; return (await database.selectFrom("media_assets").selectAll().where("user_id", "=", userId).where("media_id", "in", ids).execute()).map(asset); }
 }

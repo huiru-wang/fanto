@@ -86,7 +86,7 @@ export function registerRecordPostprocessListener(
     try {
       await retrieval.replaceRecord(completed);
     } catch (error) {
-      logError("record-postprocess", "Record indexing failed", {
+      logError("record-postprocess", "Record embedding failed", {
         recordId: task.recordId,
         userId: task.userId,
         error: error instanceof Error ? error.message : String(error),

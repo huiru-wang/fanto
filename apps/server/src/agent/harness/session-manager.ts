@@ -1,3 +1,4 @@
+import { isInternalAgent } from "../../creative-runtime/model.js";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -55,7 +56,8 @@ export class AgentSessionManager {
     });
   }
 
-  async create(definition: AgentDefinition, userId: string): Promise<ManagedSession> {
+  async create(definition: AgentDefinition, userId: string, options: { internal?: boolean } = {}): Promise<ManagedSession> {
+    if (isInternalAgent(definition.id) && !options.internal) throw new SessionOwnershipError("Internal agent is not publicly accessible");
     const id = randomUUID();
     const session = await this.repository.create({ id }, TODO_CONTEXT);
     try {
@@ -69,16 +71,18 @@ export class AgentSessionManager {
     }
   }
 
-  async acquire(definition: AgentDefinition, id: string, userId?: string): Promise<ManagedSession> {
+  async acquire(definition: AgentDefinition, id: string, userId?: string, options: { internal?: boolean } = {}): Promise<ManagedSession> {
+    if (isInternalAgent(definition.id) && !options.internal) throw new SessionOwnershipError("Internal agent is not publicly accessible");
     if (!validSessionId.test(id)) throw new SessionNotFoundError("Invalid session id");
     const cached = this.sessions.get(id);
     if (cached) {
+      if (isInternalAgent(cached.agentId) && !options.internal) throw new SessionOwnershipError("Internal session is not publicly accessible");
       this.assertOwner(cached, userId);
       if (cached.agentId === definition.id && cached.revision === definition.revision) return cached;
       if (this.running.has(id)) throw new SessionBusyError("Session is already running");
-      return this.replaceCachedHarness(cached, definition);
+      return this.replaceCachedHarness(cached, definition, options.internal);
     }
-    return this.openAndConfigure(definition, id, userId);
+    return this.openAndConfigure(definition, id, userId, options.internal);
   }
 
   async assertOwnership(id: string, userId: string): Promise<void> {
@@ -104,6 +108,7 @@ export class AgentSessionManager {
   ): Promise<{ agentId: string; entries: Entry[]; hasMore: boolean; nextCursor: number | null }> {
     const { agentId, session, close } = await this.openForRead(id, userId);
     try {
+      if (isInternalAgent(agentId)) throw new SessionOwnershipError("Internal session is not publicly accessible");
       const visible: Entry[] = [];
       let currentCursor = cursor;
       let exhausted = false;
@@ -159,19 +164,20 @@ export class AgentSessionManager {
     await this.repository.close(TODO_CONTEXT);
   }
 
-  private async replaceCachedHarness(current: ManagedSession, definition: AgentDefinition): Promise<ManagedSession> {
+  private async replaceCachedHarness(current: ManagedSession, definition: AgentDefinition, internal = false): Promise<ManagedSession> {
     this.sessions.delete(current.id);
     await current.runtime.close();
-    return this.openAndConfigure(definition, current.id, current.userId);
+    return this.openAndConfigure(definition, current.id, current.userId, internal);
   }
 
-  private async openAndConfigure(definition: AgentDefinition, id: string, userId?: string): Promise<ManagedSession> {
+  private async openAndConfigure(definition: AgentDefinition, id: string, userId?: string, internal = false): Promise<ManagedSession> {
     const metadata = (await this.repository.list(undefined, TODO_CONTEXT)).find(item => item.id === id);
     if (!metadata) throw new SessionNotFoundError("Session not found");
     const session = await this.repository.open(metadata, TODO_CONTEXT);
     try {
       const owner = await this.readOwner(session);
       if (!owner) throw new SessionNotFoundError("Session is not an agent session");
+      if (isInternalAgent(owner.agentId) && !internal) throw new SessionOwnershipError("Internal session is not publicly accessible");
       if (userId && owner.userId !== userId) throw new SessionOwnershipError("Session belongs to another user");
       const managed = await this.createManaged(session, id, owner.userId, definition);
       if (owner.agentId !== definition.id || owner.revision !== definition.revision) {

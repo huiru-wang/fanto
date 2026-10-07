@@ -1,3 +1,4 @@
+import { isInternalAgent } from "../../creative-runtime/model.js";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -25,6 +26,7 @@ export function createAgentRoutes(
     }
     const runTraceId = traceId.data ?? randomUUID();
     const definition = registry.get(body.data.agentId);
+    if (definition && isInternalAgent(definition.id)) return c.json({ error: "Agent is internal" }, 403);
     if (!definition) return c.json({ error: "Agent not found" }, 404);
 
     let session;

@@ -1,3 +1,4 @@
+import { createProjectReadTool, createProposalCreateTool, createImageGenerateTool, createCreationPrepareTool, createCreationPublishTool } from "./creative.js";
 import {
   createBashTool,
   createEditTool,
@@ -16,7 +17,8 @@ import { createTaskPlanManageTool } from "./task-plan-manage.js";
 import { createCollectUserInputTool } from "./user-input.js";
 import { createWebSearchTool } from "./web-search.js";
 import { createPresentMediaTool } from "./media.js";
-import { createRecordGetTool, createRecordListTool, createRecordSearchTool } from "./records.js";
+import { createRecordReadTool } from "./records.js";
+import { createMemoryManageTool } from "./memory.js";
 import type { FantoTool, ToolPresentationConfig } from "./types.js";
 
 export function createTools(
@@ -31,9 +33,13 @@ export function createTools(
       case "write": return createFantoWriteTool();
       case "edit": return createFantoEditTool();
       case "bash": return createFantoBashTool(workspace);
-      case "record_get": return createRecordGetTool(fanto);
-      case "record_list": return createRecordListTool(fanto);
-      case "record_search": return createRecordSearchTool(fanto);
+      case "project_read": return createProjectReadTool(fanto);
+      case "proposal_create": return createProposalCreateTool(fanto);
+      case "image_generate": return createImageGenerateTool(fanto);
+      case "creation_prepare": return createCreationPrepareTool(fanto);
+      case "creation_publish": return createCreationPublishTool(fanto);
+      case "record_read": return createRecordReadTool(fanto);
+      case "memory_manage": return createMemoryManageTool(fanto);
       case "web_search": return createWebSearchTool(fanto);
       case "present_media": return createPresentMediaTool(fanto);
       case "collect_user_input": return createCollectUserInputTool();

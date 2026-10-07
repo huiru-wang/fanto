@@ -25,6 +25,7 @@ export interface AppConfig {
   oss: { region: string; endpoint?: string; bucket: string; accessKeyId: string; accessKeySecret: string };
   dashscope: { apiKey: string; baseUrl: string; embeddingModel: string; embeddingDimension: number; visionModel: string; asrModel: string };
   agent: { sessionDatabasePath: string; workspaceRoot: string; definitionPath: string; deepseekApiKey: string };
+  creative: { enabled: boolean; intervalMs: number; workers: number; proposalTimeoutMs: number; creatorTimeoutMs: number; image: { endpoint: string; apiKey: string; model: string; timeoutMs: number } };
   tasks: { schedulerIntervalMs: number; workerConcurrency: number; timeoutMinSeconds: number; timeoutMaxSeconds: number };
 }
 
@@ -72,6 +73,11 @@ export function loadConfig(): AppConfig {
     throw new Error("TASK_TIMEOUT_MIN_SECONDS must not exceed TASK_TIMEOUT_MAX_SECONDS");
   }
 
+  const creativeEnabled = process.env.CREATIVE_ENABLED === "true";
+  if (process.env.CREATIVE_ENABLED && !["true", "false"].includes(process.env.CREATIVE_ENABLED)) throw new Error("CREATIVE_ENABLED must be true or false");
+  const imageApiKey = process.env.CREATIVE_IMAGE_API_KEY?.trim() || process.env.DASHSCOPE_API_KEY?.trim() || "";
+  const imageEndpoint = process.env.CREATIVE_IMAGE_ENDPOINT?.trim() || new URL("/api/v1/services/aigc/multimodal-generation/generation", process.env.DASHSCOPE_BASE_URL || "https://dashscope.aliyuncs.com").href;
+  if (creativeEnabled && !imageApiKey) throw new Error("CREATIVE_IMAGE_API_KEY or DASHSCOPE_API_KEY is required when creative agents are enabled");
   return {
     databaseUrl,
     port: parseInt(process.env.PORT ?? "3000", 10),
@@ -108,6 +114,14 @@ export function loadConfig(): AppConfig {
       workspaceRoot: projectPath(process.env.AGENT_WORKSPACE_ROOT, "data/workspaces"),
       definitionPath: projectPath(process.env.AGENT_CONFIG_PATH, "apps/server/agent.yaml"),
       deepseekApiKey: required("DEEPSEEK_API_KEY"),
+    },
+    creative: {
+      enabled: creativeEnabled,
+      intervalMs: positiveInt("CREATIVE_INTERVAL_MS", 2000),
+      workers: positiveInt("CREATIVE_WORKERS", 1),
+      proposalTimeoutMs: positiveInt("CREATIVE_PROPOSAL_TIMEOUT_MS", 120_000),
+      creatorTimeoutMs: positiveInt("CREATIVE_CREATOR_TIMEOUT_MS", 900_000),
+      image: { endpoint: imageEndpoint, apiKey: imageApiKey, model: process.env.CREATIVE_IMAGE_MODEL?.trim() || "qwen-image-3.0-pro", timeoutMs: positiveInt("CREATIVE_IMAGE_TIMEOUT_MS", 300_000) },
     },
     tasks: {
       schedulerIntervalMs: positiveInt("TASK_SCHEDULER_INTERVAL_MS", 300_000),

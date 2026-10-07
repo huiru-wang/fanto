@@ -61,3 +61,7 @@ Audio block 在 Record postprocess 中调用 ASR。成功后，transcription 与
 - `GET /api/media/:id/meta`：返回稳定的 `mediaId / mediaType / mimeType` 与可用的 `width / height / durationMs`，不返回 OSS 地址。
 
 `present_media` Agent Tool 使用 `/meta` 对模型给出的 mediaId 做用户归属与 ready 校验，并把稳定 metadata 写入原生 Tool Result `details`。短期 signed URL 不写入 Agent Session，真正展示或播放时再由客户端调用 `/url` 获取。缩略图 URL 与原图 URL 必须按 variant 独立缓存；业务 API 不直接暴露永久 OSS URL。
+
+## 创作图片
+
+Creative Runtime 通过 Media Service 将参考图片适配为临时 JPEG，再用服务端签名地址调用生成模型；原素材保持不变。生成结果完整验证后存 OSS，按固定 mediaId 幂等注册 ready Image，extData 包含 creationRunId / proposalId / projectId / imageIndex 和尺寸。Agent 与 Project 只使用 mediaId；供应商地址不作为成果地址。临时参考对象调用后删除，已生成的图片不因文章发布失败而删除。执行恢复见 [创作运行](../architecture/creative-runtime.md)。
