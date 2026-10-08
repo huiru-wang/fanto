@@ -59,6 +59,57 @@ export async function checkDatabaseHealth(db: Kysely<DB>, timeoutMs = 5_000): Pr
   }
 }
 
+// All migrations through 2026-10-08 are incorporated into create_current_schema.
+// Keep these names only to safely consolidate Kysely metadata on databases
+// that have already finished the old migration chain. Partial histories must
+// first be brought up to date using the previous release.
+const BASELINE_MIGRATION = "create_current_schema";
+const SQUASHED_MIGRATIONS = [
+  "extend_auth_schema",
+  "update_auth_challenge_purpose",
+  "z_task_system_schema",
+  "zz_project_domain_refactor",
+  "zzz_record_location",
+  "zzzz_drop_user_preferences",
+  "zzzzz_memory_schema",
+  "zzzzzz_creative_runtime",
+  "zzzzzzz_project_domain_upgrade",
+  "zzzzzzzz_project_summary_embedding",
+  "zzzzzzzzz_proposal_creation_goal",
+  "zzzzzzzzzz_media_object_deletions",
+  "zzzzzzzzzzz_project_session_goal",
+] as const;
+
+async function consolidateMigrationHistory(db: Kysely<DB>): Promise<void> {
+  const removed = await db.transaction().execute(async trx => {
+    // Same transaction advisory lock as Kysely 0.27's PostgresAdapter.
+    await sql`SELECT pg_advisory_xact_lock(3853314791062309107)`.execute(trx);
+    const table = await sql<{ name: string | null }>`SELECT to_regclass('kysely_migration')::text AS name`.execute(trx);
+    if (!table.rows[0]?.name) return 0; // Fresh DB: Migrator creates its own metadata.
+
+    const history = await sql<{ name: string }>`SELECT name FROM kysely_migration`.execute(trx);
+    const names = new Set(history.rows.map(row => row.name));
+    // After the squash, future migrations may legitimately appear alongside the baseline.
+    // Let Kysely validate those names instead of treating them as old history.
+    if (!SQUASHED_MIGRATIONS.some(name => names.has(name))) return 0;
+
+    const expected = [BASELINE_MIGRATION, ...SQUASHED_MIGRATIONS];
+    const known = new Set<string>(expected);
+    const missing = expected.filter(name => !names.has(name));
+    const unknown = [...names].filter(name => !known.has(name));
+    if (missing.length || unknown.length) {
+      throw new Error(
+        `Cannot consolidate incomplete/unknown migration history (missing: ${missing.join(", ") || "none"}; unknown: ${unknown.join(", ") || "none"}). ` +
+        "Run the old migration chain to completion before deploying the consolidated baseline.",
+      );
+    }
+
+    await sql`DELETE FROM kysely_migration WHERE name <> ${BASELINE_MIGRATION}`.execute(trx);
+    return SQUASHED_MIGRATIONS.length;
+  });
+  if (removed) logInfo("database", "Consolidated migration history", { removed });
+}
+
 /** 动态加载 migrations 目录下的 .ts/.js 文件 */
 async function createMigrationProvider(): Promise<MigrationProvider> {
   const dir = resolve("src/migrations");
@@ -76,6 +127,7 @@ async function createMigrationProvider(): Promise<MigrationProvider> {
 }
 
 export async function runMigrations(kyselyDb: Kysely<DB>) {
+  await consolidateMigrationHistory(kyselyDb);
   const provider = await createMigrationProvider();
 
   const migrator = new Migrator({ db: kyselyDb, provider });

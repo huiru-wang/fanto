@@ -70,7 +70,7 @@ Business Server 使用 Supabase PostgreSQL；Agent Runtime 保持 SQLite，不�
 
 Server 使用 Kysely migration 管理 PostgreSQL schema。`src/bootstrap/main.ts` 在服务监听端口前自动执行 `runMigrations()`；生产部署脚本也会在重启 Server 前显式执行一次 migration，因此正常启动和 `pnpm deploy` 都会自动创建尚未存在的表和索引。已执行过的 migration 由 Kysely migration 元数据记录，不会在每次重启时重复执行。
 
-空 PostgreSQL 使用当前基线；既有 PostgreSQL 通过 `zzzzzzz_project_domain_upgrade` 同步新版 Project / Proposal / Record 关联，补齐 `proposals.session_id` 与 Record embedding。旧 active / archived 项目保留正文和版本，summary 初始化为标题；旧 proposed / rejected 转为 pending / rejected Proposal，原表保留在 `legacy_projects` / `legacy_project_records`，不自动删除。升级不修改用户、Record 内容或媒体数据。已执行迁移文件必须保留；不要删除 Kysely 迁移历史来强行重跑。该升级不支持自动回滚，恢复应基于保留的旧表及数据库备份。本地集成验证使用明确隔离的 `TEST_DATABASE_URL`。
+`create_current_schema.ts` 是 2026-10-08 合并后的完整 PostgreSQL Schema 基线，新数据库仅需运行这一份 migration。已完整执行原有 14 个 migration 的现有数据库，启动时在事务与 Kysely 迁移锁下，仅将 `kysely_migration` 元数据压缩为 `create_current_schema`，不重建表或修改业务数据；`legacy_projects` / `legacy_project_records` 保持原状。迁移历史不完整或有未知版本时拒绝合并，须先使用合并前版本升至最新；后续结构变更新增前向 migration。不要手动清空迁移历史或强行重跑基线。**历史归并后禁止回滚运行归并前的 Server 版本**（旧 Migrator 会将被移除的增量版本视为未执行）；务必先完成新版本部署再让其处理现有数据库。本地集成验证使用隔离的 `TEST_DATABASE_URL`。
 
 ## 常用命令
 

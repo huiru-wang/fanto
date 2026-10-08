@@ -27,7 +27,7 @@
 - 每个 Domain 以 `index.ts` 作为模块外入口；`repository.ts` 与 `postgres-repository.ts` 都是模块内部实现细节，不从 barrel 导出。
 - 外部服务适配器放在 `infrastructure/clients/`，业务语义不要散落进 Client。
 - 用户归属必须在查询和写入路径中显式校验。
-- 必须保留已执行 PostgreSQL migration 的文件名；结构变更用新增迁移同步既有数据库，并验证空库与旧库路径。不为旧 SQLite schema 建兼容升级链。Project 升级保留 legacy_projects / legacy_project_records 作为恢复来源，不自动删除。
+- `create_current_schema.ts` 是 2026-10-08 合并后的完整 PostgreSQL 基线；已执行原 14 个版本的数据库在迁移启动时仅归并 Kysely 历史，不重新执行 DDL。旧迁移未全部完成的数据库须先用旧版本升级，禁止跳过版本。后续结构修改必须新增前向 migration，不得直接修改已上线基线替代升级。既有 `legacy_projects` / `legacy_project_records` 保留作恢复来源，不自动删除。
 - `records.embedding` 是 Record 行上的派生字段；当前不提供自动重试、补偿或批量重建入口。
 - Memory 是用户明确保存的独立业务数据，存储在 `memories`；不要混入 Record 的 `records.embedding` 派生字段。
 - Record 创建 / 更新后的图片理解、音频转写和向量索引走现有 postprocess queue + listener；不要再引入另一套并行工作流。

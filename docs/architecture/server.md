@@ -94,7 +94,7 @@ Record 已成功变成 `processed` 后，Embedding 失败只记录错误，不�
 
 启动时创建 PostgreSQL Pool，执行 migration 后先用 `SELECT 1` 预热连接，再开放 HTTP 服务。Pool 开启 TCP keepalive，当前 `max=10`、`min=1`、连接超时 5 秒、空闲超时 5 分钟。
 
-`create_current_schema.ts` 仍是面向空数据库的当前 schema 基线。对已经执行过基线的现有数据库，必须新增按文件名顺序执行的前向 migration；当前 Task System 使用 `z_task_system_schema.ts` 幂等创建 `tasks / task_runs`。不要修改已经执行过的 migration 来假装完成线上升级。
+`create_current_schema.ts` 是合并后的完整 PostgreSQL Schema 基线，包含 Task、Project/Proposal、Memory、Record 地理信息与媒体删除队列。原 14 个 migration 已全部执行的数据库仅压缩 Kysely 迁移元数据，不重建业务表；不完整历史会被拒绝。后续 Schema 变更须新增按文件名顺序执行的前向 migration，不修改基线冒充线上升级。
 
 向量数据存储在同一业务数据库。`records.embedding` 是整条 Record 的 768 维 pgvector 派生字段；`memories.embedding` 是用户明确保存的 Memory 业务数据。两类查询都从 SQL 层按 `user_id` 限定当前用户。
 

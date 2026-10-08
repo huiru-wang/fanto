@@ -1,16 +1,27 @@
 import { sql, type Kysely } from "kysely";
 
-/** Creates the current PostgreSQL baseline on an empty database; deployed databases use incremental migrations. */
+/** Complete PostgreSQL schema baseline. Already-upgraded databases retain their data and compact only migration metadata. */
 export async function up(db: Kysely<any>) {
   await sql`
     CREATE EXTENSION IF NOT EXISTS vector;
-    CREATE TABLE users (user_id TEXT PRIMARY KEY, status TEXT NOT NULL CHECK (status IN ('active','disabled')), created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, disabled_at TIMESTAMPTZ);\n    CREATE TABLE user_login_identities (identity_id UUID PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, provider TEXT NOT NULL, provider_subject TEXT NOT NULL, display_hint TEXT, verified_at TIMESTAMPTZ NOT NULL, last_used_at TIMESTAMPTZ, revoked_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL, CONSTRAINT user_login_identities_provider_subject UNIQUE(provider, provider_subject));\n    CREATE INDEX idx_user_login_identities_active_user ON user_login_identities(user_id) WHERE revoked_at IS NULL;\n    CREATE TABLE auth_challenges (challenge_id UUID PRIMARY KEY, purpose TEXT NOT NULL CHECK (purpose IN ('authenticate','register','login','bind','reauth')), provider TEXT NOT NULL, user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE, target_hash TEXT, nonce_hash TEXT, state_hash TEXT, verification_hash TEXT, context JSONB NOT NULL DEFAULT '{}'::jsonb, expires_at TIMESTAMPTZ NOT NULL, consumed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL);\n    CREATE INDEX idx_auth_challenges_expires ON auth_challenges(expires_at) WHERE consumed_at IS NULL;
+    CREATE TABLE users (user_id TEXT PRIMARY KEY, status TEXT NOT NULL CHECK (status IN ('active','disabled')), created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL, disabled_at TIMESTAMPTZ);
+    CREATE TABLE user_login_identities (identity_id UUID PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, provider TEXT NOT NULL, provider_subject TEXT NOT NULL, display_hint TEXT, verified_at TIMESTAMPTZ NOT NULL, last_used_at TIMESTAMPTZ, revoked_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL, CONSTRAINT user_login_identities_provider_subject UNIQUE(provider, provider_subject));
+    CREATE INDEX idx_user_login_identities_active_user ON user_login_identities(user_id) WHERE revoked_at IS NULL;
+    CREATE TABLE auth_challenges (challenge_id UUID PRIMARY KEY, purpose TEXT NOT NULL CHECK (purpose IN ('authenticate','register','login','bind','reauth')), provider TEXT NOT NULL, user_id TEXT REFERENCES users(user_id) ON DELETE CASCADE, target_hash TEXT, nonce_hash TEXT, state_hash TEXT, verification_hash TEXT, context JSONB NOT NULL DEFAULT '{}'::jsonb, expires_at TIMESTAMPTZ NOT NULL, consumed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL);
+    CREATE INDEX idx_auth_challenges_expires ON auth_challenges(expires_at) WHERE consumed_at IS NULL;
     CREATE TABLE records (id SERIAL PRIMARY KEY, record_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, source TEXT NOT NULL, content TEXT NOT NULL, ext_data TEXT, version INTEGER NOT NULL, status TEXT NOT NULL, task_id TEXT, location_latitude DOUBLE PRECISION, location_longitude DOUBLE PRECISION, event_at TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, embedding vector(768), CONSTRAINT records_location_coordinates_together CHECK ((location_latitude IS NULL) = (location_longitude IS NULL)), CONSTRAINT records_location_latitude_range CHECK (location_latitude IS NULL OR location_latitude BETWEEN -90 AND 90), CONSTRAINT records_location_longitude_range CHECK (location_longitude IS NULL OR location_longitude BETWEEN -180 AND 180));
     CREATE INDEX idx_records_user_event ON records(user_id, event_at, record_id);
     CREATE INDEX idx_records_map_lat ON records(user_id, location_latitude) WHERE location_latitude IS NOT NULL;
     CREATE INDEX idx_records_map_lon ON records(user_id, location_longitude) WHERE location_longitude IS NOT NULL;
     CREATE TABLE media_assets (id SERIAL PRIMARY KEY, media_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, object_key TEXT NOT NULL UNIQUE, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, status TEXT NOT NULL, ext_data TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE INDEX idx_media_assets_user_created ON media_assets(user_id, created_at);
+    CREATE TABLE media_object_deletions (
+      object_key TEXT PRIMARY KEY, user_id TEXT NOT NULL, media_id TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX media_object_deletions_due ON media_object_deletions(next_attempt_at);
     CREATE TABLE tasks (
       task_id UUID PRIMARY KEY,
       user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
@@ -56,6 +67,7 @@ export async function up(db: Kysely<any>) {
     CREATE TABLE projects (
       project_id UUID PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
       session_id TEXT UNIQUE, title TEXT NOT NULL, summary TEXT NOT NULL, embedding vector(768), cover_media_id TEXT,
+      goal JSONB NOT NULL DEFAULT '{}'::jsonb,
       content TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','archived')),
       version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0), created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL
     );
@@ -90,5 +102,5 @@ export async function up(db: Kysely<any>) {
 }
 
 export async function down(db: Kysely<any>) {
-  await sql`DROP TABLE IF EXISTS record_links; DROP TABLE IF EXISTS proposals; DROP TABLE IF EXISTS projects; DROP TABLE IF EXISTS memories; DROP TABLE IF EXISTS task_runs; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS media_assets; DROP TABLE IF EXISTS records; DROP TABLE IF EXISTS auth_challenges; DROP TABLE IF EXISTS user_login_identities; DROP TABLE IF EXISTS users;`.execute(db);
+  await sql`DROP TABLE IF EXISTS record_links; DROP TABLE IF EXISTS proposals; DROP TABLE IF EXISTS projects; DROP TABLE IF EXISTS memories; DROP TABLE IF EXISTS task_runs; DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS media_object_deletions; DROP TABLE IF EXISTS media_assets; DROP TABLE IF EXISTS records; DROP TABLE IF EXISTS auth_challenges; DROP TABLE IF EXISTS user_login_identities; DROP TABLE IF EXISTS users;`.execute(db);
 }
