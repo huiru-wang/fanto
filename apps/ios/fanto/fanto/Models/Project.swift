@@ -23,11 +23,50 @@ struct ProjectDetail {
 }
 enum ProposalType: String, Codable, Hashable { case create, extend }
 enum ProposalStatus: String, Codable, Hashable { case pending, accepted, rejected }
-struct ProposalContent: Codable, Hashable {
+
+struct ProposalCreation: Decodable, Hashable {
+    let objective: String
+    let context: String?
+    let constraints: [String]?
+    let successCriteria: [String]?
+}
+
+struct ProposalContent: Decodable, Hashable {
     let reason: String
     let idea: String
     let plan: [String]
+    let tags: [String]
+    let creation: ProposalCreation?
+
+    private enum CodingKeys: String, CodingKey {
+        case reason, idea, plan, tags, creation
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        reason = try container.decode(String.self, forKey: .reason)
+        idea = try container.decode(String.self, forKey: .idea)
+        plan = try container.decode([String].self, forKey: .plan)
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        creation = try container.decodeIfPresent(ProposalCreation.self, forKey: .creation)
+    }
+
+    var preserveText: String? { facet(named: "保留") }
+    var transformText: String? { facet(named: "转化") }
+
+    private func facet(named name: String) -> String? {
+        guard let constraints = creation?.constraints else { return nil }
+        let prefixes = ["\(name)：", "\(name):", "\(name)｜", "\(name)|"]
+        for constraint in constraints {
+            for prefix in prefixes where constraint.hasPrefix(prefix) {
+                let value = String(constraint.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !value.isEmpty { return value }
+            }
+        }
+        return nil
+    }
 }
+
 struct Proposal: Identifiable, Hashable {
     let id: String
     let type: ProposalType
@@ -37,4 +76,5 @@ struct Proposal: Identifiable, Hashable {
     let status: ProposalStatus
     let resultProjectID: String?
     let createdAt: Date
+    let referenceRecordCount: Int?
 }

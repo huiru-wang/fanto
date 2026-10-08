@@ -17,19 +17,20 @@
 | 能力 | 数据来源 | 当前状态 |
 | --- | --- | --- |
 | Record 列表 / 日历 / 连续时间线 | `GET /api/records?limit=30&cursor=` | Client 已接分页 |
+| 删除 Record | `DELETE /api/records/:id`，携带 expectedVersion | 日历 / 时间线长按确认，成功后更新列表与快照 |
 | 新建 Record | 打开编辑器即尝试一次当前位置定位并给出地点建议；媒体上传后调用 `POST /api/records`，再刷新列表 | Client 已接 |
 | 媒体写入 | `POST /api/uploads` 申请凭据，直传后调用 `POST /api/uploads/:mediaId/complete` | Client 已接 |
 | active Project 列表 | `GET /api/projects?status=active` | Client 已接 |
 | pending Proposal 列表 | `GET /api/proposals?status=pending` | Client 已接 |
 | Project 详情 | `GET /api/projects/:id` | 正文、总数与最多 5 条参考记录 |
 | Proposal 参考 Record | `GET /api/proposals/:id/records?limit=5&cursor=` | Client 已接分页，直接返回完整 Record |
-| Proposal accept / reject | `/api/proposals/:id/accept`、`/reject` | 已接，接受后刷新项目 |
+| Proposal accept / reject | `/api/proposals/:id/accept`、`/reject` | 已接；accept 可携带用户补充创作想法，接受后刷新项目 |
 | Project 归档 | `POST /api/projects/:id/archive` | 以详情版本归档 |
 | Fanto 默认长期会话 | `POST /api/agent/sessions` | Client 已接 |
 | Fanto 最近历史 | `GET /api/agent/sessions/:id/history?limit=10` | 已接 iOS 客户端流程 |
 | Fanto 文本流式回复 | `POST /api/agent/stream` | 已接 iOS 客户端流程 |
 
-Record 首批读取 30 条，客户端据此生成日历标记和两种视图；服务端返回 `nextCursor`，连续时间线在滚动到底部时基于 cursor 自动读取并追加更早记录。追加页会按 Record ID 去重并按事件时间倒序排列；追加失败保留已显示记录并在底部提供重试。当前账号最近 200 条已读取 Record 会以受 iOS 文件保护的数据快照保存在 Application Support；认证后的启动过程先恢复该快照，再以服务端首屏结果覆盖。新增与每次成功分页后都会更新快照；认证失效或账号切换时清除该账号快照。
+Record 首批读取 30 条，客户端据此生成日历标记和两种视图；服务端返回 `nextCursor`，连续时间线在滚动到底部时基于 cursor 自动读取并追加更早记录。追加页会按 Record ID 去重并按事件时间倒序排列；追加失败保留已显示记录并在底部提供重试。当前账号最近 200 条已读取 Record 会以受 iOS 文件保护的数据快照保存在 Application Support；认证后的启动过程先恢复该快照，再以服务端首屏结果覆盖。新增与每次成功分页后都会更新快照；认证失效或账号切换时清除该账号快照。记录携带服务端 version；旧快照缺少版本时先读取最新 Record 再删除。删除成功或服务端已不存在时移除本地数据并保存快照，已删除 ID 不允许被进行中的分页请求重新加入；版本冲突刷新列表并要求重新确认。
 
 
 ## Google 登录与账号状态
@@ -64,9 +65,9 @@ Fanto 位于根导航中间，只使用一个默认长期 Agent Session，不提
 
 ## 脉络 UI
 
-提议与项目分别使用 Proposal / Project 模型。建议详情展示 reason、idea、plan 和分页参考记录；项目摘要使用 summary，详情直接读取正文和最近参考记录，不请求独立 Project records 接口。列表续读至完整结果并按 ID 去重。归档需确认，版本冲突不会覆盖服务器内容。
+提议与项目分别使用 Proposal / Project 模型。Proposal 详情以最终作品想象为主：不展示 reason，标题下直接渲染 `content.tags`，idea 显示为「创作效果」，plan 按 3 个 `标题｜说明` 步骤呈现；creation.constraints 中规范的「保留：」「转化：」摘要可作为轻量视觉提示。用户可在接受前补充最多 500 字创作想法，accept 后由 Server 合并进确认后的 creation goal。参考记录默认折叠，仅展开时分页读取。项目摘要使用 summary，详情直接读取正文和最近参考记录，不请求独立 Project records 接口。列表续读至完整结果并按 ID 去重。刷新任务附着在稳定的导航容器，取消请求不进入失败状态；已加载数据的静默刷新失败保留原状态，请求 ID 防止旧响应覆盖新状态。归档需确认，版本冲突不会覆盖服务器内容。
 
-正文使用 Swift Markdown 语法树原生渲染标题、段落、列表、引用、表格、删除线、源码和连续图片组；图片可全屏分页，签名地址失败后刷新一次。仅项目正文启用 html-preview，受限非持久化 WebView 禁用脚本、桥接、导航与外部资源；浏览器解析 HTML / CSS 后，内部图片请求由 fanto-media Scheme Handler 读取。预览可手动刷新，普通 HTML 围栏保留源码。当前没有创作 Agent，接受后不承诺立即生成成果。
+正文使用 Swift Markdown 语法树原生渲染标题、段落、列表、引用、表格、删除线、源码和连续图片组；图片可全屏分页，签名地址失败后刷新一次。仅项目正文启用 html-preview，受限非持久化 WebView 禁用脚本、桥接、导航与外部资源；浏览器解析 HTML / CSS 后，内部图片请求由 fanto-media Scheme Handler 读取。预览可手动刷新，普通 HTML 围栏保留源码。已接受且含 creation goal 的 Proposal 由 Creative Runtime 登记 CreationRun，iOS 在项目详情跟进排队、生成、整理和完成状态。
 
 ## Record UI
 

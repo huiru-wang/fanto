@@ -5,11 +5,18 @@ import { PostgresMediaRepository, type MediaAsset } from "./postgres-repository.
 import type { MediaVariant, OssStorage } from "../../infrastructure/clients/oss-client.js";
 import type { Transaction, Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
+import { logWarn } from "../../infrastructure/logging/logger.js";
 
 export class MediaService {
   constructor(private readonly media: PostgresMediaRepository, private readonly oss: OssStorage) {}
   static create(db: Kysely<DB>, oss: OssStorage) { return new MediaService(new PostgresMediaRepository(db), oss); }
-  findOwnedByIds(userId: string, ids: string[], options: { transaction?: Transaction<DB> } = {}) { return this.media.findMediaByIds(ids, userId, options.transaction); }
+  findOwnedByIds(userId: string, ids: string[], options: { transaction?: Transaction<DB> } = {}) { return this.media.findMediaByIds(ids, userId, options.transaction, !!options.transaction); }
+  static enqueueRecordDeletion(userId: string, ids: string[], transaction: Transaction<DB>, retain: () => Promise<Set<string>>) {
+    return PostgresMediaRepository.enqueueRecordDeletion(userId, ids, transaction, retain);
+  }
+  cleanupDeletedObjects() {
+    return this.media.cleanupDeletedObjects(key => this.oss.remove(key), (mediaId, attempts) => logWarn("media-cleanup", "OSS deletion will retry", { mediaId, attempts }));
+  }
   async createGeneratedImage(input: { userId: string; mediaId: string; creationRunId: string; proposalId: string; projectId: string; imageIndex: number; data: Buffer; width: number; height: number }) {
     const current = await this.media.findMedia(input.mediaId, input.userId);
     if (current) {

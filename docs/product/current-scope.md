@@ -15,7 +15,7 @@
 
 当前 Server 已支持：
 
-- 创建、读取、分页和乐观并发更新 Record；
+- 创建、读取、分页、乐观并发更新与删除 Record；独占媒体资产随记录移除，OSS 清理可持久重试，已有成果直接引用的资源保留；
 - Record 使用 `eventAt` 表示业务发生时间；
 - 图片和音频先申请上传凭据，客户端直传 OSS，再 complete；
 - Record 创建 / 更新后异步执行图片理解、音频转写与向量索引；
@@ -23,7 +23,7 @@
 - 按用户读取媒体，并通过短期 OSS 地址返回内容；
 - Task Worker 可由 Server 直接生成 `text/plain / text/markdown / text/html` 文件、上传 OSS，并注册为 `media_type=file`。
 
-当前 iOS 已通过 Google / Apple 原生认证换取 Fanto Access / Refresh JWT；Record 读取、Project 与 Agent Client 都已实现 Server 调用链路。iOS“新建记录”支持文字与最多 5 张图片、日期和时间选择及可选地点；地点可搜索或在地图上选点，保存地点本体、行政区与坐标，拒绝定位权限时仍可手动选点；该页面不提供录音入口。保存时先通过 `POST /api/uploads` 申请上传凭据、直传并调用 complete，再通过 `POST /api/records` 创建 Record；成功后刷新本地列表与快照。
+当前 iOS 已通过 Google / Apple 原生认证换取 Fanto Access / Refresh JWT；Record 读取、Project 与 Agent Client 都已实现 Server 调用链路。iOS“新建记录”支持文字与最多 5 张图片、日期和时间选择及可选地点；地点可搜索或在地图上选点，保存地点本体、行政区与坐标，拒绝定位权限时仍可手动选点；该页面不提供录音入口。保存时先通过 `POST /api/uploads` 申请上传凭据、直传并调用 complete，再通过 `POST /api/records` 创建 Record；成功后刷新本地列表与快照。日历和时间线支持长按确认删除 Record，成功后同步本地列表与快照。
 
 当前 iOS 中间 Fanto Tab 通过 Agent Runtime 的 Session、History 与 SSE Stream 接口支持开发态多轮对话。它只恢复最近 10 条历史，在 Keychain 保存一个默认 Session ID；历史解码已能容忍 Pi 的结构化 message content，并重建可见文本及成功 `present_media` 的白名单媒体 metadata，同时兼容旧正文中的 `fanto-media://<mediaId>`。Assistant 文本使用原生 Markdown 渲染；图片以横向缩略图呈现并可全屏分页查看，语音可在会话中播放。iOS 只保存稳定媒体 metadata，实际展示时才读取短期签名地址。它不支持会话切换、新话题、跨设备恢复或来源引用；正式认证已经接入 Google / Apple。Agent 网关若将 HTTP 转至 HTTPS，真机联调依赖系统信任该 HTTPS 证书；客户端不接受不受信任的证书。
 

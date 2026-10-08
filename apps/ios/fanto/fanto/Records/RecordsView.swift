@@ -3,6 +3,8 @@ import SwiftUI
 struct RecordsView: View {
     @Environment(FantoStore.self) private var store
     @State private var showingComposer = false
+    @State private var recordToDelete: Record?
+    @State private var showsDeletionConfirmation = false
     @State private var selectedDate = Calendar.current.startOfDay(for: .now)
     @State private var viewMode: RecordViewMode = .calendar
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -35,6 +37,24 @@ struct RecordsView: View {
             }
             .refreshable {
                 await store.loadRecords()
+            }
+            .confirmationDialog("删除这条记录？", isPresented: $showsDeletionConfirmation, titleVisibility: .visible) {
+                Button("删除记录", role: .destructive) {
+                    guard let record = recordToDelete else { return }
+                    Task { await store.deleteRecord(record) }
+                    recordToDelete = nil
+                }
+                Button("取消", role: .cancel) { recordToDelete = nil }
+            } message: {
+                Text("删除后无法恢复。仅属于这条记录的照片和音频也会删除，已有脉络成果会保留。")
+            }
+            .alert("删除未完成", isPresented: Binding(
+                get: { store.recordActionError != nil },
+                set: { if !$0 { store.recordActionError = nil } }
+            )) {
+                Button("好", role: .cancel) { store.recordActionError = nil }
+            } message: {
+                Text(store.recordActionError ?? "请稍后重试。")
             }
         }
     }
@@ -85,7 +105,8 @@ struct RecordsView: View {
                         loadMoreError: store.recordLoadMoreError,
                         showCalendar: { switchView(to: .calendar) },
                         addRecord: { showingComposer = true },
-                        loadMore: { Task { await store.loadMoreRecords() } }
+                        loadMore: { Task { await store.loadMoreRecords() } },
+                        deleteRecord: confirmDeletion
                     )
                 }
             }
@@ -138,8 +159,14 @@ struct RecordsView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 24)
         case .loaded:
-            RecordTimelineView(date: date, records: records)
+            RecordTimelineView(date: date, records: records, deleteRecord: confirmDeletion)
         }
+    }
+
+    private func confirmDeletion(_ record: Record) {
+        guard !store.deletingRecordIDs.contains(record.id) else { return }
+        recordToDelete = record
+        showsDeletionConfirmation = true
     }
 
     private func switchView(to mode: RecordViewMode) {

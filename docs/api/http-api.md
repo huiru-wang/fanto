@@ -47,7 +47,7 @@
 
 `POST /api/records/search` 的每个命中返回 `recordId`、原始 Record 的 `eventAt`、从完整 Record 内容构建的 `preview` 和向量 `distance`。
 
-创建体：`{ text, media, location?, eventAt, source? }`；更新体：`{ text, media, location?, expectedVersion }`；删除体：`{ expectedVersion }`。`location` 为 `{ name, countryCode?, country?, province?, city?, district?, latitude, longitude }`；`countryCode` 为 ISO 3166-1 alpha-2，两位字母，其他行政区字段均可选。创建时省略表示无地点，更新时省略保留原地点、`null` 删除、对象替换。坐标固定为 WGS-84。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`，最多 5 项。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。保存 Record 时，音频 capture 中已有的 `durationMs` 会写入对应 audio block；后置处理完成后，图片 description、音频 transcription 与 ASR metadata 写回 `content.blocks`。Record 读取不再查询 `media_assets`，也不返回冗余 `media[]`。删除会解除媒体的 Record 绑定并删除包含向量字段的 Record 行，但不会删除媒体文件本身；已排队的后置任务因找不到 Record 而失效。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
+创建体：`{ text, media, location?, eventAt, source? }`；更新体：`{ text, media, location?, expectedVersion }`；删除体：`{ expectedVersion }`。`location` 为 `{ name, countryCode?, country?, province?, city?, district?, latitude, longitude }`；`countryCode` 为 ISO 3166-1 alpha-2，两位字母，其他行政区字段均可选。创建时省略表示无地点，更新时省略保留原地点、`null` 删除、对象替换。坐标固定为 WGS-84。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`，最多 5 项。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。保存 Record 时，音频 capture 中已有的 `durationMs` 会写入对应 audio block；后置处理完成后，图片 description、音频 transcription 与 ASR metadata 写回 `content.blocks`。Record 读取不再查询 `media_assets`，也不返回冗余 `media[]`。删除会同事务移除 Record（含向量）与独占媒体资产、清理来源关联，并登记可重试的 OSS 清理任务；被已有成果直接引用的媒体仅解除 Record 绑定并保留，详见 [媒体清理](../domain/media.md#record-删除与媒体清理)；已排队的后置任务因找不到 Record 而失效。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
 
 列表结果：`{ data, hasMore, nextCursor, pageSize }`。`nextCursor` 只应在 `hasMore=true` 时使用。
 
@@ -128,7 +128,7 @@ Proposal 的列表、详情和决策响应包含 `sessionId: string | null`，�
 | GET | `/api/proposals?type=&status=&targetProjectId=&limit=&cursor=` | type 为 create / extend，status 为 pending / accepted / rejected；默认不过滤 |
 | GET | `/api/proposals/:id` | 提议详情及 referenceRecordCount |
 | GET | `/api/proposals/:id/records?limit=&cursor=` | 完整参考 Record，按 eventAt / recordId 倒序分页 |
-| POST | `/api/proposals/:id/accept` | 返回 `{ proposal, resultProjectId, addedRecordCount }`；同决策重试新增数为 0 |
+| POST | `/api/proposals/:id/accept` | 请求体可选 `{ userInput }`；返回 `{ proposal, resultProjectId, addedRecordCount }`；用户补充会并入已接受 creation goal，同决策重试新增数为 0 |
 | POST | `/api/proposals/:id/reject` | 返回 `{ proposal }`，同决策幂等 |
 | GET | `/api/projects?status=&limit=&cursor=` | 默认 active，可选 archived；摘要列表不含 content |
 | GET | `/api/projects/:id` | 完整 Project，包含 recordCount / referenceRecords（最近最多 5 条） |
@@ -137,7 +137,7 @@ Proposal 的列表、详情和决策响应包含 `sessionId: string | null`，�
 
 Project 包含 projectId / userId / sessionId / title / summary / coverMediaId / content / status / version / createdAt / updatedAt。Proposal 包含 proposalId / userId / sessionId / type / targetProjectId / title / proposedSummary / content / status / resultProjectId / createdAt / updatedAt / resolvedAt。内容与事务语义以 [Domain](../domain/projects.md) 为准。
 
-PATCH 不接受身份、状态、Session、版本或时间字段；缺省保持不变，content 空字符串清空正文，coverMediaId null 清空封面。title 最长 200，summary 最长 2000，正文最大 2 MiB UTF-8；请求体先受 13 MiB 限制，以允许 JSON 转义开销。接受 / 拒绝无需请求体。接受 create 或修改 summary 时若向量生成失败，返回 `503 EMBEDDING_UNAVAILABLE`，业务写入不生效。Proposal content.creation 使用 `{ objective, context?, constraints?, successCriteria? }`；Proposal 摘要返回 `proposedSummary`（数据库列名为 `proposed_summary`），不提供 `summary` 别名。Proposal 创建、Project 全量 Record 分页与 Project 语义搜索 仅为内部 Service 能力。
+PATCH 不接受身份、状态、Session、版本或时间字段；缺省保持不变，content 空字符串清空正文，coverMediaId null 清空封面。title 最长 200，summary 最长 2000，正文最大 2 MiB UTF-8；请求体先受 13 MiB 限制，以允许 JSON 转义开销。Proposal `content` 包含 `reason / idea / plan / tags / creation?`：`tags` 为 2–4 个用户展示短标签，`plan` 固定 3 项；`content.creation` 使用 `{ objective, context?, constraints?, successCriteria? }`。accept 请求体可省略，也可传最多 500 字的 `userInput`；非空补充会作为确认后的创作约束写入 creation goal，再进入 creator-agent。reject 无需请求体。接受 create 或修改 summary 时若向量生成失败，返回 `503 EMBEDDING_UNAVAILABLE`，业务写入不生效。Proposal 摘要返回 `proposedSummary`（数据库列名为 `proposed_summary`），不提供 `summary` 别名。Proposal 创建、Project 全量 Record 分页与 Project 语义搜索仅为内部 Service 能力。
 
 错误：400 INVALID_INPUT / INVALID_CURSOR，404 NOT_FOUND（含跨用户），409 INVALID_STATE / VERSION_CONFLICT / REFERENCE_RECORDS_UNAVAILABLE / MEDIA_NOT_READY，413 CONTENT_TOO_LARGE。游标绑定用户、父实体、查询类型与过滤条件；不能跨查询复用。
 

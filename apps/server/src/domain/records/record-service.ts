@@ -1,4 +1,5 @@
 import { ProjectService } from "../projects/index.js";
+import { MediaService } from "../media/index.js";
 import { parseSaveRecord } from "./content.js";
 import { decodeRecordCursor, encodeRecordCursor } from "./cursor.js";
 import type { RecordReadOptions, RecordRepository, RecordSavedHook } from "./repository.js";
@@ -27,7 +28,7 @@ export class RecordService {
   ) {}
 
   static create(db: Kysely<DB>, queue: RecordPostprocessQueue, retrieval?: RecordRetrieval, listCache?: RecordListCache, onSaved?: RecordSavedHook) {
-    return new RecordService(new PostgresRecordRepository(db, ProjectService.removeRecordReferences, onSaved), queue, retrieval, listCache);
+    return new RecordService(new PostgresRecordRepository(db, ProjectService.removeRecordReferences, onSaved, (userId, ids, transaction) => MediaService.enqueueRecordDeletion(userId, ids, transaction, () => ProjectService.retainedMediaIds(userId, ids, transaction))), queue, retrieval, listCache);
   }
 
   async create(userId: string, input: { text: string; media: unknown[]; location?: unknown; source?: string; eventAt: string }) {

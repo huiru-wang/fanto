@@ -39,4 +39,4 @@ creator-agent 只读取已接受提议的参考 Record 与授权目标 Project�
 
 `project_read` 仅支持 `search`（query，固定最多 3 个候选，不接受 limit）与 `get`（projectId）。不再暴露 list / detail / records action。get 返回最近最多 5 条参考记录与截断正文，creator-agent 只能 get 授权目标，并仅返回已接受提议授权的参考记录。summary / query 使用同一 768 维 Embedding 模型；失败不作为“无相关项目”，而以 EMBEDDING_UNAVAILABLE 中止该次执行。
 
-Proposal title 按可直接发布的作品标题生成，reason 解释素材契合点、idea 描绘具体成果、plan 只写用户理解的 2–4 步。事实准确优先于创意和吸引力，不将未知地点、人物关系或情绪写成事实；不足时静默 no_proposal。旧 creation brief 通过增量迁移转为目标描述，并保留已有 CreationRun 的素材计划和付费槽位；不会重置失败状态或未知生图结果。
+Proposal title 使用作品标题语言；reason 仅保留内部判断依据；tags 生成 2–4 个作品化短标签；idea 最多两句话描述最终创作效果；plan 固定 3 项并使用 `短标题｜一句结果说明`，不写 Agent 技术步骤。shared creative Skill 统一 Tag 语言，各 reference 只提供精简 Tag Guidance，不做固定枚举。事实准确优先于创意和吸引力，不将未知地点、人物关系或情绪写成事实；不足时静默 no_proposal。用户 accept 时可附带创作补充，服务端原子写入 creation constraints，随后 creator-agent 从已接受 Proposal 读取该最终目标。旧 creation brief 通过增量迁移转为目标描述，并保留已有 CreationRun 的素材计划和付费槽位；不会重置失败状态或未知生图结果。

@@ -16,6 +16,21 @@ export class ProjectService {
   static async removeRecordReferences(userId: string, recordId: string, transaction: NonNullable<TransactionOptions["transaction"]>) {
     await new ProjectRepository(transaction).cleanupRecord(userId, recordId);
   }
+  /** Caller holds candidate media locks; concurrent publishers take shared media locks. */
+  static async retainedMediaIds(userId: string, candidates: string[], transaction: NonNullable<TransactionOptions["transaction"]>) {
+    const retained = new Set<string>();
+    for (const project of await new ProjectRepository(transaction).mediaReferences(userId)) {
+      if (project.cover_media_id) retained.add(project.cover_media_id);
+      const inspected = inspectProjectContent(project.content);
+      // Conservatively preserve candidate IDs mentioned in an unsupported legacy document.
+      if (inspected.kind === "error") {
+        for (const id of candidates) if (project.content.toLowerCase().includes(id.toLowerCase())) retained.add(id);
+      } else {
+        for (const id of inspected.data) retained.add(id);
+      }
+    }
+    return retained;
+  }
   static create(db: Kysely<DB>, records: RecordService, media: MediaService, embeddings: ProjectEmbeddingProvider) { return new ProjectService(db, records, media, embeddings); }
   async find(userId: string, id: string, options: TransactionOptions = {}) {
     if (!uuid.safeParse(id).success) return null;

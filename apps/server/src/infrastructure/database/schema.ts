@@ -185,6 +185,14 @@ export interface CreationImageStepsTable {
 }
 
 export interface DB {
+  media_object_deletions: {
+    object_key: string;
+    user_id: string;
+    media_id: string;
+    attempts: Generated<number>;
+    next_attempt_at: Generated<Date>;
+    created_at: Generated<Date>;
+  };
   users: UsersTable;
   user_login_identities: UserLoginIdentitiesTable;
   auth_challenges: AuthChallengesTable;

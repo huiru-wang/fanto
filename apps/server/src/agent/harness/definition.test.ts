@@ -42,10 +42,12 @@ test("agent.yaml exposes task management and the single task-worker", () => {
 
 test("creative agents are internal, use object-root schemas and cannot use Task or filesystem tools", async () => {
   const registry = new AgentRegistry(resolve("agent.yaml"), builtinModels(), new SkillLoader(resolve("skills")));
-  assert.deepEqual(registry.get("proposal-agent")?.tools, ["record_read", "project_read", "proposal_create"]);
-  assert.deepEqual(registry.get("creator-agent")?.tools, ["record_read", "project_read", "image_generate", "creation_prepare", "creation_publish"]);
-  assert.deepEqual(registry.get("creator-agent")?.skills, ["roleplay-article"]);
+  assert.deepEqual(registry.get("proposal-agent")?.tools, ["record_read", "project_read", "proposal_create", "skill_read"]);
+  assert.deepEqual(registry.get("creator-agent")?.tools, ["record_read", "project_read", "image_generate", "creation_prepare", "creation_publish", "skill_read"]);
+  assert.deepEqual(registry.get("proposal-agent")?.skills, ["creative"]);
+  assert.deepEqual(registry.get("creator-agent")?.skills, ["creative"]);
   assert.equal(registry.taskAgents().some(agent => agent.id === "creator-agent" || agent.id === "proposal-agent"), false);
   const { createTools } = await import("../tools/index.js");
-  for (const tool of createTools(registry.get("creator-agent")!.tools, process.cwd(), {} as never, [])) assert.equal((tool.parameters as { type?: string }).type, "object");
+  const skills = new SkillLoader(resolve("skills"));
+  for (const tool of createTools(registry.get("creator-agent")!.tools, process.cwd(), {} as never, [], skills, registry.get("creator-agent")!.skills)) assert.equal((tool.parameters as { type?: string }).type, "object");
 });

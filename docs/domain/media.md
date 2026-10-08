@@ -65,3 +65,10 @@ Audio block 在 Record postprocess 中调用 ASR。成功后，transcription 与
 ## 创作图片
 
 Creative Runtime 通过 Media Service 将参考图片适配为临时 JPEG，再用服务端签名地址调用生成模型；原素材保持不变。生成结果完整验证后存 OSS，按固定 mediaId 幂等注册 ready Image，extData 包含 creationRunId / proposalId / projectId / imageIndex 和尺寸。Agent 与 Project 只使用 mediaId；供应商地址不作为成果地址。临时参考对象调用后删除，已生成的图片不因文章发布失败而删除。执行恢复见 [创作运行](../architecture/creative-runtime.md)。
+
+
+## Record 删除与媒体清理
+
+删除 Record 时，对关联媒体加锁，并检查同用户 active / archived Project 的封面、Markdown / HTML / CSS 资源引用，以及 Task 交付和创作图片槽位。仍被成果引用的媒体保留资产与对象，仅解除 Record 占用；独占媒体在同一业务事务中删除 media_assets，并将 object_key 登记到 media_object_deletions。Project 发布的媒体校验持有共享锁，与删除互斥，避免并发发布引用已删除资产。聊天历史中的媒体引用不会阻止用户删除原始素材，删除后旧链接不可用。
+
+Server 启动后每 5 秒扫描最多 10 个到期 OSS 清理任务；数据库行锁与 skip locked 防止多实例重复领取。OSS 删除成功后移除任务，失败按 30 秒到 1 小时的指数退避持续重试，重启后继续；对象删除幂等，任务表不跟随用户级联删除。HTTP 删除成功表示 Record 与独占资产已移除，OSS 二进制最终清理；已签发地址在对象移除前可能仍可访问。缩略图为 OSS 动态变体，无独立缩略图对象需要删除。日志关键字为 media-cleanup。

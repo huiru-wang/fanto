@@ -39,7 +39,7 @@ export class CreativeService {
     const id = await this.authorize(context, role);
     if (role === "proposal") {
       const row = (await this.repository.analysis(context.userId, id))!;
-      return { role, recordIds: [row.record_id], recordVersion: row.record_version, maxProposals: 1, supportedCreation: "根据已描述的原照片，保留人物身份与年龄，调整服饰、配饰和氛围，创作角色扮演写真及配文；最多 3 张图片", assessmentOrder: ["value", "creative_points", "project_relation", "proposal"] };
+      return { role, recordIds: [row.record_id], recordVersion: row.record_version, maxProposals: 1, capabilities: { referenceImageCreation: true, maxSourceImages: 3, maxGeneratedImages: 3, projectMarkdown: true, htmlPreview: true, imageTextRendering: false } };
     }
     const row = (await this.repository.creation(context.userId, id))!;
     const proposal = await this.proposals.find(context.userId, row.proposal_id);

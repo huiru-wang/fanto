@@ -22,7 +22,7 @@ pnpm --filter @fanto/server test
 
 - schema 变化：空库 migration 与既有 PostgreSQL 增量迁移、数据保留与用户隔离；旧 Proposal goal 转换与已付费运行计划 / 状态保留；
 - Record Retrieval：Record document 构建、user-scoped pgvector 检索、Record 接入与 Search HTTP；
-- OSS：signed PUT、complete、媒体读取；
+- OSS：signed PUT、complete、媒体读取；Record 删除的事务回滚、成果引用保护、并发发布、持久删除任务的失败退避与重启恢复；真实对象写入 / 删除 / HEAD 验证；
 - Vision / ASR / Embedding：真实凭据下的最小 smoke test。
 
 ## Agent Runtime

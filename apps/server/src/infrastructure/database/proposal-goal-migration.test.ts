@@ -19,7 +19,7 @@ integration("old Proposal execution brief migrates to goal without losing a paid
     await db.insertInto("proposals").values({ proposal_id: proposalId, user_id: userId, session_id: null, type: "create", target_project_id: null, title: "游园", proposed_summary: "大观园红楼梦主题", content: { reason: "园林人物", idea: "古典游园", plan: [], creation: old }, status: "accepted", result_project_id: projectId, created_at: now, updated_at: now, resolved_at: now }).execute();
     await db.insertInto("creation_runs").values({ run_id: runId, user_id: userId, proposal_id: proposalId, project_id: projectId, status: "failed", execution_plan: null, base_project_version: 1, agent_session_id: null, lease_token: null, lease_expires_at: null, progress: {}, published_project_version: null, attempts: 1, error_code: "IMAGE_RESULT_UNKNOWN", accepted_at: now, created_at: now, updated_at: now }).execute();
     await db.insertInto("creation_image_steps").values({ run_id: runId, image_index: 1, fingerprint: "paid-original", status: "unknown", media_id: mediaId, metadata: null, recovery_ciphertext: null, recovery_expires_at: null, error_code: "IMAGE_RESULT_UNKNOWN", created_at: now, updated_at: now }).execute();
-    await sql`DELETE FROM kysely_migration WHERE name = 'zzzzzzzzz_proposal_creation_goal'`.execute(db);
+    await sql`DROP TABLE media_object_deletions; DELETE FROM kysely_migration WHERE name IN ('zzzzzzzzz_proposal_creation_goal', 'zzzzzzzzzz_media_object_deletions')`.execute(db);
     await runMigrations(db);
     await runMigrations(db);
     const proposal = await db.selectFrom("proposals").selectAll().where("proposal_id", "=", proposalId).executeTakeFirstOrThrow();

@@ -37,18 +37,18 @@ agents:
 
   - id: proposal-agent
     model_id: deepseek/deepseek-v4-flash
-    description: 理解 Record，评估价值与具体创意，识别已有项目延续并创建待确认提议。
+    description: 基于可信上下文判断值得用户继续的下一步，并创建待确认 Proposal。
     systemPromptModule: proposal-agent
-    tools: [record_read, project_read, proposal_create]
-    skills: []
+    tools: [record_read, project_read, proposal_create, skill_read]
+    skills: [creative]
     task: { enabled: false }
     compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 }
 
   - id: creator-agent
     model_id: deepseek/deepseek-v4-pro
-    description: 在已接受提议的授权范围内编辑参考照片，保存图片并发布 Markdown 图文成果。
+    description: 在已接受创作目标与授权素材范围内完成视觉创作并发布 Project。
     systemPromptModule: creator-agent
-    tools: [record_read, project_read, image_generate, creation_prepare, creation_publish]
-    skills: [roleplay-article]
+    tools: [record_read, project_read, image_generate, creation_prepare, creation_publish, skill_read]
+    skills: [creative]
     task: { enabled: false }
     compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 }

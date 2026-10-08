@@ -32,13 +32,18 @@ enum MediaReadVariant: String {
 enum FantoAPIError: LocalizedError {
     case invalidBaseURL
     case invalidResponse
-    case server(String)
+    case server(String, code: String?)
+
+    var code: String? {
+        if case let .server(_, code) = self { return code }
+        return nil
+    }
 
     var errorDescription: String? {
         switch self {
         case .invalidBaseURL: "本地服务地址无效。"
         case .invalidResponse: "服务返回的数据无法识别。"
-        case let .server(message): message
+        case let .server(message, _): message
         }
     }
 }
@@ -93,8 +98,10 @@ struct FantoAPIClient {
         return ProposalRecordPage(records: response.data.map(Record.init), hasMore: response.hasMore, nextCursor: response.nextCursor)
     }
 
-    func acceptProposal(id: String) async throws -> String {
-        let response: AcceptedProposalPayload = try await request(path: "api/proposals/\(id)/accept", method: "POST")
+    func acceptProposal(id: String, userInput: String? = nil) async throws -> String {
+        let normalized = userInput?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = try JSONEncoder().encode(AcceptProposalRequest(userInput: normalized?.isEmpty == false ? normalized : nil))
+        let response: AcceptedProposalPayload = try await request(path: "api/proposals/\(id)/accept", method: "POST", body: body)
         return response.resultProjectId
     }
 
@@ -114,6 +121,15 @@ struct FantoAPIClient {
         guard let url = components?.url else { throw FantoAPIError.invalidBaseURL }
         let response: RecordsPayload = try await request(url: url)
         return RecordPage(records: response.data.map(Record.init), hasMore: response.hasMore, nextCursor: response.nextCursor)
+    }
+
+    func fetchRecord(id: String) async throws -> Record {
+        Record(try await request(path: "api/records/\(id)") as RecordPayload)
+    }
+
+    func deleteRecord(id: String, expectedVersion: Int) async throws {
+        let body = try JSONEncoder().encode(["expectedVersion": expectedVersion])
+        let _: DeletedRecordPayload = try await request(path: "api/records/\(id)", method: "DELETE", body: body)
     }
 
     func fetchMediaReadURL(id: String, variant: MediaReadVariant = .original) async throws -> URL {
@@ -140,9 +156,13 @@ struct FantoAPIClient {
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw FantoAPIError.invalidResponse }
+        guard (200 ... 299).contains(http.statusCode) else {
+            let failure = try? decoder.decode(APIErrorPayload.self, from: data)
+            throw FantoAPIError.server(failure?.errorMsg ?? "服务暂时不可用。", code: failure?.errorCode)
+        }
         let decoded = try decoder.decode(APIEnvelope<Response>.self, from: data)
-        guard (200 ... 299).contains(http.statusCode), decoded.success else {
-            throw FantoAPIError.server(decoded.errorMsg ?? "服务暂时不可用。")
+        guard decoded.success else {
+            throw FantoAPIError.server(decoded.errorMsg ?? "服务暂时不可用。", code: decoded.errorCode)
         }
         guard let result = decoded.result else { throw FantoAPIError.invalidResponse }
         return result
@@ -164,7 +184,11 @@ private struct APIEnvelope<Result: Decodable>: Decodable {
     let success: Bool
     let result: Result?
     let errorMsg: String?
+    let errorCode: String?
 }
+
+private struct DeletedRecordPayload: Decodable { let recordId: String }
+private struct APIErrorPayload: Decodable { let errorMsg: String?; let errorCode: String? }
 
 private struct ProjectsPayload: Decodable {
     let data: [ProjectPayload]
@@ -212,12 +236,14 @@ private struct ProposalPayload: Decodable {
     let status: ProposalStatus
     let resultProjectId: String?
     let createdAt: Date
+    let referenceRecordCount: Int?
 }
 private extension Proposal {
     init(_ payload: ProposalPayload) {
-        self.init(id: payload.proposalId, type: payload.type, targetProjectID: payload.targetProjectId, title: payload.title, content: payload.content, status: payload.status, resultProjectID: payload.resultProjectId, createdAt: payload.createdAt)
+        self.init(id: payload.proposalId, type: payload.type, targetProjectID: payload.targetProjectId, title: payload.title, content: payload.content, status: payload.status, resultProjectID: payload.resultProjectId, createdAt: payload.createdAt, referenceRecordCount: payload.referenceRecordCount)
     }
 }
+private struct AcceptProposalRequest: Encodable { let userInput: String? }
 private struct AcceptedProposalPayload: Decodable { let resultProjectId: String }
 private struct ResolvedProposalPayload: Decodable { let proposal: ProposalPayload }
 
@@ -229,6 +255,7 @@ private struct RecordsPayload: Decodable {
 
 private struct RecordPayload: Decodable {
     let id: String
+    let version: Int
     let content: RecordContentPayload
     let eventAt: Date
 }
@@ -280,7 +307,7 @@ private extension Record {
             location = nil
         }
         let parsedMedia = RecordMedia(photos: images, audio: audio)
-        self.init(id: payload.id, text: payload.content.text, eventAt: payload.eventAt, location: location, media: parsedMedia.isEmpty ? nil : parsedMedia)
+        self.init(id: payload.id, text: payload.content.text, eventAt: payload.eventAt, location: location, media: parsedMedia.isEmpty ? nil : parsedMedia, version: payload.version)
     }
 }
 

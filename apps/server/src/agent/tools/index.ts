@@ -10,6 +10,7 @@ import {
 import type { AgentDefinition } from "../harness/definition.js";
 import type { TaskAgentCatalogEntry } from "../harness/registry.js";
 import type { AgentBusinessServices } from "../business-services.js";
+import type { SkillLoader } from "../skills/loader.js";
 import { prepareBashExecution } from "../workspace/bash.js";
 import { createCreateTaskTool, createGetTaskTool, createUpdateTaskTool } from "./task-management.js";
 import { createDeliverTaskResultTool } from "./deliver-task-result.js";
@@ -19,6 +20,7 @@ import { createWebSearchTool } from "./web-search.js";
 import { createPresentMediaTool } from "./media.js";
 import { createRecordReadTool } from "./records.js";
 import { createMemoryManageTool } from "./memory.js";
+import { createSkillReadTool } from "./skills.js";
 import type { FantoTool, ToolPresentationConfig } from "./types.js";
 
 export function createTools(
@@ -26,6 +28,8 @@ export function createTools(
   workspace: string,
   fanto: AgentBusinessServices,
   taskAgents: readonly TaskAgentCatalogEntry[],
+  skills?: SkillLoader,
+  allowedSkillIds: readonly string[] = [],
 ): FantoTool[] {
   return names.map(name => {
     switch (name) {
@@ -48,10 +52,12 @@ export function createTools(
       case "get_task": return createGetTaskTool(fanto);
       case "task_plan_manage": return createTaskPlanManageTool(fanto);
       case "deliver_task_result": return createDeliverTaskResultTool(fanto, workspace);
+      case "skill_read":
+        if (!skills) throw new Error("Skill loader is required for skill_read");
+        return createSkillReadTool(skills, allowedSkillIds);
     }
   });
 }
-
 
 function createFantoReadTool(): FantoTool {
   return withPresentation(createReadTool(), {

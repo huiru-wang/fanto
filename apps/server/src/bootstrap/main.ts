@@ -10,6 +10,7 @@ import { EmbeddingsClient } from "../infrastructure/clients/embeddings-client.js
 import { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
 import { OssStorage } from "../infrastructure/clients/oss-client.js";
 import { registerRecordPostprocessListener } from "../listeners/record-postprocess.listener.js";
+import { startMediaCleanup } from "../listeners/media-cleanup.listener.js";
 import { createApp, type ServerServices } from "./app.js";
 import { logError, logInfo } from "../infrastructure/logging/logger.js";
 import { JwtTokenService } from "../infrastructure/auth/jwt-token-service.js";
@@ -90,6 +91,7 @@ registerRecordPostprocessListener(
 );
 
 creativeRunner?.start();
+const stopMediaCleanup = startMediaCleanup(media);
 
 const services: ServerServices = {
   auth,
@@ -155,6 +157,7 @@ const shutdown = async (signal: string) => {
     server.close(error => error ? reject(error) : resolve());
   });
   await creativeRunner?.stop();
+  await stopMediaCleanup();
   await agent.close();
   await db.destroy();
   process.exit(0);

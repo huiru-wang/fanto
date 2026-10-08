@@ -23,23 +23,24 @@ struct ProjectsView: View {
             .navigationDestination(for: Project.self, destination: ProjectDetailView.init)
             .navigationDestination(for: Proposal.self, destination: ProposalDetailView.init)
             .navigationTitle("脉络")
-            .onAppear { isVisible = true }
-            .onDisappear { isVisible = false }
-            .task(id: isVisible && scenePhase == .active) {
-                guard isVisible && scenePhase == .active else { return }
-                while !Task.isCancelled {
-                    await store.refreshCreativeSuggestions()
-                    do { try await Task.sleep(for: .seconds(5)) } catch { return }
-                }
+        }
+        .onAppear { isVisible = true }
+        .onDisappear { isVisible = false }
+        .task(id: isVisible && scenePhase == .active) {
+            guard isVisible && scenePhase == .active else { return }
+            if store.projectLoadState != .loaded { await store.loadProjects() }
+            while !Task.isCancelled {
+                await store.refreshCreativeSuggestions()
+                do { try await Task.sleep(for: .seconds(5)) } catch { return }
             }
-            .alert("操作未完成", isPresented: Binding(
-                get: { store.projectActionError != nil },
-                set: { if !$0 { store.projectActionError = nil } }
-            )) {
-                Button("好", role: .cancel) { store.projectActionError = nil }
-            } message: {
-                Text(store.projectActionError ?? "请稍后重试。")
-            }
+        }
+        .alert("操作未完成", isPresented: Binding(
+            get: { store.projectActionError != nil },
+            set: { if !$0 { store.projectActionError = nil } }
+        )) {
+            Button("好", role: .cancel) { store.projectActionError = nil }
+        } message: {
+            Text(store.projectActionError ?? "请稍后重试。")
         }
     }
 

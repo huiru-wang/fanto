@@ -9,7 +9,8 @@ NGINX_SOURCE="$ROOT/deploy/manual/nginx/fanto-ssl.conf"
 NGINX_TARGET="${FANTO_NGINX_CONFIG:-/etc/nginx/nginx.conf}"
 INSTALL_NGINX="${FANTO_DEPLOY_NGINX:-0}"
 SERVER_PORT="${FANTO_SERVER_PORT:-3000}"
-HEALTH_RETRIES="${FANTO_HEALTH_RETRIES:-30}"
+HEALTH_RETRIES="${FANTO_HEALTH_RETRIES:-60}"
+HEALTH_INTERVAL_SECONDS="${FANTO_HEALTH_INTERVAL_SECONDS:-5}"
 
 usage() {
   cat <<'EOF'
@@ -123,7 +124,7 @@ wait_health() {
       echo "[OK] $name healthy: $url"
       return 0
     fi
-    sleep 1
+    sleep "$HEALTH_INTERVAL_SECONDS"
   done
 
   echo "[ERROR] $name health check failed: $url" >&2

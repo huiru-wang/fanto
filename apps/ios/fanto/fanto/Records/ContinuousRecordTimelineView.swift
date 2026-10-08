@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ContinuousRecordTimelineView: View {
+    @Environment(FantoStore.self) private var store
     let records: [Record]
     let hasMore: Bool
     let isLoadingMore: Bool
@@ -8,6 +9,7 @@ struct ContinuousRecordTimelineView: View {
     let showCalendar: () -> Void
     let addRecord: () -> Void
     let loadMore: () -> Void
+    var deleteRecord: (Record) -> Void = { _ in }
 
     private let calendar = Calendar.current
 
@@ -31,6 +33,14 @@ struct ContinuousRecordTimelineView: View {
                                 record: record,
                                 showsLineAfter: record.id != group.records.last?.id
                             )
+                            .opacity(store.deletingRecordIDs.contains(record.id) ? 0.5 : 1)
+                            .overlay(alignment: .trailing) {
+                                if store.deletingRecordIDs.contains(record.id) { ProgressView("正在删除") }
+                            }
+                            .contextMenu {
+                                Button("删除记录", systemImage: "trash", role: .destructive) { deleteRecord(record) }
+                            }
+                            .accessibilityAction(named: "删除记录") { deleteRecord(record) }
                         }
                     } header: {
                         dayHeader(group)

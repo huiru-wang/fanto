@@ -6,7 +6,7 @@ Proposal 保存待决策的创意建议，Project 保存用户已接受的脉络
 
 | 表 | 职责 |
 | --- | --- |
-| `proposals` | create / extend 提议、reason / idea / plan、可选 creation / session_id、参考记录与决策结果 |
+| `proposals` | create / extend 提议、reason / idea / plan / tags、可选 creation / session_id、参考记录与决策结果 |
 | `projects` | title、summary、可空 cover_media_id / session_id、Markdown content、summary embedding、version |
 | `record_links` | 以 user_id / type / outer_id / record_id 为主键的两类 Record 关联 |
 
@@ -16,7 +16,7 @@ Proposal 从 pending 单向变为 accepted 或 rejected；同一决策重复调�
 
 `ProposalService.create` 是服务器内部能力。输入至少一个同用户 Record，重复 ID 去重，任一不存在或跨用户引用使创建失败。create 必须提供 proposedSummary，不能指定目标；extend 必须指定同用户 active Project，不能提供 proposedSummary。
 
-接受时在事务中锁定 Proposal、有效 Record、目标 Project。create 使用提议标题与 proposedSummary 创建 active Project，content 为空、version 为 1；extend 只添加 Record 关联，已有关系去重，新增关系才递增 Project version，不覆盖标题、summary 或正文。响应包含 resultProjectId / addedRecordCount，保留 Proposal 原始关联。全部参考 Record 已删除时失败并保持 pending；部分删除时使用有效记录。已接受提议重试返回同一结果项目，addedRecordCount 为 0。
+接受时在事务中锁定 Proposal、有效 Record、目标 Project。accept 可携带最多 500 字 `userInput`；非空时只对含 creation 的 Proposal 生效，并在同一事务中追加为确认后的 creation constraint，使 creator-agent 读取到用户最终补充。create 使用提议标题与 proposedSummary 创建 active Project，content 为空、version 为 1；extend 只添加 Record 关联，已有关系去重，新增关系才递增 Project version，不覆盖标题、summary 或正文。响应包含 resultProjectId / addedRecordCount，保留 Proposal 原始关联。全部参考 Record 已删除时失败并保持 pending；部分删除时使用有效记录。已接受提议重试返回同一结果项目，addedRecordCount 为 0。
 
 Record 删除先锁 Record，再清理两类链接与递增受影响 Project 的版本，包括 archived 项目，整个操作同事务提交。接受、创建 extend 与删除都遵守 Record → Project 的锁顺序。参考内容通过 Record Service 查询，不复制正文。时间线按 record_event_at / record_id 倒序；若将来允许改变 Record eventAt，必须同步该冗余字段。
 
@@ -36,13 +36,13 @@ Project 列表默认 active，省略 content；详情返回正文、recordCount 
 
 content 为数据库中的 UTF-8 文本，最大 2 MiB；只将媒体二进制存 OSS。正文支持 Markdown、GFM 表格 / 删除线、`![说明](fanto-media://<mediaId>)` 与明确的 `html-preview` 围栏。连续图片段落组成图片组。普通 HTML 围栏作为源码，原始 HTML 不执行；链接只允许 HTTP(S) 或文内锚点。
 
-更新使用 Markdown / HTML / CSS 语法树校验实际图片与样式 url 引用，排除普通代码示例。资源必须为同用户 ready Image；不接受外部图片、签名地址、Base64、本地路径、脚本、表单、iframe 或外部 CSS。静态 HTML 元素、属性和 CSS 规则使用白名单。`listReferencedMediaIds` 返回正文与封面的稳定媒体引用；当前没有媒体硬删除或 OSS 回收。
+更新使用 Markdown / HTML / CSS 语法树校验实际图片与样式 url 引用，排除普通代码示例。资源必须为同用户 ready Image；不接受外部图片、签名地址、Base64、本地路径、脚本、表单、iframe 或外部 CSS。静态 HTML 元素、属性和 CSS 规则使用白名单。`listReferencedMediaIds` 返回正文与封面的稳定媒体引用；Record 删除会移除独占媒体并可靠清理 OSS，仍被项目直接引用的资源保留，见 [媒体清理](media.md#record-删除与媒体清理)。
 
 iOS 使用 Swift Markdown 解析器原生渲染正文、图片组、列表、引用、代码及表格；html-preview 使用非持久化 WebView，禁用 JavaScript、原生桥接和导航，CSP 限制资源来源。仅内部 fanto-media 图片请求通过受保护媒体接口换取签名 URL，失败后刷新一次；普通围栏降级为源码。H5 当前无 Project 页面。
 
 ## 创作契约边界
 
-Proposal content.creation 可省略；提供时仅含 objective / context? / constraints? / successCriteria?，语义与 Task goal 一致，保存用户确认的结果目标、真实背景、约束和验收标准，不包含媒体 ID 或技术执行参数。Proposal 的 HTTP / Service / Tool 摘要字段使用 proposedSummary，数据库对应 proposed_summary；Project 与 creation_publish 使用 summary，不提供 Proposal summary 别名。
+Proposal content 包含 reason / idea / plan / tags / creation?。reason 是内部判断依据；idea 是最多两句话的用户可见创作效果；plan 固定 3 项，使用 `短标题｜一句结果说明`；tags 固定 2–4 个作品化短词，只建立作品想象，不承担规格或执行说明。content.creation 可省略；提供时仅含 objective / context? / constraints? / successCriteria?，语义与 Task goal 一致，保存用户确认的结果目标、真实背景、约束和验收标准，不包含媒体 ID 或技术执行参数。Creative Proposal 的 constraints 前两项约定为可选的 `保留：...` / `转化：...` 展示摘要，其余仍是执行约束。Proposal 的 HTTP / Service / Tool 摘要字段使用 proposedSummary，数据库对应 proposed_summary；Project 与 creation_publish 使用 summary，不提供 Proposal summary 别名。
 
 具体原图、主体与 1–3 张图片预算在 creator-agent 读取授权 Record 后，通过 creation_prepare 保存到 creation_runs.execution_plan。服务端校验 ready Image 与 Record 归属，并按 Proposal 类型确定 create / append；计划首次保存后不可改变，重试复用。提议与执行计划各自承担用户目标和付费执行边界。
 

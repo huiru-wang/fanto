@@ -9,6 +9,7 @@ function respond<T>(c: Context, result: DomainResult<T>) {
 }
 const pagination = (c: Context, fallback: number) => ({ limit: c.req.query("limit") === undefined ? fallback : Number(c.req.query("limit")), cursor: c.req.query("cursor") });
 const expectedVersion = z.number().int().positive();
+const acceptProposal = z.object({ userInput: z.string().trim().min(1).max(500).optional() }).strict();
 const patch = z.object({ expectedVersion, title: z.string().optional(), summary: z.string().optional(), coverMediaId: z.string().nullable().optional(), content: z.string().optional() }).strict();
 export function createProjectRoutes(service: ProjectService) {
   const app = new Hono();
@@ -31,7 +32,10 @@ export function createProposalRoutes(service: ProposalService) {
   app.get("/proposals", async c => respond(c, await service.list(requireUserId(c.req.raw), { ...pagination(c, 20), type: c.req.query("type") as ProposalType | undefined, status: c.req.query("status") as ProposalStatus | undefined, targetProjectId: c.req.query("targetProjectId") })));
   app.get("/proposals/:id", async c => respond(c, await service.detail(requireUserId(c.req.raw), c.req.param("id"))));
   app.get("/proposals/:id/records", async c => respond(c, await service.recordsPage(requireUserId(c.req.raw), c.req.param("id"), pagination(c, 5))));
-  app.post("/proposals/:id/accept", async c => respond(c, await service.accept(requireUserId(c.req.raw), c.req.param("id"))));
+  app.post("/proposals/:id/accept", async c => {
+    const parsed = acceptProposal.safeParse(await c.req.json().catch(() => ({})));
+    return parsed.success ? respond(c, await service.accept(requireUserId(c.req.raw), c.req.param("id"), parsed.data)) : respond(c, { kind: "error", code: "INVALID_INPUT" });
+  });
   app.post("/proposals/:id/reject", async c => respond(c, await service.reject(requireUserId(c.req.raw), c.req.param("id"))));
   return app;
 }

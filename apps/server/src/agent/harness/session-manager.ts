@@ -147,6 +147,8 @@ export class AgentSessionManager {
       createWorkspace(this.workspaceRoot, userId, id),
       this.fanto,
       this.taskAgents,
+      this.skills,
+      definition.skills,
     );
   }
 

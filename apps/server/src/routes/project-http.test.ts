@@ -25,7 +25,7 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
     const r = await app.request(`/api/${path}`, { method, headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: r.status, body: r.headers.get("content-type")?.includes("json") ? await r.json() as any : null };
   };
-  const input = (ids = recordIds.slice(0, 7)): CreateProposalInput => ({ type: "create", title: "大观园写记", proposedSummary: "园林里的红楼梦主题照片与旅行回忆", recordIds: ids, content: { reason: "园林与人物照片适合主题创作", idea: "创作图文写真", plan: ["选择原图", "组织文章"] } });
+  const input = (ids = recordIds.slice(0, 7)): CreateProposalInput => ({ type: "create", title: "大观园写记", proposedSummary: "园林里的红楼梦主题照片与旅行回忆", recordIds: ids, content: { reason: "园林与人物照片适合主题创作", idea: "把园林里的这一刻整理成一页有作品感的图文写真。保留真实人物与场景，只增强主题表达。", plan: ["留住这一刻｜保留人物和园林关系", "建立作品气质｜统一画面与主题", "完成一页写真｜用短文收束真实经历"], tags: ["园林入画", "古典写真", "游园一页"] } });
   let projectId: string, proposalId: string;
   try {
     await db.insertInto("users").values(users.map(id => ({ user_id: id, status: "active" as const, created_at: now, updated_at: now, disabled_at: null }))).execute();
@@ -35,6 +35,8 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
       error(await proposals.create(userId, { ...input(), recordIds: [recordIds[0]!, randomUUID()] }), "REFERENCE_RECORDS_UNAVAILABLE");
       assert.equal((await db.selectFrom("proposals").selectAll().where("user_id", "=", userId).execute()).length, 0);
       error(await proposals.create(userId, { ...input(), type: "extend" }), "INVALID_INPUT");
+      error(await proposals.create(userId, { ...input(), content: { ...input().content, tags: ["重复", "重复"] } }), "INVALID_INPUT");
+      error(await proposals.create(userId, { ...input(), content: { ...input().content, plan: input().content.plan.slice(0, 2) } }), "INVALID_INPUT");
       const p = data(await proposals.create(userId, { ...input(), recordIds: [...input().recordIds, recordIds[0]!] })); proposalId = p.proposalId; assert.equal(p.sessionId, null);
       assert.equal(p.content.creation, undefined);
       const [first, second] = await Promise.all([proposals.accept(userId, p.proposalId), proposals.accept(userId, p.proposalId)]);
@@ -104,7 +106,8 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
     await t.test("creative goal contract, internal recovery pagination and source boundaries", async () => {
       const creation = { objective: "做一篇古典园林写真", context: "园林游览照片", constraints: ["保留人物"], successCriteria: ["主题一致"] };
       const p = data(await proposals.create(userId, { ...input([recordIds[0]!]), content: { ...input().content, creation } })); assert.deepEqual(p.content.creation, creation);
-      const accepted = data(await proposals.accept(userId, p.proposalId));
+      const accepted = data(await proposals.accept(userId, p.proposalId, { userInput: "不要文字，整体更温暖一点" }));
+      assert.deepEqual(accepted.proposal.content.creation?.constraints, [...creation.constraints, "用户补充创作想法：不要文字，整体更温暖一点"]);
       const extension = data(await proposals.create(userId, { ...input([recordIds[0]!]), type: "extend", targetProjectId: accepted.resultProjectId, proposedSummary: null, content: { ...input().content, creation } })); assert.deepEqual(extension.content.creation, creation);
       data(await proposals.accept(userId, extension.proposalId));
       error(await proposals.create(userId, { ...input([recordIds[0]!]), content: { ...input().content, creation: { ...creation, imageCount: 4 } } } as never), "INVALID_INPUT");

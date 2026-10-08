@@ -3,9 +3,22 @@ import type { DB } from "../../infrastructure/database/schema.js";
 import type { Cursor } from "./cursor.js";
 import type { Project, Proposal, ProposalContent, ProposalStatus, ProposalType } from "./project.js";
 export const projectEntity = (r: Omit<DB["projects"], "embedding">): Project => ({ projectId: r.project_id, userId: r.user_id, sessionId: r.session_id, title: r.title, summary: r.summary, coverMediaId: r.cover_media_id, content: r.content, status: r.status, version: r.version, createdAt: r.created_at, updatedAt: r.updated_at });
-export const proposalEntity = (r: DB["proposals"]): Proposal => ({ proposalId: r.proposal_id, userId: r.user_id, sessionId: r.session_id, type: r.type, targetProjectId: r.target_project_id, title: r.title, proposedSummary: r.proposed_summary, content: r.content as ProposalContent, status: r.status, resultProjectId: r.result_project_id, createdAt: r.created_at, updatedAt: r.updated_at, resolvedAt: r.resolved_at });
+const proposalContent = (value: unknown): ProposalContent => {
+  const raw = (value && typeof value === "object" ? value : {}) as Partial<ProposalContent>;
+  return {
+    reason: typeof raw.reason === "string" ? raw.reason : "",
+    idea: typeof raw.idea === "string" ? raw.idea : "",
+    plan: Array.isArray(raw.plan) ? raw.plan.filter((item): item is string => typeof item === "string") : [],
+    tags: Array.isArray(raw.tags) ? raw.tags.filter((item): item is string => typeof item === "string") : [],
+    ...(raw.creation ? { creation: raw.creation } : {}),
+  };
+};
+export const proposalEntity = (r: DB["proposals"]): Proposal => ({ proposalId: r.proposal_id, userId: r.user_id, sessionId: r.session_id, type: r.type, targetProjectId: r.target_project_id, title: r.title, proposedSummary: r.proposed_summary, content: proposalContent(r.content), status: r.status, resultProjectId: r.result_project_id, createdAt: r.created_at, updatedAt: r.updated_at, resolvedAt: r.resolved_at });
 export class ProjectRepository {
   constructor(readonly db: Kysely<DB>) {}
+  mediaReferences(userId: string) {
+    return this.db.selectFrom("projects").select(["cover_media_id", "content"]).where("user_id", "=", userId).execute();
+  }
   project(userId: string, id: string, lock = false) {
     const q = this.db.selectFrom("projects").selectAll().where("user_id", "=", userId).where("project_id", "=", id);
     return (lock ? q.forUpdate() : q).executeTakeFirst();
@@ -55,8 +68,8 @@ export class ProjectRepository {
   updateProject(userId: string, id: string, patch: Partial<DB["projects"]>) {
     return this.db.updateTable("projects").set({ ...patch, version: sql<number>`version + 1`, updated_at: new Date() }).where("user_id", "=", userId).where("project_id", "=", id).returningAll().executeTakeFirstOrThrow();
   }
-  resolveProposal(userId: string, id: string, status: "accepted" | "rejected", resultProjectId: string | null, now: Date) {
-    return this.db.updateTable("proposals").set({ status, result_project_id: resultProjectId, resolved_at: now, updated_at: now }).where("user_id", "=", userId).where("proposal_id", "=", id).returningAll().executeTakeFirstOrThrow();
+  resolveProposal(userId: string, id: string, status: "accepted" | "rejected", resultProjectId: string | null, now: Date, content?: ProposalContent) {
+    return this.db.updateTable("proposals").set({ status, result_project_id: resultProjectId, resolved_at: now, updated_at: now, ...(content ? { content } : {}) }).where("user_id", "=", userId).where("proposal_id", "=", id).returningAll().executeTakeFirstOrThrow();
   }
   async cleanupRecord(userId: string, recordId: string) {
     const linked = await this.db.selectFrom("record_links").select("outer_id").where("user_id", "=", userId).where("record_id", "=", recordId).where("type", "=", "project").execute();

@@ -88,7 +88,7 @@ Record Retrieval 是派生能力。Record 已经成功变成 `processed` 后，�
 
 ## 删除
 
-删除使用当前 `version` 进行乐观并发校验，并从主表硬删除 Record。删除会解除关联媒体的 `recordId` 占用标记、移除该 Record 的向量记忆，以及清除其作为来源的创作关联；媒体资产及其 OSS 对象保留，后续可由专门的媒体清理能力处理。已入队或执行中的后置任务只会匹配仍存在的 Record，因此不会写回已删除内容。
+删除使用当前 `version` 进行乐观并发校验，同事务硬删除 Record、清理 Proposal / Project 来源关联并使受影响 Project version 递增。媒体处理与 OSS 清理登记也在该事务内：独占媒体资产立即删除，被已有成果直接引用的媒体解除 Record 占用并保留，具体边界见 [Media 清理](media.md#record-删除与媒体清理)。Record 向量随主表行删除；提交后失效用户列表缓存。已入队或执行中的后置任务无法写回已删除 Record。删除不可恢复；重复删除返回 NOT_FOUND，客户端可按已删除处理。
 
 Record HTTP 返回不再生成额外 `media[]` 投影，也不会在读取路径查询 `media_assets`。媒体二进制访问按 block 的 `mediaId` 单独通过 [Media](media.md) 读取接口获取。
 

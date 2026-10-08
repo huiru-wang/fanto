@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { AgentRuntime } from "../agent/agent-runtime.js";
-import { runAgent } from "../agent/harness/run.js";
+import { runAgent, runAgentSkill } from "../agent/harness/run.js";
 import type { RecordService } from "../domain/records/index.js";
 import { logAgent, logError } from "../infrastructure/logging/logger.js";
 import { CreativeError, type CreativeAuthority } from "./model.js";
@@ -14,7 +14,7 @@ export class CreativeRunner {
   private ticking = false;
   private stopped = false;
   private work = new Map<AbortController, Promise<void>>();
-  constructor(private readonly service: CreativeService, private readonly records: RecordService, private readonly agent: AgentRuntime, private readonly config: CreativeRunnerConfig, private readonly run: typeof runAgent = runAgent) {}
+  constructor(private readonly service: CreativeService, private readonly records: RecordService, private readonly agent: AgentRuntime, private readonly config: CreativeRunnerConfig, private readonly run: typeof runAgent = runAgent, private readonly runSkill: typeof runAgentSkill = runAgentSkill) {}
   start() {
     this.stopped = false;
     this.timer = setInterval(() => void this.tick(), this.config.intervalMs);
@@ -83,7 +83,9 @@ export class CreativeRunner {
         heartbeat = setInterval(() => void repo.renew(role, row.run_id, token).then(ok => { if (!ok) controller.abort(); }).catch(() => controller.abort()), 20_000);
         timeout = setTimeout(() => { code = "CREATIVE_TIMEOUT"; controller.abort(); }, role === "proposal" ? this.config.proposalTimeoutMs : this.config.creatorTimeoutMs);
         if (role === "creator") await this.service.recoverImages({ userId: row.user_id, sessionId: session.id, creative, signal: controller.signal });
-        const output = await this.run(session, role === "proposal" ? "分析已注入上下文中的新 Record。先判断价值，再提炼创意和已有项目关联，只在有明确创作价值时调用 proposal_create；信息不足、主体不明确或素材不可用时返回 no_proposal，静默结束，不向用户提问。" : "执行用户已经接受的创作提议。读取授权记录和目标项目，复用已保存图片，完成角色扮演图文文章并调用 creation_publish。", controller.signal, { creative }, async () => {});
+        const output = role === "proposal"
+          ? await this.runSkill(session, "creative", "分析当前触发 Record；有明确创作价值时创建 Proposal，否则返回 no_proposal。全程静默，不向用户提问。", controller.signal, { creative }, async () => {})
+          : await this.run(session, "执行用户已经接受的创作提议。读取授权记录和目标项目，根据确认目标选择匹配的创作 Skill，复用已保存图片，完成成果并调用 creation_publish。", controller.signal, { creative }, async () => {});
         if ((await current())?.status === "completed") return;
         if (role === "proposal") {
           const result = assessment.safeParse(JSON.parse(output.trim().replace(/^```(?:json)?\s*|\s*```$/g, "")));

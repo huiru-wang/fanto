@@ -41,7 +41,7 @@ integration("Record → analysis → Proposal → acceptance → image → Markd
     return { status: response.status, body: await response.json() as any };
   };
   let targetProjectId: string | undefined, assessmentMode = "proposal", lastContext: CreativeContext | undefined;
-  const input = (recordId: string, mediaId: string): CreateProposalInput => ({ type: targetProjectId ? "extend" : "create", ...(targetProjectId ? { targetProjectId, proposedSummary: null } : { proposedSummary: "大观园游览中的红楼梦主题写真" }), title: "园林里的红楼梦", recordIds: [recordId], content: { reason: "地点与人物照片适合主题创作", idea: "保留人物身份，编辑一张主题照片，整理图文", plan: ["编辑照片", "撰写图文"], creation: { objective: "创作一张红楼梦主题照片并配文", context: "原记录为园林里的成年人物", constraints: ["保留身份与年龄，只调整服饰"], successCriteria: ["一张主题图片与真实配文"] } } });
+  const input = (recordId: string, mediaId: string): CreateProposalInput => ({ type: targetProjectId ? "extend" : "create", ...(targetProjectId ? { targetProjectId, proposedSummary: null } : { proposedSummary: "大观园游览中的红楼梦主题写真" }), title: "园林里的红楼梦", recordIds: [recordId], content: { reason: "地点与人物照片适合主题创作", idea: "把园林里的真实人物做成一页红楼主题写真。保留本人身份与年龄感，只转化服饰和古典氛围。", plan: ["保留本人｜脸部、年龄感和姿态不变", "进入红楼世界｜统一服饰与园林氛围", "完成主题写真｜形成一页可阅读作品"], tags: ["红楼入画", "古典写真", "大观园"], creation: { objective: "创作一张红楼梦主题照片并配文", context: "原记录为园林里的成年人物", constraints: ["保留：人物身份与年龄", "转化：红楼梦服饰与古典氛围"], successCriteria: ["一张主题图片与真实配文"] } } });
   const run: typeof runAgent = async (session, _message, signal, metadata) => {
     const context: CreativeContext = { userId: session.userId, sessionId: session.id, creative: metadata.creative, signal }; lastContext = context;
     const scope: any = await creative.context(context);
@@ -55,6 +55,9 @@ integration("Record → analysis → Proposal → acceptance → image → Markd
       await creative.createProposal(context, input(rs[0]!.id, block.mediaId));
       return "";
     }
+    if (scope.proposalId === proposalId) {
+      assert.ok(scope.creation.constraints?.includes("用户补充创作想法：不要文字，整体更温暖一点"));
+    }
     const refs = await creative.readRecords(context, { recordIds: scope.referenceRecordIds });
     const project: any = await creative.readProject(context, { action: "get", projectId: scope.projectId });
     const source = scope.executionPlan?.sourceMediaIds ?? refs.flatMap((r: any) => r.content.blocks.filter((b: any) => b.type === "image").map((b: any) => b.mediaId));
@@ -63,7 +66,7 @@ integration("Record → analysis → Proposal → acceptance → image → Markd
     await creative.publish(context, { expectedVersion: project.version, summary: "大观园园林中的成年人物红楼梦主题角色扮演写真图文，保留人物身份，以服饰和氛围变化延续主题。", markdown: `## 园林中的新故事\n\n![主题照片](fanto-media://${saved.mediaId})\n\n这是根据园林记录创作的一篇主题图文。` });
     return "";
   };
-  const runner = new CreativeRunner(creative, records, agent, { intervalMs: 10, workers: 1, proposalTimeoutMs: 10_000, creatorTimeoutMs: 10_000 }, run);
+  const runner = new CreativeRunner(creative, records, agent, { intervalMs: 10, workers: 1, proposalTimeoutMs: 10_000, creatorTimeoutMs: 10_000 }, run, (session, _skill, message, signal, metadata, emit) => run(session, message, signal, metadata, emit));
   let recordId: string, proposalId: string, projectId: string;
   const createRecord = async () => {
     const id = randomUUID(), now = new Date().toISOString(), key = `test/${id}.png`; objects.set(key, png);
@@ -91,7 +94,7 @@ integration("Record → analysis → Proposal → acceptance → image → Markd
       assert.equal((await request(`proposals/${proposalId}`)).body.result.sessionId, proposal.sessionId);
       assert.equal((await request(`agent/sessions/${proposal.sessionId}/history`)).status, 403);
       assert.equal((await request("agent/sessions", "POST", { agentId: "creator-agent" })).status, 403);
-      const accepted = await request(`proposals/${proposalId}/accept`, "POST"); assert.equal(accepted.status, 200); projectId = accepted.body.result.resultProjectId;
+      const accepted = await request(`proposals/${proposalId}/accept`, "POST", { userInput: "不要文字，整体更温暖一点" }); assert.equal(accepted.status, 200); projectId = accepted.body.result.resultProjectId;
       await waitFor(async () => (await creative.latest(userId, projectId))?.creation?.status === "completed");
       assert.equal(paidCalls, 1); assert.equal(downloads, 1); assert.equal(visionCalls, 1);
       const project = (await projects.find(userId, projectId))!; assert.match(project.content, /fanto-media:\/\//); assert.ok(project.coverMediaId); assert.equal(project.version, 2);

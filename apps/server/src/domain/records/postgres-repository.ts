@@ -13,7 +13,7 @@ const ext = (value: string | null): ExtData => value ? JSON.parse(value) as ExtD
 const vectorLiteral = (embedding: number[]) => JSON.stringify(embedding);
 
 export class PostgresRecordRepository implements RecordRepository {
-  constructor(private db: Kysely<DB>, private readonly cleanupLinks: (userId: string, recordId: string, transaction: Transaction<DB>) => Promise<void>, private readonly onSaved?: RecordSavedHook) {}
+  constructor(private db: Kysely<DB>, private readonly cleanupLinks: (userId: string, recordId: string, transaction: Transaction<DB>) => Promise<void>, private readonly onSaved?: RecordSavedHook, private readonly cleanupMedia?: (userId: string, ids: string[], transaction: Transaction<DB>) => Promise<void>) {}
 
   async create(input: { userId: string; source?: string; eventAt: string; value: SaveRecordContent }): Promise<Record | "invalid_media" | "invalid_content"> {
     return this.db.transaction().execute(async trx => {
@@ -73,9 +73,10 @@ export class PostgresRecordRepository implements RecordRepository {
       if (!row) return "not_found";
       if (row.version !== expectedVersion) return "conflict";
       const record = this.toEntity(row);
-      const now = nowIso();
-      for (const block of record.content.blocks) if (block.type !== "location") await this.unlink(trx, userId, block.mediaId, now);
       await this.cleanupLinks(userId, id, trx);
+      const ids = record.content.blocks.flatMap(block => block.type === "location" ? [] : [block.mediaId]);
+      if (this.cleanupMedia) await this.cleanupMedia(userId, ids, trx);
+      else for (const mediaId of ids) await this.unlink(trx, userId, mediaId, nowIso());
       await trx.deleteFrom("records").where("record_id", "=", id).where("user_id", "=", userId).where("version", "=", expectedVersion).execute();
       return record;
     });
@@ -130,7 +131,7 @@ export class PostgresRecordRepository implements RecordRepository {
 
   private async blocks(trx: Kysely<DB>, userId: string, value: SaveRecordContent, recordId?: string): Promise<RecordContent["blocks"] | "invalid_media" | "invalid_content"> {
     const ids = value.media.map(item => item.mediaId);
-    const assets = ids.length ? await trx.selectFrom("media_assets").selectAll().where("user_id", "=", userId).where("media_id", "in", ids).execute() : [];
+    const assets = ids.length ? await trx.selectFrom("media_assets").selectAll().where("user_id", "=", userId).where("media_id", "in", ids).orderBy("media_id").forUpdate().execute() : [];
     if (assets.length !== ids.length || assets.some(asset => asset.status !== "ready" || ext(asset.ext_data).recordId && ext(asset.ext_data).recordId !== recordId)) return "invalid_media";
     const byId = new Map(assets.map(asset => [asset.media_id, asset]));
     const mediaBlocks: Array<ImageContentBlock | AudioContentBlock> = value.media.map(item => {

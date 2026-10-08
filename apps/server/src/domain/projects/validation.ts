@@ -7,11 +7,13 @@ export const creationSchema = z.object({
   constraints: z.array(text(1000)).max(20).optional(),
   successCriteria: z.array(text(1000)).max(20).optional(),
 }).strict();
+const proposalTagsSchema = z.array(text(12)).min(2).max(4).transform(tags => [...new Set(tags)]).refine(tags => tags.length >= 2);
 export const createProposalSchema = z.object({
   type: z.enum(["create", "extend"]), targetProjectId: uuid.nullable().optional(), title: text(200),
   proposedSummary: text(2000).nullable().optional(), recordIds: z.array(uuid).min(1).max(100).transform(ids => [...new Set(ids)]),
-  content: z.object({ reason: text(10000), idea: text(10000), plan: z.array(text(2000)).max(20), creation: creationSchema.optional() }).strict(),
+  content: z.object({ reason: text(10000), idea: text(1000), plan: z.array(text(500)).length(3), tags: proposalTagsSchema, creation: creationSchema.optional() }).strict(),
 }).strict().refine(v => v.type === "create" ? v.targetProjectId == null && !!v.proposedSummary : !!v.targetProjectId && v.proposedSummary == null);
+export const acceptProposalSchema = z.object({ userInput: text(500).optional() }).strict();
 export const patchSchema = z.object({ title: text(200).optional(), summary: text(2000).optional(), coverMediaId: uuid.nullable().optional(), content: z.string().optional() }).strict().refine(v => Object.keys(v).length > 0);
 export const versionSchema = z.number().int().positive();
 export const proposalListSchema = paginationSchema.extend({ type: z.enum(["create", "extend"]).optional(), status: z.enum(["pending", "accepted", "rejected"]).optional(), targetProjectId: uuid.optional() });

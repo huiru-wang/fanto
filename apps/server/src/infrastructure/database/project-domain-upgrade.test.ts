@@ -21,8 +21,8 @@ integration("migrations support fresh databases and preserve legacy Project data
     // Reproduce the deployed migration history and old Project schema.
     await sql`DROP TABLE record_links; DROP TABLE proposals; DROP TABLE projects;
       DROP TABLE creation_image_steps; DROP TABLE creation_runs; DROP TABLE proposal_runs;
-      DROP TABLE memories; ALTER TABLE records DROP COLUMN embedding;
-      DELETE FROM kysely_migration WHERE name IN ('zzzzz_memory_schema', 'zzzzzz_creative_runtime', 'zzzzzzz_project_domain_upgrade', 'zzzzzzzz_project_summary_embedding', 'zzzzzzzzz_proposal_creation_goal');`.execute(db);
+      DROP TABLE memories; DROP TABLE media_object_deletions; ALTER TABLE records DROP COLUMN embedding;
+      DELETE FROM kysely_migration WHERE name IN ('zzzzz_memory_schema', 'zzzzzz_creative_runtime', 'zzzzzzz_project_domain_upgrade', 'zzzzzzzz_project_summary_embedding', 'zzzzzzzzz_proposal_creation_goal', 'zzzzzzzzzz_media_object_deletions');`.execute(db);
     await legacyUp(db);
     const userId = randomUUID(), otherId = randomUUID(), recordId = randomUUID(), mediaId = randomUUID();
     const now = new Date();

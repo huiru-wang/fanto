@@ -24,7 +24,7 @@ integration("Project summary vectors: ranking, isolation, updates, failure atomi
     const records = RecordService.create(db, new RecordPostprocessQueue()), media = MediaService.create(db, {} as never);
     const projects = ProjectService.create(db, records, media, embeddings), proposals = ProposalService.create(db, records, media, embeddings);
     const r = await records.create(owner, { text: "大观园游览", media: [], eventAt: now.toISOString() }); assert.equal(r.kind, "ok"); if (r.kind !== "ok") return;
-    const make = async (summary: string) => value(await proposals.create(owner, { type: "create", title: summary, proposedSummary: summary, recordIds: [r.record.id], content: { reason: "主题创作", idea: "保存经历", plan: [] } }));
+    const make = async (summary: string) => value(await proposals.create(owner, { type: "create", title: summary, proposedSummary: summary, recordIds: [r.record.id], content: { reason: "主题创作", idea: "把这次真实经历整理成一个可继续的作品。", plan: ["保留经历｜使用真实记录", "整理主题｜突出核心线索", "形成作品｜沉淀为可继续成果"], tags: ["经历成章", "这一页"] } }));
     const p = await make("大观园红楼梦角色扮演写真图文");
     const accepted = value(await proposals.accept(owner, p.proposalId)), id = accepted.resultProjectId;
     const before = await db.selectFrom("projects").selectAll().where("project_id", "=", id).executeTakeFirstOrThrow();

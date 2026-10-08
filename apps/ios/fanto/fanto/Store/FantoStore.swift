@@ -27,6 +27,12 @@ final class FantoStore {
     var projectLoadState: ProjectLoadState = .idle
     var proposalLoadState: ProjectLoadState = .idle
     var projectActionError: String?
+    var recordActionError: String?
+    private(set) var deletingRecordIDs = Set<String>()
+    private var deletedRecordIDs = Set<String>()
+    private var dataGeneration = UUID()
+    private var projectRequestID: UUID?
+    private var proposalRequestID: UUID?
 
     private let recordSnapshotStore: RecordSnapshotStore
     private var snapshotUserID: String?
@@ -44,21 +50,33 @@ final class FantoStore {
     }
 
     func loadProjects() async {
+        let requestID = UUID()
+        projectRequestID = requestID
+        let previousState = projectLoadState
         projectLoadState = .loading
         do {
             var cursor: String?
             var loaded: [Project] = []
             repeat {
+                try Task.checkCancellation()
                 let page = try await FantoAPIClient.shared.fetchProjects(status: .active, cursor: cursor)
                 loaded += page.projects
                 cursor = page.hasMore ? page.nextCursor : nil
             } while cursor != nil
+            try Task.checkCancellation()
+            guard projectRequestID == requestID else { return }
             var seen = Set<String>()
             projects = loaded.filter { seen.insert($0.id).inserted }
             projectLoadState = .loaded
         } catch {
+            guard projectRequestID == requestID else { return }
+            if isCancellation(error) {
+                projectLoadState = previousState == .loading ? .idle : previousState
+                return
+            }
             projectLoadState = .failed(error.localizedDescription)
         }
+        guard !Task.isCancelled else { return }
         await loadProposals()
     }
 
@@ -67,27 +85,90 @@ final class FantoStore {
     }
 
     func loadProposals(silent: Bool = false) async {
-        if !silent { proposalLoadState = .loading }
+        let requestID = UUID()
+        proposalRequestID = requestID
+        let previousState = proposalLoadState
+        if !silent || previousState != .loaded { proposalLoadState = .loading }
         do {
             var cursor: String?
             var loaded: [Proposal] = []
             repeat {
+                try Task.checkCancellation()
                 let page = try await FantoAPIClient.shared.fetchProposals(cursor: cursor)
                 loaded += page.proposals
                 cursor = page.hasMore ? page.nextCursor : nil
             } while cursor != nil
+            try Task.checkCancellation()
+            guard proposalRequestID == requestID else { return }
             var seen = Set<String>()
             proposals = loaded.filter { seen.insert($0.id).inserted }
             proposalLoadState = .loaded
         } catch {
-            if !silent { proposals = [] }
+            guard proposalRequestID == requestID else { return }
+            if isCancellation(error) || (silent && previousState == .loaded) {
+                proposalLoadState = previousState == .loading ? .idle : previousState
+                return
+            }
             proposalLoadState = .failed(error.localizedDescription)
         }
     }
 
-    func accept(_ proposal: Proposal) async -> Bool {
+    private func isCancellation(_ error: Error) -> Bool {
+        Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled
+    }
+
+    func deleteRecord(_ record: Record) async {
+        guard !deletingRecordIDs.contains(record.id) else { return }
+        let generation = dataGeneration
+        deletingRecordIDs.insert(record.id)
+        recordActionError = nil
+        defer { if generation == dataGeneration { deletingRecordIDs.remove(record.id) } }
         do {
-            _ = try await FantoAPIClient.shared.acceptProposal(id: proposal.id)
+            let version: Int
+            if let currentVersion = record.version {
+                version = currentVersion
+            } else {
+                let current = try await FantoAPIClient.shared.fetchRecord(id: record.id)
+                guard current.text == record.text, current.eventAt == record.eventAt,
+                      current.location == record.location, current.media == record.media else {
+                    recordActionError = "记录已发生变化，请刷新后再确认删除。"
+                    await loadRecords()
+                    return
+                }
+                guard let currentVersion = current.version else { throw FantoAPIError.invalidResponse }
+                version = currentVersion
+            }
+            try Task.checkCancellation()
+            guard generation == dataGeneration else { return }
+            try await FantoAPIClient.shared.deleteRecord(id: record.id, expectedVersion: version)
+        } catch {
+            guard generation == dataGeneration else { return }
+            let errorCode = (error as? FantoAPIError)?.code
+            if errorCode == "NOT_FOUND" {
+                // Already deleted on another device: converge the local snapshot.
+            } else {
+                if !isCancellation(error) {
+                    if errorCode == "VERSION_CONFLICT" {
+                        recordActionError = "记录已发生变化，请刷新后再确认删除。"
+                        await loadRecords()
+                    } else {
+                        recordActionError = error.localizedDescription
+                    }
+                }
+                return
+            }
+        }
+        guard generation == dataGeneration else { return }
+        deletedRecordIDs.insert(record.id)
+        records.removeAll { $0.id == record.id }
+        await saveRecordSnapshot()
+        guard generation == dataGeneration else { return }
+        await loadProjects()
+    }
+
+    func accept(_ proposal: Proposal, userInput: String? = nil) async -> Bool {
+        do {
+            _ = try await FantoAPIClient.shared.acceptProposal(id: proposal.id, userInput: userInput)
             proposals.removeAll { $0.id == proposal.id }
             await loadProjects()
             return true
@@ -110,17 +191,23 @@ final class FantoStore {
 
     func loadRecords() async {
         guard recordLoadState != .loading, !isLoadingMoreRecords else { return }
+        let generation = dataGeneration
+        let previousState = recordLoadState
         if records.isEmpty { recordLoadState = .loading }
         recordLoadMoreError = nil
         recordNextCursor = nil
 
         do {
             let page = try await FantoAPIClient.shared.fetchRecords()
+            try Task.checkCancellation()
+            guard generation == dataGeneration else { return }
             records = orderedUniqueRecords(page.records)
             recordNextCursor = page.nextCursor
             recordLoadState = .loaded(hasMore: page.hasMore)
             await saveRecordSnapshot()
         } catch {
+            guard generation == dataGeneration else { return }
+            if isCancellation(error) { recordLoadState = previousState; return }
             recordLoadState = records.isEmpty ? .failed(error.localizedDescription) : .loaded(hasMore: false)
         }
     }
@@ -132,17 +219,21 @@ final class FantoStore {
               !isLoadingMoreRecords
         else { return }
 
+        let generation = dataGeneration
         isLoadingMoreRecords = true
         recordLoadMoreError = nil
-        defer { isLoadingMoreRecords = false }
+        defer { if generation == dataGeneration { isLoadingMoreRecords = false } }
 
         do {
             let page = try await FantoAPIClient.shared.fetchRecords(cursor: recordNextCursor)
+            try Task.checkCancellation()
+            guard generation == dataGeneration else { return }
             records = orderedUniqueRecords(records + page.records)
             self.recordNextCursor = page.nextCursor
             recordLoadState = .loaded(hasMore: page.hasMore)
             await saveRecordSnapshot()
         } catch {
+            guard generation == dataGeneration, !isCancellation(error) else { return }
             recordLoadMoreError = error.localizedDescription
         }
     }
@@ -157,12 +248,18 @@ final class FantoStore {
         guard snapshotUserID != userID else { return }
         snapshotUserID = userID
         let cachedRecords = await recordSnapshotStore.load(for: userID)
-        guard !cachedRecords.isEmpty else { return }
+        guard snapshotUserID == userID, !cachedRecords.isEmpty else { return }
         records = orderedUniqueRecords(cachedRecords)
         if recordLoadState == .idle { recordLoadState = .loaded(hasMore: false) }
     }
 
     func resetUserData() {
+        dataGeneration = UUID()
+        projectRequestID = nil
+        proposalRequestID = nil
+        deletingRecordIDs = []
+        deletedRecordIDs = []
+        recordActionError = nil
         if let snapshotUserID {
             Task { [recordSnapshotStore] in await recordSnapshotStore.clear(for: snapshotUserID) }
         }
@@ -183,7 +280,7 @@ final class FantoStore {
         var seen = Set<String>()
         return candidates
             .sorted { $0.eventAt == $1.eventAt ? $0.id > $1.id : $0.eventAt > $1.eventAt }
-            .filter { seen.insert($0.id).inserted }
+            .filter { !deletedRecordIDs.contains($0.id) && seen.insert($0.id).inserted }
     }
 
     private func saveRecordSnapshot() async {

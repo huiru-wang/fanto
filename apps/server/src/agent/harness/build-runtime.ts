@@ -16,6 +16,7 @@ export type HarnessRuntime = {
   harness: AgentHarness<ExecutionToolContext>;
   tools: FantoTool[];
   prompt(query: string, context: Context): ReturnType<AgentLane["prompt"]>;
+  skill(name: string, additionalInstructions: string | undefined, context: Context): ReturnType<AgentLane["skill"]>;
   readRecentMessages(): Promise<ContextMessage[]>;
   appendCustomEntry(type: string, data: JsonValue | undefined): Promise<string>;
   abort(): Promise<void>;
@@ -31,15 +32,17 @@ export type HarnessDependencies = {
 
 export async function buildRuntime(session: Session, definition: AgentDefinition, workspace: string, dependencies: HarnessDependencies): Promise<HarnessRuntime> {
   const model = dependencies.models.getModel(definition.provider, definition.model);
-  if (!model) throw new Error(`Unknown model: ${definition.provider}/${definition.model}`);
-  const tools = createTools(definition.tools, workspace, dependencies.fanto, dependencies.taskAgents);
+  if (!model) throw new Error("Unknown model: " + definition.provider + "/" + definition.model);
+  const loadedSkills = dependencies.skills.load(definition.skills);
+  const tools = createTools(definition.tools, workspace, dependencies.fanto, dependencies.taskAgents, dependencies.skills, definition.skills);
+  const skillIndex = formatSkillIndex(loadedSkills);
   const systemPrompt = createSystemPrompt({
-    template: definition.systemPrompt + (definition.id === "creator-agent" ? "\n\n" + dependencies.skills.load(definition.skills).map(s => s.content).join("\n\n") : ""),
+    template: definition.systemPrompt + (skillIndex ? "\n\n" + skillIndex : ""),
     providers: createContextProviders({ fanto: dependencies.fanto }),
   });
   const { harness } = await AgentHarness.create<ExecutionToolContext>({
     session, models: dependencies.models, model, systemPrompt: systemPrompt.resolve, tools, activeToolNames: tools.map(tool => tool.name),
-    toolContext: { env: new NodeExecutionEnv({ cwd: workspace, shellEnv: {} }) }, resources: { skills: dependencies.skills.load(definition.skills) },
+    toolContext: { env: new NodeExecutionEnv({ cwd: workspace, shellEnv: {} }) }, resources: { skills: loadedSkills },
     compaction: definition.compaction, streamOptions: { timeoutMs: 120_000, maxRetries: 0 },
   }, TODO_CONTEXT);
   installHarnessHooks(harness, { workspace, systemPrompt, transformContext: createTransformContext() });
@@ -50,6 +53,7 @@ export async function buildRuntime(session: Session, definition: AgentDefinition
     harness,
     tools,
     prompt: (query, context) => lane.prompt(query, undefined, context),
+    skill: (name, additionalInstructions, context) => lane.skill(name, additionalInstructions, context),
     async readRecentMessages() {
       const entries = await lane.findEntries({ type: "message", order: "newestFirst", limit: 12 }, TODO_CONTEXT);
       return entries.reverse().flatMap(entry => {
@@ -62,4 +66,24 @@ export async function buildRuntime(session: Session, definition: AgentDefinition
     async abort() { await lane.abort(TODO_CONTEXT); },
     close: () => harness.close(TODO_CONTEXT),
   };
+}
+
+function formatSkillIndex(skills: readonly { name: string; description: string; filePath: string; disableModelInvocation?: boolean }[]): string {
+  const visible = skills.filter(skill => !skill.disableModelInvocation);
+  if (!visible.length) return "";
+  const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+  const lines = [
+    "The following skills provide specialized instructions for specific tasks.",
+    "When a task matches a skill, read its full SKILL.md with skill_read before applying it unless the server explicitly invoked that skill.",
+    "<available_skills>",
+  ];
+  for (const skill of visible) {
+    lines.push("  <skill>");
+    lines.push("    <name>" + escape(skill.name) + "</name>");
+    lines.push("    <description>" + escape(skill.description) + "</description>");
+    lines.push("    <location>" + escape(skill.filePath) + "</location>");
+    lines.push("  </skill>");
+  }
+  lines.push("</available_skills>");
+  return lines.join("\n");
 }

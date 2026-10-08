@@ -6,8 +6,8 @@ import type { RecordService } from "../records/index.js";
 import type { MediaService } from "../media/index.js";
 import { ProjectRepository, proposalEntity } from "./repository.js";
 import { decodeCursor, page } from "./cursor.js";
-import { createProposalSchema, paginationSchema, proposalListSchema, uuid } from "./validation.js";
-import { failure, success, type CreateProposalInput, type Pagination, type ProposalStatus, type ProposalType, type TransactionOptions } from "./project.js";
+import { acceptProposalSchema, createProposalSchema, paginationSchema, proposalListSchema, uuid } from "./validation.js";
+import { failure, success, type AcceptProposalInput, type CreateProposalInput, type Pagination, type ProposalContent, type ProposalStatus, type ProposalType, type TransactionOptions } from "./project.js";
 
 export class ProposalService {
   private constructor(private readonly db: Kysely<DB>, private readonly records: RecordService, private readonly media: MediaService, private readonly embeddings: ProjectEmbeddingProvider) {}
@@ -26,7 +26,7 @@ export class ProposalService {
         if (target.status !== "active") return failure("INVALID_STATE");
       }
       const now = new Date(), id = randomUUID();
-      const row = await repo.insertProposal({ session_id: options.sessionId ?? null, proposal_id: id, user_id: userId, type: value.type, target_project_id: value.targetProjectId ?? null, title: value.title, proposed_summary: value.proposedSummary ?? null, content: { reason: value.content.reason, idea: value.content.idea, plan: value.content.plan, ...(value.content.creation ? { creation: value.content.creation } : {}) }, status: "pending", result_project_id: null, created_at: now, updated_at: now, resolved_at: null });
+      const row = await repo.insertProposal({ session_id: options.sessionId ?? null, proposal_id: id, user_id: userId, type: value.type, target_project_id: value.targetProjectId ?? null, title: value.title, proposed_summary: value.proposedSummary ?? null, content: { reason: value.content.reason, idea: value.content.idea, plan: value.content.plan, tags: value.content.tags, ...(value.content.creation ? { creation: value.content.creation } : {}) }, status: "pending", result_project_id: null, created_at: now, updated_at: now, resolved_at: null });
       await repo.addLinks(userId, "proposal", id, records, now);
       return success(proposalEntity(row));
     };
@@ -67,13 +67,28 @@ export class ProposalService {
       return success({ ...result, data: await this.records.findMany(userId, result.data.map(r => r.record_id), { transaction: trx }) });
     });
   }
-  async accept(userId: string, id: string) {
-    if (!uuid.safeParse(id).success) return failure("INVALID_INPUT");
+  async accept(userId: string, id: string, input: AcceptProposalInput = {}) {
+    const parsed = acceptProposalSchema.safeParse(input);
+    if (!uuid.safeParse(id).success || !parsed.success) return failure("INVALID_INPUT");
     return this.db.transaction().execute(async trx => {
       const repo = new ProjectRepository(trx), row = await repo.proposal(userId, id, true);
       if (!row) return failure("NOT_FOUND");
       if (row.status === "accepted") return success({ proposal: proposalEntity(row), resultProjectId: row.result_project_id!, addedRecordCount: 0 });
       if (row.status !== "pending") return failure("INVALID_STATE");
+      const current = proposalEntity(row);
+      let acceptedContent: ProposalContent | undefined;
+      if (parsed.data.userInput) {
+        if (!current.content.creation) return failure("INVALID_INPUT");
+        const constraints = current.content.creation.constraints ?? [];
+        if (constraints.length >= 20) return failure("INVALID_INPUT");
+        acceptedContent = {
+          ...current.content,
+          creation: {
+            ...current.content.creation,
+            constraints: [...constraints, `用户补充创作想法：${parsed.data.userInput}`],
+          },
+        };
+      }
       const links = await repo.links(userId, "proposal", id);
       // Record -> Project lock order matches deletion. Missing Records are deliberately skipped.
       const records = await this.records.findMany(userId, links.map(r => r.record_id), { transaction: trx, lock: true });
@@ -91,7 +106,7 @@ export class ProposalService {
       }
       const addedRecordCount = await repo.addLinks(userId, "project", projectId, records, now);
       if (row.type === "extend" && addedRecordCount > 0) await repo.updateProject(userId, projectId, {});
-      const resolved = await repo.resolveProposal(userId, id, "accepted", projectId, now);
+      const resolved = await repo.resolveProposal(userId, id, "accepted", projectId, now, acceptedContent);
       return success({ proposal: proposalEntity(resolved), resultProjectId: projectId, addedRecordCount });
     });
   }

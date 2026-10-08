@@ -9,7 +9,7 @@ export interface ProposalCreation {
   constraints?: string[];
   successCriteria?: string[];
 }
-export interface ProposalContent { reason: string; idea: string; plan: string[]; creation?: ProposalCreation }
+export interface ProposalContent { reason: string; idea: string; plan: string[]; tags: string[]; creation?: ProposalCreation }
 export interface Proposal {
   proposalId: string; userId: string; sessionId: string | null; type: ProposalType; targetProjectId: string | null;
   title: string; proposedSummary: string | null; content: ProposalContent; status: ProposalStatus;
@@ -30,5 +30,6 @@ export type CreateProposalInput = {
   type: ProposalType; targetProjectId?: string | null; title: string; proposedSummary?: string | null;
   recordIds: string[]; content: ProposalContent;
 };
+export type AcceptProposalInput = { userInput?: string };
 export const success = <T>(data: T): DomainResult<T> => ({ kind: "ok", data });
 export const failure = (code: DomainErrorCode): DomainResult<never> => ({ kind: "error", code });
