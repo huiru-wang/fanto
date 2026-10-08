@@ -38,7 +38,7 @@ content 为数据库中的 UTF-8 文本，最大 2 MiB；只将媒体二进制�
 
 更新使用 Markdown / HTML / CSS 语法树校验实际图片与样式 url 引用，排除普通代码示例。资源必须为同用户 ready Image；不接受外部图片、签名地址、Base64、本地路径、脚本、表单、iframe 或外部 CSS。静态 HTML 元素、属性和 CSS 规则使用白名单。`listReferencedMediaIds` 返回正文与封面的稳定媒体引用；Record 删除会移除独占媒体并可靠清理 OSS，仍被项目直接引用的资源保留，见 [媒体清理](media.md#record-删除与媒体清理)。
 
-iOS 使用 Swift Markdown 解析器原生渲染正文、图片组、列表、引用、代码及表格；html-preview 使用非持久化 WebView，禁用 JavaScript、原生桥接和导航，CSP 限制资源来源。仅内部 fanto-media 图片请求通过受保护媒体接口换取签名 URL，失败后刷新一次；普通围栏降级为源码。H5 当前无 Project 页面。
+iOS 使用 Swift Markdown 解析器原生渲染正文、图片组、列表、引用、代码及表格；html-preview 使用非持久化 WebView，禁用 JavaScript、原生桥接和导航，CSP 限制资源来源。仅内部 fanto-media 图片请求通过受保护媒体接口换取签名 URL，失败后刷新一次；普通围栏降级为源码。H5 已提供脉络列表、pending Proposal 详情与接受 / 拒绝、附加创作想法、参考记录分页、Project 详情、创作进度与归档；正文复用 Markdown 媒体解析，html-preview 采用禁用脚本、无同源权限并限制资源的 sandbox iframe。
 
 ## 创作契约边界
 
