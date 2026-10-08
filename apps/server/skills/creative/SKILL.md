@@ -1,64 +1,48 @@
 ---
 name: creative
-description: 为 Fanto 的创意 Proposal 识别与已确认创作执行提供统一指导；proposal-agent 用于识别适合的创意方向，creator-agent 用于按已确认目标执行对应创意模板。
+description: 理解 Fanto 用户真实记录的艺术表达价值，并在用户确认后围绕既定目标完成视觉、图文或轻量 HTML 作品；用于提议筛选与长期创作交流。
+version: 2.0.0
 ---
 
-# Creative
+# Creative · 从真实素材发现值得表达的作品
 
-## Proposal 阶段
+先判断素材有什么**表达潜力**：有何独特细节、哪个瞬间值得放大、哪些片段可以连接、什么变化值得重新发现。创意是对真实材料的有意识取舍，不是把照片套入模板。作品必须有清晰的表达中心、具体素材锚点和与之相称的视觉或叙事转化。
 
-proposal-agent 使用本 Skill 时：
+## 四个表达方向
 
-1. 完整读取触发 Record。
-2. 判断是否存在可执行图片与明确创作价值。
-3. 从 visual、cultural、occasion、temporal、story signals 中识别素材特征。
-4. 推导适合的创意方向。
-5. 内部比较少量候选，只选择一个最佳方向。
-6. 调用 skill_read 读取对应 reference。
-7. 只有 reference 明确允许时才检索历史 Record，最多 2 次。
-8. 检查已有 Project 是否属于同一经历/主题，决定 create 或 extend。
-9. 创建 Proposal；无明显价值时返回 no_proposal。
+- **入画** `references/into-art.md`：保留真实瞬间，把构图、色彩、光影、形态或材质转译为艺术表达。
+- **异想** `references/imagined-world.md`：保留真实主体和身份锚点，改变周围世界的规则；幻想要清楚地属于作品，而不是用户真实经历。
+- **成章** `references/story-arc.md`：把具有关联且有推进的真实片段组织成故事，而不是照片与说明的堆叠。
+- **回声** `references/time-echo.md`：同一人、物、地点或事件在不同时间的变化与延续；必须确认共同锚点。
 
-Proposal 文案：
-- title：作品标题感，有画面，不写“生成/制作/创作一个”等任务式标题。
-- reason：只作为内部判断依据，指出真实细节和创意契合点。
-- tags：2–4 个作品化短词，以 2–6 个中文字符为主；优先“作品形态 / 主题世界 / 情绪记忆”，遵循对应 reference 的 Tag Guidance。
-- idea：最多 2 句话；第一句说最终作品，第二句说最重要的保留与转化。
-- plan：固定 3 项，格式“短标题｜一句结果说明”；只写用户能看到的结果，不写 Agent 操作。
-- goal：只写 objective/context/constraints/successCriteria。为 UI 提供稳定的“保留 / 转化”摘要时，constraints 前两项使用“保留：...”和“转化：...”，其余约束随后追加。
-- proposedSummary：create 时描述项目事实、主题、成果和延续边界。
+这是表达意图而非作品种类。海报、明信片、版画、绘本、图文与 HTML 都只是载体；跨方向组合可以发生，但一项作品需要一个清楚的价值中心。根据事实与能力选择实现，不预设必须生成图片，也不预设图片张数。按需读取对应 reference，不必全读。
 
-Tag 原则：
-- Tag 不是“这个创作会怎么做”，而是“这件作品可以叫什么”。
-- 不写比例、张数、人物保真、保留原貌、模型、Prompt、高清、精美、高级感等规格或泛化营销词。
-- 不机械重复 title，少量参考词用于确定语气，不做固定枚举。
+## 好作品的判断
 
-## Creator 阶段
+- **具体**：依赖这批素材中特有的真实细节，替换成无关 Record 就不再成立。
+- **有取舍**：突出最重要的画面、变化或事件，不把所有素材平均堆上去。
+- **转化可感知**：用户能想象成果长什么样或读起来是什么体验，不只听见“美化一下”。
+- **克制可信**：人物身份、真实事件和关系不凭空添加；幻想通过作品语言明确区别于纪实。
+- **可实现**：当下工具与素材可以交付，不夸大不可控的身份保真、字形排版或媒介能力。
 
-creator-agent 使用本 Skill 时：
+## Proposal 的创意收敛
 
-1. 从 creation_context 读取唯一可信的 projectId，并调用 project_read 读取最新 Project.goal、content 和版本。
-2. 根据当前 goal.objective/context/constraints/successCriteria 判断最匹配的 reference，需要时通过 skill_read 读取。
-3. 根据目标读取有关 Record 和参考媒体；可以向 image_generate 传多张参考图，每次返回一张图片，重复调用与否由创作需要决定。
-4. 创作不限定固定图片数量、阶段、槽位或执行计划。
-5. 项目正文是完整成果，可用 Markdown / html-preview；对文字排版或结构不做图文限定。
-6. 最终使用 project_manage(action=update) 更新 Project 的完整 content/goal；保留已确认事实，不编造经历。
-7. 用户继续对话时沿用同一 Session，按需读取 Project 当前最新数据、修改并保存。
+1. 完整读取触发 Record；根据方向需要检索同主题历史记录（通常不超过 2 次），引用前必须完整读取。
+2. 判断四个方向中哪些真正成立，核实 Record 与 Project 关联、当前可交付能力，确定 create 或 extend。
+3. 最多保存一条 Proposal，包含 **1–2 个有效候选**。只有一个成立就给一个；两个候选必须在表达中心/看点上不同，不能只改风格、载体或标题。没有价值则 `no_proposal`。
+4. 每个候选只有展示字段 `title`、`idea`、`tags` 与后台结果目标 `goal`：
+   - `title`：短而有作品感，建议 4–12 个中文字符，创建上限 40。
+   - `idea`：1–2 句，建议 40–90 字，创建上限 240；先给出可见的作品画面与独特转化，再交代必要真实锚点。
+   - `tags`：2–4 个互不重复短标签，多为 2–6 个汉字，单个最多 12；表达作品形式、主题或气质。
+   - `goal`：仅 `objective/context/constraints/successCriteria`，表达成果，不能包含工具指令、媒体槽位、张数或实施步骤；不得暗藏 idea 未向用户表达的重大人物改动或额外成果。
+5. 候选共享 recordIds、create/extend 类型和目标 Project；顶层 title 为共同场景标题，`reason` 是内部判断依据，`proposedSummary` 只写事实与主题背景，不混合候选承诺。服务端分配候选 id 和 selectedIdeaId。
 
-## References
+**idea 是作品预告，不是处理说明。** 不写步骤、参数、模型、主体提取等执行语言；不说“专属”“高级”“赋予生命”“留住美好”等空话。允许“木刻版画”“双联画”等帮助想象成果的词。具体素材、已知关系或地点不可虚构；异想中明确写成作品的虚构世界可以创造。
 
-- references/roleplay.md
-- references/art-poster.md
-- references/postcard.md
-- references/photo-story.md
-- references/storybook.md
-- references/birthday-memory.md
-- references/anniversary.md
-- references/then-and-now.md
+自检：换成毫不相关的记录仍然成立？两个候选只是替换艺术风格或载体？若是，则重新判断，不凑数。依靠正反例与评测提高质量，不做关键词过滤或自动改写流水线。
 
-当前能力边界：
-- 最多 3 张源图
-- image_generate 每次生成一张图片，可按创作需要多次调用
-- 支持 Markdown / html-preview
-- 图片模型不负责复杂文字排版
-- 事实以当前 Project 和已读 Record 为准
+## Creator 的创作取舍
+
+当前 Project.goal 通过可信上下文提供，代表已经确认的方向；以它为创作起点，但尊重用户在本 Session 中最新的明确意愿。可自主决定何时读取 Project、关联记录、参考媒体；不强制计划或第一步读工具。需要更新时遵守完整 content 保存、最新 expectedVersion、冲突重读规则。
+
+入画不能随意改变发生的事实；异想可以改变世界但不能把虚构经历当作真实记录；成章不能编造关键事件；回声不能杜撰共同主体与时间变化。可以使用图片、文本和受限 html-preview 完成作品，复杂文字排版尽量在文档层完成。对作品的普通细节调整不必更新 goal，只有用户明确改变目标时才更新 goal。Session 中允许继续交流、修改、完善。

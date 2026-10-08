@@ -16,6 +16,16 @@ export function createProjectSessionRoutes(projects: ProjectService, agent: Agen
     if(!project?.sessionId) return null;
     return project;
   };
+  app.post("/projects/:id/session/start", async c => {
+    const userId = requireUserId(c.req.raw), id = c.req.param("id");
+    const project = await projects.find(userId, id);
+    if (!project) return c.json({success:false,result:null,errorCode:"NOT_FOUND"},404);
+    if (project.status !== "active") return c.json({success:false,result:null,errorCode:"INVALID_STATE"},409);
+    try {
+      const sessionId = await runner.startAcceptedProject(userId, id);
+      return c.json({success:true,result:{projectId:id,sessionId},errorCode:null,errorMsg:null});
+    } catch { return c.json({success:false,result:null,errorCode:"PROJECT_SESSION_UNAVAILABLE",errorMsg:"请重试启动创作"},503); }
+  });
   app.get("/projects/:id/session/history",async c=>{
     const userId=requireUserId(c.req.raw),project=await bound(userId,c.req.param("id"));
     if(!project)return c.json({error:"Project session not found"},404);

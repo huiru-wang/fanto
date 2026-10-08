@@ -9,6 +9,7 @@ struct ProjectDetailView: View {
     @State private var errorMessage: String?
     @State private var showsArchiveConfirmation = false
     @State private var isArchiving = false
+    @State private var isStarting = false
     @State private var showsConversation = false
     private var displayedProject: Project { detail?.project ?? project }
 
@@ -25,7 +26,9 @@ struct ProjectDetailView: View {
                     if let sessionID = displayedProject.sessionID {
                         ProjectSessionConversation(projectID: displayedProject.id, sessionID: sessionID, onUpdated: { Task { await load() } })
                     } else {
-                        Text("正在准备创作会话").font(.caption).foregroundStyle(.secondary)
+                        Button(isStarting ? "正在启动…" : "开始创作") { Task { await startSession() } }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(isStarting)
                     }
                 }
                 if let detail, !detail.referenceRecords.isEmpty {
@@ -89,6 +92,15 @@ struct ProjectDetailView: View {
         do {
             detail = try await FantoAPIClient.shared.fetchProject(id: project.id)
             errorMessage = nil
+        } catch { errorMessage = error.localizedDescription }
+    }
+    private func startSession() async {
+        guard !isStarting else { return }
+        isStarting = true
+        defer { isStarting = false }
+        do {
+            try await FantoAPIClient.shared.startProjectSession(id: displayedProject.id)
+            await load()
         } catch { errorMessage = error.localizedDescription }
     }
     private func archive() async {

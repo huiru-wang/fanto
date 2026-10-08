@@ -1,6 +1,6 @@
 import { Archive, ArrowLeft, Check, ChevronDown, ChevronUp, CircleAlert, Clock3, RefreshCw, Sparkles, X, MessageCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { archiveProject, acceptProposal, getProject, getProposal, listProposalRecords, rejectProposal, type ProjectDetail, type Proposal } from "../../api/projects";
+import { archiveProject, acceptProposal, getProject, getProposal, listProposalRecords, rejectProposal, startProjectSession, type ProjectDetail, type Proposal } from "../../api/projects";
 import type { RecordItem } from "../../api/records";
 import { RecordMediaList } from "../RecordMedia";
 import { ProjectDocument } from "./ProjectHtmlPreview";
@@ -53,18 +53,13 @@ function RecordReferences({ records, count, cursor, loading, error, onMore, onRe
   );
 }
 
-function facet(content: Proposal["content"], name: "保留" | "转化"): string | null {
-  const constraint = content.goal?.constraints?.find(item => ["：", ":", "｜", "|"].some(separator => item.startsWith(name + separator)));
-  return constraint?.slice(name.length + 1).trim() || null;
-}
-
 function ProposalSheet({ id, onAccepted, onRejected }: { id: string; onAccepted: (id: string) => void; onRejected: () => void }) {
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [deciding, setDeciding] = useState(false);
-  const [userInput, setUserInput] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -74,15 +69,13 @@ function ProposalSheet({ id, onAccepted, onRejected }: { id: string; onAccepted:
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setProposal(await getProposal(id));
+      const next = await getProposal(id);
+      setProposal(next);
+      setSelected(current => next.status === "accepted" ? next.content.selectedIdeaId : next.content.ideas.length === 1 ? next.content.ideas[0]!.id : next.content.ideas.some(idea => idea.id === current) ? current : null);
       setError(null);
-    } catch (cause) {
-      setError(messageOf(cause, "提议暂时无法加载"));
-    } finally {
-      setLoading(false);
-    }
+    } catch (cause) { setError(messageOf(cause, "提议暂时无法加载")); }
+    finally { setLoading(false); }
   }, [id]);
-
   useEffect(() => { void load(); }, [load]);
 
   const loadReferences = async (append = false) => {
@@ -96,99 +89,72 @@ function ProposalSheet({ id, onAccepted, onRejected }: { id: string; onAccepted:
         return [...(append ? current : []), ...page.data].filter(item => !seen.has(item.id) && !!seen.add(item.id));
       });
       setCursor(page.hasMore ? page.nextCursor : null);
-    } catch (cause) {
-      setReferencesError(messageOf(cause, "参考记录加载失败"));
-    } finally {
-      setReferencesLoading(false);
-    }
+    } catch (cause) { setReferencesError(messageOf(cause, "参考记录加载失败")); }
+    finally { setReferencesLoading(false); }
   };
-
   const toggleReferences = () => {
     if (!expanded && records.length === 0) void loadReferences();
     setExpanded(value => !value);
   };
-
   const decide = async (accept: boolean) => {
-    if (!proposal || deciding || proposal.status !== "pending") return;
+    if (!proposal || deciding || (proposal.status !== "pending" && !(accept && proposal.status === "accepted"))) return;
+    if (accept && !selected) return;
     setDeciding(true);
     setActionError(null);
     try {
       if (accept) {
-        const result = await acceptProposal(id, proposal.content.goal ? userInput.trim() || undefined : undefined);
+        const result = await acceptProposal(id, proposal.content.selectedIdeaId ?? selected!);
         onAccepted(result.resultProjectId);
       } else {
         await rejectProposal(id);
         onRejected();
       }
     } catch (cause) {
-      setActionError(messageOf(cause, "操作没有完成，请稍后重试"));
-      void load();
-    } finally {
-      setDeciding(false);
-    }
+      setActionError(messageOf(cause, "操作没有完成，请重试"));
+      await load();
+    } finally { setDeciding(false); }
   };
 
   if (loading && !proposal) return <div className="project-sheet-state"><span className="large-loader" /><p>正在打开提议…</p></div>;
   if (!proposal) return <div className="project-sheet-state"><CircleAlert size={22} /><p>{error}</p><button className="secondary-button" onClick={() => void load()}>重新加载</button></div>;
 
-  const preserve = facet(proposal.content, "保留");
-  const transform = facet(proposal.content, "转化");
-
-  return (
-    <>
-      <div className="project-sheet-scroll">
-        <div className="project-sheet-kicker"><Sparkles size={15} />{proposal.type === "extend" ? "继续创作" : "新的创作提议"}</div>
-        <h2 className="project-sheet-title">{proposal.title}</h2>
-        {!!proposal.content.tags?.length && <div className="project-tags proposal-sheet-tags">{proposal.content.tags.map(tag => <span key={tag}>{tag}</span>)}</div>}
-
-        <section className="project-effect">
-          <h3>创作效果</h3>
-          <p>{proposal.content.idea}</p>
-          {(preserve || transform) && <div className="project-effect-facets">
-            {preserve && <div><span>保留</span><p>{preserve}</p></div>}
-            {transform && <div><span>转化</span><p>{transform}</p></div>}
-          </div>}
-        </section>
-
-        {!!proposal.content.plan?.length && <section className="project-detail-section">
-          <h3>创作计划</h3>
-          <div className="project-plan">{proposal.content.plan.map((step, index) => {
-            const separator = step.indexOf("｜");
-            const title = separator < 0 ? step : step.slice(0, separator).trim();
-            const description = separator < 0 ? null : step.slice(separator + 1).trim();
-            return <div className="project-plan-step" key={index}>
-              <span className="project-plan-number">{String(index + 1).padStart(2, "0")}</span>
-              <div><strong>{title}</strong>{description && <p>{description}</p>}</div>
-            </div>;
-          })}</div>
-        </section>}
-
-        {proposal.status === "pending" && proposal.content.goal && <section className="project-detail-section">
-          <h3>想再改一点？</h3>
-          <p className="project-muted">告诉 Fanto 你更希望作品是什么样子。</p>
-          <textarea className="project-suggestion-input" maxLength={500} rows={3} placeholder="比如：不要文字，色调更温暖一点…" value={userInput} onChange={event => setUserInput(event.target.value)} aria-label="补充创作想法" />
-          {userInput.length > 0 && <span className="project-character-count">{userInput.length}/500</span>}
-        </section>}
-
-        <section className="project-detail-section project-reference-section">
-          <button className="project-reference-toggle" type="button" onClick={toggleReferences} aria-expanded={expanded}>
-            <span><Clock3 size={17} />参考记录{proposal.referenceRecordCount ? ` · ${proposal.referenceRecordCount}` : ""}</span>
-            {expanded ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
-          </button>
-          {expanded && <RecordReferences records={records} count={proposal.referenceRecordCount ?? records.length} cursor={cursor} loading={referencesLoading} error={referencesError} onMore={() => void loadReferences(true)} onRetry={() => void loadReferences(false)} />}
-        </section>
-        {error && <p className="project-form-error" role="alert">{error} <button type="button" onClick={() => void load()}>重新加载</button></p>}
+  return <>
+    <div className="project-sheet-scroll">
+      <div className="project-sheet-kicker"><Sparkles size={15} />{proposal.type === "extend" ? "继续创作" : "新的创作提议"}</div>
+      <h2 className="project-sheet-title">{proposal.title}</h2>
+      <div className="proposal-choices" role="group" aria-label="选择创意方向">
+        {proposal.content.ideas.map(idea => {
+          const checked = (proposal.status === "accepted" ? proposal.content.selectedIdeaId : selected) === idea.id;
+          return <button key={idea.id} type="button" aria-pressed={checked}
+            className={`proposal-option${checked ? " selected" : ""}`}
+            disabled={deciding || proposal.status !== "pending"}
+            onClick={() => setSelected(idea.id)}>
+            <span className="proposal-option-head"><strong>{idea.title}</strong><span aria-hidden="true" className="proposal-option-check">{checked ? <Check size={15} /> : null}</span></span>
+            <span className="proposal-option-idea">{idea.idea}</span>
+            <span className="project-tags">{idea.tags.map(tag => <span key={tag}>{tag}</span>)}</span>
+          </button>;
+        })}
       </div>
-
-      <div className="project-sheet-bottom">
-        {actionError && <p role="alert" className="project-form-error">{actionError}</p>}
-        {proposal.status === "pending" ? <div className="project-sheet-actions">
-          <button type="button" className="project-decline" disabled={deciding} onClick={() => void decide(false)}>不感兴趣</button>
-          <button type="button" className="project-accept" disabled={deciding} onClick={() => void decide(true)}>{deciding ? "正在处理…" : "创作试试"} <ArrowLeft size={15} className="project-arrow-forward" /></button>
-        </div> : <span className="project-muted">{proposal.status === "accepted" ? "已接受这份提议" : "已略过这份提议"}</span>}
-      </div>
-    </>
-  );
+      <section className="project-detail-section project-reference-section">
+        <button className="project-reference-toggle" type="button" onClick={toggleReferences} aria-expanded={expanded}>
+          <span><Clock3 size={17} />参考记录{proposal.referenceRecordCount ? ` · ${proposal.referenceRecordCount}` : ""}</span>
+          {expanded ? <ChevronUp size={17} /> : <ChevronDown size={17} />}
+        </button>
+        {expanded && <RecordReferences records={records} count={proposal.referenceRecordCount ?? records.length} cursor={cursor} loading={referencesLoading} error={referencesError} onMore={() => void loadReferences(true)} onRetry={() => void loadReferences(false)} />}
+      </section>
+      {error && <p className="project-form-error" role="alert">{error} <button onClick={() => void load()}>重新加载</button></p>}
+    </div>
+    <div className="project-sheet-bottom">
+      {actionError && <p role="alert" className="project-form-error">{actionError}</p>}
+      {proposal.status === "pending" ? <div className="project-sheet-actions">
+        <button type="button" className="project-decline" disabled={deciding} onClick={() => void decide(false)}>不感兴趣</button>
+        <button type="button" className="project-accept" disabled={deciding || !selected} onClick={() => void decide(true)}>{deciding ? "正在提交…" : "按这个方向创作"} <ArrowLeft size={15} className="project-arrow-forward" /></button>
+      </div> : proposal.status === "accepted" ? <div className="project-sheet-actions">
+        <span className="project-muted">已确认上方所选方向</span>
+        <button type="button" className="project-accept" disabled={deciding} onClick={() => void decide(true)}>{deciding ? "正在启动…" : "进入作品 / 重试启动"}</button>
+      </div> : <span className="project-muted">已略过这份提议</span>}
+    </div>
+  </>;
 }
 
 function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }) {
@@ -197,6 +163,7 @@ function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [archiving, setArchiving] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [showRecords, setShowRecords] = useState(false);
 
   const load = useCallback(async () => {
@@ -217,6 +184,14 @@ function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }
       !current || current.version !== next.version ? next : current)).catch(() => {}), 3000);
     return () => clearInterval(timer);
   }, [id]);
+
+  const start = async () => {
+    setStarting(true);
+    setError(null);
+    try { await startProjectSession(id); await load(); }
+    catch (cause) { setError(messageOf(cause, "会话尚未准备好，可重试")); }
+    finally { setStarting(false); }
+  };
 
   const archive = async () => {
     if (!project || archiving || !window.confirm("归档后仍可查看作品，但不能再修改或扩展。确定归档吗？")) return;
@@ -245,6 +220,7 @@ function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }
           ? <ProjectDocument content={project.content} title={project.title} />
           : <div className="project-unpublished"><p>{project.summary}</p><span>创作过程会在下方实时呈现</span></div>}
         {!project.content?.trim() && project.sessionId && <ProjectSessionChat projectId={project.projectId} sessionId={project.sessionId} onUpdated={() => void load()} />}
+        {!project.sessionId && project.status === "active" && <button type="button" className="project-accept" disabled={starting} onClick={() => void start()}>{starting ? "正在启动…" : "开始创作"}</button>}
 
         <section className="project-detail-section project-reference-section">
           <button className="project-reference-toggle" type="button" onClick={() => setShowRecords(value => !value)} aria-expanded={showRecords}>

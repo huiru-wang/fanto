@@ -59,7 +59,7 @@ integration("Record media deletion is atomic, user-scoped, reference-safe and re
     assert.equal((await db.selectFrom("media_object_deletions").selectAll().execute()).length, 0);
     // Final Project references are rewritten to separate media so the original Record can be deleted.
     const shared = await make();
-    const p = await proposals.create(userId, { type: "create", title: "园林", proposedSummary: "园林写真", recordIds: [shared.record.id], content: { reason: "园林", idea: "把这次园林记录整理成一页写真。", plan: ["保留现场｜使用真实记录", "整理画面｜统一作品气质", "完成写真｜形成可继续的成果"], tags: ["园林写真", "游园一页"], goal: { objective: "一页园林写真" } } });
+    const p = await proposals.create(userId, { type: "create", title: "园林", proposedSummary: "园林写真", recordIds: [shared.record.id], content: { reason: "园林", ideas: [{ title: "照片手记", idea: "把这次园林记录整理成一页写真。", tags: ["园林写真", "游园一页"], goal: { objective: "一页园林写真" } }] } });
     assert.equal(p.kind, "ok");
     const accepted = await proposals.accept(userId, p.data.proposalId); assert.equal(accepted.kind, "ok");
     const projectId = accepted.data.resultProjectId;

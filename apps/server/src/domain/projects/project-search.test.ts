@@ -24,11 +24,11 @@ integration("Project summary vectors: ranking, isolation, updates, failure atomi
     const records = RecordService.create(db, new RecordPostprocessQueue()), media = MediaService.create(db, {} as never);
     const projects = ProjectService.create(db, records, media, embeddings), proposals = ProposalService.create(db, records, media, embeddings);
     const r = await records.create(owner, { text: "大观园游览", media: [], eventAt: now.toISOString() }); assert.equal(r.kind, "ok"); if (r.kind !== "ok") return;
-    const make = async (summary: string) => value(await proposals.create(owner, { type: "create", title: summary, proposedSummary: summary, recordIds: [r.record.id], content: { reason: "主题创作", idea: "把这次真实经历整理成一个可继续的作品。", plan: ["保留经历｜使用真实记录", "整理主题｜突出核心线索", "形成作品｜沉淀为可继续成果"], tags: ["经历成章", "这一页"], goal: {objective: "整理真实经历"} } }));
+    const make = async (summary: string) => value(await proposals.create(owner, { type: "create", title: summary, proposedSummary: summary, recordIds: [r.record.id], content: { reason: "主题创作", ideas: [{ title: "照片手记", idea: "把这次真实经历整理成一个可继续的作品。", tags: ["经历成章", "这一页"], goal: {objective: "整理真实经历"} }] } }));
     const p = await make("大观园红楼梦角色扮演写真图文");
     const accepted = value(await proposals.accept(owner, p.proposalId)), id = accepted.resultProjectId;
     const before = await db.selectFrom("projects").selectAll().where("project_id", "=", id).executeTakeFirstOrThrow();
-    assert.ok(before.embedding); assert.equal(before.summary, p.proposedSummary);
+    assert.ok(before.embedding); assert.ok(before.summary.startsWith("创作目标：照片手记"));
     const count = calls; value(await proposals.accept(owner, p.proposalId)); assert.equal(calls, count);
     // More than a page of recent unrelated projects must not hide an older relevant project.
     await db.insertInto("projects").values(Array.from({ length: 45 }, (_, i) => ({ project_id: randomUUID(), user_id: owner, session_id: null, title: "旅行风景", summary: "富士山旅行风景照片", embedding: `[0,1,${Array(766).fill(0).join(",")}]`, cover_media_id: null, content: "", goal: {objective:"旅行风景"}, status: "active" as const, version: 1, created_at: now, updated_at: new Date(now.getTime() + i + 1) }))).execute();

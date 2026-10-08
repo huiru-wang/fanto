@@ -139,9 +139,14 @@ export function ProjectsPage() {
                   {proposals.map(item => (
                     <button key={item.proposalId} className="proposal-card" type="button" onClick={() => open("proposalId", item.proposalId)}>
                       <div className="proposal-card-top"><span className="proposal-type"><Sparkles size={14} />{item.type === "extend" ? "继续创作" : "创作灵感"}</span><ArrowRight size={19} className="proposal-card-arrow" /></div>
-                      <h3>{item.title}</h3>
-                      <p>{item.content.idea}</p>
-                      {!!item.content.tags?.length && <div className="project-tags">{item.content.tags.map(tag => <span key={tag}>{tag}</span>)}</div>}
+                      <h3>{item.content.ideas.length === 1 ? item.content.ideas[0]!.title : item.title}</h3>
+                      {item.content.ideas.length === 1 ? <>
+                        <p>{item.content.ideas[0]!.idea}</p>
+                        <div className="project-tags">{item.content.ideas[0]!.tags.map(tag => <span key={tag}>{tag}</span>)}</div>
+                      </> : <>
+                        <p className="proposal-choice-count">2 个创意方向</p>
+                        <div className="proposal-choice-titles">{item.content.ideas.map(idea => <span key={idea.id}>{idea.title}</span>)}</div>
+                      </>}
                       <span className="proposal-card-foot">看看这个提议 <ChevronRight size={14} /></span>
                     </button>
                   ))}

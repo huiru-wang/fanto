@@ -5,112 +5,139 @@ import type { AgentStreamEvent } from "../agent/harness/events.js";
 import { CreativeService } from "./service.js";
 import { logError } from "../infrastructure/logging/logger.js";
 
-export type CreativeRunnerConfig = { intervalMs: number; workers: number; proposalTimeoutMs: number; creatorTimeoutMs: number };
-type Listener = (event: AgentStreamEvent | {type:"done"} | {type:"error"}) => void;
+export type CreativeRunnerConfig = { workers: number; proposalTimeoutMs: number; creatorTimeoutMs: number };
+type Listener = (event: AgentStreamEvent | { type: "done" } | { type: "error" }) => void;
+type Job = { key: string; projectId?: string; execute: () => Promise<void> };
+
+/** Process-local FIFO submissions. No background scanner or restart recovery. */
 export class CreativeRunner {
-  private timer?: ReturnType<typeof setInterval>;
-  private ticking = false;
-  private stopped = false;
-  private proposalCursor?: string;
-  private readonly active = new Map<string, Promise<void>>();
+  private readonly active = new Set<string>();
+  private readonly queued = new Map<string, Job>();
+  private readonly activeProjects = new Set<string>();
   private readonly listeners = new Map<string, Set<Listener>>();
+  private stopping = false;
+  private readonly executions = new Set<Promise<void>>();
   constructor(readonly service: CreativeService, private readonly agent: AgentRuntime, private readonly config: CreativeRunnerConfig) {}
 
-  start() { this.stopped = false; this.timer = setInterval(() => void this.tick(), this.config.intervalMs); this.timer.unref(); void this.tick(); }
-  async stop() { this.stopped = true; if(this.timer)clearInterval(this.timer); await Promise.allSettled(this.active.values()); }
+  async stop() {
+    this.stopping = true;
+    this.queued.clear();
+    await Promise.allSettled([...this.executions]);
+  }
   subscribe(projectId: string, listener: Listener) {
     let set = this.listeners.get(projectId);
     if (!set) { set = new Set(); this.listeners.set(projectId, set); }
     set.add(listener);
-    return () => { set!.delete(listener); if(!set!.size)this.listeners.delete(projectId); };
+    return () => { set!.delete(listener); if (!set!.size) this.listeners.delete(projectId); };
   }
-  private publish(id:string,event:Parameters<Listener>[0]) { for(const subscriber of this.listeners.get(id)??[]) subscriber(event); }
-  private launch(key:string,execute:()=>Promise<void>) {
-    if(this.active.has(key) || this.active.size >= this.config.workers) return;
-    const promise=execute().catch(error=>logError("creative-runner","Agent execution failed",{key,error:error instanceof Error?error.message:String(error)})).finally(()=>this.active.delete(key));
-    this.active.set(key,promise);
+  private publish(id: string, event: Parameters<Listener>[0]) {
+    for (const listener of this.listeners.get(id) ?? []) listener(event);
   }
-  async tick() {
-    if(this.ticking || this.stopped)return;
-    this.ticking=true;
+  private enqueue(job: Job) {
+    if (this.stopping) throw Error("CREATIVE_RUNNER_STOPPED");
+    if (this.queued.has(job.key) || this.active.has(job.key)) return;
+    this.queued.set(job.key, job);
+    this.drain();
+  }
+  private drain() {
+    while (!this.stopping && this.active.size < this.config.workers && this.queued.size) {
+      const next = [...this.queued].find(([, item]) => !item.projectId || !this.activeProjects.has(item.projectId));
+      if (!next) break;
+      const [key, job] = next;
+      this.queued.delete(key);
+      this.active.add(key);
+      if (job.projectId) this.activeProjects.add(job.projectId);
+      const promise = Promise.resolve().then(job.execute)
+        .catch(error => logError("creative-runner", "Agent execution failed", {key, error: error instanceof Error ? error.message : String(error)}))
+        .finally(() => {
+          this.active.delete(key);
+          if (job.projectId) this.activeProjects.delete(job.projectId);
+          this.executions.delete(promise);
+          this.drain();
+        });
+      this.executions.add(promise);
+    }
+  }
+  submitProposal(userId: string, recordId: string, version: number) {
+    this.enqueue({ key: `record:${userId}:${recordId}:${version}`, execute: () => this.analyzeRecord(userId, recordId, version) });
+  }
+  private async analyzeRecord(userId: string, recordId: string, version: number) {
+    const definition = this.agent.registry.get("proposal-agent");
+    if (!definition) throw Error("PROPOSAL_AGENT_UNAVAILABLE");
+    const session = await this.agent.sessions.create(definition, userId, {internal:true});
+    const release = this.agent.sessions.reserve(session);
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), this.config.proposalTimeoutMs);
     try {
-      for(const record of await this.service.pendingRecords(10)) {
-        const key=`record:${record.user_id}:${record.record_id}:${record.version}`;
-        this.launch(key,()=>this.analyzeRecord(record));
-      }
-      const page = await this.service.pendingProposals(this.proposalCursor);
-      this.proposalCursor = page.hasMore ? page.nextCursor! : undefined;
-      for(const proposal of page.data) {
-        const key=`project:${proposal.resultProjectId}`;
-        this.launch(key,()=>this.dispatch(proposal.userId,proposal.resultProjectId,proposal.proposalId));
-      }
-    } catch(error) {logError("creative-runner","Dispatch failed",{error:error instanceof Error?error.message:String(error)});}
-    finally {this.ticking=false;}
+      await runAgentSkill(session, "creative", "完整理解当前 Record；仅在确有创意价值时保存一份包含 1–2 个候选的 Proposal，否则回复 no_proposal。不要询问用户。", controller.signal,
+        {creative: {role:"proposal", recordId, recordVersion:version}}, async () => {});
+    } finally { clearTimeout(timeout); release(); await this.agent.sessions.release(session.id); }
   }
-  private async analyzeRecord(row:{user_id:string;record_id:string;version:number}) {
-    const definition=this.agent.registry.get("proposal-agent"); if(!definition)return;
-    const session=await this.agent.sessions.create(definition,row.user_id,{internal:true});
-    const release=this.agent.sessions.reserve(session);
-    const controller=new AbortController(), timeout=setTimeout(()=>controller.abort(),this.config.proposalTimeoutMs);
+  async ensureSession(userId: string, projectId: string) {
+    const project = await this.service.projects.find(userId, projectId);
+    if (!project) throw Error("PROJECT_NOT_FOUND");
+    if (project.sessionId) return project.sessionId;
+    const definition = this.agent.registry.get("creator-agent");
+    if (!definition) throw Error("CREATOR_AGENT_UNAVAILABLE");
+    const session = await this.agent.sessions.create(definition, userId, {internal:true});
     try {
-      const output=await runAgentSkill(session,"creative","分析当前触发 Record；有明确创作价值时创建 Proposal，否则返回 no_proposal。全程静默，不向用户提问。",controller.signal,
-        {creative:{role:"proposal",recordId:row.record_id,recordVersion:row.version}},async()=>{});
-      if(output.includes("no_proposal")) await this.service.markAnalyzed(row.user_id,row.record_id,row.version);
-    } finally {clearTimeout(timeout);release(); await this.agent.sessions.release(session.id);}
+      const bound = await this.service.projects.bindSession(userId, projectId, session.id);
+      if (!bound) throw Error("PROJECT_SESSION_UNAVAILABLE");
+      return bound;
+    } finally {
+      // Release only if another concurrent accept already bound a different session.
+      const current = await this.service.projects.find(userId, projectId);
+      if (current?.sessionId !== session.id) await this.agent.sessions.release(session.id);
+    }
   }
-  async ensureSession(userId:string,projectId:string) {
-    const project=await this.service.projects.find(userId,projectId);
-    if(!project)throw Error("PROJECT_NOT_FOUND");
-    if(project.sessionId)return project.sessionId;
-    const definition=this.agent.registry.get("creator-agent");
-    if(!definition)throw Error("CREATOR_AGENT_UNAVAILABLE");
-    const session=await this.agent.sessions.create(definition,userId,{internal:true});
-    const bound=await this.service.projects.bindSession(userId,projectId,session.id);
-    if(bound!==session.id) await this.agent.sessions.release(session.id);
-    if(!bound)throw Error("PROJECT_SESSION_UNAVAILABLE");
-    return bound;
-  }
-  async onAccepted(userId:string,projectId:string,proposalId:string) {
-    const sessionId=await this.ensureSession(userId,projectId);
-    this.launch(`project:${projectId}`,()=>this.dispatch(userId,projectId,proposalId));
+  async onAccepted(userId: string, projectId: string, proposalId: string) {
+    const sessionId = await this.ensureSession(userId, projectId);
+    this.enqueue({ key: `creation:${proposalId}`, projectId, execute: () => this.dispatch(userId, projectId, proposalId) });
     return sessionId;
   }
-  async dispatch(userId:string,projectId:string,proposalId:string) {
-    const sessionId=await this.ensureSession(userId,projectId);
-    const definition=this.agent.registry.get("creator-agent");
-    if(!definition)return;
-    const session=await this.agent.sessions.acquire(definition,sessionId,userId,{internal:true});
-    const previous=await session.session.findEntries({order:"desc",limit:2000},TODO_CONTEXT);
-    if(previous.some(entry=>entry.type==="custom" && entry.customType==="fanto.proposal_dispatched" &&
-      (entry.data as {proposalId?:string})?.proposalId===proposalId))return;
-    const proposal = await this.service.proposals.find(userId,proposalId);
-    const project = await this.service.projects.find(userId,projectId);
-    if (proposal?.type === "create" && project?.content.trim()) {
-      // An already-published creation (including a migrated legacy Project) must
-      // not be started again merely because older Sessions lacked this marker.
-      await session.runtime.appendCustomEntry("fanto.proposal_dispatched",{proposalId});
-      return;
-    }
-    const release=this.agent.sessions.reserve(session);
-    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),this.config.creatorTimeoutMs);
-    try {
-      await runAgent(session,`用户接受了创作提议 ${proposalId}。先使用 project_read 读取当前 Project 的最新 goal、content 和参考记录，再执行创作，最后用 project_manage 保存作品。`,controller.signal,{projectId},
-        async event=>this.publish(projectId,event));
-      await session.runtime.appendCustomEntry("fanto.proposal_dispatched",{proposalId});
-      this.publish(projectId,{type:"done"});
-    } catch(error) {this.publish(projectId,{type:"error"});throw error;}
-    finally {clearTimeout(timeout);release();await this.agent.sessions.release(session.id);}
+  /** Explicit user retry when acceptance committed but Session creation failed. */
+  async startAcceptedProject(userId: string, projectId: string) {
+    const project = await this.service.projects.find(userId, projectId);
+    if (!project || project.status !== "active") throw Error("PROJECT_NOT_FOUND");
+    if (project.sessionId) return project.sessionId;
+    const proposal = await this.service.db.selectFrom("proposals")
+      .select(["proposal_id", "content"]).where("user_id", "=", userId)
+      .where("result_project_id", "=", projectId).where("status", "=", "accepted")
+      .orderBy("resolved_at", "desc").orderBy("proposal_id", "desc").executeTakeFirst();
+    const content = proposal?.content as { selectedIdeaId?: string } | undefined;
+    if (!proposal || !content?.selectedIdeaId) throw Error("ACCEPTED_PROPOSAL_NOT_FOUND");
+    return this.onAccepted(userId, projectId, proposal.proposal_id);
   }
-  async send(userId:string,projectId:string,message:string,signal:AbortSignal,emit:(event:AgentStreamEvent)=>Promise<void>) {
-    const project=await this.service.projects.find(userId,projectId);
-    if(!project?.sessionId || project.status!=="active")throw Error("PROJECT_NOT_AUTHORIZED");
-    const definition=this.agent.registry.get("creator-agent"); if(!definition)throw Error("CREATOR_AGENT_UNAVAILABLE");
-    const session=await this.agent.sessions.acquire(definition,project.sessionId,userId,{internal:true});
-    const release=this.agent.sessions.reserve(session);
+  private async dispatch(userId: string, projectId: string, proposalId: string) {
+    const project = await this.service.projects.find(userId, projectId);
+    if (!project?.sessionId) throw Error("PROJECT_SESSION_UNAVAILABLE");
+    const definition = this.agent.registry.get("creator-agent");
+    if (!definition) throw Error("CREATOR_AGENT_UNAVAILABLE");
+    const session = await this.agent.sessions.acquire(definition, project.sessionId, userId, {internal:true});
+    const release = this.agent.sessions.reserve(session);
+    const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), this.config.creatorTimeoutMs);
     try {
-      await runAgent(session,message,signal,{projectId},async event=>{this.publish(projectId,event);await emit(event);});
-      this.publish(projectId,{type:"done"});
-    } catch(error) {this.publish(projectId,{type:"error"});throw error;}
-    finally {release();await this.agent.sessions.release(session.id);}
+      const previous = await session.session.findEntries({order:"desc",limit:2000},TODO_CONTEXT);
+      if (previous.some(entry => entry.type === "custom" && entry.customType === "fanto.proposal_dispatched" &&
+          (entry.data as {proposalId?:string})?.proposalId === proposalId)) return;
+      // The accepted decision starts once; failures remain recoverable through this Project Session.
+      await session.runtime.appendCustomEntry("fanto.proposal_dispatched", {proposalId});
+      await runAgent(session, "请按当前已确认的方向继续完成作品。", controller.signal, {projectId},
+        async event => this.publish(projectId, event));
+      this.publish(projectId, {type:"done"});
+    } catch (error) { this.publish(projectId, {type:"error"}); throw error; }
+    finally {clearTimeout(timeout); release(); await this.agent.sessions.release(session.id);}
+  }
+  async send(userId: string, projectId: string, message: string, signal: AbortSignal, emit: (event:AgentStreamEvent)=>Promise<void>) {
+    const project = await this.service.projects.find(userId, projectId);
+    if (!project?.sessionId || project.status !== "active") throw Error("PROJECT_NOT_AUTHORIZED");
+    const definition = this.agent.registry.get("creator-agent");
+    if (!definition) throw Error("CREATOR_AGENT_UNAVAILABLE");
+    const session = await this.agent.sessions.acquire(definition, project.sessionId, userId, {internal:true});
+    const release = this.agent.sessions.reserve(session);
+    try {
+      await runAgent(session, message, signal, {projectId}, async event => {this.publish(projectId,event); await emit(event);});
+      this.publish(projectId, {type:"done"});
+    } catch (error) {this.publish(projectId, {type:"error"}); throw error;}
+    finally {release(); await this.agent.sessions.release(session.id);}
   }
 }

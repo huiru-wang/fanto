@@ -18,6 +18,7 @@ export function registerRecordPostprocessListener(
   image: ImageUnderstanding,
   audio: AudioTranscriptionClient,
   retrieval: RecordRetrieval,
+  onProcessed?: (userId: string, recordId: string, version: number) => void,
 ) {
   queue.on(async task => {
     const runId = randomUUID();
@@ -92,5 +93,6 @@ export function registerRecordPostprocessListener(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+    onProcessed?.(task.userId, task.recordId, task.version);
   });
 }

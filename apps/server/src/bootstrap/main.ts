@@ -88,10 +88,10 @@ registerRecordPostprocessListener(
   new QwenImageUnderstanding(config.dashscope.apiKey, config.dashscope.baseUrl, config.dashscope.visionModel),
   new QwenAudioTranscription(config.dashscope.apiKey, config.dashscope.baseUrl, config.dashscope.asrModel),
   retrieval,
+  (userId, recordId, version) => creativeRunner?.submitProposal(userId, recordId, version),
 );
 
 if (creative) await projects.normalizeLegacyMedia();
-creativeRunner?.start();
 const stopMediaCleanup = startMediaCleanup(media);
 
 const services: ServerServices = {

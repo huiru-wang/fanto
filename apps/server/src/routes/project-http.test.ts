@@ -25,7 +25,7 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
     const r = await app.request(`/api/${path}`, { method, headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: r.status, body: r.headers.get("content-type")?.includes("json") ? await r.json() as any : null };
   };
-  const input = (ids = recordIds.slice(0, 7)): CreateProposalInput => ({ type: "create", title: "大观园写记", proposedSummary: "园林里的红楼梦主题照片与旅行回忆", recordIds: ids, content: { reason: "园林与人物照片适合主题创作", idea: "把园林里的这一刻整理成一页有作品感的图文写真。保留真实人物与场景，只增强主题表达。", plan: ["留住这一刻｜保留人物和园林关系", "建立作品气质｜统一画面与主题", "完成一页写真｜用短文收束真实经历"], tags: ["园林入画", "古典写真", "游园一页"], goal: { objective: "制作园林旅行写真" } } });
+  const input = (ids = recordIds.slice(0, 7)): CreateProposalInput => ({ type: "create", title: "大观园写记", proposedSummary: "园林里的红楼梦主题照片与旅行回忆", recordIds: ids, content: { reason: "园林与人物照片适合主题创作", ideas: [{ title: "园林入画", idea: "把园林里的这一刻整理成一页有作品感的图文写真。保留真实人物与场景，只增强主题表达。", tags: ["园林入画", "古典写真", "游园一页"], goal: { objective: "制作园林旅行写真" } }] }});
   let projectId: string, proposalId: string;
   try {
     await db.insertInto("users").values(users.map(id => ({ user_id: id, status: "active" as const, created_at: now, updated_at: now, disabled_at: null }))).execute();
@@ -35,15 +35,15 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
       error(await proposals.create(userId, { ...input(), recordIds: [recordIds[0]!, randomUUID()] }), "REFERENCE_RECORDS_UNAVAILABLE");
       assert.equal((await db.selectFrom("proposals").selectAll().where("user_id", "=", userId).execute()).length, 0);
       error(await proposals.create(userId, { ...input(), type: "extend" }), "INVALID_INPUT");
-      error(await proposals.create(userId, { ...input(), content: { ...input().content, tags: ["重复", "重复"] } }), "INVALID_INPUT");
-      error(await proposals.create(userId, { ...input(), content: { ...input().content, plan: input().content.plan.slice(0, 2) } }), "INVALID_INPUT");
+      error(await proposals.create(userId, { ...input(), content: { ...input().content, ideas: [{...input().content.ideas[0]!, tags: ["重复", "重复"]}] } }), "INVALID_INPUT");
+      error(await proposals.create(userId, { ...input(), content: { ...input().content, ideas: [] } }), "INVALID_INPUT");
       const p = data(await proposals.create(userId, { ...input(), recordIds: [...input().recordIds, recordIds[0]!] })); proposalId = p.proposalId; assert.equal(p.sessionId, null);
-      assert.equal(p.content.goal.objective, "制作园林旅行写真");
+      assert.equal(p.content.ideas[0]!.goal.objective, "制作园林旅行写真");
       const [first, second] = await Promise.all([proposals.accept(userId, p.proposalId), proposals.accept(userId, p.proposalId)]);
       const a = data(first), b = data(second); projectId = a.resultProjectId;
       assert.equal(a.resultProjectId, b.resultProjectId); assert.equal(a.addedRecordCount + b.addedRecordCount, 7);
       error(await proposals.reject(userId, p.proposalId), "INVALID_STATE");
-      const project = await projects.find(userId, projectId); assert.equal(project?.content, ""); assert.equal(project?.summary, p.proposedSummary); assert.equal(project?.sessionId, null);
+      const project = await projects.find(userId, projectId); assert.equal(project?.content, ""); assert.equal(project?.summary.includes("创作目标：园林入画"), true); assert.equal(project?.sessionId, null);
       assert.equal(data(await proposals.recordsPage(userId, proposalId, { limit: 100 })).data.length, 7);
     });
     await t.test("HTTP nine routes, pagination scope and privacy", async () => {
@@ -51,7 +51,7 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
       const list = await request("projects"); assert.equal(list.body.result.data[0].content, undefined); assert.equal(list.body.result.data[0].summary.length > 0, true);
       assert.equal((await request(`projects/${projectId}`, "GET", undefined, "other")).status, 404);
       assert.equal((await request(`proposals/${proposalId}/accept`, "POST", undefined, "other")).status, 404);
-      const pd = await request(`proposals/${proposalId}`); assert.equal(pd.body.result.referenceRecordCount, 7); assert.equal(pd.body.result.proposedSummary, input().proposedSummary); assert.equal(Object.hasOwn(pd.body.result, "summary"), false);
+      const pd = await request(`proposals/${proposalId}`); assert.equal(pd.body.result.referenceRecordCount, 7); assert.equal(Object.hasOwn(pd.body.result, "proposedSummary"), false); assert.equal(Object.hasOwn(pd.body.result.content, "reason"), false); assert.equal(Object.hasOwn(pd.body.result.content.ideas[0], "goal"), false); assert.equal(Object.hasOwn(pd.body.result, "summary"), false);
       const first = await request(`proposals/${proposalId}/records?limit=5`); assert.deepEqual(first.body.result.data.map((r: any) => r.id), recordIds.slice(0, 5));
       const cursor = encodeURIComponent(first.body.result.nextCursor);
       const second = await request(`proposals/${proposalId}/records?limit=5&cursor=${cursor}`); assert.deepEqual(second.body.result.data.map((r: any) => r.id), recordIds.slice(5, 7));
@@ -103,17 +103,43 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
       assert.equal((await records.delete(userId, recordIds[4]!, 1)).kind, "ok"); assert.equal((await projects.find(userId, projectId))?.version, archive.body.result.version + 1);
       assert.equal(data(await projects.search(userId, { query: "项目主题" })).data.some(p => p.projectId === projectId), false);
     });
-    await t.test("creative goal contract, internal recovery pagination and source boundaries", async () => {
+    await t.test("candidate isolation, public response whitelist and goal contract", async () => {
       const creation = { objective: "做一篇古典园林写真", context: "园林游览照片", constraints: ["保留人物"], successCriteria: ["主题一致"] };
-      const p = data(await proposals.create(userId, { ...input([recordIds[0]!]), content: { ...input().content, goal: creation } })); assert.deepEqual(p.content.goal, creation);
-      const accepted = data(await proposals.accept(userId, p.proposalId, { userInput: "不要文字，整体更温暖一点" }));
-      assert.deepEqual(accepted.proposal.content.goal?.constraints, [...creation.constraints, "用户补充创作想法：不要文字，整体更温暖一点"]);
-      const extension = data(await proposals.create(userId, { ...input([recordIds[0]!]), type: "extend", targetProjectId: accepted.resultProjectId, proposedSummary: null, content: { ...input().content, goal: creation } })); assert.deepEqual(extension.content.goal, creation);
-      data(await proposals.accept(userId, extension.proposalId));
-      error(await proposals.create(userId, { ...input([recordIds[0]!]), content: { ...input().content, goal: { ...creation, imageCount: 4 } } } as never), "INVALID_INPUT");
-      error(await proposals.create(userId, { ...input([recordIds[0]!]), content: { ...input().content, goal: { ...creation, objective: "" } } }), "INVALID_INPUT");
-      const first = data(await proposals.scanAcceptedCreations({ limit: 1 })); assert.equal(first.data.length, 1); assert.equal(first.hasMore, true); assert.ok(first.data[0]?.referenceRecordIds.length);
-      const second = data(await proposals.scanAcceptedCreations({ limit: 100, cursor: first.nextCursor! })); assert.ok(second.data.some(v => v.proposalId === extension.proposalId)); assert.ok(second.data.every(v => !!v.goal.objective && v.resultProjectId && v.userId));
+      const alternative = { objective: "构建幻想园林场景", constraints: ["保持人物身份"] };
+      const base = input([recordIds[0]!]);
+      const two = { ...base, content: { reason: base.content.reason, ideas: [
+        {...base.content.ideas[0]!, goal: creation},
+        {title: "另一个园林", idea: "把园中的人引入一个月光森林世界，仍保留真实照片中的人物外貌和原有姿势。", tags: ["奇幻插画", "森林秘境"], goal: alternative},
+      ] } };
+      const p = data(await proposals.create(userId, two));
+      assert.equal(p.content.ideas.length, 2);
+      assert.notEqual(p.content.ideas[0]!.id, p.content.ideas[1]!.id);
+      error(await proposals.accept(userId, p.proposalId), "INVALID_INPUT");
+      error(await proposals.accept(userId, p.proposalId, {selectedIdeaId: randomUUID()}), "INVALID_INPUT");
+      const list = data(await proposals.list(userId, {limit:100}));
+      const exposed = list.data.find(row => row.proposalId === p.proposalId)!;
+      assert.equal(Object.hasOwn(exposed, "proposedSummary"), false);
+      assert.equal(Object.hasOwn(exposed.content, "reason"), false);
+      assert.equal(Object.hasOwn(exposed.content.ideas[0], "goal"), false);
+      const aId = p.content.ideas[0]!.id, bId = p.content.ideas[1]!.id;
+      const results = await Promise.all([proposals.accept(userId, p.proposalId, {selectedIdeaId: aId}), proposals.accept(userId, p.proposalId, {selectedIdeaId: bId})]);
+      assert.equal(results.filter(r => r.kind === "ok").length, 1);
+      assert.equal(results.filter(r => r.kind === "error" && r.code === "INVALID_STATE").length, 1);
+      const accepted = data(results.find(r => r.kind === "ok")!);
+      const selectedId = accepted.proposal.content.selectedIdeaId!;
+      assert.equal(data(await proposals.accept(userId, p.proposalId, {selectedIdeaId: selectedId})).resultProjectId, accepted.resultProjectId);
+      const selectedGoal = selectedId === aId ? creation : alternative;
+      assert.deepEqual((await projects.find(userId, accepted.resultProjectId))?.goal, selectedGoal);
+      assert.equal((await proposals.find(userId, p.proposalId))?.content.ideas.find(idea => idea.id === selectedId)?.goal.objective, selectedGoal.objective);
+      error(await proposals.accept(userId, p.proposalId, {selectedIdeaId: selectedId === aId ? bId : aId}), "INVALID_STATE");
+      const extension = data(await proposals.create(userId, { ...two, type: "extend", targetProjectId: accepted.resultProjectId, proposedSummary: null }));
+      const target = (await projects.find(userId, accepted.resultProjectId))!;
+      data(await proposals.accept(userId, extension.proposalId, {selectedIdeaId: extension.content.ideas[0]!.id}));
+      assert.equal((await projects.find(userId, accepted.resultProjectId))?.summary, target.summary);
+      error(await proposals.create(userId, { ...base, content: { ...base.content, ideas: [{ ...base.content.ideas[0]!, goal: { ...creation, imageCount: 4 } }] } } as never), "INVALID_INPUT");
+      error(await proposals.create(userId, { ...base, content: { ...base.content, ideas: [{ ...base.content.ideas[0]!, goal: { ...creation, objective: "" } }] } }), "INVALID_INPUT");
+      assert.equal((await request(`proposals/${p.proposalId}/accept`, "POST", {selectedIdeaId: randomUUID()})).status, 400);
+      assert.equal((await request(`proposals/${p.proposalId}/accept`, "POST", {userInput: "discarded"})).status, 400);
     });
     await t.test("concurrent deletion and acceptance never leave dangling links", async () => {
       for (let i = 0; i < 5; i++) {

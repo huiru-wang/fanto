@@ -93,15 +93,18 @@ struct FantoAPIClient {
         return ProposalRecordPage(records: response.data.map(Record.init), hasMore: response.hasMore, nextCursor: response.nextCursor)
     }
 
-    func acceptProposal(id: String, userInput: String? = nil) async throws -> String {
-        let normalized = userInput?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = try JSONEncoder().encode(AcceptProposalRequest(userInput: normalized?.isEmpty == false ? normalized : nil))
+    func acceptProposal(id: String, selectedIdeaId: String) async throws -> String {
+        let body = try JSONEncoder().encode(AcceptProposalRequest(selectedIdeaId: selectedIdeaId))
         let response: AcceptedProposalPayload = try await request(path: "api/proposals/\(id)/accept", method: "POST", body: body)
         return response.resultProjectId
     }
 
     func rejectProposal(id: String) async throws {
         let _: ResolvedProposalPayload = try await request(path: "api/proposals/\(id)/reject", method: "POST")
+    }
+
+    func startProjectSession(id: String) async throws {
+        let _: StartedProjectSessionPayload = try await request(path: "api/projects/\(id)/session/start", method: "POST")
     }
 
     func archiveProject(id: String, expectedVersion: Int) async throws {
@@ -239,7 +242,8 @@ private extension Proposal {
         self.init(id: payload.proposalId, type: payload.type, targetProjectID: payload.targetProjectId, title: payload.title, content: payload.content, status: payload.status, resultProjectID: payload.resultProjectId, createdAt: payload.createdAt, referenceRecordCount: payload.referenceRecordCount)
     }
 }
-private struct AcceptProposalRequest: Encodable { let userInput: String? }
+private struct StartedProjectSessionPayload: Decodable { let projectId: String; let sessionId: String }
+private struct AcceptProposalRequest: Encodable { let selectedIdeaId: String }
 private struct AcceptedProposalPayload: Decodable { let resultProjectId: String }
 private struct ResolvedProposalPayload: Decodable { let proposal: ProposalPayload }
 

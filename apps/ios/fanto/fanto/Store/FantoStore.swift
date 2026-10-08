@@ -166,15 +166,15 @@ final class FantoStore {
         await loadProjects()
     }
 
-    func accept(_ proposal: Proposal, userInput: String? = nil) async -> Bool {
+    func accept(_ proposal: Proposal, selectedIdeaId: String) async -> Project? {
         do {
-            _ = try await FantoAPIClient.shared.acceptProposal(id: proposal.id, userInput: userInput)
+            let projectId = try await FantoAPIClient.shared.acceptProposal(id: proposal.id, selectedIdeaId: selectedIdeaId)
             proposals.removeAll { $0.id == proposal.id }
             await loadProjects()
-            return true
+            return projects.first { $0.id == projectId }
         } catch {
             projectActionError = error.localizedDescription
-            return false
+            return nil
         }
     }
 

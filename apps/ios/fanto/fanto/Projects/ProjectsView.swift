@@ -85,8 +85,13 @@ struct ProjectsView: View {
                 ForEach(store.proposals) { proposal in
                     NavigationLink(value: proposal) {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(proposal.title).font(.headline)
-                            Text(proposal.content.idea).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
+                            Text(proposal.content.ideas.count == 1 ? (proposal.content.ideas.first?.title ?? proposal.title) : proposal.title).font(.headline)
+                            if proposal.content.ideas.count == 1, let idea = proposal.content.ideas.first {
+                                Text(idea.idea).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
+                            } else {
+                                Text("2 个创意方向").font(.subheadline).foregroundStyle(.secondary)
+                                Text(proposal.content.ideas.map(\.title).joined(separator: "  ·  ")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            }
                             Label(proposal.type == .create ? "新的创作建议" : "继续创作", systemImage: "sparkles").font(.caption).foregroundStyle(.secondary)
                         }
                     }

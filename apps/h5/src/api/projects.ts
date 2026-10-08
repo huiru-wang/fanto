@@ -37,18 +37,9 @@ export type Proposal = {
   type: ProposalType;
   targetProjectId: string | null;
   title: string;
-  proposedSummary: string | null;
   content: {
-    reason: string;
-    idea: string;
-    plan: string[];
-    tags?: string[];
-    goal: {
-      objective: string;
-      context?: string;
-      constraints?: string[];
-      successCriteria?: string[];
-    };
+    ideas: { id: string; title: string; idea: string; tags: string[] }[];
+    selectedIdeaId: string | null;
   };
   status: ProposalStatus;
   resultProjectId: string | null;
@@ -94,15 +85,19 @@ export function listProposalRecords(id: string, cursor?: string | null) {
   return requestJson<Page<RecordItem>>(`/api/proposals/${encodeURIComponent(id)}/records?${queryPage(5, cursor)}`);
 }
 
-export function acceptProposal(id: string, userInput?: string) {
+export function acceptProposal(id: string, selectedIdeaId: string) {
   return requestJson<{ proposal: Proposal; resultProjectId: string; addedRecordCount: number }>(
     `/api/proposals/${encodeURIComponent(id)}/accept`,
-    { method: "POST", body: JSON.stringify(userInput ? { userInput } : {}) },
+    { method: "POST", body: JSON.stringify({ selectedIdeaId }) },
   );
 }
 
 export function rejectProposal(id: string) {
   return requestJson<{ proposal: Proposal }>(`/api/proposals/${encodeURIComponent(id)}/reject`, { method: "POST" });
+}
+
+export function startProjectSession(id: string) {
+  return requestJson<{projectId: string; sessionId: string}>(`/api/projects/${encodeURIComponent(id)}/session/start`, {method:"POST"});
 }
 
 export function fetchProjectHistory(id: string) {

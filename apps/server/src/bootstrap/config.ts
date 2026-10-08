@@ -25,7 +25,7 @@ export interface AppConfig {
   oss: { region: string; endpoint?: string; bucket: string; accessKeyId: string; accessKeySecret: string };
   dashscope: { apiKey: string; baseUrl: string; embeddingModel: string; embeddingDimension: number; visionModel: string; asrModel: string };
   agent: { sessionDatabasePath: string; workspaceRoot: string; definitionPath: string; deepseekApiKey: string };
-  creative: { enabled: boolean; intervalMs: number; workers: number; proposalTimeoutMs: number; creatorTimeoutMs: number; image: { endpoint: string; apiKey: string; model: string; timeoutMs: number } };
+  creative: { enabled: boolean; workers: number; proposalTimeoutMs: number; creatorTimeoutMs: number; image: { endpoint: string; apiKey: string; model: string; timeoutMs: number } };
   tasks: { schedulerIntervalMs: number; workerConcurrency: number; timeoutMinSeconds: number; timeoutMaxSeconds: number };
 }
 
@@ -117,7 +117,6 @@ export function loadConfig(): AppConfig {
     },
     creative: {
       enabled: creativeEnabled,
-      intervalMs: positiveInt("CREATIVE_INTERVAL_MS", 2000),
       workers: positiveInt("CREATIVE_WORKERS", 1),
       proposalTimeoutMs: positiveInt("CREATIVE_PROPOSAL_TIMEOUT_MS", 120_000),
       creatorTimeoutMs: positiveInt("CREATIVE_CREATOR_TIMEOUT_MS", 900_000),

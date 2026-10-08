@@ -18,14 +18,13 @@ const proposal = Type.Object({
   title: string(200), proposedSummary: Type.Optional(string(2000)),
   recordIds: Type.Array(string(100), { minItems: 1, maxItems: 100 }),
   content: Type.Object({
-    reason: string(10000), idea: string(1000),
-    plan: Type.Array(string(500), { minItems: 3, maxItems: 3 }),
-    tags: Type.Array(string(12), { minItems: 2, maxItems: 4 }),
-    goal,
+    reason: string(10000), ideas: Type.Array(Type.Object({
+      title: string(40), idea: string(240), tags: Type.Array(string(12), { minItems: 2, maxItems: 4 }), goal,
+    }, { additionalProperties: false }), { minItems: 1, maxItems: 2 }),
   }, { additionalProperties: false }),
 }, { additionalProperties: false });
 const image = Type.Object({ prompt: string(6000),
-  referenceMediaIds: Type.Array(string(100), { minItems: 1, maxItems: 3 }),
+  referenceMediaIds: Type.Array(string(100), { minItems: 1, maxItems: 10 }),
   aspectRatio: Type.Optional(Type.Union([Type.Literal("portrait"), Type.Literal("landscape"), Type.Literal("square")])) }, { additionalProperties: false });
 const manage = Type.Object({
   action: Type.Union([Type.Literal("create"), Type.Literal("update")]),

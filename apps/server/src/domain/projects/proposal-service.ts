@@ -4,10 +4,10 @@ import type { Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
 import type { RecordService } from "../records/index.js";
 import type { MediaService } from "../media/index.js";
-import { ProjectRepository, proposalEntity } from "./repository.js";
+import { ProjectRepository, proposalEntity, publicProposal } from "./repository.js";
 import { decodeCursor, page } from "./cursor.js";
 import { acceptProposalSchema, createProposalSchema, paginationSchema, proposalListSchema, uuid } from "./validation.js";
-import { failure, success, type AcceptProposalInput, type CreateProposalInput, type Pagination, type ProposalContent, type ProposalStatus, type ProposalType, type TransactionOptions } from "./project.js";
+import { failure, success, type AcceptProposalInput, type CreateProposalInput, type Pagination, type ProposalStatus, type ProposalType, type TransactionOptions } from "./project.js";
 
 export class ProposalService {
   private constructor(private readonly db: Kysely<DB>, private readonly records: RecordService, private readonly media: MediaService, private readonly embeddings: ProjectEmbeddingProvider) {}
@@ -26,7 +26,7 @@ export class ProposalService {
         if (target.status !== "active") return failure("INVALID_STATE");
       }
       const now = new Date(), id = randomUUID();
-      const row = await repo.insertProposal({ session_id: options.sessionId ?? null, proposal_id: id, user_id: userId, type: value.type, target_project_id: value.targetProjectId ?? null, title: value.title, proposed_summary: value.proposedSummary ?? null, content: { reason: value.content.reason, idea: value.content.idea, plan: value.content.plan, tags: value.content.tags, goal: value.content.goal }, status: "pending", result_project_id: null, created_at: now, updated_at: now, resolved_at: null });
+      const row = await repo.insertProposal({ session_id: options.sessionId ?? null, proposal_id: id, user_id: userId, type: value.type, target_project_id: value.targetProjectId ?? null, title: value.title, proposed_summary: value.proposedSummary ?? null, content: { reason: value.content.reason, ideas: value.content.ideas.map(idea => ({ ...idea, id: randomUUID() })), selectedIdeaId: null }, status: "pending", result_project_id: null, created_at: now, updated_at: now, resolved_at: null });
       await repo.addLinks(userId, "proposal", id, records, now);
       return success(proposalEntity(row));
     };
@@ -42,7 +42,7 @@ export class ProposalService {
     if (!uuid.safeParse(id).success) return failure("INVALID_INPUT");
     return this.db.transaction().setIsolationLevel("repeatable read").execute(async trx => {
       const repo = new ProjectRepository(trx), row = await repo.proposal(userId, id);
-      return row ? success({ ...proposalEntity(row), referenceRecordCount: await repo.count(userId, "proposal", id) }) : failure("NOT_FOUND");
+      return row ? success({ ...publicProposal(proposalEntity(row)), referenceRecordCount: await repo.count(userId, "proposal", id) }) : failure("NOT_FOUND");
     });
   }
   async list(userId: string, input: Pagination & { type?: ProposalType; status?: ProposalStatus; targetProjectId?: string }) {
@@ -53,7 +53,7 @@ export class ProposalService {
     if (cursor === null) return failure("INVALID_CURSOR");
     const rows = await new ProjectRepository(this.db).proposals(userId, { type, status, targetProjectId }, cursor, limit + 1);
     const result = page(rows, limit, scope, r => ({ time: r.created_at.toISOString(), id: r.proposal_id }));
-    return success({ ...result, data: result.data.map(proposalEntity) });
+    return success({ ...result, data: result.data.map(row => publicProposal(proposalEntity(row))) });
   }
   async recordsPage(userId: string, id: string, input: Pagination) {
     if (!uuid.safeParse(id).success || !paginationSchema.safeParse(input).success) return failure("INVALID_INPUT");
@@ -73,41 +73,41 @@ export class ProposalService {
     return this.db.transaction().execute(async trx => {
       const repo = new ProjectRepository(trx), row = await repo.proposal(userId, id, true);
       if (!row) return failure("NOT_FOUND");
-      if (row.status === "accepted") return success({ proposal: proposalEntity(row), resultProjectId: row.result_project_id!, addedRecordCount: 0 });
-      if (row.status !== "pending") return failure("INVALID_STATE");
       const current = proposalEntity(row);
-      let acceptedContent: ProposalContent | undefined;
-      if (parsed.data.userInput) {
-        if (!current.content.goal) return failure("INVALID_INPUT");
-        const constraints = current.content.goal.constraints ?? [];
-        if (constraints.length >= 20) return failure("INVALID_INPUT");
-        acceptedContent = {
-          ...current.content,
-          goal: {
-            ...current.content.goal,
-            constraints: [...constraints, `用户补充创作想法：${parsed.data.userInput}`],
-          },
-        };
+      const selectedId = parsed.data.selectedIdeaId ?? (current.content.ideas.length === 1 ? current.content.ideas[0]?.id : undefined);
+      if (!selectedId) return failure("INVALID_INPUT");
+      const selected = current.content.ideas.find(idea => idea.id === selectedId);
+      if (!selected) return failure("INVALID_INPUT");
+      if (row.status === "accepted") {
+        return selectedId === current.content.selectedIdeaId
+          ? success({ proposal: publicProposal(current), resultProjectId: row.result_project_id!, addedRecordCount: 0 })
+          : failure("INVALID_STATE");
       }
+      if (row.status !== "pending") return failure("INVALID_STATE");
       const links = await repo.links(userId, "proposal", id);
-      // Record -> Project lock order matches deletion. Missing Records are deliberately skipped.
+      // Record -> Project lock order matches deletion.
       const records = await this.records.findMany(userId, links.map(r => r.record_id), { transaction: trx, lock: true });
       if (!records.length) return failure("REFERENCE_RECORDS_UNAVAILABLE");
       const now = new Date(), projectId = row.type === "create" ? randomUUID() : row.target_project_id!;
       if (row.type === "create") {
+        const prefix = `创作目标：${selected.title}。${selected.idea}；素材背景：`;
+        const summary = prefix.slice(0, 2000) + (row.proposed_summary ?? "").slice(0, Math.max(0, 2000 - prefix.length));
         let embedding: string;
-        try { embedding = await embedProjectText(this.embeddings, row.proposed_summary!); }
+        try { embedding = await embedProjectText(this.embeddings, summary); }
         catch { return failure("EMBEDDING_UNAVAILABLE"); }
-        await repo.insertProject({ project_id: projectId, user_id: userId, embedding, session_id: null, title: row.title, summary: row.proposed_summary!, goal: (acceptedContent ?? current.content).goal, cover_media_id: null, content: "", status: "active", version: 1, created_at: now, updated_at: now });
+        await repo.insertProject({ project_id: projectId, user_id: userId, embedding, session_id: null,
+          title: selected.title, summary, goal: selected.goal, cover_media_id: null,
+          content: "", status: "active", version: 1, created_at: now, updated_at: now });
       } else {
         const target = await repo.project(userId, projectId, true);
         if (!target) return failure("NOT_FOUND");
         if (target.status !== "active") return failure("INVALID_STATE");
       }
       const addedRecordCount = await repo.addLinks(userId, "project", projectId, records, now);
-      if (row.type === "extend") await repo.updateProject(userId, projectId, { goal: (acceptedContent ?? current.content).goal });
-      const resolved = await repo.resolveProposal(userId, id, "accepted", projectId, now, acceptedContent);
-      return success({ proposal: proposalEntity(resolved), resultProjectId: projectId, addedRecordCount });
+      if (row.type === "extend") await repo.updateProject(userId, projectId, { goal: selected.goal });
+      const resolved = await repo.resolveProposal(userId, id, "accepted", projectId, now,
+        { ...current.content, selectedIdeaId: selectedId });
+      return success({ proposal: publicProposal(proposalEntity(resolved)), resultProjectId: projectId, addedRecordCount });
     });
   }
   async reject(userId: string, id: string) {
@@ -115,21 +115,9 @@ export class ProposalService {
     return this.db.transaction().execute(async trx => {
       const repo = new ProjectRepository(trx), row = await repo.proposal(userId, id, true);
       if (!row) return failure("NOT_FOUND");
-      if (row.status === "rejected") return success({ proposal: proposalEntity(row) });
+      if (row.status === "rejected") return success({ proposal: publicProposal(proposalEntity(row)) });
       if (row.status !== "pending") return failure("INVALID_STATE");
-      return success({ proposal: proposalEntity(await repo.resolveProposal(userId, id, "rejected", null, new Date())) });
-    });
-  }
-  /** Privileged recovery feed for server orchestration only; never expose as an HTTP or model tool. */
-  async scanAcceptedCreations(input: Pagination) {
-    if (!paginationSchema.safeParse(input).success) return failure("INVALID_INPUT");
-    const scope = ["accepted-creations-v1"], cursor = decodeCursor(input.cursor, scope);
-    if (cursor === null) return failure("INVALID_CURSOR");
-    return this.db.transaction().setIsolationLevel("repeatable read").execute(async trx => {
-      const repo = new ProjectRepository(trx), rows = await repo.scan(cursor, input.limit + 1);
-      const result = page(rows, input.limit, scope, r => ({ time: r.resolved_at!.toISOString(), id: r.proposal_id }));
-      const data = await Promise.all(result.data.map(async r => ({ userId: r.user_id, proposalId: r.proposal_id, resultProjectId: r.result_project_id!, resolvedAt: r.resolved_at!, goal: proposalEntity(r).content.goal!, referenceRecordIds: (await repo.links(r.user_id, "proposal", r.proposal_id)).map(link => link.record_id) })));
-      return success({ ...result, data });
+      return success({ proposal: publicProposal(proposalEntity(await repo.resolveProposal(userId, id, "rejected", null, new Date()))) });
     });
   }
 }

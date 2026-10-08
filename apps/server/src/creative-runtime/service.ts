@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { sql, type Kysely } from "kysely";
+import type { Kysely } from "kysely";
 import type { DB } from "../infrastructure/database/schema.js";
 import type { RecordService } from "../domain/records/index.js";
 import type { MediaService } from "../domain/media/index.js";
@@ -25,7 +25,7 @@ export class CreativeService {
   async context(context: CreativeContext) {
     if (context.creative?.role === "proposal") return { projectId: null, role: "proposal", recordIds: [context.creative.recordId] };
     const project = await this.authorizedProject(context);
-    return { projectId: project.projectId };
+    return { projectId: project.projectId, title: project.title, goal: project.goal, version: project.version, summary: project.summary };
   }
 
   async readRecords(context: CreativeContext, input: { recordIds?: string[]; query?: string }) {
@@ -60,29 +60,7 @@ export class CreativeService {
     if (!record || record.version !== context.creative.recordVersion || record.status !== "processed") throw new CreativeError("SOURCE_RECORD_CHANGED");
     const result = await this.proposals.create(context.userId, input, { sessionId: context.sessionId });
     if (result.kind === "error") throw new CreativeError(result.code);
-    await this.markAnalyzed(context.userId, context.creative.recordId, context.creative.recordVersion);
     return { proposalId: result.data.proposalId, type: result.data.type, status: result.data.status, title: result.data.title };
-  }
-
-  async markAnalyzed(userId: string, recordId: string, version: number) {
-    await sql`UPDATE records SET ext_data = jsonb_set(COALESCE(ext_data::jsonb, '{}'::jsonb),
-      '{proposalAnalyzedVersion}', to_jsonb(${version}::int))::text
-      WHERE user_id = ${userId} AND record_id = ${recordId} AND version = ${version}`.execute(this.db);
-  }
-
-  async pendingRecords(limit = 10) {
-    const result = await sql<{ user_id: string; record_id: string; version: number }>`
-      SELECT user_id, record_id, version FROM records
-      WHERE status = 'processed' AND
-        (COALESCE(ext_data::jsonb->>'proposalAnalyzedVersion', '') <> version::text)
-      ORDER BY updated_at DESC LIMIT ${limit}`.execute(this.db);
-    return result.rows;
-  }
-
-  async pendingProposals(cursor?: string) {
-    const result = await this.proposals.scanAcceptedCreations({ limit: 100, ...(cursor ? { cursor } : {}) });
-    if (result.kind === "error") throw new CreativeError(result.code);
-    return result.data;
   }
 
   async projectManage(context: CreativeContext, input: ProjectManageInput) {

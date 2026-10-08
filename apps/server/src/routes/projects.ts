@@ -10,7 +10,7 @@ function respond<T>(c: Context, result: DomainResult<T>) {
 }
 const pagination = (c: Context, fallback: number) => ({ limit: c.req.query("limit") === undefined ? fallback : Number(c.req.query("limit")), cursor: c.req.query("cursor") });
 const expectedVersion = z.number().int().positive();
-const acceptProposal = z.object({ userInput: z.string().trim().min(1).max(500).optional() }).strict();
+const acceptProposal = z.object({ selectedIdeaId: z.string().uuid().optional() }).strict();
 const patch = z.object({ expectedVersion, title: z.string().optional(), summary: z.string().optional(), coverMediaId: z.string().nullable().optional(), content: z.string().optional(), goal: z.object({ objective: z.string().min(1), context: z.string().optional(), constraints: z.array(z.string()).optional(), successCriteria: z.array(z.string()).optional() }).strict().optional() }).strict();
 export function createProjectRoutes(service: ProjectService) {
   const app = new Hono();

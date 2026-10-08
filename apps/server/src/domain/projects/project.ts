@@ -9,7 +9,9 @@ export interface ProjectGoal {
   constraints?: string[];
   successCriteria?: string[];
 }
-export interface ProposalContent { reason: string; idea: string; plan: string[]; tags: string[]; goal: ProjectGoal }
+export interface ProposalIdea { id: string; title: string; idea: string; tags: string[]; goal: ProjectGoal }
+export interface ProposalContent { reason: string; ideas: ProposalIdea[]; selectedIdeaId: string | null }
+export interface ProposalCreateContent { reason: string; ideas: Array<Omit<ProposalIdea, "id">> }
 export interface Proposal {
   proposalId: string; userId: string; sessionId: string | null; type: ProposalType; targetProjectId: string | null;
   title: string; proposedSummary: string | null; content: ProposalContent; status: ProposalStatus;
@@ -28,8 +30,8 @@ export type TransactionOptions = { transaction?: Transaction<DB> };
 export type ProjectPatch = Partial<Pick<Project, "title" | "summary" | "coverMediaId" | "content" | "goal">>;
 export type CreateProposalInput = {
   type: ProposalType; targetProjectId?: string | null; title: string; proposedSummary?: string | null;
-  recordIds: string[]; content: ProposalContent;
+  recordIds: string[]; content: ProposalCreateContent;
 };
-export type AcceptProposalInput = { userInput?: string };
+export type AcceptProposalInput = { selectedIdeaId?: string };
 export const success = <T>(data: T): DomainResult<T> => ({ kind: "ok", data });
 export const failure = (code: DomainErrorCode): DomainResult<never> => ({ kind: "error", code });
