@@ -1,4 +1,4 @@
-import type { CreativeAuthority } from "../../creative-runtime/model.js";
+import type { CreativeContext } from "../../creative-runtime/model.js";
 import { createContextKey, TODO_CONTEXT, type Context, withContextValue } from "@earendil-works/pi-agent-core";
 import { createSlotStore, type SlotStore } from "./internal/slot-store.js";
 
@@ -6,7 +6,8 @@ export type ContextMessage = { role: "user" | "assistant"; text: string };
 
 type RunContextInput = {
   runId: string;
-  creative?: CreativeAuthority;
+  creative?: CreativeContext["creative"];
+  projectId?: string;
   userId: string;
   query: string;
   slots: Record<string, string>;

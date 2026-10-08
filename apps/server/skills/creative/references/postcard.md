@@ -71,4 +71,4 @@ creation 建议：
 - 不伪造天气、路线、景点名称、同行关系或旅行事件。
 - 若 location 与文本冲突，以可确认的 Record 信息为准，不自行猜测。
 
-完成后调用 creation_publish。
+完成后调用 project_manage(action=update)。

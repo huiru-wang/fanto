@@ -1,5 +1,4 @@
 import type { CreativeService } from "../creative-runtime/service.js";
-import { createCreativeRoutes } from "../routes/creative.js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { nowIso } from "../infrastructure/time.js";
@@ -18,6 +17,8 @@ import type { AgentRuntime } from "../agent/agent-runtime.js";
 import { createSessionRoutes } from "../routes/agent/sessions.js";
 import { createAgentRoutes } from "../routes/agent/stream.js";
 import { createTaskRoutes } from "../routes/tasks.js";
+import { createProjectSessionRoutes } from "../routes/project-session.js";
+import type { CreativeRunner } from "../creative-runtime/runner.js";
 import { bodyLimit } from "hono/body-limit";
 
 const redact = (value: unknown): unknown => {
@@ -37,6 +38,7 @@ const jsonBody = async (response: Response, path: string) => {
 
 export type ServerServices = {
   creative?: CreativeService;
+  creativeRunner?: CreativeRunner;
   auth?: AuthService;
   records: RecordService;
   media: MediaService;
@@ -100,9 +102,9 @@ export function createApp(services: ServerServices) {
   if (auth) app.route("/api", createAuthRoutes(auth));
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));
-  if (services.creative) app.route("/api", createCreativeRoutes(services.creative));
   if (projectService) app.route("/api", createProjectRoutes(projectService));
-  if (services.proposals) app.route("/api", createProposalRoutes(services.proposals));
+  if (services.proposals) app.route("/api", createProposalRoutes(services.proposals, services.creativeRunner));
+  if (projectService && services.agent && services.creativeRunner) app.route("/api", createProjectSessionRoutes(projectService, services.agent, services.creativeRunner));
   if (services.tasks) app.route("/api", createTaskRoutes(services.tasks, mediaService));
   if (services.agent) {
     app.use("/api/agent/*", bodyLimit({ maxSize: 64 * 1024 }));

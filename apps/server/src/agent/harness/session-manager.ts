@@ -105,10 +105,11 @@ export class AgentSessionManager {
     cursor: number | undefined,
     limit: number,
     userId: string,
+    options: { internal?: boolean } = {},
   ): Promise<{ agentId: string; entries: Entry[]; hasMore: boolean; nextCursor: number | null }> {
     const { agentId, session, close } = await this.openForRead(id, userId);
     try {
-      if (isInternalAgent(agentId)) throw new SessionOwnershipError("Internal session is not publicly accessible");
+      if (isInternalAgent(agentId) && !options.internal) throw new SessionOwnershipError("Internal session is not publicly accessible");
       const visible: Entry[] = [];
       let currentCursor = cursor;
       let exhausted = false;

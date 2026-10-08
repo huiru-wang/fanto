@@ -26,8 +26,8 @@ test("successful task delivery and user input collection terminate the current t
   assert.equal(await afterTool({ toolName: "deliver_task_result", isError: true }), undefined);
   assert.equal(await afterTool({ toolName: "write", isError: false }), undefined);
   assert.deepEqual(await afterTool({ toolName: "proposal_create", isError: false }), { terminate: true });
-  assert.deepEqual(await afterTool({ toolName: "creation_publish", isError: false }), { terminate: true });
-  assert.equal(await afterTool({ toolName: "creation_publish", isError: true }), undefined);
+  assert.equal(await afterTool({ toolName: "project_manage", isError: false }), undefined);
+  assert.equal(await afterTool({ toolName: "project_manage", isError: true }), undefined);
 });
 
 test("Task Worker cannot write, execute bash, or deliver before saving a plan", async () => {

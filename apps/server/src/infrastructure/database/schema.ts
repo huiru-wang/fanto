@@ -70,6 +70,7 @@ export interface ProjectsTable {
   summary: string;
   cover_media_id: string | null;
   content: string;
+  goal: unknown;
   status: "active" | "archived";
   version: number;
   created_at: Date;
@@ -197,9 +198,6 @@ export interface DB {
   user_login_identities: UserLoginIdentitiesTable;
   auth_challenges: AuthChallengesTable;
   records: RecordsTable;
-  proposal_runs: ProposalRunsTable;
-  creation_runs: CreationRunsTable;
-  creation_image_steps: CreationImageStepsTable;
   projects: ProjectsTable;
   proposals: ProposalsTable;
   record_links: RecordLinksTable;

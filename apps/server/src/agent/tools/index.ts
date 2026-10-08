@@ -1,4 +1,4 @@
-import { createProjectReadTool, createProposalCreateTool, createImageGenerateTool, createCreationPrepareTool, createCreationPublishTool } from "./creative.js";
+import { createProjectReadTool, createProposalCreateTool, createImageGenerateTool, createProjectManageTool } from "./creative.js";
 import {
   createBashTool,
   createEditTool,
@@ -40,8 +40,7 @@ export function createTools(
       case "project_read": return createProjectReadTool(fanto);
       case "proposal_create": return createProposalCreateTool(fanto);
       case "image_generate": return createImageGenerateTool(fanto);
-      case "creation_prepare": return createCreationPrepareTool(fanto);
-      case "creation_publish": return createCreationPublishTool(fanto);
+      case "project_manage": return createProjectManageTool(fanto);
       case "record_read": return createRecordReadTool(fanto);
       case "memory_manage": return createMemoryManageTool(fanto);
       case "web_search": return createWebSearchTool(fanto);

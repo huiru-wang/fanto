@@ -64,7 +64,7 @@ const embeddings = new EmbeddingsClient(
 const retrieval = RecordRetrievalService.create(db, embeddings);
 const memories = MemoryService.create(db, embeddings);
 const queue = new RecordPostprocessQueue();
-const records = RecordService.create(db, queue, retrieval, recordListCache, config.creative.enabled ? CreativeService.enqueueRecord : undefined);
+const records = RecordService.create(db, queue, retrieval, recordListCache);
 const tasks = new TaskService(db, {
   minSeconds: config.tasks.timeoutMinSeconds,
   maxSeconds: config.tasks.timeoutMaxSeconds,
@@ -73,7 +73,7 @@ const projects = ProjectService.create(db, records, media, embeddings);
 const proposals = ProposalService.create(db, records, media, embeddings);
 const creative = config.creative.enabled ? new CreativeService(db, records, projects, proposals, media, new CreativeImageClient(config.creative.image), userId => auth.assertActiveUser(userId)) : undefined;
 const agent = createAgentRuntime({ records, media, tasks, memories, creative, ...config.agent });
-const creativeRunner = creative ? new CreativeRunner(creative, records, agent, config.creative) : undefined;
+const creativeRunner = creative ? new CreativeRunner(creative, agent, config.creative) : undefined;
 const taskWorker = new TaskWorker(tasks, agent.registry, agent.sessions);
 const taskWorkerPool = new TaskWorkerPool(config.tasks.workerConcurrency, taskWorker);
 const taskScheduler = new TaskScheduler(tasks, taskWorkerPool, config.tasks.schedulerIntervalMs);
@@ -90,6 +90,7 @@ registerRecordPostprocessListener(
   retrieval,
 );
 
+if (creative) await projects.normalizeLegacyMedia();
 creativeRunner?.start();
 const stopMediaCleanup = startMediaCleanup(media);
 
@@ -98,6 +99,7 @@ const services: ServerServices = {
   records,
   media,
   projects,
+  creativeRunner,
   proposals,
   creative,
   tasks,

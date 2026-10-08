@@ -16,21 +16,6 @@ export class ProjectService {
   static async removeRecordReferences(userId: string, recordId: string, transaction: NonNullable<TransactionOptions["transaction"]>) {
     await new ProjectRepository(transaction).cleanupRecord(userId, recordId);
   }
-  /** Caller holds candidate media locks; concurrent publishers take shared media locks. */
-  static async retainedMediaIds(userId: string, candidates: string[], transaction: NonNullable<TransactionOptions["transaction"]>) {
-    const retained = new Set<string>();
-    for (const project of await new ProjectRepository(transaction).mediaReferences(userId)) {
-      if (project.cover_media_id) retained.add(project.cover_media_id);
-      const inspected = inspectProjectContent(project.content);
-      // Conservatively preserve candidate IDs mentioned in an unsupported legacy document.
-      if (inspected.kind === "error") {
-        for (const id of candidates) if (project.content.toLowerCase().includes(id.toLowerCase())) retained.add(id);
-      } else {
-        for (const id of inspected.data) retained.add(id);
-      }
-    }
-    return retained;
-  }
   static create(db: Kysely<DB>, records: RecordService, media: MediaService, embeddings: ProjectEmbeddingProvider) { return new ProjectService(db, records, media, embeddings); }
   async find(userId: string, id: string, options: TransactionOptions = {}) {
     if (!uuid.safeParse(id).success) return null;
@@ -91,19 +76,17 @@ export class ProjectService {
     const parsed = patchSchema.safeParse(input);
     if (!parsed.success) return failure("INVALID_INPUT");
     const patch = parsed.data;
-    const inspected = inspectProjectContent(patch.content ?? "");
-    if (inspected.kind === "error") return inspected;
+    const createdMediaKeys: string[] = [];
     const execute = async (transaction: NonNullable<TransactionOptions["transaction"]>) => {
       const repo = new ProjectRepository(transaction);
       const row = await repo.project(userId, id, true);
       if (!row) return failure("NOT_FOUND");
       if (row.status !== "active") return failure("INVALID_STATE");
       if (row.version !== expectedVersion) return failure("VERSION_CONFLICT");
-      const ids = [...new Set([...inspected.data, ...(patch.coverMediaId ? [patch.coverMediaId] : [])])];
-      if (ids.length) {
-        const assets = await this.media.findOwnedByIds(userId, ids, { transaction });
-        if (assets.length !== ids.length || assets.some(a => a.status !== "ready" || a.mediaType !== "image")) return failure("MEDIA_NOT_READY");
-      }
+      const fullContent = patch.content ?? row.content;
+      const inspected = inspectProjectContent(fullContent);
+      if (inspected.kind === "error") return inspected;
+      const cover = patch.coverMediaId === undefined ? row.cover_media_id : patch.coverMediaId;
       const values: Partial<DB["projects"]> = {};
       if (patch.title !== undefined) values.title = patch.title;
       if (patch.summary !== undefined && patch.summary !== row.summary) {
@@ -111,12 +94,52 @@ export class ProjectService {
         catch { return failure("EMBEDDING_UNAVAILABLE"); }
         values.summary = patch.summary;
       }
-      if (patch.coverMediaId !== undefined) values.cover_media_id = patch.coverMediaId;
-      if (patch.content !== undefined) values.content = patch.content;
+      const mapping = await this.media.copyFinalReferences(userId, id, [...inspected.data, ...(cover ? [cover] : [])], transaction, createdMediaKeys);
+      const content = fullContent.replace(/fanto-media:\/\/([0-9a-f-]{36})/gi, (match, mediaId: string) =>
+        mapping[mediaId.toLowerCase()] ? `fanto-media://${mapping[mediaId.toLowerCase()]}` : match);
+      const canonicalCover = cover ? mapping[cover] ?? cover : null;
+      if (canonicalCover !== row.cover_media_id) values.cover_media_id = canonicalCover;
+      if (content !== row.content) values.content = content;
+      if (patch.goal !== undefined) values.goal = patch.goal;
       if (Object.entries(values).every(([key, value]) => row[key as keyof typeof row] === value)) return success(projectEntity(row));
       return success(projectEntity(await repo.updateProject(userId, id, values)));
     };
-    return options.transaction ? execute(options.transaction) : this.db.transaction().execute(execute);
+    try { return await (options.transaction ? execute(options.transaction) : this.db.transaction().execute(execute)); }
+    catch (error) {
+      await this.media.cleanupUncommittedProjectObjects(createdMediaKeys);
+      if (error instanceof Error && /MEDIA_NOT_READY|not found|NoSuchKey/i.test(error.message)) return failure("MEDIA_NOT_READY");
+      throw error;
+    }
+  }
+  async bindSession(userId: string, projectId: string, sessionId: string) {
+    const existing = await this.find(userId, projectId);
+    if (!existing) return null;
+    if (existing.sessionId) return existing.sessionId;
+    const row = await this.db.updateTable("projects").set({ session_id: sessionId }).where("user_id", "=", userId)
+      .where("project_id", "=", projectId).where("session_id", "is", null).returning("session_id").executeTakeFirst();
+    return row?.session_id ?? (await this.find(userId, projectId))?.sessionId ?? null;
+  }
+  async normalizeLegacyMedia() {
+    // Run before serving traffic; archived Projects must be normalized too.
+    const projects = await this.db.selectFrom("projects").select(["user_id", "project_id"]).execute();
+    for (const project of projects) {
+      await this.db.transaction().execute(async trx => {
+        const repo = new ProjectRepository(trx);
+        const row = await repo.project(project.user_id, project.project_id, true);
+        if (!row) return;
+        const inspected = inspectProjectContent(row.content);
+        if (inspected.kind === "error") throw new Error(`Cannot normalize project ${row.project_id}: ${inspected.code}`);
+        const ids = [...inspected.data, ...(row.cover_media_id ? [row.cover_media_id] : [])];
+        if (!ids.length) return;
+        const mapping = await this.media.copyFinalReferences(row.user_id, row.project_id, ids, trx);
+        if (!Object.keys(mapping).length) return;
+        const content = row.content.replace(/fanto-media:\/\/([0-9a-f-]{36})/gi, (match, id: string) =>
+          mapping[id.toLowerCase()] ? `fanto-media://${mapping[id.toLowerCase()]}` : match);
+        await repo.updateProject(row.user_id, row.project_id, {
+          content, cover_media_id: row.cover_media_id ? mapping[row.cover_media_id] ?? row.cover_media_id : null,
+        });
+      });
+    }
   }
   async listReferencedMediaIds(userId: string, id: string) {
     const project = await this.find(userId, id);

@@ -39,7 +39,7 @@ export function installHarnessHooks(
   harness.hooks.on("before_payload", async () => undefined);
   harness.hooks.on("after_response", async () => undefined);
   harness.hooks.on("after_tool", async ({ toolName, isError }) => {
-    if (["deliver_task_result", "collect_user_input", "proposal_create", "creation_publish"].includes(toolName) && !isError) return { terminate: true };
+    if (["deliver_task_result", "collect_user_input", "proposal_create"].includes(toolName) && !isError) return { terminate: true };
     return undefined;
   });
   harness.hooks.on("before_compaction", async () => undefined);

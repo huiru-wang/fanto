@@ -78,7 +78,7 @@ export function createAgentRoutes(
   return app;
 }
 
-async function writeStreamEvent(
+export async function writeStreamEvent(
   stream: { writeSSE: (event: { event: string; data: string }) => Promise<void> },
   event: AgentStreamEvent,
 ): Promise<void> {

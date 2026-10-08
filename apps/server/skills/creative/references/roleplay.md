@@ -68,4 +68,4 @@ Prompt 应明确包含：
 - 生成图全部使用稳定 fanto-media:// mediaId。
 - Project 内容可用 Markdown / html-preview 组织成一组主题写真。
 - 文案只描述真实拍摄背景与“基于原图的二次创作”，不把角色扮演写成真实发生。
-- 完成后调用 creation_publish。
+- 完成后调用 project_manage(action=update)。

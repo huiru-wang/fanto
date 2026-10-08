@@ -18,11 +18,11 @@ import { UserInputCard } from "../components/UserInputCard";
 import { AGENT_SESSION_KEY } from "../config";
 
 type MessageState = "complete" | "processing" | "streaming" | "stopped" | "failed";
-type ChatMessage = AgentHistoryMessage & { state: MessageState };
+export type ChatMessage = AgentHistoryMessage & { state: MessageState };
 
 const localId = () => `local-${crypto.randomUUID()}`;
 
-const ChatMessageItem = memo(function ChatMessageItem({
+export const ChatMessageItem = memo(function ChatMessageItem({
   message,
   responding,
   onSubmitInput,

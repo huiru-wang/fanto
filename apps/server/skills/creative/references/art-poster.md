@@ -58,10 +58,7 @@ creation 建议写法：
 执行规则：
 1. 只使用 1 张最合适的授权源图；除非 Proposal 已明确要求，否则不要混用多张图。
 2. 如果画面中有人物，必须把该人物作为 subject reference，并保持身份一致。
-3. 调用 creation_prepare 时，优先固定：
-   - sourceMediaIds：只选这 1 张主图
-   - subjectMediaId：有人物时填写主人物对应图片
-   - imageCount：优先 1
+3. 使用 image_generate，referenceMediaIds 传选定的主图，不需要预先锁定数量或图片槽位。
 4. 生成图时，必须将该源图作为唯一视觉参考。
 5. 图像模型负责：
    - 手绘海报主体视觉

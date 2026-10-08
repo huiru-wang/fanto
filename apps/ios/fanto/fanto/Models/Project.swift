@@ -9,6 +9,7 @@ struct Project: Identifiable, Hashable {
     let id: String
     let title: String
     let summary: String
+    var sessionID: String? = nil
     var coverMediaID: String? = nil
     let content: String
     let status: ProjectStatus
@@ -24,7 +25,7 @@ struct ProjectDetail {
 enum ProposalType: String, Codable, Hashable { case create, extend }
 enum ProposalStatus: String, Codable, Hashable { case pending, accepted, rejected }
 
-struct ProposalCreation: Decodable, Hashable {
+struct ProposalGoal: Decodable, Hashable {
     let objective: String
     let context: String?
     let constraints: [String]?
@@ -36,10 +37,10 @@ struct ProposalContent: Decodable, Hashable {
     let idea: String
     let plan: [String]
     let tags: [String]
-    let creation: ProposalCreation?
+    let goal: ProposalGoal?
 
     private enum CodingKeys: String, CodingKey {
-        case reason, idea, plan, tags, creation
+        case reason, idea, plan, tags, goal
     }
 
     init(from decoder: Decoder) throws {
@@ -48,14 +49,14 @@ struct ProposalContent: Decodable, Hashable {
         idea = try container.decode(String.self, forKey: .idea)
         plan = try container.decode([String].self, forKey: .plan)
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
-        creation = try container.decodeIfPresent(ProposalCreation.self, forKey: .creation)
+        goal = try container.decodeIfPresent(ProposalGoal.self, forKey: .goal)
     }
 
     var preserveText: String? { facet(named: "保留") }
     var transformText: String? { facet(named: "转化") }
 
     private func facet(named name: String) -> String? {
-        guard let constraints = creation?.constraints else { return nil }
+        guard let constraints = goal?.constraints else { return nil }
         let prefixes = ["\(name)：", "\(name):", "\(name)｜", "\(name)|"]
         for constraint in constraints {
             for prefix in prefixes where constraint.hasPrefix(prefix) {

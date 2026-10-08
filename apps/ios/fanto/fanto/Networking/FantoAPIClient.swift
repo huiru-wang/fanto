@@ -53,11 +53,6 @@ struct FantoAPIClient {
 
     private let baseURL = URL(string: "https://fanto.robinverse.me")!
 
-    func fetchCreation(projectID: String) async throws -> ProjectCreation? {
-        let response: ProjectCreationEnvelope = try await request(path: "api/projects/\(projectID)/creation")
-        return response.creation
-    }
-
     func fetchProjects(status: ProjectStatus? = nil, cursor: String? = nil, limit: Int = 100) async throws -> ProjectPage {
         var components = URLComponents(url: baseURL.appending(path: "api/projects"), resolvingAgainstBaseURL: false)
         var items = [URLQueryItem(name: "limit", value: String(limit))]
@@ -198,6 +193,7 @@ private struct ProjectsPayload: Decodable {
 
 private struct ProjectPayload: Decodable {
     let projectId: String
+    let sessionId: String?
     let title: String
     let summary: String
     let coverMediaId: String?
@@ -212,7 +208,7 @@ private struct ProjectPayload: Decodable {
 
 private extension Project {
     init(_ payload: ProjectPayload) {
-        self.init(id: payload.projectId, title: payload.title, summary: payload.summary, coverMediaID: payload.coverMediaId, content: payload.content ?? "", status: payload.status, version: payload.version, createdAt: payload.createdAt, updatedAt: payload.updatedAt)
+        self.init(id: payload.projectId, title: payload.title, summary: payload.summary, sessionID: payload.sessionId, coverMediaID: payload.coverMediaId, content: payload.content ?? "", status: payload.status, version: payload.version, createdAt: payload.createdAt, updatedAt: payload.updatedAt)
     }
 }
 
@@ -325,25 +321,3 @@ private extension ISO8601DateFormatter {
         return formatter
     }()
 }
-
-struct ProjectCreation: Decodable {
-    let status: String
-    let progress: Progress
-    let errorCode: String?
-    struct Progress: Decodable {
-        let stage: String?
-        let completedImages: Int?
-        let imageCount: Int?
-    }
-    var isPending: Bool { status == "queued" || status == "running" }
-    var label: String {
-        switch status {
-        case "queued": "创作正在排队"
-        case "running": progress.stage == "writing" ? "正在整理图文" : (progress.imageCount == nil ? "正在准备创作" : "正在创作图片 · \(progress.completedImages ?? 0)/\(progress.imageCount ?? 0)")
-        case "completed": "创作已完成"
-        case "failed": errorCode == "IMAGE_RESULT_UNKNOWN" ? "生成结果未能确认，这次创作已暂停" : "这次创作未完成，已生成的图片会保留"
-        default: "创作已停止"
-        }
-    }
-}
-private struct ProjectCreationEnvelope: Decodable { let creation: ProjectCreation? }

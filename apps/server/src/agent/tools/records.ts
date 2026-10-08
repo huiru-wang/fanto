@@ -31,6 +31,7 @@ function requestContext(context: Context) {
     userId: metadata.userId,
     sessionId: metadata.sessionId,
     creative: metadata.creative,
+    projectId: metadata.projectId,
     traceId: metadata.traceId,
     signal: context.abortSignal,
   };

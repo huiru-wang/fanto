@@ -73,4 +73,4 @@ creation 建议：
 时间、日期、短文使用 Markdown / html-preview。
 不写未经记录的成长评价、性格变化或家庭关系。
 
-完成后调用 creation_publish。
+完成后调用 project_manage(action=update)。

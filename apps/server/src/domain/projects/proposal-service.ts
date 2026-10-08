@@ -26,7 +26,7 @@ export class ProposalService {
         if (target.status !== "active") return failure("INVALID_STATE");
       }
       const now = new Date(), id = randomUUID();
-      const row = await repo.insertProposal({ session_id: options.sessionId ?? null, proposal_id: id, user_id: userId, type: value.type, target_project_id: value.targetProjectId ?? null, title: value.title, proposed_summary: value.proposedSummary ?? null, content: { reason: value.content.reason, idea: value.content.idea, plan: value.content.plan, tags: value.content.tags, ...(value.content.creation ? { creation: value.content.creation } : {}) }, status: "pending", result_project_id: null, created_at: now, updated_at: now, resolved_at: null });
+      const row = await repo.insertProposal({ session_id: options.sessionId ?? null, proposal_id: id, user_id: userId, type: value.type, target_project_id: value.targetProjectId ?? null, title: value.title, proposed_summary: value.proposedSummary ?? null, content: { reason: value.content.reason, idea: value.content.idea, plan: value.content.plan, tags: value.content.tags, goal: value.content.goal }, status: "pending", result_project_id: null, created_at: now, updated_at: now, resolved_at: null });
       await repo.addLinks(userId, "proposal", id, records, now);
       return success(proposalEntity(row));
     };
@@ -78,13 +78,13 @@ export class ProposalService {
       const current = proposalEntity(row);
       let acceptedContent: ProposalContent | undefined;
       if (parsed.data.userInput) {
-        if (!current.content.creation) return failure("INVALID_INPUT");
-        const constraints = current.content.creation.constraints ?? [];
+        if (!current.content.goal) return failure("INVALID_INPUT");
+        const constraints = current.content.goal.constraints ?? [];
         if (constraints.length >= 20) return failure("INVALID_INPUT");
         acceptedContent = {
           ...current.content,
-          creation: {
-            ...current.content.creation,
+          goal: {
+            ...current.content.goal,
             constraints: [...constraints, `用户补充创作想法：${parsed.data.userInput}`],
           },
         };
@@ -98,14 +98,14 @@ export class ProposalService {
         let embedding: string;
         try { embedding = await embedProjectText(this.embeddings, row.proposed_summary!); }
         catch { return failure("EMBEDDING_UNAVAILABLE"); }
-        await repo.insertProject({ project_id: projectId, user_id: userId, embedding, session_id: null, title: row.title, summary: row.proposed_summary!, cover_media_id: null, content: "", status: "active", version: 1, created_at: now, updated_at: now });
+        await repo.insertProject({ project_id: projectId, user_id: userId, embedding, session_id: null, title: row.title, summary: row.proposed_summary!, goal: (acceptedContent ?? current.content).goal, cover_media_id: null, content: "", status: "active", version: 1, created_at: now, updated_at: now });
       } else {
         const target = await repo.project(userId, projectId, true);
         if (!target) return failure("NOT_FOUND");
         if (target.status !== "active") return failure("INVALID_STATE");
       }
       const addedRecordCount = await repo.addLinks(userId, "project", projectId, records, now);
-      if (row.type === "extend" && addedRecordCount > 0) await repo.updateProject(userId, projectId, {});
+      if (row.type === "extend") await repo.updateProject(userId, projectId, { goal: (acceptedContent ?? current.content).goal });
       const resolved = await repo.resolveProposal(userId, id, "accepted", projectId, now, acceptedContent);
       return success({ proposal: proposalEntity(resolved), resultProjectId: projectId, addedRecordCount });
     });
@@ -128,7 +128,7 @@ export class ProposalService {
     return this.db.transaction().setIsolationLevel("repeatable read").execute(async trx => {
       const repo = new ProjectRepository(trx), rows = await repo.scan(cursor, input.limit + 1);
       const result = page(rows, input.limit, scope, r => ({ time: r.resolved_at!.toISOString(), id: r.proposal_id }));
-      const data = await Promise.all(result.data.map(async r => ({ userId: r.user_id, proposalId: r.proposal_id, resultProjectId: r.result_project_id!, resolvedAt: r.resolved_at!, creation: proposalEntity(r).content.creation!, referenceRecordIds: (await repo.links(r.user_id, "proposal", r.proposal_id)).map(link => link.record_id) })));
+      const data = await Promise.all(result.data.map(async r => ({ userId: r.user_id, proposalId: r.proposal_id, resultProjectId: r.result_project_id!, resolvedAt: r.resolved_at!, goal: proposalEntity(r).content.goal!, referenceRecordIds: (await repo.links(r.user_id, "proposal", r.proposal_id)).map(link => link.record_id) })));
       return success({ ...result, data });
     });
   }

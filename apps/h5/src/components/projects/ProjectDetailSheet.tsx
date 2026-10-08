@@ -1,9 +1,10 @@
-import { Archive, ArrowLeft, Check, ChevronDown, ChevronUp, CircleAlert, Clock3, RefreshCw, Sparkles, X } from "lucide-react";
+import { Archive, ArrowLeft, Check, ChevronDown, ChevronUp, CircleAlert, Clock3, RefreshCw, Sparkles, X, MessageCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { archiveProject, acceptProposal, getProject, getProjectCreation, getProposal, listProposalRecords, rejectProposal, type Creation, type ProjectDetail, type Proposal } from "../../api/projects";
+import { archiveProject, acceptProposal, getProject, getProposal, listProposalRecords, rejectProposal, type ProjectDetail, type Proposal } from "../../api/projects";
 import type { RecordItem } from "../../api/records";
 import { RecordMediaList } from "../RecordMedia";
 import { ProjectDocument } from "./ProjectHtmlPreview";
+import { ProjectSessionChat } from "./ProjectSessionChat";
 
 type SheetProps = {
   proposalId: string | null;
@@ -53,7 +54,7 @@ function RecordReferences({ records, count, cursor, loading, error, onMore, onRe
 }
 
 function facet(content: Proposal["content"], name: "保留" | "转化"): string | null {
-  const constraint = content.creation?.constraints?.find(item => ["：", ":", "｜", "|"].some(separator => item.startsWith(name + separator)));
+  const constraint = content.goal?.constraints?.find(item => ["：", ":", "｜", "|"].some(separator => item.startsWith(name + separator)));
   return constraint?.slice(name.length + 1).trim() || null;
 }
 
@@ -113,7 +114,7 @@ function ProposalSheet({ id, onAccepted, onRejected }: { id: string; onAccepted:
     setActionError(null);
     try {
       if (accept) {
-        const result = await acceptProposal(id, proposal.content.creation ? userInput.trim() || undefined : undefined);
+        const result = await acceptProposal(id, proposal.content.goal ? userInput.trim() || undefined : undefined);
         onAccepted(result.resultProjectId);
       } else {
         await rejectProposal(id);
@@ -162,7 +163,7 @@ function ProposalSheet({ id, onAccepted, onRejected }: { id: string; onAccepted:
           })}</div>
         </section>}
 
-        {proposal.status === "pending" && proposal.content.creation && <section className="project-detail-section">
+        {proposal.status === "pending" && proposal.content.goal && <section className="project-detail-section">
           <h3>想再改一点？</h3>
           <p className="project-muted">告诉 Fanto 你更希望作品是什么样子。</p>
           <textarea className="project-suggestion-input" maxLength={500} rows={3} placeholder="比如：不要文字，色调更温暖一点…" value={userInput} onChange={event => setUserInput(event.target.value)} aria-label="补充创作想法" />
@@ -190,21 +191,9 @@ function ProposalSheet({ id, onAccepted, onRejected }: { id: string; onAccepted:
   );
 }
 
-const progressText = (creation: Creation) => {
-  if (creation.status === "failed") return "创作暂时中断，可以稍后查看";
-  if (creation.status === "cancelled") return "创作已取消";
-  if (creation.status === "queued") return "灵感已收好，正在等待创作";
-  if (creation.progress.stage === "generating") {
-    const count = creation.progress.completedImages ?? 0;
-    return `正在绘制画面${creation.progress.imageCount ? ` · ${count}/${creation.progress.imageCount}` : ""}`;
-  }
-  if (creation.progress.stage === "writing") return "正在整理成作品";
-  return "正在创作中…";
-};
-
 function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }) {
   const [project, setProject] = useState<ProjectDetail | null>(null);
-  const [creation, setCreation] = useState<Creation | null>(null);
+  const [showChat, setShowChat] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [archiving, setArchiving] = useState(false);
@@ -224,27 +213,10 @@ function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }
   useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let attempts = 0;
-    const poll = async () => {
-      try {
-        const result = await getProjectCreation(id);
-        if (cancelled) return;
-        setCreation(result.creation);
-        if (result.creation?.status === "completed") {
-          await load();
-          return;
-        }
-        if (result.creation && !["queued", "running"].includes(result.creation.status)) return;
-        if (++attempts < 150) timer = setTimeout(() => void poll(), 4000);
-      } catch {
-        // Some installations don't enable the optional Creative Runtime.
-      }
-    };
-    void poll();
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [id, load]);
+    const timer = setInterval(() => void getProject(id).then(next => setProject(current =>
+      !current || current.version !== next.version ? next : current)).catch(() => {}), 3000);
+    return () => clearInterval(timer);
+  }, [id]);
 
   const archive = async () => {
     if (!project || archiving || !window.confirm("归档后仍可查看作品，但不能再修改或扩展。确定归档吗？")) return;
@@ -269,14 +241,10 @@ function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }
       <div className="project-sheet-scroll">
         <div className="project-sheet-kicker"><Check size={15} />{project.status === "archived" ? "已归档的作品" : "创作成果"}<span>·</span><time>{formatDate(project.updatedAt)}</time></div>
         <h2 className="project-sheet-title">{project.title}</h2>
-        {creation && creation.status !== "completed" && <div className={`project-creation-status ${creation.status === "failed" ? "is-failed" : ""}`}>
-          {["queued", "running"].includes(creation.status) ? <span className="project-pulse" /> : <CircleAlert size={17} />}
-          <span>{progressText(creation)}</span>
-        </div>}
-        {project.content?.trim() ? <ProjectDocument content={project.content} title={project.title} /> : <div className="project-unpublished">
-          <p>{project.summary}</p>
-          <span>{creation && ["queued", "running"].includes(creation.status) ? "作品还在准备中，完成后将自动更新。" : "作品正文暂未发布"}</span>
-        </div>}
+        {project.content?.trim()
+          ? <ProjectDocument content={project.content} title={project.title} />
+          : <div className="project-unpublished"><p>{project.summary}</p><span>创作过程会在下方实时呈现</span></div>}
+        {!project.content?.trim() && project.sessionId && <ProjectSessionChat projectId={project.projectId} sessionId={project.sessionId} onUpdated={() => void load()} />}
 
         <section className="project-detail-section project-reference-section">
           <button className="project-reference-toggle" type="button" onClick={() => setShowRecords(value => !value)} aria-expanded={showRecords}>
@@ -288,6 +256,10 @@ function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }
 
         {error && <div className="project-form-error" role="alert">{error} <button type="button" onClick={() => void load()}>重新加载</button></div>}
       </div>
+      {project.content?.trim() && project.sessionId && project.status === "active" && <div className="project-session-float">
+        {showChat && <div className="project-session-popover"><ProjectSessionChat projectId={project.projectId} sessionId={project.sessionId} onUpdated={() => void load()} /></div>}
+        <button type="button" className="project-session-launch" onClick={() => setShowChat(!showChat)}><MessageCircle size={19}/>{showChat ? "收起对话" : "继续创作"}</button>
+      </div>}
       <div className="project-sheet-bottom project-sheet-footer">
         <span className="project-muted">{project.status === "archived" ? "作品已归档" : "作品会随着新的创作继续生长"}</span>
         {project.status === "active" && <button className="project-archive-button" type="button" onClick={() => void archive()} disabled={archiving}><Archive size={16} />{archiving ? "归档中…" : "归档"}</button>}

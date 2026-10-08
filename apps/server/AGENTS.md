@@ -16,7 +16,7 @@
 - `src/routes/`：HTTP 输入校验、用户边界、响应映射与路由注册。
 - `src/domain/`：业务实体、规则、操作与 Repository。
 - `src/infrastructure/`：PostgreSQL、外部 Client、队列、日志、时间等基础设施。
-- `src/creative-runtime/`：Record 提议分析、接受后创作、租约与付费图片恢复；运行语义见 `docs/architecture/creative-runtime.md`。
+- `src/creative-runtime/`：Record 提议分析与接受后 Project Session Agent 调度；运行语义见 `docs/architecture/creative-runtime.md`。
 - `src/listeners/`：进程内异步事件处理。
 - `src/migrations/`：当前 schema 空库基线与已部署 PostgreSQL 的增量迁移。
 - `src/agent/`：Pi Agent Runtime、Session、Context、Tool 与 workspace；`src/routes/agent/` 只保留其 HTTP / SSE 边界。
@@ -33,8 +33,9 @@
 - Record 创建 / 更新后的图片理解、音频转写和向量索引走现有 postprocess queue + listener；不要再引入另一套并行工作流。
 - Record postprocess 异步队列是进程内机制，不具备持久化、重试或多实例一致性；不要在代码或文档中暗示这些能力已存在。
 - Proposal / Project 是独立领域；Project 只保存 active / archived 成果，提议决策使用 ProposalService。Proposal 摘要字段使用 proposedSummary（数据库 proposed_summary），Project 摘要字段使用 summary。Record 删除与提议接受须保持 Record → Project 锁顺序及同事务关联清理；正文资源校验使用语法解析，不以全文正则替代。Project summary 与其 768 维 embedding 同事务写入；搜索限定用户和 active 状态。project_read 仅支持 search / get，不能把候选相似度当成关联结论。
-- Creative Runtime 的 proposal-agent / creator-agent 仅由可信后台执行；proposal-agent 全程静默，仅允许生成提议或 no_proposal，不向用户提问。任何 Tool 写入都校验用户、内部角色、Session 和租约；Proposal creation 仅保存与 Task goal 同形的用户目标；creator-agent 经 creation_prepare 固化不可变素材 / 主体 / 数量计划后才能生图和发布。生图先登记固定槽位，未知结果禁止重发，保存恢复只能复用已收到结果。Proposal 的 session_id 仅由可信服务端执行上下文写入，不由模型参数指定，不授予公共会话权限。Proposal / Project 更新与对应运行完成必须同事务。
-- Record 删除必须同事务清理来源关联、移除独占媒体资产并登记 media_object_deletions；已有成果直接引用的媒体保留。Project 发布与媒体删除必须通过共享 / 排他媒体锁互斥。OSS 清理失败保留持久任务并重试，不能将网络调用失败等同于业务删除回滚。
+- Creative Runtime 的 proposal-agent 从已处理 Record 发现提议；creator-agent 基于绑定 Project 的长期 Session 执行并继续对话。Project 仅存最新 goal/content，Session 消息为执行过程唯一事实来源；不引入独立 Run / 进度 / 图片槽位 / 租约表。Proposal goal 不包含媒体槽位。Proposal 的 session_id 是提议分析 Session，Project session_id 是创作 Session，不互换。
+- 可信 RunContext 的 projectId 来自服务端经用户 + Session 绑定检查；creator-agent 工具不得修改其它 Project。Project 级 History / Stream 独立校验授权，普通内部 Agent Session HTTP 仍不可公开访问。
+- image_generate 多参考图输入、单图输出且无运行状态；Project 媒体统一写入 users/{userId}/project/{projectId}/{mediaId}.{ext}。project_manage 最终保存时检查 objectKey 并为外部 Record 引用创建新 mediaId + 对象副本，替换内容引用。Record 删除继续同事务清理独占资产与 OSS 删除队列；Task 交付按原规则保留。OSS 清理失败重试。
 - HTTP 接口行为以实际注册 Route 为准。
 - Agent Tool 与 Context Provider 只能通过 `src/agent/business-services.ts` 调用声明过的领域 Service；不得调用 Route、HTTP Client 或 Repository。Agent Session SQLite、workspace 和 SSE / abort 语义必须保持兼容。
 

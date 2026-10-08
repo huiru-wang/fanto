@@ -14,6 +14,8 @@ export type Page<T> = {
 
 export type Project = {
   projectId: string;
+  sessionId: string | null;
+  goal: { objective: string; context?: string; constraints?: string[]; successCriteria?: string[] };
   title: string;
   summary: string;
   coverMediaId: string | null;
@@ -41,7 +43,7 @@ export type Proposal = {
     idea: string;
     plan: string[];
     tags?: string[];
-    creation?: {
+    goal: {
       objective: string;
       context?: string;
       constraints?: string[];
@@ -54,17 +56,6 @@ export type Proposal = {
   updatedAt: string;
   resolvedAt: string | null;
   referenceRecordCount?: number;
-};
-
-export type Creation = {
-  creationRunId: string;
-  proposalId: string;
-  projectId: string;
-  status: "queued" | "running" | "completed" | "failed" | "cancelled";
-  progress: { stage: string; completedImages?: number; imageCount?: number };
-  errorCode: string | null;
-  publishedProjectVersion: number | null;
-  updatedAt: string;
 };
 
 const queryPage = (limit: number, cursor?: string | null) => {
@@ -114,6 +105,6 @@ export function rejectProposal(id: string) {
   return requestJson<{ proposal: Proposal }>(`/api/proposals/${encodeURIComponent(id)}/reject`, { method: "POST" });
 }
 
-export function getProjectCreation(id: string) {
-  return requestJson<{ creation: Creation | null }>(`/api/projects/${encodeURIComponent(id)}/creation`);
+export function fetchProjectHistory(id: string) {
+  return requestJson<{ messages: import("./agent").AgentHistoryMessage[]; hasMore: boolean; nextCursor: number | null }>(`/api/projects/${encodeURIComponent(id)}/session/history?limit=100`);
 }

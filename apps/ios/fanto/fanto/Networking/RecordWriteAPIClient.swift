@@ -50,6 +50,9 @@ struct RecordWriteAPIClient {
     private let baseURL = URL(string: "https://fanto.robinverse.me")!
 
     func upload(_ media: DraftMediaUpload) async throws -> String {
+        if media.mimeType.hasPrefix("image/") && media.data.count > 10 * 1024 * 1024 {
+            throw RecordWriteAPIError.server("图片不能超过 10MB")
+        }
         let ticket: UploadTicketPayload = try await authenticatedRequest(
             url: baseURL.appending(path: "api/uploads"),
             method: "POST",

@@ -2,7 +2,7 @@ import { sql, type Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
 import type { Cursor } from "./cursor.js";
 import type { Project, Proposal, ProposalContent, ProposalStatus, ProposalType } from "./project.js";
-export const projectEntity = (r: Omit<DB["projects"], "embedding">): Project => ({ projectId: r.project_id, userId: r.user_id, sessionId: r.session_id, title: r.title, summary: r.summary, coverMediaId: r.cover_media_id, content: r.content, status: r.status, version: r.version, createdAt: r.created_at, updatedAt: r.updated_at });
+export const projectEntity = (r: Omit<DB["projects"], "embedding">): Project => ({ projectId: r.project_id, userId: r.user_id, sessionId: r.session_id, title: r.title, summary: r.summary, coverMediaId: r.cover_media_id, content: r.content, goal: r.goal as Project["goal"], status: r.status, version: r.version, createdAt: r.created_at, updatedAt: r.updated_at });
 const proposalContent = (value: unknown): ProposalContent => {
   const raw = (value && typeof value === "object" ? value : {}) as Partial<ProposalContent>;
   return {
@@ -10,7 +10,7 @@ const proposalContent = (value: unknown): ProposalContent => {
     idea: typeof raw.idea === "string" ? raw.idea : "",
     plan: Array.isArray(raw.plan) ? raw.plan.filter((item): item is string => typeof item === "string") : [],
     tags: Array.isArray(raw.tags) ? raw.tags.filter((item): item is string => typeof item === "string") : [],
-    ...(raw.creation ? { creation: raw.creation } : {}),
+    goal: (raw.goal ?? (raw as {creation?: ProposalContent["goal"]}).creation ?? {objective: "继续创作"}) as ProposalContent["goal"],
   };
 };
 export const proposalEntity = (r: DB["proposals"]): Proposal => ({ proposalId: r.proposal_id, userId: r.user_id, sessionId: r.session_id, type: r.type, targetProjectId: r.target_project_id, title: r.title, proposedSummary: r.proposed_summary, content: proposalContent(r.content), status: r.status, resultProjectId: r.result_project_id, createdAt: r.created_at, updatedAt: r.updated_at, resolvedAt: r.resolved_at });
@@ -28,7 +28,7 @@ export class ProjectRepository {
     return (lock ? q.forUpdate() : q).executeTakeFirst();
   }
   projects(userId: string, status: "active" | "archived", cursor: Cursor | undefined, limit: number) {
-    let q = this.db.selectFrom("projects").select(["project_id", "user_id", "session_id", "title", "summary", "cover_media_id", "status", "version", "created_at", "updated_at"]).where("user_id", "=", userId).where("status", "=", status);
+    let q = this.db.selectFrom("projects").select(["project_id", "user_id", "session_id", "title", "summary", "cover_media_id", "goal", "status", "version", "created_at", "updated_at"]).where("user_id", "=", userId).where("status", "=", status);
     if (cursor) q = q.where(eb => eb.or([eb("updated_at", "<", new Date(cursor.time)), eb.and([eb("updated_at", "=", new Date(cursor.time)), eb("project_id", "<", cursor.id)])]));
     return q.orderBy("updated_at", "desc").orderBy("project_id", "desc").limit(limit).execute();
   }
@@ -81,7 +81,7 @@ export class ProjectRepository {
     await this.db.deleteFrom("record_links").where("user_id", "=", userId).where("record_id", "=", recordId).execute();
   }
   scan(cursor: Cursor | undefined, limit: number) {
-    let q = this.db.selectFrom("proposals").selectAll().where("status", "=", "accepted").where(sql<boolean>`content->'creation'->>'objective' IS NOT NULL`);
+    let q = this.db.selectFrom("proposals").selectAll().where("status", "=", "accepted").where(sql<boolean>`content->'goal'->>'objective' IS NOT NULL`);
     if (cursor) q = q.where(eb => eb.or([eb("resolved_at", ">", new Date(cursor.time)), eb.and([eb("resolved_at", "=", new Date(cursor.time)), eb("proposal_id", ">", cursor.id)])]));
     return q.orderBy("resolved_at", "asc").orderBy("proposal_id", "asc").limit(limit).execute();
   }

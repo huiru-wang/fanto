@@ -62,4 +62,4 @@ creation 建议：
 - Markdown / html-preview 负责标题、短文与页面节奏。
 - 每页文字尽量少，视觉优先。
 
-完成后调用 creation_publish。
+完成后调用 project_manage(action=update)。

@@ -24,6 +24,7 @@ type UploadTicket = {
 };
 
 const MAX_MEDIA_BYTES = 50_000_000;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 const mimeByExtension: Record<string, string> = {
   jpg: "image/jpeg",
@@ -103,6 +104,7 @@ export async function createDraftMedia(file: File): Promise<DraftMedia> {
 
   const mimeType = canonicalMime(file, file.name);
   const kind = kindForMime(mimeType);
+  if (kind === "image" && file.size > MAX_IMAGE_BYTES) throw new Error("图片不能超过 10MB");
   const blob = file.type === mimeType ? file : file.slice(0, file.size, mimeType);
   const capture = kind === "image" ? await imageCapture(blob) : await audioCapture(blob);
 
@@ -136,6 +138,7 @@ export function disposeDraftMedia(media: DraftMedia): void {
 }
 
 export async function uploadMedia(media: DraftMedia): Promise<string> {
+  if (media.kind === "image" && media.blob.size > MAX_IMAGE_BYTES) throw new Error("图片不能超过 10MB");
   const ticket = await requestJson<UploadTicket>("/api/uploads", {
     method: "POST",
     body: JSON.stringify({ mimeType: media.mimeType, bytes: media.blob.size }),

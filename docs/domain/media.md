@@ -9,7 +9,7 @@ Media 负责 Record 使用的图片与音频资产。二进制内容存储在阿
 | Image | `image/jpeg`、`image/png`、`image/webp` |
 | Audio | `audio/mp4`、`audio/mpeg`、`audio/wav` |
 
-单个媒体请求声明大小上限为 50,000,000 bytes。
+用户上传图片上限 10 × 1024 × 1024 bytes（10 MiB），音频声明大小上限 50,000,000 bytes。H5/iOS 在上传前验证；Server 申请和 complete 分别检查声明与 OSS 实际大小。
 
 ## 上传链路
 
@@ -62,13 +62,14 @@ Audio block 在 Record postprocess 中调用 ASR。成功后，transcription 与
 
 `present_media` Agent Tool 使用 `/meta` 对模型给出的 mediaId 做用户归属与 ready 校验，并把稳定 metadata 写入原生 Tool Result `details`。短期 signed URL 不写入 Agent Session，真正展示或播放时再由客户端调用 `/url` 获取。缩略图 URL 与原图 URL 必须按 variant 独立缓存；业务 API 不直接暴露永久 OSS URL。
 
-## 创作图片
+## Project 媒体与创作图片
 
-Creative Runtime 通过 Media Service 将参考图片适配为临时 JPEG，再用服务端签名地址调用生成模型；原素材保持不变。生成结果完整验证后存 OSS，按固定 mediaId 幂等注册 ready Image，extData 包含 creationRunId / proposalId / projectId / imageIndex 和尺寸。Agent 与 Project 只使用 mediaId；供应商地址不作为成果地址。临时参考对象调用后删除，已生成的图片不因文章发布失败而删除。执行恢复见 [创作运行](../architecture/creative-runtime.md)。
+`image_generate` 以多张用户可访问的 ready 参考图片调用模型，服务端可短暂生成适配 JPEG 和签名链接，调用完成删除临时对象。模型每次只返回单张图片，完成下载/解码后保存到 `users/{userId}/project/{projectId}/{mediaId}.{ext}`，注册新的 ready Media，并只给 Agent 返回 mediaId/mimeType/width/height。不使用 Run、预算、图片槽位或独立进度表。
 
+`project_manage` 在最终保存 Project content/coverMediaId 时校验每个媒体归属：原 objectKey 已在当前 Project 前缀下则直接使用，否则复制 OSS 对象、创建新的 mediaId 和媒体资产，将最终内容中的引用换成新的 ID。同请求重复媒体引用复制一次。仅用于参考、不进入正式作品的 Record 图片无需副本。
 
 ## Record 删除与媒体清理
 
-删除 Record 时，对关联媒体加锁，并检查同用户 active / archived Project 的封面、Markdown / HTML / CSS 资源引用，以及 Task 交付和创作图片槽位。仍被成果引用的媒体保留资产与对象，仅解除 Record 占用；独占媒体在同一业务事务中删除 media_assets，并将 object_key 登记到 media_object_deletions。Project 发布的媒体校验持有共享锁，与删除互斥，避免并发发布引用已删除资产。聊天历史中的媒体引用不会阻止用户删除原始素材，删除后旧链接不可用。
+删除 Record 时锁定其媒体资产，同事务删除原 Record 独占媒体的 media_assets 并向 `media_object_deletions` 登记 object_key；Task 结果有独立保留规则。Project 最终作品已使用独立 mediaId 和 objectKey，不再阻止原 Record 媒体被删除。聊天历史的原 Record 图片引用也不会阻止删除。
 
-Server 启动后每 5 秒扫描最多 10 个到期 OSS 清理任务；数据库行锁与 skip locked 防止多实例重复领取。OSS 删除成功后移除任务，失败按 30 秒到 1 小时的指数退避持续重试，重启后继续；对象删除幂等，任务表不跟随用户级联删除。HTTP 删除成功表示 Record 与独占资产已移除，OSS 二进制最终清理；已签发地址在对象移除前可能仍可访问。缩略图为 OSS 动态变体，无独立缩略图对象需要删除。日志关键字为 media-cleanup。
+Server 启动后每 5 秒处理 OSS 删除队列；网络删除失败按退避重试。HTTP Record 删除成功表示业务行已提交，对象异步移除。

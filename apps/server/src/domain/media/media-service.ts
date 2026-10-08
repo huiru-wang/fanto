@@ -11,33 +11,53 @@ export class MediaService {
   constructor(private readonly media: PostgresMediaRepository, private readonly oss: OssStorage) {}
   static create(db: Kysely<DB>, oss: OssStorage) { return new MediaService(new PostgresMediaRepository(db), oss); }
   findOwnedByIds(userId: string, ids: string[], options: { transaction?: Transaction<DB> } = {}) { return this.media.findMediaByIds(ids, userId, options.transaction, !!options.transaction); }
-  static enqueueRecordDeletion(userId: string, ids: string[], transaction: Transaction<DB>, retain: () => Promise<Set<string>>) {
-    return PostgresMediaRepository.enqueueRecordDeletion(userId, ids, transaction, retain);
+  static enqueueRecordDeletion(userId: string, ids: string[], transaction: Transaction<DB>) {
+    return PostgresMediaRepository.enqueueRecordDeletion(userId, ids, transaction);
   }
   cleanupDeletedObjects() {
     return this.media.cleanupDeletedObjects(key => this.oss.remove(key), (mediaId, attempts) => logWarn("media-cleanup", "OSS deletion will retry", { mediaId, attempts }));
   }
-  async createGeneratedImage(input: { userId: string; mediaId: string; creationRunId: string; proposalId: string; projectId: string; imageIndex: number; data: Buffer; width: number; height: number }) {
-    const current = await this.media.findMedia(input.mediaId, input.userId);
-    if (current) {
-      if (current.extData.creationRunId !== input.creationRunId || current.extData.imageIndex !== input.imageIndex || current.status !== "ready" || current.mediaType !== "image") throw new Error("Generated media registration conflict");
-      return metadata(current);
-    }
+  async createGeneratedImage(input: { userId: string; projectId: string; mediaId: string; data: Buffer; width: number; height: number }) {
     const decoded = await sharp(input.data, { limitInputPixels: 40_000_000 }).metadata();
     if (decoded.format !== "png" || decoded.width !== input.width || decoded.height !== input.height || input.data.length > 20 * 1024 * 1024) throw new Error("Invalid generated image");
-    const key = `users/${input.userId}/creations/${input.creationRunId}/${input.mediaId}.png`;
+    const key = `users/${input.userId}/project/${input.projectId}/${input.mediaId}.png`;
     await this.oss.putObject(key, input.data, "image/png");
     try {
-      const saved = await this.media.createReadyImage({ mediaId: input.mediaId, userId: input.userId, objectKey: key, mimeType: "image/png", bytes: input.data.length, extData: { source: "creation", creationRunId: input.creationRunId, proposalId: input.proposalId, projectId: input.projectId, imageIndex: input.imageIndex, capture: { width: input.width, height: input.height } } });
+      const saved = await this.media.createReadyImage({ mediaId: input.mediaId, userId: input.userId, objectKey: key, mimeType: "image/png", bytes: input.data.length, extData: { source: "project", projectId: input.projectId, createdBy: "image_generate", capture: { width: input.width, height: input.height } } });
       return metadata(saved);
-    } catch (error) {
-      // On a lost DB acknowledgement, preserve a possibly committed object; remove only confirmed orphans.
-      const exists = await this.media.findMedia(input.mediaId, input.userId).catch(() => undefined);
-      if (exists === null) await this.oss.remove(key).catch(() => {});
-      throw error;
-    }
+    } catch (error) { await this.oss.remove(key).catch(() => {}); throw error; }
   }
-  async withGenerationReferences<T>(userId: string, ids: string[], runId: string, operation: (urls: string[]) => Promise<T>) {
+
+  async copyFinalReferences(userId: string, projectId: string, ids: string[], transaction: Transaction<DB>, createdKeys: string[] = []): Promise<Record<string, string>> {
+    const keys = [...new Set(ids)];
+    const rows = await this.media.findMediaByIds(keys, userId, transaction, true);
+    if (rows.length !== keys.length || rows.some(a => a.status !== "ready")) throw new Error("MEDIA_NOT_READY");
+    const prefix = `users/${userId}/project/${projectId}/`;
+    const mapping: Record<string, string> = {};
+    for (const source of rows) {
+      if (source.objectKey.startsWith(prefix)) continue;
+      const descriptor = mediaMime(source.mimeType);
+      const ext = descriptor?.extension ?? (source.mimeType === "text/html" ? ".html" : source.mimeType === "text/markdown" ? ".md" : "");
+      if (!ext) throw new Error("MEDIA_NOT_READY");
+      const newId = randomUUID(), key = `${prefix}${newId}${ext}`;
+      const data = await this.oss.getObject(source.objectKey);
+      await this.oss.putObject(key, data, source.mimeType);
+      createdKeys.push(key);
+      await this.media.createReadyAsset({
+        mediaId: newId, userId, objectKey: key, mediaType: source.mediaType,
+        mimeType: source.mimeType, bytes: data.length,
+        extData: { source: "project", projectId, createdBy: "project_copy", originMediaId: source.mediaId, ...(source.extData.capture ? { capture: source.extData.capture } : {}) },
+      }, transaction);
+      mapping[source.mediaId] = newId;
+    }
+    return mapping;
+  }
+
+  async cleanupUncommittedProjectObjects(keys: string[]) {
+    await Promise.allSettled(keys.map(key => this.oss.remove(key)));
+  }
+
+  async withGenerationReferences<T>(userId: string, ids: string[], projectId: string, operation: (urls: string[]) => Promise<T>) {
     const assets = await this.media.findMediaByIds(ids, userId);
     if (assets.length !== ids.length || assets.some(a => a.status !== "ready" || a.mediaType !== "image" || a.bytes > 20 * 1024 * 1024)) throw new Error("SOURCE_MEDIA_UNAVAILABLE");
     const keys: string[] = [], urls: string[] = [];
@@ -51,7 +71,7 @@ export class MediaService {
         const width = meta.autoOrient?.width ?? meta.width, height = meta.autoOrient?.height ?? meta.height;
         const scale = Math.max(384 / Math.min(width, height), Math.min(1, 3072 / Math.max(width, height)));
         const adapted = await image.rotate().resize({ width: Math.round(width * scale), height: Math.round(height * scale), fit: "inside" }).jpeg({ quality: 92 }).toBuffer();
-        const key = `users/${userId}/creations/${runId}/references/${randomUUID()}.jpg`;
+        const key = `users/${userId}/project/${projectId}/temp/${randomUUID()}.jpg`;
         keys.push(key);
         await this.oss.putObject(key, adapted, "image/jpeg");
         urls.push(this.oss.readUrl(key, "original", 900));
@@ -60,7 +80,7 @@ export class MediaService {
     } finally { await Promise.all(keys.map(key => this.oss.remove(key).catch(() => {}))); }
   }
   async createUpload(userId: string, input: { mimeType: string; bytes: number }) {
-    const descriptor = mediaMime(input.mimeType); if (!descriptor) return null;
+    const descriptor = mediaMime(input.mimeType); if (!descriptor || (descriptor.mediaType === "image" && input.bytes > 10 * 1024 * 1024)) return null;
     const mediaId = crypto.randomUUID();
     const created = await this.media.create({ mediaId, userId, objectKey: mediaObjectKey(userId, mediaId, descriptor.extension), mediaType: descriptor.mediaType, mimeType: descriptor.mimeType, bytes: input.bytes });
     return { mediaId: created.mediaId, uploadUrl: this.oss.putUrl(created.objectKey, created.mimeType), expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
@@ -114,7 +134,7 @@ export class MediaService {
   async completeUpload(userId: string, id: string, capture: Record<string, unknown>) {
     const current = await this.media.findMedia(id, userId); if (!current) return { kind: "not_found" } as const;
     try { const head: any = await this.oss.head(current.objectKey); const bytes = Number(head.res?.headers?.["content-length"] ?? head.res?.headers?.["Content-Length"]); const mimeType = head.res?.headers?.["content-type"] ?? head.res?.headers?.["Content-Type"];
-      if (bytes !== current.bytes || normalizeMimeType(mimeType) !== current.mimeType) return { kind: "mismatch" } as const;
+      if (bytes !== current.bytes || (current.mediaType === "image" && bytes > 10 * 1024 * 1024) || normalizeMimeType(mimeType) !== current.mimeType) return { kind: "mismatch" } as const;
       const result = await this.media.complete(id, userId, capture); return result ? { kind: "ok", media: result } as const : { kind: "incomplete" } as const;
     } catch { return { kind: "incomplete" } as const; }
   }

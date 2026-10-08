@@ -25,7 +25,7 @@ struct ProposalDetailView: View {
                 header
                 effectSection
                 planSection
-                if displayedProposal.content.creation != nil {
+                if displayedProposal.content.goal != nil {
                     inputSection
                 }
                 referencesSection

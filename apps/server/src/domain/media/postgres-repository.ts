@@ -10,14 +10,11 @@ const asset = (row: any): MediaAsset => ({ mediaId: row.media_id, userId: row.us
 export class PostgresMediaRepository {
   constructor(private db: Kysely<DB>) {}
 
-  static async enqueueRecordDeletion(userId: string, ids: string[], transaction: Transaction<DB>, retain: () => Promise<Set<string>>) {
+  static async enqueueRecordDeletion(userId: string, ids: string[], transaction: Transaction<DB>) {
     if (!ids.length) return;
     const assets = await transaction.selectFrom("media_assets").selectAll().where("user_id", "=", userId).where("media_id", "in", ids).orderBy("media_id").forUpdate().execute();
-    const retained = await retain();
     const taskMedia = await transaction.selectFrom("task_runs").select("result_media_id").where("user_id", "=", userId).where("result_media_id", "in", ids).execute();
-    for (const row of taskMedia) if (row.result_media_id) retained.add(row.result_media_id);
-    const generated = await transaction.selectFrom("creation_image_steps").innerJoin("creation_runs", "creation_runs.run_id", "creation_image_steps.run_id").select("media_id").where("creation_runs.user_id", "=", userId).where("media_id", "in", ids).execute();
-    for (const row of generated) retained.add(row.media_id);
+    const retained = new Set(taskMedia.map(r => r.result_media_id).filter(Boolean));
     for (const row of assets) {
       if (retained.has(row.media_id)) {
         await transaction.updateTable("media_assets").set({ ext_data: JSON.stringify({ ...json(row.ext_data), recordId: null }), updated_at: nowIso() }).where("media_id", "=", row.media_id).where("user_id", "=", userId).execute();
@@ -73,12 +70,13 @@ export class PostgresMediaRepository {
     return asset(row);
   }
 
-  async createReadyImage(input: { mediaId: string; userId: string; objectKey: string; mimeType: string; bytes: number; extData: Record<string, unknown> }) {
+  async createReadyAsset(input: { mediaId: string; userId: string; objectKey: string; mediaType: "image" | "audio" | "file"; mimeType: string; bytes: number; extData: Record<string, unknown> }, transaction: Transaction<DB> | Kysely<DB> = this.db) {
     const now = nowIso();
-    await this.db.insertInto("media_assets").values({ media_id: input.mediaId, user_id: input.userId, object_key: input.objectKey, media_type: "image", mime_type: input.mimeType, bytes: input.bytes, status: "ready", ext_data: JSON.stringify(input.extData), created_at: now, updated_at: now }).onConflict(oc => oc.column("media_id").doNothing()).execute();
-    const saved = await this.findMedia(input.mediaId, input.userId);
-    if (!saved || saved.status !== "ready" || saved.mediaType !== "image" || saved.extData.creationRunId !== input.extData.creationRunId || saved.extData.imageIndex !== input.extData.imageIndex) throw new Error("Generated media registration conflict");
-    return saved;
+    const row = await transaction.insertInto("media_assets").values({ media_id: input.mediaId, user_id: input.userId, object_key: input.objectKey, media_type: input.mediaType, mime_type: input.mimeType, bytes: input.bytes, status: "ready", ext_data: JSON.stringify(input.extData), created_at: now, updated_at: now }).returningAll().executeTakeFirstOrThrow();
+    return asset(row);
+  }
+  async createReadyImage(input: { mediaId: string; userId: string; objectKey: string; mimeType: string; bytes: number; extData: Record<string, unknown> }) {
+    return this.createReadyAsset({ ...input, mediaType: "image" });
   }
 
   async complete(id: string, userId: string, capture: Record<string, unknown>) {

@@ -128,31 +128,32 @@ Proposal 的列表、详情和决策响应包含 `sessionId: string | null`，�
 | GET | `/api/proposals?type=&status=&targetProjectId=&limit=&cursor=` | type 为 create / extend，status 为 pending / accepted / rejected；默认不过滤 |
 | GET | `/api/proposals/:id` | 提议详情及 referenceRecordCount |
 | GET | `/api/proposals/:id/records?limit=&cursor=` | 完整参考 Record，按 eventAt / recordId 倒序分页 |
-| POST | `/api/proposals/:id/accept` | 请求体可选 `{ userInput }`；返回 `{ proposal, resultProjectId, addedRecordCount }`；用户补充会并入已接受 creation goal，同决策重试新增数为 0 |
+| POST | `/api/proposals/:id/accept` | 请求体可选 `{ userInput }`；返回 `{ proposal, resultProjectId, addedRecordCount, sessionId }`；用户补充会并入已接受 goal，同决策重试新增数为 0 |
 | POST | `/api/proposals/:id/reject` | 返回 `{ proposal }`，同决策幂等 |
 | GET | `/api/projects?status=&limit=&cursor=` | 默认 active，可选 archived；摘要列表不含 content |
 | GET | `/api/projects/:id` | 完整 Project，包含 recordCount / referenceRecords（最近最多 5 条） |
-| PATCH | `/api/projects/:id` | `{ expectedVersion, title?, summary?, coverMediaId?, content? }`，返回 Project |
+| PATCH | `/api/projects/:id` | `{ expectedVersion, title?, summary?, goal?, coverMediaId?, content? }`，返回 Project |
 | POST | `/api/projects/:id/archive` | `{ expectedVersion }`，返回 Project；重复归档幂等 |
 
-Project 包含 projectId / userId / sessionId / title / summary / coverMediaId / content / status / version / createdAt / updatedAt。Proposal 包含 proposalId / userId / sessionId / type / targetProjectId / title / proposedSummary / content / status / resultProjectId / createdAt / updatedAt / resolvedAt。内容与事务语义以 [Domain](../domain/projects.md) 为准。
+Project 包含 projectId / userId / sessionId / goal / title / summary / coverMediaId / content / status / version / createdAt / updatedAt。Proposal 包含 proposalId / userId / sessionId / type / targetProjectId / title / proposedSummary / content / status / resultProjectId / createdAt / updatedAt / resolvedAt。内容与事务语义以 [Domain](../domain/projects.md) 为准。
 
-PATCH 不接受身份、状态、Session、版本或时间字段；缺省保持不变，content 空字符串清空正文，coverMediaId null 清空封面。title 最长 200，summary 最长 2000，正文最大 2 MiB UTF-8；请求体先受 13 MiB 限制，以允许 JSON 转义开销。Proposal `content` 包含 `reason / idea / plan / tags / creation?`：`tags` 为 2–4 个用户展示短标签，`plan` 固定 3 项；`content.creation` 使用 `{ objective, context?, constraints?, successCriteria? }`。accept 请求体可省略，也可传最多 500 字的 `userInput`；非空补充会作为确认后的创作约束写入 creation goal，再进入 creator-agent。reject 无需请求体。接受 create 或修改 summary 时若向量生成失败，返回 `503 EMBEDDING_UNAVAILABLE`，业务写入不生效。Proposal 摘要返回 `proposedSummary`（数据库列名为 `proposed_summary`），不提供 `summary` 别名。Proposal 创建、Project 全量 Record 分页与 Project 语义搜索仅为内部 Service 能力。
+PATCH 不接受用户身份、Session ID 或状态字段；缺省字段保留，content 是完整正文。Proposal `content` 包含 `reason / idea / plan / tags / goal`，其中 Goal 是 `{ objective, context?, constraints?, successCriteria? }`。Goal 由 Proposal 接受写入 Project，也可由 creator-agent 在 `project_manage` 更新。summary 更新需要向量服务成功；创建 Project 只在 Proposal 接受时发生。
 
-错误：400 INVALID_INPUT / INVALID_CURSOR，404 NOT_FOUND（含跨用户），409 INVALID_STATE / VERSION_CONFLICT / REFERENCE_RECORDS_UNAVAILABLE / MEDIA_NOT_READY，413 CONTENT_TOO_LARGE。游标绑定用户、父实体、查询类型与过滤条件；不能跨查询复用。
+## Project Agent Session
 
-## 创作分析与进度
+Creative Runtime 启用时开放经过当前用户 Project 归属及 creator-agent 会话绑定校验的 API，不提供独立的 /creation 进度或 Record proposal-analysis Run 状态。
 
-仅启用 Creative Runtime 时注册，使用同一 access JWT 与用户隔离。响应沿用 success / result / errorCode / errorMsg envelope。
-
-| 方法 | 路径 | 返回 / 输入 |
+| 方法 | 路径 | 作用 |
 | --- | --- | --- |
-| GET | `/api/records/:id/proposal-analysis` | 当前 Record 版本的 `{ analysis: { status, outcome, errorCode } | null }` |
-| GET | `/api/projects/:id/creation` | `{ creation: { creationRunId, proposalId, projectId, status, progress, errorCode, publishedProjectVersion, updatedAt } | null }` |
+| GET | `/api/projects/:id/session/history?limit=&cursor=` | Pi Session 原生历史消息按既有 Tool Presentation 投影；包含 messages、hasMore、nextCursor |
+| GET | `/api/projects/:id/session/events` | 订阅后台 Agent 增量消息和工具事件的 SSE；断线后重新拉 History |
+| POST | `/api/projects/:id/session/stream` | `{ message: string }`，在已绑定 creator Session 中追加用户对话，返回与主会话一致的 SSE |
 
-status 为 queued / running / completed / failed / cancelled。analysis.outcome 为 proposal_created（带 proposalId）或 no_proposal（带 reason）；completed 不一定产生提议。progress 包含 stage，及可选 completedImages / imageCount。接受后后台登记可能有短暂延迟，creation=null 不代表失败。
+内部 Agent 通过普通 `/api/agent/sessions/:id/history` 或 `/api/agent/stream` 仍不可被用户直接访问。Project 无 Session 时 History 返回 404，归档项目不可再提交消息。过程不使用 progress、imageCount、stage 等业务字段。
 
-提议分析静默执行；无价值、信息不足或主体不明确时直接不提议，没有提问或补充回答接口。Record / Project 不属于当前用户时为 404，输入错误为 400。请求不允许指定身份、Agent、Run 或 Session。内部 proposal-agent / creator-agent 的公共创建、stream 和历史访问均为 403。
+## 上传图片
+
+`POST /api/uploads` 声明 image MIME 时最大 10 MiB，超限返回 413 IMAGE_TOO_LARGE；上传完成继续核验 OSS 实际长度与 MIME。音频沿用原有限制。
 
 ## Agent Tasks
 

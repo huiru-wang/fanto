@@ -43,7 +43,7 @@ test("agent.yaml exposes task management and the single task-worker", () => {
 test("creative agents are internal, use object-root schemas and cannot use Task or filesystem tools", async () => {
   const registry = new AgentRegistry(resolve("agent.yaml"), builtinModels(), new SkillLoader(resolve("skills")));
   assert.deepEqual(registry.get("proposal-agent")?.tools, ["record_read", "project_read", "proposal_create", "skill_read"]);
-  assert.deepEqual(registry.get("creator-agent")?.tools, ["record_read", "project_read", "image_generate", "creation_prepare", "creation_publish", "skill_read"]);
+  assert.deepEqual(registry.get("creator-agent")?.tools, ["record_read", "project_read", "image_generate", "project_manage", "skill_read"]);
   assert.deepEqual(registry.get("proposal-agent")?.skills, ["creative"]);
   assert.deepEqual(registry.get("creator-agent")?.skills, ["creative"]);
   assert.equal(registry.taskAgents().some(agent => agent.id === "creator-agent" || agent.id === "proposal-agent"), false);

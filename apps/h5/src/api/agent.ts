@@ -202,13 +202,14 @@ export async function streamAgentMessage(
   message: string,
   onEvent: (event: AgentStreamEvent) => void,
   signal?: AbortSignal,
+  projectId?: string,
 ): Promise<void> {
   const headers = agentHeaders();
   headers.set("Accept", "text/event-stream");
-  const response = await authorizedFetch("/api/agent/stream", {
+  const response = await authorizedFetch(projectId ? `/api/projects/${encodeURIComponent(projectId)}/session/stream` : "/api/agent/stream", {
     method: "POST",
     headers,
-    body: JSON.stringify({ agentId: FANTO_AGENT_ID, sessionId, message }),
+    body: JSON.stringify(projectId ? {message} : { agentId: FANTO_AGENT_ID, sessionId, message }),
     signal,
   });
   if (!response.ok || !response.body) {
@@ -288,4 +289,46 @@ export async function streamAgentMessage(
       break;
     }
   }
+}
+
+/** Read-only Project Agent events. History remains authoritative after reconnect. */
+export async function watchProjectEvents(
+  projectId: string,
+  signal: AbortSignal,
+  onEvent: (event: AgentStreamEvent) => void,
+): Promise<void> {
+  const headers = agentHeaders();
+  headers.set("Accept", "text/event-stream");
+  const response = await authorizedFetch(`/api/projects/${encodeURIComponent(projectId)}/session/events`, { headers, signal });
+  if (!response.ok || !response.body) throw new Error("创作会话订阅暂时不可用");
+  const reader = response.body.getReader(), decoder = new TextDecoder();
+  let buffer = "";
+  const handle = (raw: string) => {
+    const event = raw.split("\n").find(line => line.startsWith("event:"))?.slice(6).trim();
+    const data = raw.split("\n").filter(line => line.startsWith("data:")).map(line => line.slice(5)).join("\n");
+    if (!event) return;
+    if (event === "done") return onEvent({type:"done"});
+    if (event === "error") return onEvent({type:"error",message:"本次创作遇到问题"});
+    if (event === "delta") {
+      const parsed = JSON.parse(data) as {text:string};
+      return onEvent({type:"delta",text:parsed.text});
+    }
+    if (event === "tool_start" || event === "tool_end") {
+      const parsed = JSON.parse(data) as {toolCallId:string;status?:"succeeded"|"failed";presentation:ToolPresentation};
+      if (!parsed.presentation.visible) return;
+      if (event === "tool_start") onEvent({type:"tool_start",toolCallId:parsed.toolCallId,presentation:parsed.presentation});
+      else onEvent({type:"tool_end",toolCallId:parsed.toolCallId,status:parsed.status??"succeeded",presentation:parsed.presentation});
+    }
+  };
+  try {
+    for (;;) {
+      const {value,done} = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value,{stream:true});
+      const normalized = buffer.replace(/\r\n/g,"\n");
+      const blocks = normalized.split("\n\n");
+      buffer = blocks.pop() ?? "";
+      for (const block of blocks) try {handle(block);} catch { /* malformed individual event */ }
+    }
+  } finally {reader.releaseLock();}
 }

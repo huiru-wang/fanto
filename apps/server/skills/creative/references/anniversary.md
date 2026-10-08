@@ -70,4 +70,4 @@ creation 建议：
 日期、时间线与说明使用 Markdown / html-preview。
 不得将模糊关系写成恋爱、结婚、亲子等明确关系。
 
-完成后调用 creation_publish。
+完成后调用 project_manage(action=update)。

@@ -1,5 +1,5 @@
 import type { CreativeService } from "../creative-runtime/service.js";
-import type { CreativeAuthority, ImageInput, PublishInput } from "../creative-runtime/model.js";
+import type { CreativeContext, ImageInput, ProjectManageInput } from "../creative-runtime/model.js";
 import type { CreateProposalInput } from "../domain/projects/index.js";
 import type { MediaService } from "../domain/media/index.js";
 import type { RecordService } from "../domain/records/index.js";
@@ -10,7 +10,8 @@ import type { DeepSeekWebSearchClient, WebSearchResult } from "./web/deepseek-we
 
 export type AgentRequestContext = {
   userId: string;
-  creative?: CreativeAuthority;
+  creative?: CreativeContext["creative"];
+  projectId?: string;
   traceId?: string;
   signal?: AbortSignal;
   sessionId?: string;
@@ -31,8 +32,7 @@ export type AgentBusinessServices = {
   readProject?(context: AgentRequestContext, input: Parameters<CreativeService["readProject"]>[1]): ReturnType<CreativeService["readProject"]>;
   createProposal?(context: AgentRequestContext, input: CreateProposalInput): ReturnType<CreativeService["createProposal"]>;
   generateImage?(context: AgentRequestContext, input: ImageInput): ReturnType<CreativeService["generateImage"]>;
-  prepareCreation?(context: AgentRequestContext, input: Parameters<CreativeService["prepare"]>[1]): ReturnType<CreativeService["prepare"]>;
-  publishCreation?(context: AgentRequestContext, input: PublishInput): ReturnType<CreativeService["publish"]>;
+  manageProject?(context: AgentRequestContext, input: ProjectManageInput): ReturnType<CreativeService["projectManage"]>;
   readRecords(context: AgentRequestContext, input: { recordIds?: string[]; query?: string }): Promise<AgentRecord[]>;
   listRecords(context: AgentRequestContext, input: { limit: number; cursor?: string }): Promise<AgentRecordList>;
   searchRecords(context: AgentRequestContext, input: { query: string; limit: number }): Promise<AgentRecordSearch>;
@@ -74,8 +74,7 @@ export function createAgentBusinessServices(services: {
     readProject: (context, input) => creative().readProject(context, input),
     createProposal: (context, input) => creative().createProposal(context, input),
     generateImage: (context, input) => creative().generateImage(context, input),
-    prepareCreation: (context, input) => creative().prepare(context, input),
-    publishCreation: (context, input) => creative().publish(context, input),
+    manageProject: (context, input) => creative().projectManage(context, input),
     async readRecords(context, input) {
       if (context.creative) return withRunAbort(context, () => creative().readRecords(context, input));
       const recordIds = input.recordIds

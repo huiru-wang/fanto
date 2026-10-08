@@ -72,4 +72,4 @@ creation 建议：
 - 日期、年份和说明由 Markdown / html-preview 排版。
 - 文案尽量短，让视觉差异成为重点。
 
-完成后调用 creation_publish。
+完成后调用 project_manage(action=update)。

@@ -48,7 +48,7 @@ agents:
     model_id: deepseek/deepseek-v4-pro
     description: 在已接受创作目标与授权素材范围内完成视觉创作并发布 Project。
     systemPromptModule: creator-agent
-    tools: [record_read, project_read, image_generate, creation_prepare, creation_publish, skill_read]
+    tools: [record_read, project_read, image_generate, project_manage, skill_read]
     skills: [creative]
     task: { enabled: false }
     compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 }

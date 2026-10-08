@@ -88,8 +88,8 @@ struct AgentAPIClient {
         return response.sessionID
     }
 
-    func fetchHistory(sessionID: String, cursor: Int? = nil) async throws -> AgentHistoryPage {
-        var components = URLComponents(url: baseURL.appending(path: "api/agent/sessions/\(sessionID)/history"), resolvingAgainstBaseURL: false)
+    func fetchHistory(sessionID: String, cursor: Int? = nil, projectID: String? = nil) async throws -> AgentHistoryPage {
+        var components = URLComponents(url: baseURL.appending(path: projectID.map { "api/projects/\($0)/session/history" } ?? "api/agent/sessions/\(sessionID)/history"), resolvingAgainstBaseURL: false)
         var queryItems = [URLQueryItem(name: "limit", value: "10")]
         if let cursor {
             queryItems.append(URLQueryItem(name: "cursor", value: String(cursor)))
@@ -114,9 +114,47 @@ struct AgentAPIClient {
         try await request(path: "api/tasks/artifacts/\(mediaID)/preview", method: "GET")
     }
 
-    func stream(sessionID: String, message: String, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
-        let body = StreamRequest(agentID: agentID, sessionID: sessionID, message: message)
-        var request = try await makeRequest(path: "api/agent/stream", method: "POST", body: body)
+    func observeProject(projectID: String, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
+        var request = try await makeRequest(url: baseURL.appending(path: "api/projects/\(projectID)/session/events"), method: "GET")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
+        guard let http = response as? HTTPURLResponse, (200 ... 299).contains(http.statusCode) else {
+            throw AgentAPIError.invalidResponse
+        }
+        var eventName: String?
+        var dataLines: [String] = []
+        var lineBytes: [UInt8] = []
+        func consume(_ line: String) {
+            if line.isEmpty {
+                deliver(eventName: eventName, data: dataLines.joined(separator: "\n"), onEvent: onEvent)
+                eventName = nil
+                dataLines.removeAll(keepingCapacity: true)
+            } else if line.hasPrefix("event:") {
+                eventName = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+            } else if line.hasPrefix("data:") {
+                dataLines.append(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces))
+            }
+        }
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            if byte == 0x0A {
+                var line = String(decoding: lineBytes, as: UTF8.self)
+                if line.last == "\r" { line.removeLast() }
+                consume(line)
+                lineBytes.removeAll(keepingCapacity: true)
+            } else { lineBytes.append(byte) }
+        }
+        if !lineBytes.isEmpty { consume(String(decoding: lineBytes, as: UTF8.self)) }
+    }
+
+    func stream(sessionID: String, message: String, projectID: String? = nil, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
+        var request: URLRequest
+        if let projectID {
+            request = try await makeRequest(path: "api/projects/\(projectID)/session/stream", method: "POST", body: ["message": message])
+        } else {
+            let body = StreamRequest(agentID: agentID, sessionID: sessionID, message: message)
+            request = try await makeRequest(path: "api/agent/stream", method: "POST", body: body)
+        }
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
 
         let (bytes, response) = try await URLSession.shared.bytes(for: request)

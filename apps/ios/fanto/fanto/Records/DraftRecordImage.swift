@@ -19,6 +19,7 @@ struct DraftRecordImage: Identifiable {
               let jpeg = UIImage(cgImage: image).jpegData(compressionQuality: 0.9) else {
             throw RecordWriteAPIError.server("图片读取失败，请重新选择。")
         }
+        guard jpeg.count <= 10 * 1024 * 1024 else { throw RecordWriteAPIError.server("图片不能超过 10MB") }
         data = jpeg
         width = image.width
         height = image.height

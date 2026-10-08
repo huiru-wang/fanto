@@ -70,4 +70,4 @@ creation 建议：
 - 原图和生成图可以混排。
 - 文字以“真实经历说明”为主，不写成小说。
 
-完成后调用 creation_publish。
+完成后调用 project_manage(action=update)。

@@ -17,7 +17,7 @@ integration("Record media deletion is atomic, user-scoped, reference-safe and re
   const userId = randomUUID(), otherId = randomUUID(), now = new Date();
   const objects = new Map<string, Buffer>();
   let fail = false, calls = 0;
-  const oss = { remove: async (key: string) => { calls++; if (fail) throw new Error("OSS unavailable"); objects.delete(key); } };
+  const oss = { remove: async (key: string) => { calls++; if (fail) throw new Error("OSS unavailable"); objects.delete(key); }, getObject: async (key: string) => objects.get(key)!, putObject: async (key: string, bytes: Buffer) => {objects.set(key,bytes);} };
   const media = MediaService.create(db, oss as never);
   const records = RecordService.create(db, new RecordPostprocessQueue());
   const embedding = { embed: async () => Array.from({ length: 768 }, (_, i) => i === 0 ? 1 : 0) };
@@ -57,28 +57,39 @@ integration("Record media deletion is atomic, user-scoped, reference-safe and re
     await MediaService.create(db, oss as never).cleanupDeletedObjects();
     assert.equal(objects.has(first.key), false); assert.ok(objects.has(foreign.key)); assert.ok(await media.readyMetadata(otherId, foreign.id));
     assert.equal((await db.selectFrom("media_object_deletions").selectAll().execute()).length, 0);
-    // Deleting a Record preserves images directly embedded in an archived Project.
+    // Final Project references are rewritten to separate media so the original Record can be deleted.
     const shared = await make();
-    const p = await proposals.create(userId, { type: "create", title: "园林", proposedSummary: "园林写真", recordIds: [shared.record.id], content: { reason: "园林", idea: "把这次园林记录整理成一页写真。", plan: ["保留现场｜使用真实记录", "整理画面｜统一作品气质", "完成写真｜形成可继续的成果"], tags: ["园林写真", "游园一页"] } });
+    const p = await proposals.create(userId, { type: "create", title: "园林", proposedSummary: "园林写真", recordIds: [shared.record.id], content: { reason: "园林", idea: "把这次园林记录整理成一页写真。", plan: ["保留现场｜使用真实记录", "整理画面｜统一作品气质", "完成写真｜形成可继续的成果"], tags: ["园林写真", "游园一页"], goal: { objective: "一页园林写真" } } });
     assert.equal(p.kind, "ok");
     const accepted = await proposals.accept(userId, p.data.proposalId); assert.equal(accepted.kind, "ok");
     const projectId = accepted.data.resultProjectId;
     assert.equal((await projects.update(userId, projectId, 1, { content: `![照片](fanto-media://${shared.id})`, coverMediaId: shared.id })).kind, "ok");
     assert.equal((await projects.archive(userId, projectId, 2)).kind, "ok");
     assert.equal((await records.delete(userId, shared.record.id, 1)).kind, "ok");
-    await media.cleanupDeletedObjects(); assert.ok(objects.has(shared.key)); assert.ok(await media.readyMetadata(userId, shared.id));
-    const asset = await db.selectFrom("media_assets").select("ext_data").where("media_id", "=", shared.id).executeTakeFirstOrThrow();
-    assert.equal(JSON.parse(asset.ext_data!).recordId, null);
+    await media.cleanupDeletedObjects();
+    assert.equal(objects.has(shared.key), false);
+    assert.equal(await media.readyMetadata(userId, shared.id), null);
+    const published = await projects.find(userId, projectId);
+    assert.ok(published?.coverMediaId && published.coverMediaId !== shared.id);
+    assert.ok(published!.content.includes(published!.coverMediaId!));
+    const ownedCopy = await db.selectFrom("media_assets").selectAll().where("media_id", "=", published!.coverMediaId!).executeTakeFirstOrThrow();
+    assert.ok(ownedCopy.object_key.startsWith(`users/${userId}/project/${projectId}/`));
+    assert.equal(objects.has(ownedCopy.object_key), true);
     assert.equal((await projects.detail(userId, projectId)).kind, "ok");
     // Publishing an unrelated project races deletion: either retain its image,
     // or reject the publication after the asset has disappeared.
     const concurrent = await make(), otherProjectId = randomUUID();
-    await db.insertInto("projects").values({ project_id: otherProjectId, user_id: userId, session_id: null, title: "另一个项目", summary: "园林", embedding: null, cover_media_id: null, content: "", status: "active", version: 1, created_at: now, updated_at: now }).execute();
+    await db.insertInto("projects").values({ project_id: otherProjectId, user_id: userId, session_id: null, title: "另一个项目", summary: "园林", goal: {objective:"另一个项目"}, embedding: null, cover_media_id: null, content: "", status: "active", version: 1, created_at: now, updated_at: now }).execute();
     const results = await Promise.all([records.delete(userId, concurrent.record.id, 1), projects.update(userId, otherProjectId, 1, { content: `![并发](fanto-media://${concurrent.id})` })]);
     assert.equal(results[0].kind, "ok");
     await media.cleanupDeletedObjects();
     if (results[1].kind === "ok") {
-      assert.ok(objects.has(concurrent.key)); assert.ok(await media.readyMetadata(userId, concurrent.id));
+      assert.equal(objects.has(concurrent.key), false);
+      assert.equal(await media.readyMetadata(userId, concurrent.id), null);
+      const resultProject = results[1].data;
+      const resolved = /fanto-media:\/\/([0-9a-f-]{36})/.exec(resultProject.content)?.[1];
+      assert.ok(resolved && resolved !== concurrent.id);
+      assert.ok((await media.readyMetadata(userId, resolved))?.mediaId === resolved);
     } else {
       assert.equal(results[1].code, "MEDIA_NOT_READY"); assert.equal(objects.has(concurrent.key), false);
     }

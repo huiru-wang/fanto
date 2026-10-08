@@ -2,6 +2,12 @@
 
 目录：`apps/ios/fanto`。当前使用 SwiftUI，最低部署目标为 iOS 26.5。
 
+## Project Session 创作与继续对话
+
+iOS 脉络详情在未完成作品时使用 `GET /api/projects/:id/session/history` 读取 Creator Agent 消息及工具活动；不读取 creation.progress。作品的最新 content 来自 `GET /api/projects/:id`。已有内容的 active Project 显示右下角“继续创作”，使用 `POST /api/projects/:id/session/stream` 向同一 Session 发送消息，结果刷新项目。
+
+图片在本地生成上传 JPEG 后校验 10 MiB；服务端申请与完成直传同样校验。最终作品媒体由 Project Service 按 objectKey 归属生成独立副本。
+
 ## 根导航
 
 应用使用系统 `TabView`：
