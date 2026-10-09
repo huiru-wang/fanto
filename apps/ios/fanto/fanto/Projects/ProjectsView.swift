@@ -97,7 +97,10 @@ struct ProjectsView: View {
                     NavigationLink(value: proposal) {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(proposal.content.ideas.count == 1 ? (proposal.content.ideas.first?.title ?? proposal.title) : proposal.title).font(.headline)
-                            if proposal.content.ideas.count == 1, let idea = proposal.content.ideas.first {
+                            if let opening = proposal.content.opening, !opening.isEmpty {
+                                Text(opening).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
+                            }
+                            if proposal.content.opening == nil, proposal.content.ideas.count == 1, let idea = proposal.content.ideas.first {
                                 Text(idea.idea).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
                             } else {
                                 Text("2 个创意方向").font(.subheadline).foregroundStyle(.secondary)

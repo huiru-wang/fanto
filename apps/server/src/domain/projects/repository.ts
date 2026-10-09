@@ -9,6 +9,7 @@ export const publicProposal = (proposal: Proposal) => ({
   title: proposal.title, status: proposal.status, resultProjectId: proposal.resultProjectId,
   createdAt: proposal.createdAt, updatedAt: proposal.updatedAt, resolvedAt: proposal.resolvedAt,
   content: { selectedIdeaId: proposal.content.selectedIdeaId,
+    ...(proposal.content.opening ? { opening: proposal.content.opening } : {}),
     ...(proposal.type === "extend" && proposal.content.change ? { changeKind: proposal.content.change.kind } : {}),
     ideas: proposal.content.ideas.map(({id,title,idea,tags}) => ({id,title,idea,tags})) },
 });

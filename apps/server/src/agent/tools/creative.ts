@@ -23,8 +23,8 @@ const proposal = Type.Object({
   targetProjectId: Type.Optional(string(100)), title: string(200), proposedSummary: Type.Optional(string(2000)),
   recordIds: Type.Array(string(100), { minItems: 1, maxItems: 100 }),
   content: Type.Union([
-    Type.Object({ reason: string(10000), ideas: Type.Array(idea, { minItems: 1, maxItems: 2 }) }, { additionalProperties: false }),
-    Type.Object({ reason: string(10000), change }, { additionalProperties: false }),
+    Type.Object({ reason: string(10000), opening: string(180), ideas: Type.Array(idea, { minItems: 1, maxItems: 2 }) }, { additionalProperties: false }),
+    Type.Object({ reason: string(10000), opening: string(180), change }, { additionalProperties: false }),
   ]),
 }, { additionalProperties: false });
 const image = Type.Object({ prompt: string(6000),

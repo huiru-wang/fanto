@@ -25,7 +25,7 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
     const r = await app.request(`/api/${path}`, { method, headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: r.status, body: r.headers.get("content-type")?.includes("json") ? await r.json() as any : null };
   };
-  const input = (ids = recordIds.slice(0, 7)): Extract<CreateProposalInput, {type:"create"}> => ({ type: "create", title: "大观园写记", proposedSummary: "园林里的红楼梦主题照片与旅行回忆", recordIds: ids, content: { reason: "园林与人物照片适合主题创作", ideas: [{ title: "园林入画", idea: "把园林里的这一刻整理成一页有作品感的图文写真。保留真实人物与场景，只增强主题表达。", tags: ["园林入画", "古典写真", "游园一页"], goal: { objective: "制作园林旅行写真" } }] }});
+  const input = (ids = recordIds.slice(0, 7)): Extract<CreateProposalInput, {type:"create"}> => ({ type: "create", title: "大观园写记", proposedSummary: "园林里的红楼梦主题照片与旅行回忆", recordIds: ids, content: { reason: "园林与人物照片适合主题创作", opening: "看到你在大观园拍的照片，我想把这段游园经历变成真正能收藏的主题写真。", ideas: [{ title: "园林入画", idea: "把园林里的这一刻整理成一页有作品感的图文写真。保留真实人物与场景，只增强主题表达。", tags: ["园林入画", "古典写真", "游园一页"], goal: { objective: "制作园林旅行写真" } }] }});
   let projectId: string, proposalId: string;
   try {
     await db.insertInto("users").values(users.map(id => ({ user_id: id, status: "active" as const, created_at: now, updated_at: now, disabled_at: null }))).execute();
@@ -52,7 +52,7 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
       const list = await request("projects"); assert.equal(list.body.result.data[0].content, undefined); assert.equal(list.body.result.data[0].summary.length > 0, true);
       assert.equal((await request(`projects/${projectId}`, "GET", undefined, "other")).status, 404);
       assert.equal((await request(`proposals/${proposalId}/accept`, "POST", undefined, "other")).status, 404);
-      const pd = await request(`proposals/${proposalId}`); assert.equal(pd.body.result.referenceRecordCount, 7); assert.equal(Object.hasOwn(pd.body.result, "proposedSummary"), false); assert.equal(Object.hasOwn(pd.body.result.content, "reason"), false); assert.equal(Object.hasOwn(pd.body.result.content.ideas[0], "goal"), false); assert.equal(Object.hasOwn(pd.body.result, "summary"), false);
+      const pd = await request(`proposals/${proposalId}`); assert.equal(pd.body.result.referenceRecordCount, 7); assert.equal(Object.hasOwn(pd.body.result, "proposedSummary"), false); assert.equal(Object.hasOwn(pd.body.result.content, "reason"), false); assert.match(pd.body.result.content.opening, /大观园/); assert.equal(Object.hasOwn(pd.body.result.content.ideas[0], "goal"), false); assert.equal(Object.hasOwn(pd.body.result, "summary"), false);
       const first = await request(`proposals/${proposalId}/records?limit=5`); assert.deepEqual(first.body.result.data.map((r: any) => r.id), recordIds.slice(0, 5));
       const cursor = encodeURIComponent(first.body.result.nextCursor);
       const second = await request(`proposals/${proposalId}/records?limit=5&cursor=${cursor}`); assert.deepEqual(second.body.result.data.map((r: any) => r.id), recordIds.slice(5, 7));

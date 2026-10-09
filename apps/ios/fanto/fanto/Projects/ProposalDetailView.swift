@@ -32,9 +32,26 @@ struct ProposalDetailView: View {
                         .font(.largeTitle.weight(.bold))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                VStack(spacing: 12) {
+                if let opening = current.content.opening, !opening.isEmpty {
+                    Text(opening)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 4)
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(current.content.ideas.count > 1 ? "我想到了两个方向" : "我想这样来做")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.secondary)
                     ForEach(current.content.ideas) { idea in
                         ideaCard(idea)
+                    }
+                    if current.status == .pending {
+                        Text("选中只是确定创作方向。点下方按钮后，我才会开始制作；完成后你可以查看作品，也能继续告诉我怎么修改。")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 referencesSection
@@ -101,7 +118,7 @@ struct ProposalDetailView: View {
         .disabled(current.status != .pending || isDeciding)
         .accessibilityLabel("\(idea.title)，\(idea.idea)，\(idea.tags.joined(separator: "、"))")
         .accessibilityValue(checked ? "已选择" : "未选择")
-        .accessibilityHint(current.status == .pending ? "双击确认这个方向" : "已确认的创意，仅供查看")
+        .accessibilityHint(current.status == .pending ? "双击选中这个创意，再点击下方按钮开始制作" : "已确认的创意，仅供查看")
     }
 
     private var referencesSection: some View {

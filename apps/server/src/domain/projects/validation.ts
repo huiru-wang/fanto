@@ -17,11 +17,11 @@ const proposalBase = { title: text(200), recordIds: z.array(uuid).min(1).max(100
 export const createProposalSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("create"), ...proposalBase,
     targetProjectId: z.null().optional(), proposedSummary: text(2000),
-    content: z.object({ reason: text(10000), ideas: z.array(ideaSchema).min(1).max(2) }).strict(),
+    content: z.object({ reason: text(10000), opening: text(180).optional(), ideas: z.array(ideaSchema).min(1).max(2) }).strict(),
   }).strict(),
   z.object({ type: z.literal("extend"), ...proposalBase,
     targetProjectId: uuid, proposedSummary: z.null().optional(),
-    content: z.object({ reason: text(10000), change: changeSchema }).strict(),
+    content: z.object({ reason: text(10000), opening: text(180).optional(), change: changeSchema }).strict(),
   }).strict(),
 ]);
 export const acceptProposalSchema = z.object({ selectedIdeaId: uuid.optional() }).strict();

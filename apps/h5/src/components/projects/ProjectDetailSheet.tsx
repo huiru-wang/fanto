@@ -122,6 +122,8 @@ function ProposalSheet({ id, onAccepted, onRejected }: { id: string; onAccepted:
     <div className="project-sheet-scroll">
       <div className="project-sheet-kicker"><Sparkles size={15} />{proposal.type === "extend" ? "延续已有脉络" : "新的提议"}</div>
       <h2 className="project-sheet-title">{proposal.title}</h2>
+      {proposal.content.opening && <p className="proposal-opening">{proposal.content.opening}</p>}
+      <p className="proposal-direction-title">{proposal.content.ideas.length > 1 ? "我想到了两个方向" : "我想这样来做"}</p>
       <div className="proposal-choices" role="group" aria-label={proposal.type === "extend" ? "确认延续建议" : "选择创意方向"}>
         {proposal.content.ideas.map(idea => {
           const checked = (proposal.status === "accepted" ? proposal.content.selectedIdeaId : selected) === idea.id;
@@ -135,6 +137,7 @@ function ProposalSheet({ id, onAccepted, onRejected }: { id: string; onAccepted:
           </button>;
         })}
       </div>
+      {proposal.status === "pending" && <p className="proposal-selection-hint">选中只是确定方向。点击下方按钮后，我才会开始制作；完成后你可以查看作品，也能继续告诉我怎么修改。</p>}
       <section className="project-detail-section project-reference-section">
         <button className="project-reference-toggle" type="button" onClick={toggleReferences} aria-expanded={expanded}>
           <span><Clock3 size={17} />参考记录{proposal.referenceRecordCount ? ` · ${proposal.referenceRecordCount}` : ""}</span>

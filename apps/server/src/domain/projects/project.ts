@@ -13,9 +13,9 @@ export interface ProposalIdea { id: string; title: string; idea: string; tags: s
 export type ProjectChangeKind = "enrich" | "correct" | "refine" | "continue";
 export interface ProjectChange { kind: ProjectChangeKind; title: string; idea: string; tags: string[]; instruction: string }
 /** The public ideas view is retained for older H5/iOS clients. Extend is an explicit change, not a replacement goal. */
-export interface ProposalContent { reason: string; ideas: ProposalIdea[]; selectedIdeaId: string | null; change?: ProjectChange }
-export interface ProposalCreateContent { reason: string; ideas: Array<Omit<ProposalIdea, "id">> }
-export interface ProposalExtendContent { reason: string; change: ProjectChange }
+export interface ProposalContent { reason: string; opening?: string; ideas: ProposalIdea[]; selectedIdeaId: string | null; change?: ProjectChange }
+export interface ProposalCreateContent { reason: string; opening?: string; ideas: Array<Omit<ProposalIdea, "id">> }
+export interface ProposalExtendContent { reason: string; opening?: string; change: ProjectChange }
 export interface Proposal {
   proposalId: string; userId: string; sessionId: string | null; type: ProposalType; targetProjectId: string | null;
   title: string; proposedSummary: string | null; content: ProposalContent; status: ProposalStatus;

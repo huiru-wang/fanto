@@ -38,6 +38,7 @@ export type Proposal = {
   targetProjectId: string | null;
   title: string;
   content: {
+    opening?: string;
     ideas: { id: string; title: string; idea: string; tags: string[] }[];
     selectedIdeaId: string | null;
   };

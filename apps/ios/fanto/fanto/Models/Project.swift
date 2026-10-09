@@ -54,6 +54,7 @@ struct ProposalIdea: Decodable, Hashable, Identifiable {
 }
 
 struct ProposalContent: Decodable, Hashable {
+    let opening: String?
     let ideas: [ProposalIdea]
     let selectedIdeaId: String?
 }

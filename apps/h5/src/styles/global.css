@@ -3347,6 +3347,9 @@ input:focus-visible {
 .project-session-chat{display:flex;flex-direction:column;min-height:250px;max-height:60vh;overflow:hidden;gap:12px}.project-session-messages{min-height:160px;overflow:auto;flex:1;padding:12px 2px}.project-session-composer{display:flex;align-items:flex-end;gap:8px;padding:10px;border:1px solid var(--border, #ddd);border-radius:16px;background:var(--surface, white)}.project-session-composer textarea{min-width:0;flex:1;border:0;outline:none;background:transparent;resize:none;font:inherit;color:inherit}.project-session-composer button,.project-session-launch{border:0;border-radius:25px;padding:10px 14px;background:#343f39;color:#fff;cursor:pointer}.project-session-composer button:disabled{opacity:.5}.project-session-float{position:relative;display:flex;justify-content:flex-end;padding:0 18px 12px}.project-session-popover{position:absolute;z-index:15;bottom:60px;right:16px;width:min(420px,calc(100vw - 48px));height:min(560px,65vh);display:flex;flex-direction:column;padding:16px;border:1px solid #e4e1db;border-radius:20px;background:var(--surface,#fff);box-shadow:0 14px 45px #0002}.project-session-popover .project-session-chat{height:100%;max-height:none}.project-session-launch{display:flex;align-items:center;gap:7px}.project-session-live{padding:12px;border-radius:12px;background:#f2f3ef;font-size:13px}.project-session-live p{white-space:pre-wrap}
 
 /* Creative proposal candidates */
+.proposal-opening { margin: 14px 0 18px; color: #504d47; font-size: 15px; line-height: 1.8; }
+.proposal-direction-title { margin: 0; color: #81786e; font-size: 13px; font-weight: 600; }
+.proposal-selection-hint { margin: -8px 0 22px; color: #81786e; font-size: 12px; line-height: 1.65; }
 .proposal-choice-count { font-weight: 650; }
 .proposal-choice-titles { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
 .proposal-choice-titles span { padding: 7px 11px; border-radius: 9px; background: rgba(133,116,82,.09); font-size: 12px; }

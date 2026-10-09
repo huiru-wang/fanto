@@ -27,8 +27,8 @@ export class ProposalService {
       }
       const now = new Date(), id = randomUUID();
       const content = value.type === "create"
-        ? { reason: value.content.reason, ideas: value.content.ideas.map(idea => ({ ...idea, id: randomUUID() })), selectedIdeaId: null }
-        : { reason: value.content.reason, change: value.content.change,
+        ? { reason: value.content.reason, opening: value.content.opening, ideas: value.content.ideas.map(idea => ({ ...idea, id: randomUUID() })), selectedIdeaId: null }
+        : { reason: value.content.reason, opening: value.content.opening, change: value.content.change,
             ideas: [{ id: randomUUID(), title: value.content.change.title, idea: value.content.change.idea,
               tags: value.content.change.tags, goal: (await repo.project(userId, value.targetProjectId))!.goal }], selectedIdeaId: null };
       const row = await repo.insertProposal({ session_id: options.sessionId ?? null, proposal_id: id, user_id: userId, type: value.type, target_project_id: value.targetProjectId ?? null, title: value.title, proposed_summary: value.proposedSummary ?? null, content, status: "pending", result_project_id: null, created_at: now, updated_at: now, resolved_at: null });
