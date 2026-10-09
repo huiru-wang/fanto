@@ -31,7 +31,9 @@ Tool 和 Context Provider 通过 `agent/business-services.ts` 调用领域 Servi
 
 ## Session
 
-通过 `POST /api/agent/sessions` 创建任意已配置 Agent 的 Session；Pi SQLite 中的 `fanto.session_owner` custom entry 绑定用户、Agent 与 revision。会话工作区 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。同 Session 的 `reserve` 防止并发执行；历史按用户归属读取。后台 Proposal / Task / Creator Session 仍由服务端创建，公共 Session 可以创建对应 Agent 的无业务授权 Session。
+通过 `POST /api/agent/sessions` 创建任意已配置 Agent 的 Session；PostgreSQL `agent_session.entries` 中的 `fanto.session_owner` custom entry 绑定用户、Agent 与 revision。会话工作区 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。同 Session 的 `reserve` 防止并发执行；历史按用户归属读取。后台 Proposal / Task / Creator Session 仍由服务端创建，公共 Session 可以创建对应 Agent 的无业务授权 Session。
+
+Session 持久层通过 `agent/session/PgSessionRepo` 和 `PgStorage` 实现 Pi Core `SessionRepo/Storage` 接口，复用应用 `DATABASE_URL` 和 Kysely 连接池。七张表位于标准 PostgreSQL 的 `agent_session` Schema；无外键、无扩展和 Supabase 专有 API。对外 Session/Agent Runtime 协议不变。当前 `reserve` 仅实现单进程互斥，跨 Server 实例的同一会话并发执行须等待 Redis Session Lock；持久化共享本身不等于分布式执行安全。旧 SQLite 会话不会迁移。
 
 空闲 Session 可以应用更新后的 Agent definition revision，但 `agentId`、`userId` 一经绑定不可改变。Stream 从当前用户的 Session 解析 Agent ID；Creator 仅在 Project↔Session 绑定和归档写保护校验通过后获得 Project 工具权限。Proposal 缺可信 Record 上下文、Task Worker 缺正在运行且绑定自身 Session 的 TaskRun 时，必需 Provider 在模型调用前拒绝执行。
 

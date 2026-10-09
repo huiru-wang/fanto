@@ -80,7 +80,7 @@ const projects = ProjectService.create(db, records, media, embeddings);
 const proposals = ProposalService.create(db, records, media, embeddings);
 const creative = config.creative.enabled ? new CreativeService(db, records, projects, proposals, media, new CreativeImageClient(config.creative.image), userId => auth.assertActiveUser(userId),
   new QwenImageUnderstanding(config.dashscope.apiKey, config.dashscope.baseUrl, config.dashscope.visionModel)) : undefined;
-const agent = createAgentRuntime({ records, media, tasks, memories, creative, ...config.agent });
+const agent = createAgentRuntime({ db, records, media, tasks, memories, creative, ...config.agent });
 const embeddingQueue=new RecordEmbeddingQueue();
 const agentQueue=new AgentExecutionQueue();
 const events=new SessionEventBus();

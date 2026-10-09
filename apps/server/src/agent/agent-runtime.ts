@@ -1,3 +1,5 @@
+import type { Kysely } from "kysely";
+import type { DB } from "../infrastructure/database/schema.js";
 import type { CreativeService } from "../domain/projects/creative-service.js";
 import { dirname, resolve } from "node:path";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
@@ -20,7 +22,7 @@ export function createAgentRuntime(input: {
   media: MediaService;
   tasks: TaskService;
   memories: MemoryService;
-  sessionDatabasePath: string;
+  db: Kysely<DB>;
   workspaceRoot: string;
   definitionPath: string;
   deepseekApiKey: string;
@@ -50,7 +52,7 @@ export function createAgentRuntime(input: {
     fanto,
     skills,
     taskAgents,
-    input.sessionDatabasePath,
+    input.db,
     input.workspaceRoot,
   );
   return { registry, sessions, close: () => sessions.close() };

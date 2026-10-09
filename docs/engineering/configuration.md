@@ -7,7 +7,7 @@
 | 变量 | 当前语义 |
 | --- | --- |
 | `PORT` / `HOST` | HTTP 监听，默认 3000 / 0.0.0.0 |
-| `DATABASE_URL` | PostgreSQL 连接串；生产连接需 TLS，Supabase Pooler 可用 `sslmode=require&uselibpqcompat=true` |
+| `DATABASE_URL` | PostgreSQL 连接串，业务数据和 Agent Session 共用；兼容标准 PostgreSQL 厂商。生产连接需 TLS，Supabase Pooler 可用 `sslmode=require&uselibpqcompat=true` |
 | `AUTH_JWT_ACTIVE_KID` / `AUTH_JWT_PRIVATE_KEY` / `AUTH_JWT_PUBLIC_KEYS` | EdDSA 签名 Key ID、私钥和公钥映射 |
 | `AUTH_JWT_ISSUER` | 默认 fanto |
 | `GOOGLE_ALLOWED_CLIENT_IDS` / `APPLE_ALLOWED_CLIENT_IDS` | 允许的 OAuth audience / iOS Bundle ID |
@@ -18,7 +18,6 @@
 | `OSS_REGION` / `OSS_ENDPOINT` / `OSS_BUCKET` | OSS 地区、公网 Endpoint、Bucket |
 | `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` | 仅服务端保存的 OSS 密钥 |
 | `AGENT_CONFIG_PATH` | 默认 `apps/server/agent.yaml` |
-| `AGENT_SESSION_DB` | 默认 `data/agent-sessions.sqlite` |
 | `AGENT_WORKSPACE_ROOT` | 默认 `data/workspaces` |
 | `AGENT_EXECUTION_CONCURRENCY` | Proposal / Creator / Task 共享后台并发，默认 2 |
 | `TASK_SCHEDULER_INTERVAL_MS` | 到期任务扫描间隔，默认 300000 ms；即时任务会触发主动唤醒 |

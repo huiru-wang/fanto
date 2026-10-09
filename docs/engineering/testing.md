@@ -21,6 +21,7 @@ xcodebuild -project apps/ios/fanto/fanto.xcodeproj -scheme fanto -sdk iphonesimu
 - **数据库**：空库基线 `create_current_schema.ts`、已有数据库迁移历史合并与后续 `zzzzzz_async_v3.ts`，保留业务数据；不要手动删除 `kysely_migration`。
 - **Record / Media**：按用户、版本、位置字段、五媒体限制、后置 Vision/ASR、独立 EmbeddingQueue、语义检索；真实 OSS PUT/HEAD/URL、删除后的尽力清理以及 Project 最终副本归属。
 - **Proposal / Project**：Proposal 1–2 个 Idea、accept 幂等、create/extend 状态、Record 关联、version 乐观并发、媒体复制、旧内容保留和失败状态收敛；测试文件位于 `domain/projects/`、`routes/project-http.test.ts`。
+- **PG Session SDK conformance**：设置只指向独立测试库的 `TEST_DATABASE_URL`（库名需包含 test），运行 `pnpm --filter @fanto/server exec tsx --test src/agent/session/pg-session.test.ts`，验证 Pi Core Storage / SessionRepo 一致性、Fork、失败回滚与 PG 无外键。测试会清空并删除测试数据库中的 `agent_session` schema，不可使用生产数据库。
 - **Agent Session**：History user ownership、Creator 按 projectId+sessionId 绑定 Project 的领域授权、TaskRun 身份校验、Stream/Events、同一 Session 并发防护、Tool Presentation 隐私投影、取消与超时。可检查 `routes/agent/sessions.test.ts`、`routes/agent/stream.test.ts` 与 `agent/presentation.test.ts`。
 - **异步执行**：`execution/agent-execution.listener.test.ts`、`execution/handlers/task-brief.test.ts`、`domain/tasks/scheduler.test.ts`；验证共享并发、queued TaskRun、单次运行、无自动重试、停止/进程中断边界。异步 Queue 不持久化，不能凭借持久 Task 状态声称自动恢复。
 - **客户端**：H5 typecheck/build；iOS Xcode 模拟器构建与实际页面交互。测试创建记录/位置、Proposal 接受、Project 继续对话（含订阅失败仍可发）、Tool 活动/媒体渲染、异步状态刷新、归档和 Task 产物预览。

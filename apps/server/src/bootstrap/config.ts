@@ -24,7 +24,7 @@ export interface AppConfig {
   };
   oss: { region: string; endpoint?: string; bucket: string; accessKeyId: string; accessKeySecret: string };
   dashscope: { apiKey: string; baseUrl: string; embeddingModel: string; embeddingDimension: number; visionModel: string; asrModel: string };
-  agent: { sessionDatabasePath: string; workspaceRoot: string; definitionPath: string; deepseekApiKey: string };
+  agent: { workspaceRoot: string; definitionPath: string; deepseekApiKey: string };
   agentExecutionConcurrency: number;
   creative: { enabled: boolean; proposalTimeoutMs: number; creatorTimeoutMs: number; image: { endpoint: string; apiKey: string; model: string; timeoutMs: number } };
   tasks: { schedulerIntervalMs: number; timeoutMinSeconds: number; timeoutMaxSeconds: number };
@@ -111,7 +111,6 @@ export function loadConfig(): AppConfig {
       asrModel: process.env.DASHSCOPE_ASR_MODEL ?? "qwen3-asr-flash",
     },
     agent: {
-      sessionDatabasePath: projectPath(process.env.AGENT_SESSION_DB, "data/agent-sessions.sqlite"),
       workspaceRoot: projectPath(process.env.AGENT_WORKSPACE_ROOT, "data/workspaces"),
       definitionPath: projectPath(process.env.AGENT_CONFIG_PATH, "apps/server/agent.yaml"),
       deepseekApiKey: required("DEEPSEEK_API_KEY"),

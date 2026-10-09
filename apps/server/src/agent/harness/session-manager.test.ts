@@ -19,7 +19,7 @@ test("Persisted Session mismatch never rebuilds Harness or rewrites identity", a
   const manager = Object.create(AgentSessionManager.prototype) as any;
   manager.sessions = new Map();
   manager.running = new Set();
-  manager.repository = { list: async () => [{id}], open: async () => ({close:async()=>{}}) };
+  manager.repository = { getById: async () => ({id}), open: async () => ({close:async()=>{}}) };
   manager.readOwner = async () => ({agentId:"proposal-agent",userId:"owner",revision:"r1"});
   manager.createManaged = async () => {rebuilt=true;return {};};
   manager.writeBinding = async () => {rewritten=true;};
@@ -36,7 +36,7 @@ test("Same Session agent identity allows revision upgrades", async () => {
   const manager = Object.create(AgentSessionManager.prototype) as any;
   manager.sessions = new Map();
   manager.running = new Set();
-  manager.repository = {list:async()=>[{id}],open:async()=>({close:async()=>{}})};
+  manager.repository = {getById:async()=>({id}),open:async()=>({close:async()=>{}})};
   manager.readOwner = async () => ({agentId:"creator-agent",userId:"owner",revision:"old"});
   manager.createManaged = async (_session:unknown,_id:string,userId:string,definition:{id:string;revision:string}) => ({id,agentId:definition.id,userId,revision:definition.revision});
   manager.writeBinding = async (_session:unknown,definition:{revision:string}) => {savedRevision=definition.revision;};

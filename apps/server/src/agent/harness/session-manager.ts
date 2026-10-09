@@ -1,9 +1,10 @@
 import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { TODO_CONTEXT, type AgentHarness, type Entry, type ExecutionToolContext, type Session } from "@earendil-works/pi-agent-core";
 import type { Models } from "@earendil-works/pi-ai";
-import { createNodeSqliteFactory, SqliteSessionRepo } from "@earendil-works/pi-session-backend-sqlite-node";
+import { type Kysely } from "kysely";
+import type { DB } from "../../infrastructure/database/schema.js";
+import { PgSessionRepo } from "../session/pg-session-repo.js";
 import type { AgentDefinition } from "./definition.js";
 import { buildRuntime, type HarnessRuntime } from "./build-runtime.js";
 import { createTools } from "../tools/index.js";
@@ -34,7 +35,7 @@ export type ManagedSession = {
 };
 
 export class AgentSessionManager {
-  private readonly repository: SqliteSessionRepo;
+  private readonly repository: PgSessionRepo;
   private readonly sessions = new Map<string, ManagedSession>();
   private readonly running = new Set<string>();
 
@@ -43,16 +44,11 @@ export class AgentSessionManager {
     private readonly fanto: AgentBusinessServices,
     private readonly skills: SkillLoader,
     private readonly taskAgents: readonly TaskAgentCatalogEntry[],
-    private readonly databasePath: string,
+    private readonly db: Kysely<DB>,
     private readonly workspaceRoot: string,
   ) {
-    mkdirSync(dirname(databasePath), { recursive: true });
     mkdirSync(workspaceRoot, { recursive: true });
-    this.repository = new SqliteSessionRepo({
-      directory: dirname(databasePath),
-      databasePath,
-      databaseFactory: createNodeSqliteFactory(),
-    });
+    this.repository = new PgSessionRepo(db);
   }
 
   async create(definition: AgentDefinition, userId: string): Promise<ManagedSession> {
@@ -179,7 +175,7 @@ export class AgentSessionManager {
   }
 
   private async openAndConfigure(definition: AgentDefinition, id: string, userId?: string): Promise<ManagedSession> {
-    const metadata = (await this.repository.list(undefined, TODO_CONTEXT)).find(item => item.id === id);
+    const metadata = await this.repository.getById(id);
     if (!metadata) throw new SessionNotFoundError("Session not found");
     const session = await this.repository.open(metadata, TODO_CONTEXT);
     try {
@@ -264,7 +260,7 @@ export class AgentSessionManager {
         close: async () => {},
       };
     }
-    const metadata = (await this.repository.list(undefined, TODO_CONTEXT)).find(item => item.id === id);
+    const metadata = await this.repository.getById(id);
     if (!metadata) throw new SessionNotFoundError("Session not found");
     const session = await this.repository.open(metadata, TODO_CONTEXT);
     const owner = await this.readOwner(session);
