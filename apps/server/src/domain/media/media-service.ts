@@ -37,7 +37,7 @@ export class MediaService {
     const key = `users/${input.userId}/project/${input.projectId}/${input.mediaId}.png`;
     await this.oss.putObject(key, input.data, "image/png");
     try {
-      const saved = await this.media.createReadyImage({ mediaId: input.mediaId, userId: input.userId, objectKey: key, mimeType: "image/png", bytes: input.data.length, extData: { source: "project", projectId: input.projectId, createdBy: "image_generate", capture: { width: input.width, height: input.height } } });
+      const saved = await this.media.createReadyImage({ mediaId: input.mediaId, userId: input.userId, objectKey: key, mimeType: "image/png", bytes: input.data.length, extData: { source: "project", projectId: input.projectId, createdBy: "image_generate", requiresReview: true, capture: { width: input.width, height: input.height } } });
       return metadata(saved);
     } catch (error) { await this.oss.remove(key).catch(() => {}); throw error; }
   }

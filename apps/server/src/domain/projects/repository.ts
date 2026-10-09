@@ -9,6 +9,7 @@ export const publicProposal = (proposal: Proposal) => ({
   title: proposal.title, status: proposal.status, resultProjectId: proposal.resultProjectId,
   createdAt: proposal.createdAt, updatedAt: proposal.updatedAt, resolvedAt: proposal.resolvedAt,
   content: { selectedIdeaId: proposal.content.selectedIdeaId,
+    ...(proposal.type === "extend" && proposal.content.change ? { changeKind: proposal.content.change.kind } : {}),
     ideas: proposal.content.ideas.map(({id,title,idea,tags}) => ({id,title,idea,tags})) },
 });
 export const proposalEntity = (r: DB["proposals"]): Proposal => ({ proposalId: r.proposal_id, userId: r.user_id, sessionId: r.session_id, type: r.type, targetProjectId: r.target_project_id, title: r.title, proposedSummary: r.proposed_summary, content: proposalContent(r.content), status: r.status, resultProjectId: r.result_project_id, createdAt: r.created_at, updatedAt: r.updated_at, resolvedAt: r.resolved_at });
@@ -38,11 +39,11 @@ export class ProjectRepository {
     if (cursor) q = q.where(eb => eb.or([eb("created_at", "<", new Date(cursor.time)), eb.and([eb("created_at", "=", new Date(cursor.time)), eb("proposal_id", "<", cursor.id)])]));
     return q.orderBy("created_at", "desc").orderBy("proposal_id", "desc").limit(limit).execute();
   }
-  async search(userId: string, embedding: string) {
+  async search(userId: string, embedding: string, limit = 3) {
     const result = await sql<{ project_id: string; title: string; summary: string; version: number; similarity: number }>`
       SELECT project_id, title, summary, version, (1 - (embedding <=> ${embedding}::vector))::float8 AS similarity
       FROM projects WHERE user_id = ${userId} AND status <> 'archived' AND embedding IS NOT NULL
-      ORDER BY embedding <=> ${embedding}::vector, project_id LIMIT 3
+      ORDER BY embedding <=> ${embedding}::vector, project_id LIMIT ${limit}
     `.execute(this.db);
     return result.rows.map(r => ({ projectId: r.project_id, title: r.title, summary: r.summary, version: r.version, similarity: Number(r.similarity) }));
   }

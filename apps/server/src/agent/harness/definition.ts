@@ -8,7 +8,7 @@ import type { Models } from "@earendil-works/pi-ai";
 import { mainPrompt } from "../prompts/main.js";
 import { taskWorkerPrompt } from "../prompts/task-worker.js";
 
-const tool = z.enum(["read", "write", "edit", "bash", "record_read", "memory_manage", "web_search", "present_media", "collect_user_input", "create_task", "update_task", "get_task", "task_plan_manage", "deliver_task_result", "project_read", "proposal_create", "image_generate", "project_manage", "skill_read"]);
+const tool = z.enum(["read", "write", "edit", "bash", "record_read", "memory_manage", "web_search", "present_media", "collect_user_input", "create_task", "update_task", "get_task", "task_plan_manage", "deliver_task_result", "project_read", "proposal_create", "image_generate", "image_review", "project_manage", "skill_read"]);
 const taskConfig = z.discriminatedUnion("enabled", [
   z.object({ enabled: z.literal(false) }).strict(),
   z.object({
@@ -84,7 +84,7 @@ export function readAgentDefinitions(
     configuredModels.set(modelId, configured);
   }
 
-  return document.data.agents.map(configured => {
+  const definitions = document.data.agents.map(configured => {
     const { id, model_id, systemPromptModule, ...overrides } = configured;
     if (!model_id) throw new Error(`Invalid agents.yaml agent "${id}": model_id is required`);
     const configuredModel = configuredModels.get(model_id);
@@ -113,9 +113,9 @@ export function readAgentDefinitions(
     if (definition.data.tools.includes("deliver_task_result") && !definition.data.task?.enabled) {
       throw new Error(`Agent "${id}" enables deliver_task_result but is not task-enabled`);
     }
-    if (definition.data.tools.some(t => ["project_read", "proposal_create", "image_generate", "project_manage"].includes(t)) && !["proposal-agent", "creator-agent"].includes(id)) throw new Error("Creative tools require an internal creative agent");
+    if (definition.data.tools.some(t => ["project_read", "proposal_create", "image_generate", "image_review", "project_manage"].includes(t)) && !["proposal-agent", "creator-agent"].includes(id)) throw new Error("Creative tools require an internal creative agent");
     if (id === "proposal-agent" && (definition.data.tools.some(t => !["record_read", "project_read", "proposal_create", "skill_read"].includes(t)) || systemPromptModule !== "proposal-agent" || definition.data.task?.enabled)) throw new Error("Invalid proposal-agent permissions");
-    if (id === "creator-agent" && (definition.data.tools.some(t => !["record_read", "project_read", "image_generate", "project_manage", "skill_read"].includes(t)) || systemPromptModule !== "creator-agent" || definition.data.task?.enabled)) throw new Error("Invalid creator-agent permissions");
+    if (id === "creator-agent" && (definition.data.tools.some(t => !["record_read", "project_read", "image_generate", "image_review", "project_manage", "skill_read"].includes(t)) || systemPromptModule !== "creator-agent" || definition.data.task?.enabled)) throw new Error("Invalid creator-agent permissions");
     if (new Set(definition.data.tools).size !== definition.data.tools.length) throw new Error(`Agent "${id}" has duplicate tools`);
     if (new Set(definition.data.skills).size !== definition.data.skills.length) throw new Error(`Agent "${id}" has duplicate skills`);
     for (const skill of definition.data.skills) {
@@ -128,4 +128,8 @@ export function readAgentDefinitions(
     }
     return { ...definition.data, revision: createHash("sha256").update(JSON.stringify(definition.data)).digest("hex") };
   });
+  const proposalSkills = new Set(definitions.find(agent => agent.id === "proposal-agent")?.skills ?? []);
+  const creatorSkills = definitions.find(agent => agent.id === "creator-agent")?.skills ?? [];
+  if (creatorSkills.some(skill => proposalSkills.has(skill))) throw new Error("Proposal and Creator cannot share skills");
+  return definitions;
 }

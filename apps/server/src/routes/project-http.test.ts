@@ -25,7 +25,7 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
     const r = await app.request(`/api/${path}`, { method, headers: { Authorization: `Bearer ${token}`, ...(body === undefined ? {} : { "Content-Type": "application/json" }) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     return { status: r.status, body: r.headers.get("content-type")?.includes("json") ? await r.json() as any : null };
   };
-  const input = (ids = recordIds.slice(0, 7)): CreateProposalInput => ({ type: "create", title: "大观园写记", proposedSummary: "园林里的红楼梦主题照片与旅行回忆", recordIds: ids, content: { reason: "园林与人物照片适合主题创作", ideas: [{ title: "园林入画", idea: "把园林里的这一刻整理成一页有作品感的图文写真。保留真实人物与场景，只增强主题表达。", tags: ["园林入画", "古典写真", "游园一页"], goal: { objective: "制作园林旅行写真" } }] }});
+  const input = (ids = recordIds.slice(0, 7)): Extract<CreateProposalInput, {type:"create"}> => ({ type: "create", title: "大观园写记", proposedSummary: "园林里的红楼梦主题照片与旅行回忆", recordIds: ids, content: { reason: "园林与人物照片适合主题创作", ideas: [{ title: "园林入画", idea: "把园林里的这一刻整理成一页有作品感的图文写真。保留真实人物与场景，只增强主题表达。", tags: ["园林入画", "古典写真", "游园一页"], goal: { objective: "制作园林旅行写真" } }] }});
   let projectId: string, proposalId: string;
   try {
     await db.insertInto("users").values(users.map(id => ({ user_id: id, status: "active" as const, created_at: now, updated_at: now, disabled_at: null }))).execute();
@@ -34,7 +34,7 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
     await t.test("strict creation and concurrent idempotent acceptance", async () => {
       error(await proposals.create(userId, { ...input(), recordIds: [recordIds[0]!, randomUUID()] }), "REFERENCE_RECORDS_UNAVAILABLE");
       assert.equal((await db.selectFrom("proposals").selectAll().where("user_id", "=", userId).execute()).length, 0);
-      error(await proposals.create(userId, { ...input(), type: "extend" }), "INVALID_INPUT");
+      error(await proposals.create(userId, { ...input(), type: "extend" } as never), "INVALID_INPUT");
       error(await proposals.create(userId, { ...input(), content: { ...input().content, ideas: [{...input().content.ideas[0]!, tags: ["重复", "重复"]}] } }), "INVALID_INPUT");
       error(await proposals.create(userId, { ...input(), content: { ...input().content, ideas: [] } }), "INVALID_INPUT");
       const p = data(await proposals.create(userId, { ...input(), recordIds: [...input().recordIds, recordIds[0]!] })); proposalId = p.proposalId; assert.equal(p.sessionId, null);
@@ -85,7 +85,8 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
     });
     await t.test("extend, deletions, missing references, reject and archive", async () => {
       const original = (await projects.find(userId, projectId))!;
-      const extend = { ...input([recordIds[0]!, recordIds[7]!]), type: "extend" as const, proposedSummary: null, targetProjectId: projectId };
+      const extend: CreateProposalInput = { type:"extend", title:"补充园林素材", recordIds:[recordIds[0]!, recordIds[7]!], targetProjectId:projectId,
+        content:{reason:"新素材有独立补充价值", change:{kind:"enrich",title:"补充亭边细节",idea:"把亭边的照片补进现有的园林作品，形成衔接。",tags:["园林素材","细节补充"],instruction:"仅补充新的亭边照片，不修改原目标"}} };
       const p = data(await proposals.create(userId, extend)); assert.equal(data(await proposals.accept(userId,p.proposalId)).projectId,projectId);
       await db.updateTable("projects").set({status:"completed"}).where("project_id","=",projectId).execute();
       let current = (await projects.find(userId, projectId))!; assert.equal(current.version, original.version + 1); assert.equal(current.summary, original.summary);
@@ -137,10 +138,18 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
       assert.equal((await proposals.find(userId, p.proposalId))?.content.ideas.find(idea => idea.id === selectedId)?.goal.objective, selectedGoal.objective);
       error(await proposals.accept(userId, p.proposalId, {selectedIdeaId: selectedId === aId ? bId : aId}), "INVALID_STATE");
       await db.updateTable("projects").set({status:"completed"}).where("project_id","=",accepted.projectId).execute();
-      const extension = data(await proposals.create(userId,{...two,type:"extend",targetProjectId:accepted.projectId,proposedSummary:null}));
+      const extension = data(await proposals.create(userId,{type:"extend",title:"调整作品构图",recordIds:base.recordIds,targetProjectId:accepted.projectId,
+        content:{reason:"补充了明确的改动偏好",change:{kind:"refine",title:"调整图文顺序",idea:"将已有作品的照片顺序调整得更有节奏。",tags:["内容节奏","图文顺序"],instruction:"保留原始创作目标与所有人物，调整图片顺序"}}}));
       const target = (await projects.find(userId, accepted.projectId))!;
       data(await proposals.accept(userId, extension.proposalId, {selectedIdeaId: extension.content.ideas[0]!.id}));
       assert.equal((await projects.find(userId, accepted.projectId))?.summary, target.summary);
+      assert.deepEqual((await projects.find(userId, accepted.projectId))?.goal, target.goal);
+      assert.equal(extension.content.change?.kind, "refine");
+      const publicExtension = data(await proposals.detail(userId, extension.proposalId));
+      assert.equal(publicExtension.content.changeKind, "refine");
+      assert.equal(publicExtension.content.ideas.length, 1);
+      assert.equal(Object.hasOwn(publicExtension.content, "change"), false);
+      error(await proposals.create(userId, {type:"extend",targetProjectId:accepted.projectId,title:"不可替换目标", recordIds:base.recordIds,content:{reason:"测试",change:{...extension.content.change,goal:{objective:"擅自改目标"}}}} as never),"INVALID_INPUT");
       error(await proposals.create(userId, { ...base, content: { ...base.content, ideas: [{ ...base.content.ideas[0]!, goal: { ...creation, imageCount: 4 } }] } } as never), "INVALID_INPUT");
       error(await proposals.create(userId, { ...base, content: { ...base.content, ideas: [{ ...base.content.ideas[0]!, goal: { ...creation, objective: "" } }] } }), "INVALID_INPUT");
       assert.equal((await request(`proposals/${p.proposalId}/accept`, "POST", {selectedIdeaId: randomUUID()})).status, 400);
@@ -176,7 +185,8 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
       await db.updateTable("projects").set({status:"running"}).where("project_id","=",ownProject).execute();
       error(await projects.update(userId, ownProject, 1, { content: `![x](fanto-media://${image})` }), "MEDIA_NOT_READY");
       error(await proposals.create(userId, input([record])), "REFERENCE_RECORDS_UNAVAILABLE");
-      error(await proposals.create(otherUser, { ...input([record]), type: "extend", targetProjectId: ownProject, proposedSummary: null }), "NOT_FOUND");
+      error(await proposals.create(otherUser, { type: "extend", targetProjectId: ownProject, title: "资料补充", recordIds: [record],
+        content: {reason:"新观察", change:{kind:"enrich",title:"补充信息",idea:"新增的记录能够补足原有文本的遗漏。",tags:["信息补充","观点补充"],instruction:"只补充核实的事实"}} }), "NOT_FOUND");
       assert.equal(data(await proposals.list(otherUser, { limit: 100 })).data.length, 0);
       const a = data(await proposals.create(userId, input([recordIds[1]!])));
       const b = data(await proposals.create(userId, input([recordIds[1]!])));

@@ -1,0 +1,423 @@
+[
+  {
+    "id": "pq-01",
+    "domain": "life",
+    "triggerRecord": "又找到一张雨后石阶照片，原文里恰好缺少进寺前的那一刻",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "一段旅行散文已经整理了去山里寻找古寺的经过"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "enrich",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-02",
+    "domain": "life",
+    "triggerRecord": "再次上传已在散文里使用的同一张照片，未说明修改",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "同一旅行散文已经完整引用当天的三张照片"
+    },
+    "expected": {
+      "decision": "no_proposal"
+    }
+  },
+  {
+    "id": "pq-03",
+    "domain": "life",
+    "triggerRecord": "海边夜航的一次短途旅程，文字记下了灯塔与归途，配有独特的船上夜色照片",
+    "existingProject": null,
+    "expected": {
+      "decision": "create"
+    }
+  },
+  {
+    "id": "pq-04",
+    "domain": "career",
+    "triggerRecord": "新团队沟通反复失误，发现线上协作在跨时区需求澄清上反而更慢",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "已有一篇关于远程协作效率的职业复盘，结论是线上沟通通常更快"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "correct",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-05",
+    "domain": "career",
+    "triggerRecord": "今天又是很累的一天，不想说更多了",
+    "existingProject": null,
+    "expected": {
+      "decision": "no_proposal"
+    }
+  },
+  {
+    "id": "pq-06",
+    "domain": "career",
+    "triggerRecord": "收到两个工作机会，一个成长快但通勤长，一个稳定却技术栈停滞，记下了各自的限制和担忧",
+    "existingProject": null,
+    "expected": {
+      "decision": "create"
+    }
+  },
+  {
+    "id": "pq-07",
+    "domain": "mood",
+    "triggerRecord": "今晚意识到低落主要出现在没吃晚饭的加班日，也有两天并不如此",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "私人情绪日记写过过去一周都容易烦躁"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "refine",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-08",
+    "domain": "mood",
+    "triggerRecord": "我今天不太开心，先这样吧",
+    "existingProject": null,
+    "expected": {
+      "decision": "no_proposal"
+    }
+  },
+  {
+    "id": "pq-09",
+    "domain": "mood",
+    "triggerRecord": "一段持续六周的私密心情观察，标注过不同环境和事件中的感受差异，想弄清变化而非寻求诊断",
+    "existingProject": null,
+    "expected": {
+      "decision": "create"
+    }
+  },
+  {
+    "id": "pq-10",
+    "domain": "reflection",
+    "triggerRecord": "补充一次意外：与同事激烈讨论反而使多年搁置的想法有了形状",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "关于独处有助于创造力的一页思考札记"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "correct",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-11",
+    "domain": "reflection",
+    "triggerRecord": "原封不动又记了昨天关于独处的那句话",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "独处思考札记已收录昨夜的这段话"
+    },
+    "expected": {
+      "decision": "no_proposal"
+    }
+  },
+  {
+    "id": "pq-12",
+    "domain": "reflection",
+    "triggerRecord": "从几次不同年龄阶段的选择中，发现“被认可”和“想做的事”之间的矛盾，写了多个具体例子",
+    "existingProject": null,
+    "expected": {
+      "decision": "create"
+    }
+  },
+  {
+    "id": "pq-13",
+    "domain": "learning",
+    "triggerRecord": "练习到第五周，右手扫弦稳定了，但切换和弦仍卡住",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "正在整理吉他练习的四周成长记录"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "continue",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-14",
+    "domain": "learning",
+    "triggerRecord": "今天上了一节课程，随手记“听过了”，没有内容或问题",
+    "existingProject": null,
+    "expected": {
+      "decision": "no_proposal"
+    }
+  },
+  {
+    "id": "pq-15",
+    "domain": "learning",
+    "triggerRecord": "关于学习分布式系统的三次实验：分别记录了预期、故障、修正后的观察和仍不确定的点",
+    "existingProject": null,
+    "expected": {
+      "decision": "create"
+    }
+  },
+  {
+    "id": "pq-16",
+    "domain": "relationship",
+    "triggerRecord": "后来当面谈过，父亲说明当年沉默的原因和我原来设想的不一样",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "写给父亲的一封未寄出的私人信件，记录过一段误会"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "correct",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-17",
+    "domain": "relationship",
+    "triggerRecord": "刚和朋友吵完架，还不知道该怎么整理，只想先记录一下难受",
+    "existingProject": null,
+    "expected": {
+      "decision": "no_proposal"
+    }
+  },
+  {
+    "id": "pq-18",
+    "domain": "relationship",
+    "triggerRecord": "与老友连续多年每年拍同一个桥头，如今桥修过了，三年的照片和时间都有记录",
+    "existingProject": null,
+    "expected": {
+      "decision": "create"
+    }
+  },
+  {
+    "id": "pq-19",
+    "domain": "planning",
+    "triggerRecord": "房东通知钥匙交接提前了四天，搬家时间线需同步修改",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "已有一份秋季搬家的时间线和预算"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "correct",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-20",
+    "domain": "planning",
+    "triggerRecord": "重复确认快递费用还是 600 元，没有变化",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "秋季搬家预算已将快递费用更新到 600 元"
+    },
+    "expected": {
+      "decision": "no_proposal"
+    }
+  },
+  {
+    "id": "pq-21",
+    "domain": "planning",
+    "triggerRecord": "为了判断是否读研究生，整理了课程、申请时限、家庭约束和想验证的问题",
+    "existingProject": null,
+    "expected": {
+      "decision": "create"
+    }
+  },
+  {
+    "id": "pq-22",
+    "domain": "finance",
+    "triggerRecord": "这个月发现保险有年付账单，解释了为什么单月费用突增",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "记录一份每月实际支出与预算的差异分析"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "enrich",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-23",
+    "domain": "finance",
+    "triggerRecord": "今天买水花了三元，随手一记",
+    "existingProject": null,
+    "expected": {
+      "decision": "no_proposal"
+    }
+  },
+  {
+    "id": "pq-24",
+    "domain": "hobby",
+    "triggerRecord": "新增一张开花时的近景照片和首次开花日期",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "长期养的多肉植物的生长影集"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "continue",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-25",
+    "domain": "hobby",
+    "triggerRecord": "收集了旧唱片封套中的纹样、质感与三张手工拼贴草稿，想尝试一组有共同视觉语言的封面",
+    "existingProject": null,
+    "expected": {
+      "decision": "create"
+    }
+  },
+  {
+    "id": "pq-26",
+    "domain": "reading",
+    "triggerRecord": "读到反驳作者观点的另一篇文章，记下了两者证据的分歧",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "《人类简史》阅读札记里已经总结作者关于合作的判断"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "enrich",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-27",
+    "domain": "reading",
+    "triggerRecord": "随手存了一个并没有看过的文章链接，暂时没有想法或片段",
+    "existingProject": null,
+    "expected": {
+      "decision": "no_proposal"
+    }
+  },
+  {
+    "id": "pq-28",
+    "domain": "creation",
+    "triggerRecord": "这次想保留画册事实内容，但让余下章节采用更柔和的灰阶和更多留白",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "已有一册真实的街头摄影画册，原风格偏高对比黑白"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "refine",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-29",
+    "domain": "creation",
+    "triggerRecord": "画了一个三叶精灵的草图，记下它如何收集散落的思绪并编织成图案，附有分镜设想",
+    "existingProject": null,
+    "expected": {
+      "decision": "create"
+    }
+  },
+  {
+    "id": "pq-30",
+    "domain": "uncertain",
+    "triggerRecord": "网上一条不知道真假的传闻声称目标景点已经关闭，没有可靠来源",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "Project 写着“准备三月去旅行”，但时间和目标城市都未确认"
+    },
+    "expected": {
+      "decision": "no_proposal"
+    }
+  },
+  {
+    "id": "pq-31",
+    "domain": "mixed",
+    "triggerRecord": "一段新记录从毫不相关的读书想法谈起，但最后清楚说明新的运动习惯与原目标的冲突",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "个人年度目标包含“保持每周两次运动”，已经做成跟踪札记"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "refine",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-32",
+    "domain": "mixed",
+    "triggerRecord": "新记录完整描述了准备面试技术负责人的困惑、备选方案与具体条件，和猫咪项目无直接关系",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "现有项目是关于猫咪的插画集"
+    },
+    "expected": {
+      "decision": "create"
+    }
+  },
+  {
+    "id": "pq-33",
+    "domain": "mixed",
+    "triggerRecord": "新记录同样谈职业，但只是复制已有分析全文，没有补充事实、纠正或新的意愿",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "现有项目是职业转型的结构化分析"
+    },
+    "expected": {
+      "decision": "no_proposal"
+    }
+  },
+  {
+    "id": "pq-34",
+    "domain": "work",
+    "triggerRecord": "复盘一次听众问答，发现最重要的反例应该放在开头，以便讲清论点",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "已有一个线上技术分享大纲，案例按先后排好"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "refine",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-35",
+    "domain": "work",
+    "triggerRecord": "最近研发同事在不同项目中反复遇到相同审批阻塞，写下三次独立观察和可能的制度原因，但尚未定论",
+    "existingProject": null,
+    "expected": {
+      "decision": "create"
+    }
+  },
+  {
+    "id": "pq-36",
+    "domain": "family",
+    "triggerRecord": "十月家里增加了一个小型共同仪式，并补记了延续三周的细节",
+    "existingProject": {
+      "alias": "project-A",
+      "summary": "一份私人家庭年末小结，已写到九月"
+    },
+    "expected": {
+      "decision": "extend",
+      "changeKind": "continue",
+      "targetProjectAlias": "project-A"
+    }
+  },
+  {
+    "id": "pq-37",
+    "domain": "family",
+    "triggerRecord": "只发了一个“晚安”，没有其他信息",
+    "existingProject": null,
+    "expected": {
+      "decision": "no_proposal"
+    }
+  }
+]

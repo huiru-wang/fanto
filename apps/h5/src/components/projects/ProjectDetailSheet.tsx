@@ -120,9 +120,9 @@ function ProposalSheet({ id, onAccepted, onRejected }: { id: string; onAccepted:
 
   return <>
     <div className="project-sheet-scroll">
-      <div className="project-sheet-kicker"><Sparkles size={15} />{proposal.type === "extend" ? "继续创作" : "新的创作提议"}</div>
+      <div className="project-sheet-kicker"><Sparkles size={15} />{proposal.type === "extend" ? "延续已有脉络" : "新的提议"}</div>
       <h2 className="project-sheet-title">{proposal.title}</h2>
-      <div className="proposal-choices" role="group" aria-label="选择创意方向">
+      <div className="proposal-choices" role="group" aria-label={proposal.type === "extend" ? "确认延续建议" : "选择创意方向"}>
         {proposal.content.ideas.map(idea => {
           const checked = (proposal.status === "accepted" ? proposal.content.selectedIdeaId : selected) === idea.id;
           return <button key={idea.id} type="button" aria-pressed={checked}
@@ -148,7 +148,7 @@ function ProposalSheet({ id, onAccepted, onRejected }: { id: string; onAccepted:
       {actionError && <p role="alert" className="project-form-error">{actionError}</p>}
       {proposal.status === "pending" ? <div className="project-sheet-actions">
         <button type="button" className="project-decline" disabled={deciding} onClick={() => void decide(false)}>不感兴趣</button>
-        <button type="button" className="project-accept" disabled={deciding || !selected} onClick={() => void decide(true)}>{deciding ? "正在提交…" : "按这个方向创作"} <ArrowLeft size={15} className="project-arrow-forward" /></button>
+        <button type="button" className="project-accept" disabled={deciding || !selected} onClick={() => void decide(true)}>{deciding ? "正在提交…" : proposal.type === "extend" ? "更新这个作品" : "按这个方向创作"} <ArrowLeft size={15} className="project-arrow-forward" /></button>
       </div> : proposal.status === "accepted" ? <div className="project-sheet-actions">
         <span className="project-muted">已确认上方所选方向</span>
         <button type="button" className="project-accept" onClick={() => proposal.resultProjectId && onAccepted(proposal.resultProjectId)} disabled={!proposal.resultProjectId}>查看作品</button>

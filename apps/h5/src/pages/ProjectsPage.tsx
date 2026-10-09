@@ -129,9 +129,9 @@ export function ProjectsPage() {
     <div className="page projects-page">
       <header className="page-header">
         <div>
-          <p className="eyebrow">让记录生长出新的可能</p>
+          <p className="eyebrow">记住 · 发现 · 继续</p>
           <h1>脉络</h1>
-          <p className="page-description">值得珍藏的瞬间，还可以继续成为作品。</p>
+          <p className="page-description">让经历、思考与灵感，继续长成值得留下的内容。</p>
         </div>
         <button type="button" className="icon-button" onClick={() => void refresh(tab)} disabled={loading} aria-label="刷新脉络" title="刷新">
           <RefreshCw size={18} />
@@ -146,7 +146,7 @@ export function ProjectsPage() {
           {tab === "all" && (
             <section className="project-section">
               <div className="project-section-head">
-                <div className="project-heading"><span className="project-heading-icon suggestion"><Sparkles size={17} /></span><h2>等待你的灵感</h2>{proposals.length > 0 && <span className="project-count">{proposals.length}{proposalCursor ? "+" : ""}</span>}</div>
+                <div className="project-heading"><span className="project-heading-icon suggestion"><Sparkles size={17} /></span><h2>值得继续的发现</h2>{proposals.length > 0 && <span className="project-count">{proposals.length}{proposalCursor ? "+" : ""}</span>}</div>
                 <span className="project-section-aside">来自你的记录</span>
               </div>
               {proposalError && <div className="project-inline-state" role="alert">{proposalError}<button type="button" onClick={() => void loadProposals()}>重试</button></div>}
@@ -154,7 +154,7 @@ export function ProjectsPage() {
                 <div className="proposal-grid">
                   {proposals.map(item => (
                     <button key={item.proposalId} className="proposal-card" type="button" onClick={() => open("proposalId", item.proposalId)}>
-                      <div className="proposal-card-top"><span className="proposal-type"><Sparkles size={14} />{item.type === "extend" ? "继续创作" : "创作灵感"}</span><ArrowRight size={19} className="proposal-card-arrow" /></div>
+                      <div className="proposal-card-top"><span className="proposal-type"><Sparkles size={14} />{item.type === "extend" ? "继续这一脉络" : "新的可能"}</span><ArrowRight size={19} className="proposal-card-arrow" /></div>
                       <h3>{item.content.ideas.length === 1 ? item.content.ideas[0]!.title : item.title}</h3>
                       {item.content.ideas.length === 1 ? <>
                         <p>{item.content.ideas[0]!.idea}</p>
@@ -168,7 +168,7 @@ export function ProjectsPage() {
                   ))}
                 </div>
               ) : !proposalError && (
-                <div className="project-quiet-state">新的创作灵感出现时，会在这里等你。</div>
+                <div className="project-quiet-state">当记录中出现值得继续的线索，会在这里等你。</div>
               )}
               {proposalCursor && <button type="button" className="project-load-more" disabled={!!loadingMore} onClick={() => void loadMore("proposals")}>{loadingMore === "proposals" ? "正在加载…" : "查看更多提议"}</button>}
             </section>

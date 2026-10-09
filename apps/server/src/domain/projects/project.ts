@@ -10,8 +10,12 @@ export interface ProjectGoal {
   successCriteria?: string[];
 }
 export interface ProposalIdea { id: string; title: string; idea: string; tags: string[]; goal: ProjectGoal }
-export interface ProposalContent { reason: string; ideas: ProposalIdea[]; selectedIdeaId: string | null }
+export type ProjectChangeKind = "enrich" | "correct" | "refine" | "continue";
+export interface ProjectChange { kind: ProjectChangeKind; title: string; idea: string; tags: string[]; instruction: string }
+/** The public ideas view is retained for older H5/iOS clients. Extend is an explicit change, not a replacement goal. */
+export interface ProposalContent { reason: string; ideas: ProposalIdea[]; selectedIdeaId: string | null; change?: ProjectChange }
 export interface ProposalCreateContent { reason: string; ideas: Array<Omit<ProposalIdea, "id">> }
+export interface ProposalExtendContent { reason: string; change: ProjectChange }
 export interface Proposal {
   proposalId: string; userId: string; sessionId: string | null; type: ProposalType; targetProjectId: string | null;
   title: string; proposedSummary: string | null; content: ProposalContent; status: ProposalStatus;
@@ -28,10 +32,9 @@ export type Page<T> = { data: T[]; hasMore: boolean; nextCursor: string | null; 
 export type Pagination = { cursor?: string; limit: number };
 export type TransactionOptions = { transaction?: Transaction<DB> };
 export type ProjectPatch = Partial<Pick<Project, "title" | "summary" | "coverMediaId" | "content" | "goal">>;
-export type CreateProposalInput = {
-  type: ProposalType; targetProjectId?: string | null; title: string; proposedSummary?: string | null;
-  recordIds: string[]; content: ProposalCreateContent;
-};
+export type CreateProposalInput =
+  | { type: "create"; title: string; targetProjectId?: null; proposedSummary: string; recordIds: string[]; content: ProposalCreateContent }
+  | { type: "extend"; title: string; targetProjectId: string; proposedSummary?: null; recordIds: string[]; content: ProposalExtendContent };
 export type AcceptProposalInput = { selectedIdeaId?: string };
 export const success = <T>(data: T): DomainResult<T> => ({ kind: "ok", data });
 export const failure = (code: DomainErrorCode): DomainResult<never> => ({ kind: "error", code });

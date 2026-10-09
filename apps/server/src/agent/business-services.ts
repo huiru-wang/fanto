@@ -32,6 +32,7 @@ export type AgentBusinessServices = {
   readProject?(context: AgentRequestContext, input: Parameters<CreativeService["readProject"]>[1]): ReturnType<CreativeService["readProject"]>;
   createProposal?(context: AgentRequestContext, input: CreateProposalInput): ReturnType<CreativeService["createProposal"]>;
   generateImage?(context: AgentRequestContext, input: ImageInput): ReturnType<CreativeService["generateImage"]>;
+  reviewImage?(context: AgentRequestContext, input: {mediaId: string; brief: string; referenceMediaIds?: string[]}): ReturnType<CreativeService["reviewImage"]>;
   manageProject?(context: AgentRequestContext, input: ProjectManageInput): ReturnType<CreativeService["projectManage"]>;
   readRecords(context: AgentRequestContext, input: { recordIds?: string[]; query?: string }): Promise<AgentRecord[]>;
   listRecords(context: AgentRequestContext, input: { limit: number; cursor?: string }): Promise<AgentRecordList>;
@@ -74,6 +75,7 @@ export function createAgentBusinessServices(services: {
     readProject: (context, input) => creative().readProject(context, input),
     createProposal: (context, input) => creative().createProposal(context, input),
     generateImage: (context, input) => creative().generateImage(context, input),
+    reviewImage: (context, input) => creative().reviewImage(context, input),
     manageProject: (context, input) => creative().projectManage(context, input),
     async readRecords(context, input) {
       if (context.creative) return withRunAbort(context, () => creative().readRecords(context, input));

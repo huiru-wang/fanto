@@ -103,7 +103,7 @@ struct ProjectsView: View {
                                 Text("2 个创意方向").font(.subheadline).foregroundStyle(.secondary)
                                 Text(proposal.content.ideas.map(\.title).joined(separator: "  ·  ")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                             }
-                            Label(proposal.type == .create ? "新的创作建议" : "继续创作", systemImage: "sparkles").font(.caption).foregroundStyle(.secondary)
+                            Label(proposal.type == .create ? "发现一个新可能" : "继续这一脉络", systemImage: "sparkles").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }

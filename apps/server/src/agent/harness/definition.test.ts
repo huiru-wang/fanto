@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { AgentRegistry } from "./registry.js";
@@ -42,11 +44,21 @@ test("agent.yaml exposes task management and the single task-worker", () => {
 test("creative agents are internal, use object-root schemas and cannot use Task or filesystem tools", async () => {
   const registry = new AgentRegistry(resolve("agent.yaml"), builtinModels(), new SkillLoader(resolve("skills")));
   assert.deepEqual(registry.get("proposal-agent")?.tools, ["record_read", "project_read", "proposal_create", "skill_read"]);
-  assert.deepEqual(registry.get("creator-agent")?.tools, ["record_read", "project_read", "image_generate", "project_manage", "skill_read"]);
-  assert.deepEqual(registry.get("proposal-agent")?.skills, ["creative"]);
-  assert.deepEqual(registry.get("creator-agent")?.skills, ["creative"]);
+  assert.deepEqual(registry.get("creator-agent")?.tools, ["record_read", "project_read", "image_generate", "image_review", "project_manage", "skill_read"]);
+  assert.deepEqual(registry.get("proposal-agent")?.skills, ["project-evolution", "creative-opportunity"]);
+  assert.deepEqual(registry.get("creator-agent")?.skills, ["art-direction", "photography", "storytelling", "editorial-design", "image-creation", "creative-review"]);
+  assert.deepEqual(registry.get("proposal-agent")?.skills.filter(id => registry.get("creator-agent")?.skills.includes(id)), []);
   assert.equal(registry.taskAgents().some(agent => agent.id === "creator-agent" || agent.id === "proposal-agent"), false);
   const { createTools } = await import("../tools/index.js");
   const skills = new SkillLoader(resolve("skills"));
   for (const tool of createTools(registry.get("creator-agent")!.tools, process.cwd(), {} as never, [], skills, registry.get("creator-agent")!.skills)) assert.equal((tool.parameters as { type?: string }).type, "object");
+});
+
+test("Proposal and Creator skill overlap is rejected at config loading", () => {
+  const dir=mkdtempSync(join(tmpdir(),"fanto-skill-test-"));
+  try {
+    const config=readFileSync(resolve("agent.yaml"),"utf8");
+    writeFileSync(join(dir,"agent.yaml"),config.replace("skills: [art-direction, photography", "skills: [project-evolution, art-direction, photography"));
+    assert.throws(()=>new AgentRegistry(join(dir,"agent.yaml"),builtinModels(),new SkillLoader(resolve("skills"))),/cannot share skills/);
+  } finally {rmSync(dir,{recursive:true,force:true});}
 });

@@ -25,7 +25,7 @@ struct ProposalDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(current.type == .extend ? "继续创作" : "新的创作提议")
+                    Text(current.type == .extend ? "延续已有脉络" : "新的提议")
                         .font(.caption.weight(.medium))
                         .foregroundStyle(.secondary)
                     Text(current.title)
@@ -50,7 +50,7 @@ struct ProposalDetailView: View {
             .padding(.top, 12)
             .padding(.bottom, 30)
         }
-        .navigationTitle("创作提议")
+        .navigationTitle(current.type == .extend ? "脉络更新" : "新提议")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) { actionBar }
         .task(id: proposal.id) { await load() }
@@ -101,7 +101,7 @@ struct ProposalDetailView: View {
         .disabled(current.status != .pending || isDeciding)
         .accessibilityLabel("\(idea.title)，\(idea.idea)，\(idea.tags.joined(separator: "、"))")
         .accessibilityValue(checked ? "已选择" : "未选择")
-        .accessibilityHint(current.status == .pending ? "双击选择此创意方向" : "已确认的创意，仅供查看")
+        .accessibilityHint(current.status == .pending ? "双击确认这个方向" : "已确认的创意，仅供查看")
     }
 
     private var referencesSection: some View {
@@ -149,7 +149,7 @@ struct ProposalDetailView: View {
             HStack(spacing: 12) {
                 Button("不感兴趣") { Task { await decide(accept: false) } }
                     .buttonStyle(.bordered).frame(maxWidth: .infinity)
-                Button(isDeciding ? "正在提交…" : "按这个方向创作") { Task { await decide(accept: true) } }
+                Button(isDeciding ? "正在提交…" : (current.type == .extend ? "更新这个项目" : "按这个方向创作")) { Task { await decide(accept: true) } }
                     .buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
                     .disabled(resolvedSelection == nil)
             }

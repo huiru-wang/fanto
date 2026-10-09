@@ -38,16 +38,27 @@ export class CreatorHandler {
       let handedOff=false;
       try {
         const prior=await session.session.findEntries({order:"desc",limit:2000},TODO_CONTEXT);
-        if(prior.some(e=>e.type==="custom"&&e.customType==="fanto.proposal_dispatched"&&
+        if(prior.some(e=>e.type==="custom"&&e.customType==="fanto.proposal_applied"&&
           (e.data as {proposalId?:string})?.proposalId===proposalId)) {
           await this.projects.finishExecution(userId,projectId,"completed");
           return;
         }
-        await session.runtime.appendCustomEntry("fanto.proposal_dispatched",{proposalId});
+        const selected=proposal.content.ideas.find(idea=>idea.id===proposal.content.selectedIdeaId);
+        if (!selected) throw Error("ACCEPTED_PROPOSAL_MISSING_SELECTION");
+        const references=await this.proposals.recordsPage(userId,proposalId,{limit:100});
+        if (references.kind === "error") throw Error(references.code);
+        const referenceIds=references.data.data.map(record=>record.id);
+        if (!referenceIds.length) throw Error("ACCEPTED_PROPOSAL_RECORDS_UNAVAILABLE");
+        const sourceDirective=`\n本次确认的 Record IDs：${referenceIds.join(", ")}。在创作前用 record_read 按每批不超过5条读取所需新增素材；不能只依赖 project_read 的最近5条关联记录。`;
+        const directive = proposal.type === "extend"
+          ? `用户接受了一条针对现有 Project 的增量修改提议。请保留原有 goal 和有价值的已有内容，只进行以下明确的改变。\n类型：${proposal.content.change?.kind ?? "enrich"}\n作品变化：${selected.title}。${selected.idea}\n具体变更要求：${proposal.content.change?.instruction ?? selected.idea}\n请读取最新 Project 和关联 Record，合并更新而不是重新制作独立作品。${sourceDirective}`
+          : `用户已接受新作品的命题：${selected.title}。${selected.idea}。\n目标：${JSON.stringify(selected.goal)}。\n请围绕此命题创作并检查实际成果。${sourceDirective}`;
         handedOff=true;
-        await this.worker.run(session,"请按当前已确认的方向继续完成作品。",this.timeoutMs,{projectId},true);
-        const current=await this.projects.find(userId,projectId);
-        if(!current||current.version<=initial.version)throw Error("CREATOR_RESULT_NOT_SAVED");
+        await this.worker.run(session,directive,this.timeoutMs,{projectId},true,undefined,async () => {
+          const current=await this.projects.find(userId,projectId);
+          if(!current||current.version<=initial.version)throw Error("CREATOR_RESULT_NOT_SAVED");
+          await session.runtime.appendCustomEntry("fanto.proposal_applied",{proposalId});
+        });
         await this.projects.finishExecution(userId,projectId,"completed");
       } finally {
         if(!handedOff)await this.agent.sessions.release(session.id).catch(()=>{});

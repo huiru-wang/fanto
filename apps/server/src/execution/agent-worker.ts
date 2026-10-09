@@ -8,7 +8,8 @@ type Metadata = Parameters<typeof runAgent>[3];
 export class AgentWorker {
   constructor(private readonly sessions: AgentSessionManager, readonly events: SessionEventBus) {}
   async run(session: ManagedSession, message: string, timeoutMs: number, metadata: Metadata,
-    publishEvents = false, externalSignal?: AbortSignal): Promise<string> {
+    publishEvents = false, externalSignal?: AbortSignal,
+    onCompleted?: () => Promise<void>): Promise<string> {
     let release: (()=>void);
     try { release = this.sessions.reserve(session); }
     catch(error) {
@@ -25,6 +26,7 @@ export class AgentWorker {
       const output=await runAgent(session,message,controller.signal,metadata,async (event:AgentStreamEvent)=>{
         if(publishEvents)this.events.publish(session.id,event);
       });
+      await onCompleted?.();
       if(publishEvents)this.events.publish(session.id,{type:"done"});
       return output;
     } catch(error) {

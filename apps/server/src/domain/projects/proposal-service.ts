@@ -23,16 +23,26 @@ export class ProposalService {
       if (value.type === "extend") {
         const target = await repo.project(userId, value.targetProjectId!, true);
         if (!target) return failure("NOT_FOUND");
-        if (!["completed","failed"].includes(target.status)) return failure("INVALID_STATE");
+        if (target.status === "archived") return failure("INVALID_STATE");
       }
       const now = new Date(), id = randomUUID();
-      const row = await repo.insertProposal({ session_id: options.sessionId ?? null, proposal_id: id, user_id: userId, type: value.type, target_project_id: value.targetProjectId ?? null, title: value.title, proposed_summary: value.proposedSummary ?? null, content: { reason: value.content.reason, ideas: value.content.ideas.map(idea => ({ ...idea, id: randomUUID() })), selectedIdeaId: null }, status: "pending", result_project_id: null, created_at: now, updated_at: now, resolved_at: null });
+      const content = value.type === "create"
+        ? { reason: value.content.reason, ideas: value.content.ideas.map(idea => ({ ...idea, id: randomUUID() })), selectedIdeaId: null }
+        : { reason: value.content.reason, change: value.content.change,
+            ideas: [{ id: randomUUID(), title: value.content.change.title, idea: value.content.change.idea,
+              tags: value.content.change.tags, goal: (await repo.project(userId, value.targetProjectId))!.goal }], selectedIdeaId: null };
+      const row = await repo.insertProposal({ session_id: options.sessionId ?? null, proposal_id: id, user_id: userId, type: value.type, target_project_id: value.targetProjectId ?? null, title: value.title, proposed_summary: value.proposedSummary ?? null, content, status: "pending", result_project_id: null, created_at: now, updated_at: now, resolved_at: null });
       await repo.addLinks(userId, "proposal", id, records, now);
       return success(proposalEntity(row));
     };
     return options.transaction ? execute(options.transaction) : this.db.transaction().execute(execute);
   }
 
+  async findBySession(userId: string, sessionId: string) {
+    const row = await this.db.selectFrom("proposals").selectAll().where("user_id", "=", userId)
+      .where("session_id", "=", sessionId).orderBy("created_at", "desc").executeTakeFirst();
+    return row ? proposalEntity(row) : null;
+  }
   async find(userId: string, id: string) {
     if (!uuid.safeParse(id).success) return null;
     const row = await new ProjectRepository(this.db).proposal(userId, id);
@@ -104,7 +114,7 @@ export class ProposalService {
         if (!["completed","failed"].includes(target.status)) return failure("INVALID_STATE");
       }
       const addedRecordCount = await repo.addLinks(userId, "project", projectId, records, now);
-      if (row.type === "extend") await repo.updateProject(userId, projectId, { goal: selected.goal, status: "queued" });
+      if (row.type === "extend") await repo.updateProject(userId, projectId, { status: "queued" });
       const resolved = await repo.resolveProposal(userId, id, "accepted", projectId, now,
         { ...current.content, selectedIdeaId: selectedId });
       return success({ projectId, firstAccepted: true });

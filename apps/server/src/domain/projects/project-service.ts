@@ -10,6 +10,32 @@ import { inspectProjectContent } from "./content.js";
 import { paginationSchema, patchSchema, projectListSchema, uuid, versionSchema } from "./validation.js";
 import { failure, success, type Pagination, type ProjectPatch, type ProjectStatus, type TransactionOptions } from "./project.js";
 
+/** Retrieval features are generic lexical signals, never Proposal decision rules. */
+function discoveryText(content: unknown): string {
+  if (typeof content === "string") return content.slice(0, 2400);
+  if (!content || typeof content !== "object") return "";
+  const row=content as {text?:unknown;blocks?:unknown};
+  const parts=[typeof row.text==="string"?row.text:""];
+  if(Array.isArray(row.blocks)) for (const block of row.blocks) {
+    if(!block || typeof block!=="object")continue;
+    const data=block as {description?:unknown;transcription?:unknown};
+    if(typeof data.description==="string")parts.push(data.description);
+    if(typeof data.transcription==="string")parts.push(data.transcription);
+  }
+  return parts.join("\n").slice(0, 2400);
+}
+function grams(value:string):Set<string>{
+  const cleaned=value.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu,"");
+  const out=new Set<string>();
+  for(let i=0;i<cleaned.length-1;i++)out.add(cleaned.slice(i,i+2));
+  return out;
+}
+function lexicalOverlap(a:Set<string>, b:Set<string>):number{
+  if(!a.size || !b.size)return 0;
+  let common=0;for(const gram of b)if(a.has(gram))common++;
+  return common/Math.sqrt(a.size*b.size);
+}
+
 export class ProjectService {
   private constructor(private readonly db: Kysely<DB>, private readonly records: RecordService, private readonly media: MediaService, private readonly embeddings: ProjectEmbeddingProvider) {}
   /** Internal Record deletion hook; caller already holds the Record lock. */
@@ -37,19 +63,62 @@ export class ProjectService {
     const result = page(rows, limit, scope, r => ({ time: r.updated_at.toISOString(), id: r.project_id }));
     return success({ ...result, data: result.data.map(r => { const { content: _, ...summary } = projectEntity({ ...r, content: "" }); return summary; }) });
   }
+  private async ensureProjectEmbeddings(userId: string) {
+    const missing = await this.db.selectFrom("projects").select(["project_id", "summary"])
+      .where("user_id", "=", userId).where("status", "!=", "archived").where("embedding", "is", null).execute();
+    for (const row of missing) {
+      const embedding = await embedProjectText(this.embeddings, row.summary);
+      await this.db.updateTable("projects").set({ embedding }).where("user_id", "=", userId)
+        .where("project_id", "=", row.project_id).where("summary", "=", row.summary)
+        .where("embedding", "is", null).execute();
+    }
+  }
   async search(userId: string, input: { query: string }) {
     const parsed = z.object({ query: z.string().trim().min(1).max(2000) }).strict().safeParse(input);
     if (!parsed.success) return failure("INVALID_INPUT");
     try {
-      // Existing Projects receive their derived vector lazily, without altering business versions.
-      const missing = await this.db.selectFrom("projects").select(["project_id", "summary"]).where("user_id", "=", userId).where("status", "!=", "archived").where("embedding", "is", null).execute();
-      for (const row of missing) {
-        const embedding = await embedProjectText(this.embeddings, row.summary);
-        await this.db.updateTable("projects").set({ embedding }).where("user_id", "=", userId).where("project_id", "=", row.project_id).where("summary", "=", row.summary).where("embedding", "is", null).execute();
-      }
+      await this.ensureProjectEmbeddings(userId);
       const embedding = await embedProjectText(this.embeddings, parsed.data.query);
       return success({ data: await new ProjectRepository(this.db).search(userId, embedding) });
     } catch { return failure("EMBEDDING_UNAVAILABLE"); }
+  }
+  /** Internal discovery: semantic + lexical + recent candidates, with no content-value classification heuristics. */
+  async candidates(userId: string, sourceContent: unknown) {
+    const query = discoveryText(sourceContent).trim();
+    const recent = await new ProjectRepository(this.db).projects(userId, undefined, undefined, 7);
+    const scan = await this.db.selectFrom("projects").select(["project_id","title","summary","goal"])
+      .where("user_id","=",userId).where("status","!=","archived")
+      .orderBy("updated_at","desc").limit(200).execute();
+    let semantic: Awaited<ReturnType<ProjectRepository["search"]>> = [];
+    let semanticAvailable = false;
+    if (query) {
+      try {
+        await this.ensureProjectEmbeddings(userId);
+        const embedding = await embedProjectText(this.embeddings, query);
+        semantic = await new ProjectRepository(this.db).search(userId, embedding, 8);
+        semanticAvailable = true;
+      } catch { /* Degrade to lexical and recent candidates, without hiding all Project context. */ }
+    }
+    const hints = new Map<string, { source: "explicit" | "semantic" | "lexical" | "recent"; similarity?: number }>();
+    const normalizedQuery=query.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu,"");
+    for(const project of scan){
+      const title=project.title.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu,"");
+      if(title.length >= 4 && normalizedQuery.includes(title))hints.set(project.project_id,{source:"explicit"});
+    }
+    for (const match of semantic) if(!hints.has(match.projectId)) hints.set(match.projectId, { source: "semantic", similarity: match.similarity });
+    const sourceGrams=grams(query);
+    const lexical=scan.map(project=>({id:project.project_id, score:lexicalOverlap(sourceGrams,grams([project.title,project.summary,JSON.stringify(project.goal)].join(" ")))}))
+      .filter(row=>row.score>0).sort((a,b)=>b.score-a.score).slice(0,5);
+    for(const match of lexical)if(!hints.has(match.id))hints.set(match.id,{source:"lexical",similarity:match.score});
+    for (const project of recent) if (!hints.has(project.project_id)) hints.set(project.project_id, { source: "recent" });
+    const candidates = await Promise.all([...hints].slice(0, 14).map(async ([id, hint]) => {
+      const project = await this.find(userId, id);
+      if (!project || project.status === "archived") return null;
+      return { projectId: project.projectId, title: project.title, summary: project.summary.slice(0,1000),
+        goal: project.goal, status: project.status, version: project.version,
+        contentExcerpt: project.content.slice(0, 700), ...hint };
+    }));
+    return { search: semanticAvailable ? "semantic_lexical_recent" : "lexical_recent_only", candidates: candidates.filter(c => c !== null) };
   }
   async recordsPage(userId: string, id: string, input: Pagination) {
     if (!uuid.safeParse(id).success) return failure("INVALID_INPUT");

@@ -78,13 +78,14 @@ const tasks = new TaskService(db, {
 });
 const projects = ProjectService.create(db, records, media, embeddings);
 const proposals = ProposalService.create(db, records, media, embeddings);
-const creative = config.creative.enabled ? new CreativeService(db, records, projects, proposals, media, new CreativeImageClient(config.creative.image), userId => auth.assertActiveUser(userId)) : undefined;
+const creative = config.creative.enabled ? new CreativeService(db, records, projects, proposals, media, new CreativeImageClient(config.creative.image), userId => auth.assertActiveUser(userId),
+  new QwenImageUnderstanding(config.dashscope.apiKey, config.dashscope.baseUrl, config.dashscope.visionModel)) : undefined;
 const agent = createAgentRuntime({ records, media, tasks, memories, creative, ...config.agent });
 const embeddingQueue=new RecordEmbeddingQueue();
 const agentQueue=new AgentExecutionQueue();
 const events=new SessionEventBus();
 const worker=new AgentWorker(agent.sessions,events);
-const proposalHandler=creative?new ProposalHandler(records,agent,worker,config.creative.proposalTimeoutMs):undefined;
+const proposalHandler=creative?new ProposalHandler(records,proposals,agent,worker,config.creative.proposalTimeoutMs):undefined;
 const creatorHandler=creative?new CreatorHandler(projects,proposals,agent,worker,config.creative.creatorTimeoutMs):undefined;
 const taskHandler=new TaskHandler(tasks,agent,worker);
 const agentExecution=new AgentExecutionListener(agentQueue,config.agentExecutionConcurrency,proposalHandler,creatorHandler,taskHandler);
