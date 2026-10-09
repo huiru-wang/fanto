@@ -1,9 +1,30 @@
 import Foundation
 
 enum ProjectStatus: String, Codable, Hashable {
-    case active, archived
-    var title: String { self == .active ? "创作成果" : "已归档" }
-    var symbol: String { self == .active ? "book.closed" : "archivebox" }
+    case queued, running, completed, failed, archived
+
+    var title: String {
+        switch self {
+        case .queued: "等待创作"
+        case .running: "正在创作"
+        case .completed: "创作完成"
+        case .failed: "本次创作未完成"
+        case .archived: "已归档"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .queued: "clock"
+        case .running: "sparkles"
+        case .completed: "checkmark.circle"
+        case .failed: "exclamationmark.circle"
+        case .archived: "archivebox"
+        }
+    }
+
+    var canContinue: Bool { self == .completed || self == .failed }
+    var canArchive: Bool { canContinue }
 }
 struct Project: Identifiable, Hashable {
     let id: String

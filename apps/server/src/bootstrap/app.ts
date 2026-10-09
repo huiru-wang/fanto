@@ -1,4 +1,4 @@
-import type { CreativeService } from "../creative-runtime/service.js";
+import type { CreativeService } from "../domain/projects/creative-service.js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { nowIso } from "../infrastructure/time.js";
@@ -17,8 +17,10 @@ import type { AgentRuntime } from "../agent/agent-runtime.js";
 import { createSessionRoutes } from "../routes/agent/sessions.js";
 import { createAgentRoutes } from "../routes/agent/stream.js";
 import { createTaskRoutes } from "../routes/tasks.js";
-import { createProjectSessionRoutes } from "../routes/project-session.js";
-import type { CreativeRunner } from "../creative-runtime/runner.js";
+
+import type { AgentExecutionQueue } from "../event/agent-execution-queue.js";
+import type { SessionEventBus } from "../event/session-event-bus.js";
+import type { AgentWorker } from "../execution/agent-worker.js";
 import { bodyLimit } from "hono/body-limit";
 
 const redact = (value: unknown): unknown => {
@@ -38,7 +40,9 @@ const jsonBody = async (response: Response, path: string) => {
 
 export type ServerServices = {
   creative?: CreativeService;
-  creativeRunner?: CreativeRunner;
+  agentQueue?: AgentExecutionQueue;
+  events?: SessionEventBus;
+  agentWorker?: AgentWorker;
   auth?: AuthService;
   records: RecordService;
   media: MediaService;
@@ -103,13 +107,13 @@ export function createApp(services: ServerServices) {
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));
   if (projectService) app.route("/api", createProjectRoutes(projectService));
-  if (services.proposals) app.route("/api", createProposalRoutes(services.proposals, services.creativeRunner));
-  if (projectService && services.agent && services.creativeRunner) app.route("/api", createProjectSessionRoutes(projectService, services.agent, services.creativeRunner));
+  if (services.proposals) app.route("/api", createProposalRoutes(services.proposals, services.agentQueue));
+
   if (services.tasks) app.route("/api", createTaskRoutes(services.tasks, mediaService));
   if (services.agent) {
     app.use("/api/agent/*", bodyLimit({ maxSize: 64 * 1024 }));
-    app.route("/api/agent", createSessionRoutes(services.agent.registry, services.agent.sessions));
-    app.route("/api/agent", createAgentRoutes(services.agent.registry, services.agent.sessions));
+    app.route("/api/agent", createSessionRoutes(services.agent.registry, services.agent.sessions, services.events));
+    app.route("/api/agent", createAgentRoutes(services.agent.registry, services.agent.sessions, projectService ?? undefined));
   }
   app.get("/api/media/:id/meta", async c => {
     const result = await mediaService.readyMetadata(requireUserId(c.req.raw), c.req.param("id"));

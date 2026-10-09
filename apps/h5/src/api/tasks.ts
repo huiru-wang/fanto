@@ -1,7 +1,7 @@
 import { requestJson } from "./http";
 
 export type TaskStatus = "active" | "paused" | "completed" | "cancelled";
-export type TaskRunStatus = "running" | "completed" | "failed" | "cancelled";
+export type TaskRunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type TaskResultFormat = "markdown" | "text" | "html";
 
 export type TaskTrigger =

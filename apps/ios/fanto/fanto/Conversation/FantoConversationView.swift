@@ -171,7 +171,7 @@ struct FantoConversationView: View {
     }
 }
 
-private struct ConversationMessageBubble: View {
+struct ConversationMessageBubble: View {
     let message: ConversationMessage
     let retry: () -> Void
     let taskDetailCache: TaskDetailCache

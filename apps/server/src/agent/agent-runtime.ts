@@ -1,4 +1,4 @@
-import type { CreativeService } from "../creative-runtime/service.js";
+import type { CreativeService } from "../domain/projects/creative-service.js";
 import { dirname, resolve } from "node:path";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { RecordService } from "../domain/records/index.js";
@@ -9,7 +9,7 @@ import { createAgentBusinessServices } from "./business-services.js";
 import { AgentRegistry } from "./harness/registry.js";
 import { AgentSessionManager } from "./harness/session-manager.js";
 import { SkillLoader } from "./skills/loader.js";
-import { TaskResultPublisher } from "../task-runtime/result-publisher.js";
+import { TaskResultPublisher } from "../domain/tasks/result-publisher.js";
 import { DeepSeekWebSearchClient } from "./web/deepseek-web-search.js";
 
 export type AgentRuntime = { registry: AgentRegistry; sessions: AgentSessionManager; close(): Promise<void> };
@@ -42,7 +42,6 @@ export function createAgentRuntime(input: {
       return {
         defaultTimeoutSeconds: definition.task.defaultTimeoutSeconds,
         maxTimeoutSeconds: definition.task.maxTimeoutSeconds,
-        maxAttempts: definition.task.maxAttempts,
       };
     },
   });

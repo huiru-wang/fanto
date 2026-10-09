@@ -1,5 +1,4 @@
-import { CreativeService } from "../creative-runtime/service.js";
-import { CreativeRunner } from "../creative-runtime/runner.js";
+import { CreativeService } from "../domain/projects/creative-service.js";
 import { CreativeImageClient } from "../infrastructure/clients/creative-image-client.js";
 import { serve } from "@hono/node-server";
 import { loadConfig, loadEnv } from "./config.js";
@@ -7,10 +6,18 @@ import { checkDatabaseHealth, createDatabase, runMigrations } from "../infrastru
 import { QwenImageUnderstanding } from "../infrastructure/clients/image-client.js";
 import { QwenAudioTranscription } from "../infrastructure/clients/audio-client.js";
 import { EmbeddingsClient } from "../infrastructure/clients/embeddings-client.js";
-import { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
+import { RecordPostprocessQueue } from "../event/record-postprocess-queue.js";
+import { RecordEmbeddingQueue } from "../event/record-embedding-queue.js";
+import { AgentExecutionQueue } from "../event/agent-execution-queue.js";
+import { SessionEventBus } from "../event/session-event-bus.js";
+import { registerRecordEmbeddingListener } from "../listeners/record-embedding.listener.js";
+import { AgentWorker } from "../execution/agent-worker.js";
+import { AgentExecutionListener } from "../execution/agent-execution.listener.js";
+import { ProposalHandler } from "../execution/handlers/proposal.handler.js";
+import { CreatorHandler } from "../execution/handlers/creator.handler.js";
+import { TaskHandler } from "../execution/handlers/task.handler.js";
 import { OssStorage } from "../infrastructure/clients/oss-client.js";
 import { registerRecordPostprocessListener } from "../listeners/record-postprocess.listener.js";
-import { startMediaCleanup } from "../listeners/media-cleanup.listener.js";
 import { createApp, type ServerServices } from "./app.js";
 import { logError, logInfo } from "../infrastructure/logging/logger.js";
 import { JwtTokenService } from "../infrastructure/auth/jwt-token-service.js";
@@ -24,7 +31,7 @@ import { ProjectService, ProposalService } from "../domain/projects/index.js";
 import { TaskService } from "../domain/tasks/index.js";
 import { MemoryService } from "../domain/memory/index.js";
 import { createAgentRuntime } from "../agent/agent-runtime.js";
-import { TaskScheduler, TaskWorker, TaskWorkerPool } from "../task-runtime/index.js";
+import { TaskScheduler } from "../domain/tasks/scheduler.js";
 import { TtlCache } from "../infrastructure/cache/ttl-cache.js";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -64,7 +71,7 @@ const embeddings = new EmbeddingsClient(
 const retrieval = RecordRetrievalService.create(db, embeddings);
 const memories = MemoryService.create(db, embeddings);
 const queue = new RecordPostprocessQueue();
-const records = RecordService.create(db, queue, retrieval, recordListCache);
+const records = RecordService.create(db, queue, retrieval, recordListCache, undefined, media);
 const tasks = new TaskService(db, {
   minSeconds: config.tasks.timeoutMinSeconds,
   maxSeconds: config.tasks.timeoutMaxSeconds,
@@ -73,33 +80,36 @@ const projects = ProjectService.create(db, records, media, embeddings);
 const proposals = ProposalService.create(db, records, media, embeddings);
 const creative = config.creative.enabled ? new CreativeService(db, records, projects, proposals, media, new CreativeImageClient(config.creative.image), userId => auth.assertActiveUser(userId)) : undefined;
 const agent = createAgentRuntime({ records, media, tasks, memories, creative, ...config.agent });
-const creativeRunner = creative ? new CreativeRunner(creative, agent, config.creative) : undefined;
-const taskWorker = new TaskWorker(tasks, agent.registry, agent.sessions);
-const taskWorkerPool = new TaskWorkerPool(config.tasks.workerConcurrency, taskWorker);
-const taskScheduler = new TaskScheduler(tasks, taskWorkerPool, config.tasks.schedulerIntervalMs);
-await tasks.recoverRunning();
-taskScheduler.start();
+const embeddingQueue=new RecordEmbeddingQueue();
+const agentQueue=new AgentExecutionQueue();
+const events=new SessionEventBus();
+const worker=new AgentWorker(agent.sessions,events);
+const proposalHandler=creative?new ProposalHandler(records,agent,worker,config.creative.proposalTimeoutMs):undefined;
+const creatorHandler=creative?new CreatorHandler(projects,proposals,agent,worker,config.creative.creatorTimeoutMs):undefined;
+const taskHandler=new TaskHandler(tasks,agent,worker);
+const agentExecution=new AgentExecutionListener(agentQueue,config.agentExecutionConcurrency,proposalHandler,creatorHandler,taskHandler);
+const taskScheduler=new TaskScheduler(tasks,agentQueue,config.tasks.schedulerIntervalMs);
+tasks.setSchedulerWake(()=>taskScheduler.wake());
 
 registerRecordPostprocessListener(
-  queue,
-  records,
-  media,
-  oss,
-  new QwenImageUnderstanding(config.dashscope.apiKey, config.dashscope.baseUrl, config.dashscope.visionModel),
-  new QwenAudioTranscription(config.dashscope.apiKey, config.dashscope.baseUrl, config.dashscope.asrModel),
-  retrieval,
-  (userId, recordId, version) => creativeRunner?.submitProposal(userId, recordId, version),
+  queue,records,media,oss,
+  new QwenImageUnderstanding(config.dashscope.apiKey,config.dashscope.baseUrl,config.dashscope.visionModel),
+  new QwenAudioTranscription(config.dashscope.apiKey,config.dashscope.baseUrl,config.dashscope.asrModel),
+  embeddingQueue,agentQueue
 );
+registerRecordEmbeddingListener(embeddingQueue,records,retrieval);
+taskScheduler.start();
 
 if (creative) await projects.normalizeLegacyMedia();
-const stopMediaCleanup = startMediaCleanup(media);
 
 const services: ServerServices = {
   auth,
   records,
   media,
   projects,
-  creativeRunner,
+  agentQueue,
+  events,
+  agentWorker: worker,
   proposals,
   creative,
   tasks,
@@ -158,8 +168,7 @@ const shutdown = async (signal: string) => {
   await new Promise<void>((resolve, reject) => {
     server.close(error => error ? reject(error) : resolve());
   });
-  await creativeRunner?.stop();
-  await stopMediaCleanup();
+  await agentExecution.stop();
   await agent.close();
   await db.destroy();
   process.exit(0);

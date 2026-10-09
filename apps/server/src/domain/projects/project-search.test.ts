@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { sql } from "kysely";
 import { createDatabase, runMigrations } from "../../infrastructure/database/database.js";
-import { RecordPostprocessQueue } from "../../infrastructure/queue/record-postprocess-queue.js";
+import { RecordPostprocessQueue } from "../../event/record-postprocess-queue.js";
 import { RecordService } from "../records/index.js";
 import { MediaService } from "../media/index.js";
 import { ProjectService, ProposalService, type DomainResult } from "./index.js";
@@ -26,17 +26,18 @@ integration("Project summary vectors: ranking, isolation, updates, failure atomi
     const r = await records.create(owner, { text: "大观园游览", media: [], eventAt: now.toISOString() }); assert.equal(r.kind, "ok"); if (r.kind !== "ok") return;
     const make = async (summary: string) => value(await proposals.create(owner, { type: "create", title: summary, proposedSummary: summary, recordIds: [r.record.id], content: { reason: "主题创作", ideas: [{ title: "照片手记", idea: "把这次真实经历整理成一个可继续的作品。", tags: ["经历成章", "这一页"], goal: {objective: "整理真实经历"} }] } }));
     const p = await make("大观园红楼梦角色扮演写真图文");
-    const accepted = value(await proposals.accept(owner, p.proposalId)), id = accepted.resultProjectId;
+    const accepted = value(await proposals.accept(owner, p.proposalId)), id = accepted.projectId;
     const before = await db.selectFrom("projects").selectAll().where("project_id", "=", id).executeTakeFirstOrThrow();
     assert.ok(before.embedding); assert.ok(before.summary.startsWith("创作目标：照片手记"));
     const count = calls; value(await proposals.accept(owner, p.proposalId)); assert.equal(calls, count);
     // More than a page of recent unrelated projects must not hide an older relevant project.
-    await db.insertInto("projects").values(Array.from({ length: 45 }, (_, i) => ({ project_id: randomUUID(), user_id: owner, session_id: null, title: "旅行风景", summary: "富士山旅行风景照片", embedding: `[0,1,${Array(766).fill(0).join(",")}]`, cover_media_id: null, content: "", goal: {objective:"旅行风景"}, status: "active" as const, version: 1, created_at: now, updated_at: new Date(now.getTime() + i + 1) }))).execute();
+    await db.insertInto("projects").values(Array.from({ length: 45 }, (_, i) => ({ project_id: randomUUID(), user_id: owner, session_id: null, title: "旅行风景", summary: "富士山旅行风景照片", embedding: `[0,1,${Array(766).fill(0).join(",")}]`, cover_media_id: null, content: "", goal: {objective:"旅行风景"}, status: "completed" as const, version: 1, created_at: now, updated_at: new Date(now.getTime() + i + 1) }))).execute();
     await db.insertInto("projects").values({ ...before, project_id: randomUUID(), user_id: other }).execute();
     const hits = value(await projects.search(owner, { query: "红楼梦古典园林写真" })).data;
     assert.equal(hits.length, 3); assert.equal(hits[0]!.projectId, id); assert.equal(hits[0]!.similarity, 1);
     assert.doesNotMatch(JSON.stringify(value(await projects.detail(owner, id))), /embedding/);
     assert.equal((await projects.find(other, id)), null);
+    await db.updateTable("projects").set({status:"running"}).where("project_id","=",id).execute();
     unavailable = true;
     assert.deepEqual(await projects.update(owner, id, 1, { summary: "富士山旅行" }), { kind: "error", code: "EMBEDDING_UNAVAILABLE" });
     const failed = await db.selectFrom("projects").selectAll().where("project_id", "=", id).executeTakeFirstOrThrow();
@@ -53,6 +54,7 @@ integration("Project summary vectors: ranking, isolation, updates, failure atomi
     value(await projects.search(owner, { query: "富士山" }));
     const recovered = await db.selectFrom("projects").selectAll().where("project_id", "=", id).executeTakeFirstOrThrow();
     assert.ok(recovered.embedding); assert.equal(recovered.version, 2);
+    await projects.finishExecution(owner,id,"completed");
     value(await projects.archive(owner, id, 2));
     assert.ok(value(await projects.search(owner, { query: "富士山" })).data.every(p => p.projectId !== id));
   } finally {

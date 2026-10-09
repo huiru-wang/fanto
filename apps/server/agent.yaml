@@ -29,7 +29,6 @@ agents:
       enabled: true
       defaultTimeoutSeconds: 900
       maxTimeoutSeconds: 3600
-      maxAttempts: 3
     compaction:
       enabled: true
       reserveTokens: 16384

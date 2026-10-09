@@ -1,5 +1,5 @@
-import type { CreativeContext } from "../../creative-runtime/model.js";
-import { isInternalAgent } from "../../creative-runtime/model.js";
+import type { CreativeContext } from "../../domain/projects/creative-model.js";
+import { isInternalAgent } from "../../domain/projects/creative-model.js";
 import { randomUUID } from "node:crypto";
 import { withAbortSignal, type Context } from "@earendil-works/pi-agent-core";
 import { createRunContext } from "../context/index.js";
@@ -17,17 +17,6 @@ export function runAgent(
   emit: (event: AgentStreamEvent) => Promise<void>,
 ): Promise<string> {
   return run(session, message, signal, metadata, emit, context => session.runtime.prompt(message, context));
-}
-
-export function runAgentSkill(
-  session: RunSession,
-  skillName: string,
-  instructions: string,
-  signal: AbortSignal,
-  metadata: RunMetadata,
-  emit: (event: AgentStreamEvent) => Promise<void>,
-): Promise<string> {
-  return run(session, instructions, signal, metadata, emit, context => session.runtime.skill(skillName, instructions, context));
 }
 
 async function run(

@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import type { MediaService } from "../domain/media/index.js";
-import type { Task, TaskRun, TaskRunArtifact, TaskRunResult } from "../domain/tasks/index.js";
-import { assertWorkspacePath } from "../agent/workspace/paths.js";
+import type { MediaService } from "../media/index.js";
+import type { Task, TaskRun, TaskRunArtifact, TaskRunResult } from "./index.js";
+import { assertWorkspacePath } from "../../agent/workspace/paths.js";
 
 const formats = {
   markdown: { filename: "result.md", mimeType: "text/markdown" },

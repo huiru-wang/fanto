@@ -26,7 +26,7 @@
 | `AGENT_CONFIG_PATH` | Server 内 Agent YAML 路径，默认 `apps/server/agent.yaml` |
 | `DEEPSEEK_API_KEY` | 当前 Server Agent YAML 使用的 DeepSeek 模型凭据；缺失时 Server 启动失败 |
 | `TASK_SCHEDULER_INTERVAL_MS` | Task Scheduler Tick 周期，默认 `300000`（5 分钟） |
-| `TASK_WORKER_CONCURRENCY` | 同时执行的 TaskWorker 数，默认 `1` |
+| `AGENT_EXECUTION_CONCURRENCY` | Proposal/Creator/Task 共用的后台 Agent 并发限制，默认 `2` |
 | `TASK_TIMEOUT_MIN_SECONDS` | Task 最小允许超时，默认 `30` |
 | `TASK_TIMEOUT_MAX_SECONDS` | Task 全局最大允许超时，默认 `3600` |
 | `OSS_REGION` | OSS Region |
@@ -45,12 +45,11 @@ Agent 的模型、Agent、Tool、Task capability 与 compaction 配置位于 `ap
 
 ## 创作 Agent
 
-默认关闭，设置 `CREATIVE_ENABLED=true` 后，Record 分析与接受后的创作由同一 Server 进程执行。需要可用的 DeepSeek、Qwen 与 OSS 服务端凭据；不在客户端保存密钥。配置修改后重启 Server。
+默认关闭，设置 `CREATIVE_ENABLED=true` 后，Record 处理完成即通过进程内 AgentExecutionQueue 发布 Proposal，接受后发布 Creator；无需创作扫描器。需要可用的 DeepSeek、Qwen 与 OSS 服务端凭据；不在客户端保存密钥。配置修改后重启 Server。
 
 | 变量 | 默认 / 用途 |
 | --- | --- |
 | `CREATIVE_ENABLED` | `false`；仅接受 true / false |
-| `CREATIVE_INTERVAL_MS` / `CREATIVE_WORKERS` | `2000` / `1`，扫描周期与总执行并发 |
 | `CREATIVE_PROPOSAL_TIMEOUT_MS` / `CREATIVE_CREATOR_TIMEOUT_MS` | `120000` / `900000`，完整 Agent 回合超时 |
 | `CREATIVE_IMAGE_ENDPOINT` | 默认 DASHSCOPE_BASE_URL 同主机的原生 `/api/v1/services/aigc/multimodal-generation/generation` |
 | `CREATIVE_IMAGE_API_KEY` | 缺省使用 DASHSCOPE_API_KEY |

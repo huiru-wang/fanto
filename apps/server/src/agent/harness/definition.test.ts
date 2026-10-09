@@ -25,7 +25,6 @@ test("agent.yaml exposes task management and the single task-worker", () => {
     enabled: true,
     defaultTimeoutSeconds: 900,
     maxTimeoutSeconds: 3600,
-    maxAttempts: 3,
   });
   assert.ok(worker?.tools.includes("web_search"));
   assert.ok(worker?.tools.includes("task_plan_manage"));

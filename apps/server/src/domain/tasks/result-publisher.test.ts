@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { Task, TaskRun } from "../domain/tasks/index.js";
+import type { Task, TaskRun } from "./index.js";
 import { TaskResultPublisher } from "./result-publisher.js";
 
 const task = {

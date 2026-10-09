@@ -63,5 +63,5 @@ export function createProjectManageTool(client: AgentBusinessServices): FantoToo
   return {name:"project_manage",label:"保存创作",presentation:{visible:true,start:{displayContent:"正在保存作品",animation:"working"},succeeded:{displayContent:"作品已更新"},failed:{displayContent:"作品保存失败"}},
     description:"更新项目最新 goal/content/标题/摘要/封面。content 输入完整正文，服务器自动复制不在当前 Project 目录的媒体并转换为新的 mediaId。expectedVersion 使用 project_read 返回值。",
     parameters:manage,executionMode:"sequential",replay:"never",
-    async execute(_id,input,_u,_t,_i,context) {if(!client.manageProject)throw Error("CREATIVE_DISABLED"); return result(await client.manageProject(request(context),input as import("../../creative-runtime/model.js").ProjectManageInput));} };
+    async execute(_id,input,_u,_t,_i,context) {if(!client.manageProject)throw Error("CREATIVE_DISABLED"); return result(await client.manageProject(request(context),input as import("../../domain/projects/creative-model.js").ProjectManageInput));} };
 }

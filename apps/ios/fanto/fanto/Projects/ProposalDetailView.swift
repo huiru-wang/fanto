@@ -158,9 +158,9 @@ struct ProposalDetailView: View {
             .padding(.vertical, 12)
             .background(.bar)
         } else if current.status == .accepted {
-            Button(isDeciding ? "正在启动…" : "进入作品 / 重试启动") { Task { await decide(accept: true) } }
+            Button("查看作品") { Task { await openAcceptedProject() } }
                 .buttonStyle(.borderedProminent)
-                .disabled(isDeciding)
+                .disabled(current.resultProjectID == nil || isDeciding)
                 .frame(maxWidth: .infinity)
                 .padding(14)
                 .background(.bar)
@@ -189,6 +189,17 @@ struct ProposalDetailView: View {
             nextCursor = page.hasMore ? page.nextCursor : nil
             referenceError = nil
         } catch { referenceError = error.localizedDescription }
+    }
+
+    private func openAcceptedProject() async {
+        guard let projectID = current.resultProjectID, !isDeciding else { return }
+        isDeciding = true
+        defer { isDeciding = false }
+        do {
+            destination = try await FantoAPIClient.shared.fetchProject(id: projectID).project
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     private func decide(accept: Bool) async {

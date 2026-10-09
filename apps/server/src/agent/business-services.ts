@@ -1,10 +1,10 @@
-import type { CreativeService } from "../creative-runtime/service.js";
-import type { CreativeContext, ImageInput, ProjectManageInput } from "../creative-runtime/model.js";
+import type { CreativeService } from "../domain/projects/creative-service.js";
+import type { CreativeContext, ImageInput, ProjectManageInput } from "../domain/projects/creative-model.js";
 import type { CreateProposalInput } from "../domain/projects/index.js";
 import type { MediaService } from "../domain/media/index.js";
 import type { RecordService } from "../domain/records/index.js";
 import type { DelegateTaskInput, DelegateTaskResult, TaskAgentPolicy, TaskPlanAction, TaskRunPlan, TaskRunPlanInput, TaskService, UpdateTaskInput } from "../domain/tasks/index.js";
-import type { TaskDeliveryInput, TaskResultPublisher } from "../task-runtime/result-publisher.js";
+import type { TaskDeliveryInput, TaskResultPublisher } from "../domain/tasks/result-publisher.js";
 import type { Memory, MemoryKind, MemorySearchResult, MemoryService } from "../domain/memory/index.js";
 import type { DeepSeekWebSearchClient, WebSearchResult } from "./web/deepseek-web-search.js";
 

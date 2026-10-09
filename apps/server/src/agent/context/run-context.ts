@@ -1,4 +1,4 @@
-import type { CreativeContext } from "../../creative-runtime/model.js";
+import type { CreativeContext } from "../../domain/projects/creative-model.js";
 import { createContextKey, TODO_CONTEXT, type Context, withContextValue } from "@earendil-works/pi-agent-core";
 import { createSlotStore, type SlotStore } from "./internal/slot-store.js";
 

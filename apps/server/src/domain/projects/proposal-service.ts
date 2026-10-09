@@ -23,7 +23,7 @@ export class ProposalService {
       if (value.type === "extend") {
         const target = await repo.project(userId, value.targetProjectId!, true);
         if (!target) return failure("NOT_FOUND");
-        if (target.status !== "active") return failure("INVALID_STATE");
+        if (!["completed","failed"].includes(target.status)) return failure("INVALID_STATE");
       }
       const now = new Date(), id = randomUUID();
       const row = await repo.insertProposal({ session_id: options.sessionId ?? null, proposal_id: id, user_id: userId, type: value.type, target_project_id: value.targetProjectId ?? null, title: value.title, proposed_summary: value.proposedSummary ?? null, content: { reason: value.content.reason, ideas: value.content.ideas.map(idea => ({ ...idea, id: randomUUID() })), selectedIdeaId: null }, status: "pending", result_project_id: null, created_at: now, updated_at: now, resolved_at: null });
@@ -80,7 +80,7 @@ export class ProposalService {
       if (!selected) return failure("INVALID_INPUT");
       if (row.status === "accepted") {
         return selectedId === current.content.selectedIdeaId
-          ? success({ proposal: publicProposal(current), resultProjectId: row.result_project_id!, addedRecordCount: 0 })
+          ? success({ projectId: row.result_project_id!, firstAccepted: false })
           : failure("INVALID_STATE");
       }
       if (row.status !== "pending") return failure("INVALID_STATE");
@@ -97,17 +97,17 @@ export class ProposalService {
         catch { return failure("EMBEDDING_UNAVAILABLE"); }
         await repo.insertProject({ project_id: projectId, user_id: userId, embedding, session_id: null,
           title: selected.title, summary, goal: selected.goal, cover_media_id: null,
-          content: "", status: "active", version: 1, created_at: now, updated_at: now });
+          content: "", status: "queued", version: 1, created_at: now, updated_at: now });
       } else {
         const target = await repo.project(userId, projectId, true);
         if (!target) return failure("NOT_FOUND");
-        if (target.status !== "active") return failure("INVALID_STATE");
+        if (!["completed","failed"].includes(target.status)) return failure("INVALID_STATE");
       }
       const addedRecordCount = await repo.addLinks(userId, "project", projectId, records, now);
-      if (row.type === "extend") await repo.updateProject(userId, projectId, { goal: selected.goal });
+      if (row.type === "extend") await repo.updateProject(userId, projectId, { goal: selected.goal, status: "queued" });
       const resolved = await repo.resolveProposal(userId, id, "accepted", projectId, now,
         { ...current.content, selectedIdeaId: selectedId });
-      return success({ proposal: publicProposal(proposalEntity(resolved)), resultProjectId: projectId, addedRecordCount });
+      return success({ projectId, firstAccepted: true });
     });
   }
   async reject(userId: string, id: string) {

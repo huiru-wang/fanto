@@ -1,6 +1,6 @@
 import { Archive, ArrowLeft, Check, ChevronDown, ChevronUp, CircleAlert, Clock3, RefreshCw, Sparkles, X, MessageCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { archiveProject, acceptProposal, getProject, getProposal, listProposalRecords, rejectProposal, startProjectSession, type ProjectDetail, type Proposal } from "../../api/projects";
+import { archiveProject, acceptProposal, getProject, getProposal, listProposalRecords, rejectProposal, type ProjectDetail, type Proposal } from "../../api/projects";
 import type { RecordItem } from "../../api/records";
 import { RecordMediaList } from "../RecordMedia";
 import { ProjectDocument } from "./ProjectHtmlPreview";
@@ -97,14 +97,14 @@ function ProposalSheet({ id, onAccepted, onRejected }: { id: string; onAccepted:
     setExpanded(value => !value);
   };
   const decide = async (accept: boolean) => {
-    if (!proposal || deciding || (proposal.status !== "pending" && !(accept && proposal.status === "accepted"))) return;
+    if (!proposal || deciding || proposal.status !== "pending") return;
     if (accept && !selected) return;
     setDeciding(true);
     setActionError(null);
     try {
       if (accept) {
         const result = await acceptProposal(id, proposal.content.selectedIdeaId ?? selected!);
-        onAccepted(result.resultProjectId);
+        onAccepted(result.projectId);
       } else {
         await rejectProposal(id);
         onRejected();
@@ -151,7 +151,7 @@ function ProposalSheet({ id, onAccepted, onRejected }: { id: string; onAccepted:
         <button type="button" className="project-accept" disabled={deciding || !selected} onClick={() => void decide(true)}>{deciding ? "正在提交…" : "按这个方向创作"} <ArrowLeft size={15} className="project-arrow-forward" /></button>
       </div> : proposal.status === "accepted" ? <div className="project-sheet-actions">
         <span className="project-muted">已确认上方所选方向</span>
-        <button type="button" className="project-accept" disabled={deciding} onClick={() => void decide(true)}>{deciding ? "正在启动…" : "进入作品 / 重试启动"}</button>
+        <button type="button" className="project-accept" onClick={() => proposal.resultProjectId && onAccepted(proposal.resultProjectId)} disabled={!proposal.resultProjectId}>查看作品</button>
       </div> : <span className="project-muted">已略过这份提议</span>}
     </div>
   </>;
@@ -163,7 +163,6 @@ function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [archiving, setArchiving] = useState(false);
-  const [starting, setStarting] = useState(false);
   const [showRecords, setShowRecords] = useState(false);
 
   const load = useCallback(async () => {
@@ -179,19 +178,15 @@ function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }
 
   useEffect(() => { void load(); }, [load]);
 
+  // Status and Session binding do not bump Project.version.
   useEffect(() => {
-    const timer = setInterval(() => void getProject(id).then(next => setProject(current =>
-      !current || current.version !== next.version ? next : current)).catch(() => {}), 3000);
-    return () => clearInterval(timer);
-  }, [id]);
-
-  const start = async () => {
-    setStarting(true);
-    setError(null);
-    try { await startProjectSession(id); await load(); }
-    catch (cause) { setError(messageOf(cause, "会话尚未准备好，可重试")); }
-    finally { setStarting(false); }
-  };
+    if(project?.status !== "queued" && project?.status !== "running")return;
+    const timer=window.setInterval(()=>{
+      if(document.visibilityState==="visible")
+        void getProject(id).then(next=>setProject(next)).catch(()=>{});
+    },5000);
+    return()=>window.clearInterval(timer);
+  },[id,project?.status]);
 
   const archive = async () => {
     if (!project || archiving || !window.confirm("归档后仍可查看作品，但不能再修改或扩展。确定归档吗？")) return;
@@ -201,8 +196,9 @@ function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }
       await archiveProject(id, project.version);
       onArchived();
     } catch (cause) {
-      setError(messageOf(cause, "归档失败，请刷新重试"));
+      const message = messageOf(cause, "归档失败，请刷新重试");
       await load();
+      setError(message);
     } finally {
       setArchiving(false);
     }
@@ -214,13 +210,15 @@ function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }
   return (
     <>
       <div className="project-sheet-scroll">
-        <div className="project-sheet-kicker"><Check size={15} />{project.status === "archived" ? "已归档的作品" : "创作成果"}<span>·</span><time>{formatDate(project.updatedAt)}</time></div>
+        <div className="project-sheet-kicker"><Check size={15}/>作品<span>·</span><time>{formatDate(project.updatedAt)}</time></div>
         <h2 className="project-sheet-title">{project.title}</h2>
+        <div className={`project-creation-status is-${project.status}`} role="status">
+          {project.status === "running" && <span className="project-pulse" aria-hidden="true"/>}
+          {({queued:"等待创作",running:"正在创作",completed:"创作完成",failed:"本次创作未完成",archived:"已归档"} as const)[project.status]}
+        </div>
         {project.content?.trim()
           ? <ProjectDocument content={project.content} title={project.title} />
-          : <div className="project-unpublished"><p>{project.summary}</p><span>创作过程会在下方实时呈现</span></div>}
-        {!project.content?.trim() && project.sessionId && <ProjectSessionChat projectId={project.projectId} sessionId={project.sessionId} onUpdated={() => void load()} />}
-        {!project.sessionId && project.status === "active" && <button type="button" className="project-accept" disabled={starting} onClick={() => void start()}>{starting ? "正在启动…" : "开始创作"}</button>}
+          : <div className="project-unpublished"><p>{project.summary}</p><span>{project.status === "queued" ? "创作已加入等待队列" : project.status === "running" ? "Fanto 正在为你创作" : project.status === "failed" ? "这次创作尚未完成，已有记录仍会保留" : "作品内容将在这里呈现"}</span></div>}
 
         <section className="project-detail-section project-reference-section">
           <button className="project-reference-toggle" type="button" onClick={() => setShowRecords(value => !value)} aria-expanded={showRecords}>
@@ -232,13 +230,13 @@ function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }
 
         {error && <div className="project-form-error" role="alert">{error} <button type="button" onClick={() => void load()}>重新加载</button></div>}
       </div>
-      {project.content?.trim() && project.sessionId && project.status === "active" && <div className="project-session-float">
-        {showChat && <div className="project-session-popover"><ProjectSessionChat projectId={project.projectId} sessionId={project.sessionId} onUpdated={() => void load()} /></div>}
-        <button type="button" className="project-session-launch" onClick={() => setShowChat(!showChat)}><MessageCircle size={19}/>{showChat ? "收起对话" : "继续创作"}</button>
+      {project.sessionId && <div className="project-session-float">
+        {showChat && <div className="project-session-popover"><ProjectSessionChat sessionId={project.sessionId} status={project.status} onUpdated={() => void load()} /></div>}
+        <button type="button" className="project-session-launch" onClick={() => setShowChat(!showChat)}><MessageCircle size={19}/>{showChat ? "收起对话" : project.status === "completed" || project.status === "failed" ? "继续创作" : "查看创作过程"}</button>
       </div>}
       <div className="project-sheet-bottom project-sheet-footer">
         <span className="project-muted">{project.status === "archived" ? "作品已归档" : "作品会随着新的创作继续生长"}</span>
-        {project.status === "active" && <button className="project-archive-button" type="button" onClick={() => void archive()} disabled={archiving}><Archive size={16} />{archiving ? "归档中…" : "归档"}</button>}
+        {(project.status === "completed" || project.status === "failed") && <button className="project-archive-button" type="button" onClick={() => void archive()} disabled={archiving}><Archive size={16} />{archiving ? "归档中…" : "归档"}</button>}
       </div>
     </>
   );

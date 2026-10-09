@@ -63,6 +63,10 @@ struct TaskDetailSheet: View {
                                 markdownSection("结果摘要", result.summary)
                             } else if details.latestRun?.status == "completed" {
                                 markdownSection("结果", "任务已完成，但没有可预览的交付成果。")
+                            } else if details.latestRun?.status == "queued" {
+                                markdownSection("结果", "任务等待执行，开始后会在这里显示进展。")
+                            } else if details.latestRun?.status == "failed" {
+                                markdownSection("结果", "本次执行未完成，可查看已有计划和交付。")
                             } else if details.latestRun != nil {
                                 markdownSection("结果", "任务正在执行，完成后会在这里出现交付成果。")
                             } else {
@@ -88,7 +92,17 @@ struct TaskDetailSheet: View {
                     .accessibilityLabel("刷新任务详情")
                 }
             }
-            .task(id: task.taskID) { await load(forceRefresh: false) }
+            .task(id: task.taskID) {
+                await load(forceRefresh: false)
+                while !Task.isCancelled {
+                    guard case let .loaded(details) = loadState,
+                          let run = details.latestRun,
+                          run.status == "queued" || run.status == "running" else { break }
+                    do { try await Task.sleep(for: .seconds(5)) } catch { return }
+                    if Task.isCancelled { return }
+                    await load(forceRefresh: true)
+                }
+            }
         }
     }
 
@@ -139,7 +153,11 @@ struct TaskDetailSheet: View {
             loadState = .loaded(cached)
             return
         }
-        loadState = .loading
+        if case .loaded = loadState, forceRefresh {
+            // Keep existing content visible while refreshing an active run.
+        } else {
+            loadState = .loading
+        }
         do {
             let details = try await AgentAPIClient.shared.fetchTaskDetails(taskID: task.taskID)
             cache.store(details, taskID: task.taskID, userID: userID)

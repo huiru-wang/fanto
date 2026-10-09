@@ -1,4 +1,7 @@
-import { isInternalAgent } from "../../creative-runtime/model.js";
+import { isInternalAgent } from "../../domain/projects/creative-model.js";
+import type { SessionEventBus } from "../../event/session-event-bus.js";
+import { streamSSE } from "hono/streaming";
+import { writeStreamEvent } from "./stream.js";
 import { Hono } from "hono";
 import type { AgentRegistry } from "../../agent/harness/registry.js";
 import { AgentSessionManager } from "../../agent/harness/session-manager.js";
@@ -7,7 +10,7 @@ import { createSessionSchema, cursorSchema, limitSchema, sessionParamsSchema, tr
 import { requireUserId } from "../request-user.js";
 import { projectHistory } from "../../agent/presentation.js";
 
-export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSessionManager): Hono {
+export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSessionManager, events?: SessionEventBus): Hono {
   const app = new Hono();
   app.post("/sessions", async c => {
     const body = createSessionSchema.safeParse(await c.req.json().catch(() => null));
@@ -21,6 +24,21 @@ export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSess
     return c.json({ success: true, result: { sessionId: session.id, agentId: session.agentId, createdAt: new Date().toISOString(), traceId: traceId.data } }, 201);
   });
 
+  app.get("/sessions/:sessionId/events", async c => {
+    const userId=requireUserId(c.req.raw), id=c.req.param("sessionId");
+    if(!events)return c.json({error:"Events unavailable"},503);
+    try{await sessions.assertOwnership(id,userId);}catch(error){return sessionError(c,error);}
+    return streamSSE(c,async stream=>{
+      const unsubscribe=events.subscribe(id,event=>{
+        if(event.type==="start")void stream.writeSSE({event:"start",data:JSON.stringify({sessionId:id,agentId:event.agentId})}).catch(()=>{});
+        else if(event.type==="done"||event.type==="error")void stream.writeSSE({event:event.type,data:JSON.stringify(event.type==="error"?{error:event.message??"Agent run failed"}:{})}).catch(()=>{});
+        else void writeStreamEvent(stream,event).catch(()=>{});
+      });
+      const heartbeat=setInterval(()=>void stream.write(": ping\n\n").catch(()=>{}),15000);
+      try{await new Promise<void>(resolve=>stream.onAbort(resolve));}
+      finally{clearInterval(heartbeat);unsubscribe();}
+    });
+  });
   app.get("/sessions/:sessionId/history", async c => {
     const params = sessionParamsSchema.safeParse(c.req.param());
     const cursor = cursorSchema.safeParse(c.req.query("cursor"));

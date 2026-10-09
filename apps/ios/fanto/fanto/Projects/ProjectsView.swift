@@ -29,8 +29,11 @@ struct ProjectsView: View {
         .task(id: isVisible && scenePhase == .active) {
             guard isVisible && scenePhase == .active else { return }
             if store.projectLoadState != .loaded { await store.loadProjects() }
+            var cycle = 0
             while !Task.isCancelled {
                 await store.refreshCreativeSuggestions()
+                if cycle.isMultiple(of: 3) { await store.refreshActiveProjectStates() }
+                cycle += 1
                 do { try await Task.sleep(for: .seconds(5)) } catch { return }
             }
         }
@@ -44,24 +47,32 @@ struct ProjectsView: View {
         }
     }
 
-    @ViewBuilder
     private var content: some View {
-        if store.projects.isEmpty && store.proposals.isEmpty && store.proposalLoadState == .loaded {
-            ContentUnavailableView("还没有脉络", systemImage: "point.3.connected.trianglepath.dotted", description: Text("当一些记录彼此呼应时，新的脉络便会在这里长出来。"))
-        } else {
-            List {
-                proposedSection
-                if !store.projects.isEmpty {
-                    Section("创作成果") {
+        List {
+            proposedSection
+            if store.projects.isEmpty && store.proposals.isEmpty && store.proposalLoadState == .loaded {
+                Section {
+                    ContentUnavailableView("还没有脉络", systemImage: "point.3.connected.trianglepath.dotted", description: Text("当一些记录彼此呼应时，新的脉络便会在这里长出来。"))
+                }
+            }
+            if !store.projects.isEmpty {
+                    Section("你的作品") {
                         ForEach(store.projects) { project in
                             NavigationLink(value: project) { ProjectRow(project: project) }
                         }
                     }
                 }
+                Section {
+                    NavigationLink {
+                        ArchivedProjectsView()
+                    } label: {
+                        Label("已归档的作品", systemImage: "archivebox")
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
-            .listStyle(.insetGrouped)
-            .refreshable { await store.loadProjects() }
-        }
+        .listStyle(.insetGrouped)
+        .refreshable { await store.loadProjects() }
     }
 
     @ViewBuilder
@@ -103,4 +114,45 @@ struct ProjectsView: View {
 
 #Preview {
     ProjectsView().environment(FantoStore.preview)
+}
+
+private struct ArchivedProjectsView: View {
+    @State private var projects: [Project] = []
+    @State private var loading = true
+    @State private var error: String?
+
+    var body: some View {
+        List {
+            if loading {
+                ProgressView("正在读取归档作品")
+            } else if let error {
+                ContentUnavailableView("归档作品加载失败", systemImage: "wifi.exclamationmark", description: Text(error))
+            } else if projects.isEmpty {
+                ContentUnavailableView("还没有归档作品", systemImage: "archivebox")
+            } else {
+                ForEach(projects) { project in
+                    NavigationLink(value: project) { ProjectRow(project: project) }
+                }
+            }
+        }
+        .navigationTitle("已归档")
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private func load() async {
+        loading = projects.isEmpty
+        do {
+            var cursor: String?
+            var all: [Project] = []
+            repeat {
+                let page = try await FantoAPIClient.shared.fetchProjects(status: .archived, cursor: cursor)
+                all += page.projects
+                cursor = page.hasMore ? page.nextCursor : nil
+            } while cursor != nil
+            projects = all
+            error = nil
+        } catch { self.error = error.localizedDescription }
+        loading = false
+    }
 }

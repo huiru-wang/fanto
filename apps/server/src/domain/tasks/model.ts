@@ -1,5 +1,5 @@
 export type TaskStatus = "active" | "paused" | "completed" | "cancelled";
-export type TaskRunStatus = "running" | "completed" | "failed" | "cancelled";
+export type TaskRunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
 export type TaskResultFormat = "markdown" | "text" | "html";
 
 export type TaskGoal = {
@@ -104,7 +104,6 @@ export type TaskRun = {
 export type TaskAgentPolicy = {
   defaultTimeoutSeconds: number;
   maxTimeoutSeconds: number;
-  maxAttempts?: number;
 };
 
 export type DelegateTaskInput = {

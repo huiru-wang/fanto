@@ -13,7 +13,7 @@ const ext = (value: string | null): ExtData => value ? JSON.parse(value) as ExtD
 const vectorLiteral = (embedding: number[]) => JSON.stringify(embedding);
 
 export class PostgresRecordRepository implements RecordRepository {
-  constructor(private db: Kysely<DB>, private readonly cleanupLinks: (userId: string, recordId: string, transaction: Transaction<DB>) => Promise<void>, private readonly onSaved?: RecordSavedHook, private readonly cleanupMedia?: (userId: string, ids: string[], transaction: Transaction<DB>) => Promise<void>) {}
+  constructor(private db: Kysely<DB>, private readonly cleanupLinks: (userId: string, recordId: string, transaction: Transaction<DB>) => Promise<void>, private readonly onSaved?: RecordSavedHook, private readonly cleanupMedia?: (userId: string, ids: string[], transaction: Transaction<DB>) => Promise<string[]>) {}
 
   async create(input: { userId: string; source?: string; eventAt: string; value: SaveRecordContent }): Promise<Record | "invalid_media" | "invalid_content"> {
     return this.db.transaction().execute(async trx => {
@@ -67,7 +67,7 @@ export class PostgresRecordRepository implements RecordRepository {
     });
   }
 
-  async delete(id: string, userId: string, expectedVersion: number): Promise<Record | "not_found" | "conflict"> {
+  async delete(id: string, userId: string, expectedVersion: number): Promise<{record:Record;objectKeys:string[]} | "not_found" | "conflict"> {
     return this.db.transaction().execute(async trx => {
       const row = await trx.selectFrom("records").selectAll().where("record_id", "=", id).where("user_id", "=", userId).forUpdate().executeTakeFirst();
       if (!row) return "not_found";
@@ -75,10 +75,10 @@ export class PostgresRecordRepository implements RecordRepository {
       const record = this.toEntity(row);
       await this.cleanupLinks(userId, id, trx);
       const ids = record.content.blocks.flatMap(block => block.type === "location" ? [] : [block.mediaId]);
-      if (this.cleanupMedia) await this.cleanupMedia(userId, ids, trx);
-      else for (const mediaId of ids) await this.unlink(trx, userId, mediaId, nowIso());
+      const objectKeys=this.cleanupMedia ? await this.cleanupMedia(userId,ids,trx) : [];
+      if(!this.cleanupMedia)for (const mediaId of ids) await this.unlink(trx, userId, mediaId, nowIso());
       await trx.deleteFrom("records").where("record_id", "=", id).where("user_id", "=", userId).where("version", "=", expectedVersion).execute();
-      return record;
+      return {record,objectKeys};
     });
   }
 

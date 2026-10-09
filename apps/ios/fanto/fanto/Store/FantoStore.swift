@@ -59,7 +59,7 @@ final class FantoStore {
             var loaded: [Project] = []
             repeat {
                 try Task.checkCancellation()
-                let page = try await FantoAPIClient.shared.fetchProjects(status: .active, cursor: cursor)
+                let page = try await FantoAPIClient.shared.fetchProjects(cursor: cursor)
                 loaded += page.projects
                 cursor = page.hasMore ? page.nextCursor : nil
             } while cursor != nil
@@ -78,6 +78,17 @@ final class FantoStore {
         }
         guard !Task.isCancelled else { return }
         await loadProposals()
+    }
+
+    func refreshActiveProjectStates() async {
+        for project in projects where project.status == .queued || project.status == .running {
+            guard !Task.isCancelled else { return }
+            guard let current = try? await FantoAPIClient.shared.fetchProject(id: project.id).project else { continue }
+            if let index = projects.firstIndex(where: { $0.id == project.id }) {
+                if current.status == .archived { projects.remove(at: index) }
+                else { projects[index] = current }
+            }
+        }
     }
 
     func refreshCreativeSuggestions() async {
@@ -170,8 +181,13 @@ final class FantoStore {
         do {
             let projectId = try await FantoAPIClient.shared.acceptProposal(id: proposal.id, selectedIdeaId: selectedIdeaId)
             proposals.removeAll { $0.id == proposal.id }
-            await loadProjects()
-            return projects.first { $0.id == projectId }
+            // Accepted Project may not yet be present in the paged list.
+            let accepted = try await FantoAPIClient.shared.fetchProject(id: projectId)
+            // Keep the existing navigation tree stable while opening the Project.
+            // A full list reload would temporarily switch ProjectsView into loading.
+            projects.removeAll { $0.id == projectId }
+            projects.insert(accepted.project, at: 0)
+            return accepted.project
         } catch {
             projectActionError = error.localizedDescription
             return nil
@@ -303,7 +319,7 @@ extension FantoStore {
             title: "关于有边界的投入",
             summary: "记录生活中的选择与投入。",
             content: "不是减少投入，而是让投入能被自己选择。",
-            status: .active,
+            status: .completed,
             version: 1,
             createdAt: .now,
             updatedAt: .now

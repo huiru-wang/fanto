@@ -15,7 +15,6 @@ const taskConfig = z.discriminatedUnion("enabled", [
     enabled: z.literal(true),
     defaultTimeoutSeconds: z.number().int().positive(),
     maxTimeoutSeconds: z.number().int().positive(),
-    maxAttempts: z.number().int().min(1).max(5),
   }).strict(),
 ]);
 const compaction = z.object({

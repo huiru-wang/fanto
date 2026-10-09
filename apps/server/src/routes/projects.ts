@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { DomainResult, ProjectService, ProposalService, ProjectStatus, ProposalStatus, ProposalType } from "../domain/projects/index.js";
 import { requireUserId } from "./request-user.js";
-import type { CreativeRunner } from "../creative-runtime/runner.js";
+import type { AgentExecutionQueue } from "../event/agent-execution-queue.js";
 const ok = (result: unknown) => ({ success: true, result, errorCode: null, errorMsg: null });
 const errors = { EMBEDDING_UNAVAILABLE: 503, INVALID_INPUT: 400, INVALID_CURSOR: 400, NOT_FOUND: 404, INVALID_STATE: 409, VERSION_CONFLICT: 409, REFERENCE_RECORDS_UNAVAILABLE: 409, MEDIA_NOT_READY: 409, CONTENT_TOO_LARGE: 413 } as const;
 function respond<T>(c: Context, result: DomainResult<T>) {
@@ -28,7 +28,7 @@ export function createProjectRoutes(service: ProjectService) {
   });
   return app;
 }
-export function createProposalRoutes(service: ProposalService, runner?: CreativeRunner) {
+export function createProposalRoutes(service: ProposalService, queue?: AgentExecutionQueue) {
   const app = new Hono();
   app.get("/proposals", async c => respond(c, await service.list(requireUserId(c.req.raw), { ...pagination(c, 20), type: c.req.query("type") as ProposalType | undefined, status: c.req.query("status") as ProposalStatus | undefined, targetProjectId: c.req.query("targetProjectId") })));
   app.get("/proposals/:id", async c => respond(c, await service.detail(requireUserId(c.req.raw), c.req.param("id"))));
@@ -39,11 +39,8 @@ export function createProposalRoutes(service: ProposalService, runner?: Creative
     const userId = requireUserId(c.req.raw);
     const accepted = await service.accept(userId,c.req.param("id"),parsed.data);
     if (accepted.kind === "error") return respond(c,accepted);
-    if (!runner) return respond(c,accepted);
-    try {
-      const sessionId = await runner.onAccepted(userId,accepted.data.resultProjectId,c.req.param("id"));
-      return c.json(ok({...accepted.data, sessionId}));
-    } catch { return c.json({success:false,result:null,errorCode:"PROJECT_SESSION_UNAVAILABLE",errorMsg:"Session binding pending; retry accept"},503); }
+    if(accepted.data.firstAccepted)queue?.publish({type:"creator",userId,proposalId:c.req.param("id"),projectId:accepted.data.projectId});
+    return c.json(ok({projectId:accepted.data.projectId}));
   });
   app.post("/proposals/:id/reject", async c => respond(c, await service.reject(requireUserId(c.req.raw), c.req.param("id"))));
   return app;

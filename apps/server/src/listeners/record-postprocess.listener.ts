@@ -2,13 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { AudioTranscriptionClient } from "../infrastructure/clients/audio-client.js";
 import type { ImageUnderstanding } from "../infrastructure/clients/image-client.js";
 import type { OssStorage } from "../infrastructure/clients/oss-client.js";
-import type { RecordPostprocessQueue } from "../infrastructure/queue/record-postprocess-queue.js";
-import type { RecordRetrievalService } from "../domain/records/index.js";
+import type { RecordPostprocessQueue } from "../event/record-postprocess-queue.js";
+import type { RecordEmbeddingQueue } from "../event/record-embedding-queue.js";
+import type { AgentExecutionQueue } from "../event/agent-execution-queue.js";
 import type { MediaService } from "../domain/media/index.js";
 import type { RecordService } from "../domain/records/index.js";
 import { logError } from "../infrastructure/logging/logger.js";
-
-type RecordRetrieval = Pick<RecordRetrievalService, "replaceRecord">;
 
 export function registerRecordPostprocessListener(
   queue: RecordPostprocessQueue,
@@ -17,8 +16,8 @@ export function registerRecordPostprocessListener(
   oss: OssStorage,
   image: ImageUnderstanding,
   audio: AudioTranscriptionClient,
-  retrieval: RecordRetrieval,
-  onProcessed?: (userId: string, recordId: string, version: number) => void,
+  embeddingQueue: RecordEmbeddingQueue,
+  agentQueue: AgentExecutionQueue,
 ) {
   queue.on(async task => {
     const runId = randomUUID();
@@ -84,15 +83,7 @@ export function registerRecordPostprocessListener(
 
     if (!completed) return;
 
-    try {
-      await retrieval.replaceRecord(completed);
-    } catch (error) {
-      logError("record-postprocess", "Record embedding failed", {
-        recordId: task.recordId,
-        userId: task.userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-    onProcessed?.(task.userId, task.recordId, task.version);
+    embeddingQueue.publish({...task});
+    agentQueue.publish({type:"proposal", ...task});
   });
 }

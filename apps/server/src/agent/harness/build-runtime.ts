@@ -16,7 +16,6 @@ export type HarnessRuntime = {
   harness: AgentHarness<ExecutionToolContext>;
   tools: FantoTool[];
   prompt(query: string, context: Context): ReturnType<AgentLane["prompt"]>;
-  skill(name: string, additionalInstructions: string | undefined, context: Context): ReturnType<AgentLane["skill"]>;
   readRecentMessages(): Promise<ContextMessage[]>;
   appendCustomEntry(type: string, data: JsonValue | undefined): Promise<string>;
   abort(): Promise<void>;
@@ -53,7 +52,6 @@ export async function buildRuntime(session: Session, definition: AgentDefinition
     harness,
     tools,
     prompt: (query, context) => lane.prompt(query, undefined, context),
-    skill: (name, additionalInstructions, context) => lane.skill(name, additionalInstructions, context),
     async readRecentMessages() {
       const entries = await lane.findEntries({ type: "message", order: "newestFirst", limit: 12 }, TODO_CONTEXT);
       return entries.reverse().flatMap(entry => {

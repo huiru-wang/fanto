@@ -1,7 +1,7 @@
 import { ArrowRight, Archive, BookOpenText, ChevronRight, RefreshCw, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { listProjects, listProposals, type Page, type Project, type ProjectStatus, type Proposal } from "../api/projects";
+import { listProjects, listProposals, type Page, type Project, type Proposal } from "../api/projects";
 import { ProjectCover } from "../components/projects/ProjectCover";
 import { ProjectDetailSheet } from "../components/projects/ProjectDetailSheet";
 
@@ -16,7 +16,7 @@ function appendUnique<T>(current: T[], incoming: T[], key: (item: T) => string):
 
 export function ProjectsPage() {
   const [params, setParams] = useSearchParams();
-  const [tab, setTab] = useState<ProjectStatus>("active");
+  const [tab, setTab] = useState<"all" | "archived">("all");
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [proposalCursor, setProposalCursor] = useState<string | null>(null);
@@ -41,10 +41,10 @@ export function ProjectsPage() {
     }
   }, []);
 
-  const loadProjects = useCallback(async (status: ProjectStatus) => {
+  const loadProjects = useCallback(async (status: "all" | "archived") => {
     const request = ++projectRequest.current;
     try {
-      const result = await listProjects(status);
+      const result = await listProjects(status === "all" ? undefined : "archived");
       if (request !== projectRequest.current) return;
       setProjects(result.data);
       setProjectCursor(result.hasMore ? result.nextCursor : null);
@@ -54,7 +54,7 @@ export function ProjectsPage() {
     }
   }, []);
 
-  const refresh = useCallback(async (status: ProjectStatus) => {
+  const refresh = useCallback(async (status: "all" | "archived") => {
     setLoading(true);
     setError(null);
     await Promise.all([loadProposals(), loadProjects(status)]);
@@ -67,6 +67,22 @@ export function ProjectsPage() {
     setProjectError(null);
     void refresh(tab);
   }, [refresh, tab]);
+
+  // Only refresh visible active works; keep already paged cards and their scroll positions.
+  const hasActiveProject = tab === "all" && projects.some(project => project.status === "queued" || project.status === "running");
+  useEffect(() => {
+    if (!hasActiveProject) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void listProjects().then(page => {
+        setProjects(current => {
+          const updates=new Map(page.data.map(project => [project.projectId,project]));
+          return current.map(project => updates.get(project.projectId) ?? project);
+        });
+      }).catch(() => {});
+    }, 12000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveProject]);
 
   const open = (kind: "projectId" | "proposalId", id: string) => {
     const next = new URLSearchParams();
@@ -94,7 +110,7 @@ export function ProjectsPage() {
     setError(null);
     try {
       if (kind === "projects") {
-        const page: Page<Project> = await listProjects(tab, cursor);
+        const page: Page<Project> = await listProjects(tab === "all" ? undefined : "archived", cursor);
         setProjects(current => appendUnique(current, page.data, item => item.projectId));
         setProjectCursor(page.hasMore ? page.nextCursor : null);
       } else {
@@ -127,7 +143,7 @@ export function ProjectsPage() {
         <div className="empty-state"><span className="large-loader" /><p>正在整理你的脉络…</p></div>
       ) : (
         <>
-          {tab === "active" && (
+          {tab === "all" && (
             <section className="project-section">
               <div className="project-section-head">
                 <div className="project-heading"><span className="project-heading-icon suggestion"><Sparkles size={17} /></span><h2>等待你的灵感</h2>{proposals.length > 0 && <span className="project-count">{proposals.length}{proposalCursor ? "+" : ""}</span>}</div>
@@ -160,9 +176,9 @@ export function ProjectsPage() {
 
           <section className="project-section">
             <div className="project-section-head">
-              <div className="project-heading"><span className="project-heading-icon"><BookOpenText size={18} /></span><h2>创作成果</h2></div>
+              <div className="project-heading"><span className="project-heading-icon"><BookOpenText size={18} /></span><h2>你的作品</h2></div>
               <div className="project-tabs" role="group" aria-label="成果状态">
-                <button type="button" className={tab === "active" ? "is-active" : ""} onClick={() => setTab("active")} aria-pressed={tab === "active"}>进行中</button>
+                <button type="button" className={tab === "all" ? "is-active" : ""} onClick={() => setTab("all")} aria-pressed={tab === "all"}>全部</button>
                 <button type="button" className={tab === "archived" ? "is-active" : ""} onClick={() => setTab("archived")} aria-pressed={tab === "archived"}>已归档</button>
               </div>
             </div>
@@ -173,7 +189,9 @@ export function ProjectsPage() {
                   <button key={item.projectId} className="project-card" type="button" onClick={() => open("projectId", item.projectId)}>
                     <ProjectCover mediaId={item.coverMediaId} />
                     <div className="project-card-copy">
-                      <div className="project-card-meta"><span>{item.status === "archived" ? <><Archive size={13} />已归档</> : "你的作品"}</span><time>{dateText(item.updatedAt)}</time></div>
+                      <div className="project-card-meta"><span className={`project-status-text is-${item.status}`}>{item.status === "archived" ? <><Archive size={13}/>已归档</> : ({
+                      queued:"等待创作",running:"正在创作",completed:"创作完成",failed:"未完成",archived:"已归档"
+                    }[item.status])}</span><time>{dateText(item.updatedAt)}</time></div>
                       <h3>{item.title}</h3>
                       <p>{item.summary || "打开看看这段脉络的最新进展。"}</p>
                       <span className="project-card-link">查看作品 <ArrowRight size={15} /></span>

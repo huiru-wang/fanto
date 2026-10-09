@@ -3362,3 +3362,19 @@ input:focus-visible {
 .proposal-option-idea { line-height: 1.8; font-size: 14px; color: #625d55; }
 .proposal-option .project-tags { display: flex; flex-wrap: wrap; gap: 7px; }
 @media (max-width: 640px) { .proposal-option { padding: 16px; } .proposal-option.selected { padding: 15px; } }
+
+/* V3 Project execution state: status never implies a Session exists. */
+.project-status-text { display: inline-flex; align-items: center; gap: 5px; font-weight: 580; }
+.project-status-text.is-running, .project-creation-status.is-running { color: #827152; }
+.project-status-text.is-queued, .project-creation-status.is-queued { color: #938570; }
+.project-status-text.is-failed, .project-creation-status.is-failed { color: #9c6e62; }
+.project-status-text.is-completed, .project-creation-status.is-completed { color: #6c7b63; }
+.project-status-text.is-archived, .project-creation-status.is-archived { color: #969088; }
+.project-creation-status.is-running .project-pulse { animation: project-state-pulse 2s ease-in-out infinite; }
+@keyframes project-state-pulse {
+  0%,100% { opacity: .45; transform: scale(.82); }
+  50% { opacity: 1; transform: scale(1.06); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-creation-status.is-running .project-pulse { animation: none; }
+}

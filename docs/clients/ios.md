@@ -2,9 +2,15 @@
 
 目录：`apps/ios/fanto`。当前使用 SwiftUI，最低部署目标为 iOS 26.5。
 
-## Project Session 创作与继续对话
+## Project Session 创作与继续对话（V3）
 
-iOS 脉络详情在未完成作品时使用 `GET /api/projects/:id/session/history` 读取 Creator Agent 消息及工具活动；不读取 creation.progress。作品的最新 content 来自 `GET /api/projects/:id`。已有内容的 active Project 显示右下角“继续创作”，使用 `POST /api/projects/:id/session/stream` 向同一 Session 发送消息，结果刷新项目。
+iOS 采用原生 SwiftUI Project 列表与详情：Proposal 接受只返回 `projectId`，随后直接读取 Project 详情，Server 后台自动处理 Creator，无须手动 `/session/start`。
+
+`Project.status` 使用 `queued/running/completed/failed/archived`：queued 表示等待执行，**与 Session 是否存在/绑定无关**。详情优先显示当前有效作品，queued/running 时继续保留上次内容；completed/failed 且有 Session 时可以继续创作，queued/running/archived 不允许发送新消息；只有 completed/failed 能归档。
+
+会话统一按 `sessionId` 读取 `GET /api/agent/sessions/:sessionId/history` 和订阅 `GET /api/agent/sessions/:sessionId/events`（JWT + `URLSession.bytes(for:)`）；继续创作通过统一 `POST /api/agent/stream` 传入 `creator-agent` 和当前 sessionId，直接消费流式响应。断线后补读 History、不自动重发消息。列表有活动 Project 时短间隔刷新；详情 queued/running 时每约 5 秒刷新，并在 App 进入后台时暂停。
+
+TaskRun.status 增加 queued（等待执行），与 running（正在执行）区分。Project 和 Task 不共享状态枚举。
 
 图片在本地生成上传 JPEG 后校验 10 MiB；服务端申请与完成直传同样校验。最终作品媒体由 Project Service 按 objectKey 归属生成独立副本。
 
@@ -26,11 +32,11 @@ iOS 脉络详情在未完成作品时使用 `GET /api/projects/:id/session/histo
 | 删除 Record | `DELETE /api/records/:id`，携带 expectedVersion | 日历 / 时间线长按确认，成功后更新列表与快照 |
 | 新建 Record | 打开编辑器即尝试一次当前位置定位并给出地点建议；媒体上传后调用 `POST /api/records`，再刷新列表 | Client 已接 |
 | 媒体写入 | `POST /api/uploads` 申请凭据，直传后调用 `POST /api/uploads/:mediaId/complete` | Client 已接 |
-| active Project 列表 | `GET /api/projects?status=active` | Client 已接 |
+| 非归档 Project 列表 | `GET /api/projects`（默认全部非归档）；`status=archived` 获取归档 | Client 已接 |
 | pending Proposal 列表 | `GET /api/proposals?status=pending` | Client 已接 |
 | Project 详情 | `GET /api/projects/:id` | 正文、总数与最多 5 条参考记录 |
 | Proposal 参考 Record | `GET /api/proposals/:id/records?limit=5&cursor=` | Client 已接分页，直接返回完整 Record |
-| Proposal accept / reject | `/api/proposals/:id/accept`、`/reject` | 已接；accept 可携带用户补充创作想法，接受后刷新项目 |
+| Proposal accept / reject | `/api/proposals/:id/accept`、`/reject` | 已接；accept 传 selectedIdeaId，只返回 projectId，直接读取 Project |
 | Project 归档 | `POST /api/projects/:id/archive` | 以详情版本归档 |
 | Fanto 默认长期会话 | `POST /api/agent/sessions` | Client 已接 |
 | Fanto 最近历史 | `GET /api/agent/sessions/:id/history?limit=10` | 已接 iOS 客户端流程 |
@@ -71,9 +77,13 @@ Fanto 位于根导航中间，只使用一个默认长期 Agent Session，不提
 
 ## 脉络 UI
 
-提议与项目分别使用 Proposal / Project 模型。Proposal 详情以最终作品想象为主：不展示 reason，标题下直接渲染 `content.tags`，idea 显示为「创作效果」，plan 按 3 个 `标题｜说明` 步骤呈现；creation.constraints 中规范的「保留：」「转化：」摘要可作为轻量视觉提示。用户可在接受前补充最多 500 字创作想法，accept 后由 Server 合并进确认后的 creation goal。参考记录默认折叠，仅展开时分页读取。项目摘要使用 summary，详情直接读取正文和最近参考记录，不请求独立 Project records 接口。列表续读至完整结果并按 ID 去重。刷新任务附着在稳定的导航容器，取消请求不进入失败状态；已加载数据的静默刷新失败保留原状态，请求 ID 防止旧响应覆盖新状态。归档需确认，版本冲突不会覆盖服务器内容。
+Proposal 和 Project 独立展示：待确认创作灵感在列表上方，非归档作品在下方；通过单独入口查看 archived 作品。Proposal 允许 1–2 个创意方向及 Tags，用户选择方向后使用「按这个方向创作」，接受返回 projectId 即导航至对应 Project。再次查看已接受提议仅跳转原 Project，不能再次尝试创建或启动 Creator。
 
-正文使用 Swift Markdown 语法树原生渲染标题、段落、列表、引用、表格、删除线、源码和连续图片组；图片可全屏分页，签名地址失败后刷新一次。仅项目正文启用 html-preview，受限非持久化 WebView 禁用脚本、桥接、导航与外部资源；浏览器解析 HTML / CSS 后，内部图片请求由 fanto-media Scheme Handler 读取。预览可手动刷新，普通 HTML 围栏保留源码。已接受且含 creation goal 的 Proposal 由 Creative Runtime 登记 CreationRun，iOS 在项目详情跟进排队、生成、整理和完成状态。
+Project 列表行使用标题、摘要和轻量状态提示；详情优先展示已有作品，queued/running 时保留上一版的封面及正文，不通过 Session 有无推测创作阶段；没有作品时只显示摘要与“等待创作 / 正在创作”短提示。Session 存在即可查看历史及实时工具/文本过程；completed/failed 时才可以发送新的创作消息、归档，archived 只读。内容变化通过 Project.version 维护，但状态/Session 变化不增长 version，客户端仍应正常刷新 status/sessionId。
+
+iOS 使用原生 SwiftUI ScrollView、NavigationStack、Sheet 与 Toolbar；底部单一主要行动为“继续创作 / 继续聊聊”（仅完成或失败且 Session 存在），其他状态不占用底部固定区域。参考 Record 按现有详情简洁排列。Project 正在执行时详情可见期间低频查询状态，完成后停止；Session SSE 本身不持久化，断线后查询 History。后台进入时停止实时订阅/查询，恢复前台时刷新。
+
+Project 正文使用 Swift Markdown 语法树渲染标题、段落、列表和媒体；HTML 作品使用当前禁用脚本及外部导航的非持久化预览容器。作品媒体从 Project 独立副本读取，不依赖被删除的原 Record 媒体。
 
 ## Record UI
 
@@ -93,4 +103,4 @@ Record 提供日历与连续时间线两种视图。日历以周日为一周起�
 
 SwiftUI Preview 可以使用 `FantoStore.preview` 样例数据。Preview 数据只用于界面开发，不代表运行态 Server 已具备对应自动生成能力。
 
-脉络页可见期间每五秒刷新待确认建议，不提供后台提议分析的提问或回答表单；进入项目详情每两秒查询最新创作状态，显示排队、生图、整理与失败，完成后刷新正文与项目列表。等待后台登记最长三十秒，连续跟进最长二十分钟；离开详情取消跟进，重新进入或手动刷新继续查询。
+脉络页可见期间按现有逻辑每五秒刷新待确认建议；每约十五秒仅对列表中 queued/running 的 Project 补读状态。详情 queued/running 时每约五秒刷新，完成/失败即停止状态轮询；没有“等待 Session 创建后主动 start”或“自动重新执行”流程。

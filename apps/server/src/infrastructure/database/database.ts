@@ -94,7 +94,7 @@ async function consolidateMigrationHistory(db: Kysely<DB>): Promise<void> {
     if (!SQUASHED_MIGRATIONS.some(name => names.has(name))) return 0;
 
     const expected = [BASELINE_MIGRATION, ...SQUASHED_MIGRATIONS];
-    const known = new Set<string>(expected);
+    const known = new Set<string>([...expected, "zzzzzz_async_v3"]);
     const missing = expected.filter(name => !names.has(name));
     const unknown = [...names].filter(name => !known.has(name));
     if (missing.length || unknown.length) {
@@ -104,10 +104,46 @@ async function consolidateMigrationHistory(db: Kysely<DB>): Promise<void> {
       );
     }
 
-    await sql`DELETE FROM kysely_migration WHERE name <> ${BASELINE_MIGRATION}`.execute(trx);
+    await sql`DELETE FROM kysely_migration WHERE name <> ${BASELINE_MIGRATION} AND name <> 'zzzzzz_async_v3'`.execute(trx);
     return SQUASHED_MIGRATIONS.length;
   });
   if (removed) logInfo("database", "Consolidated migration history", { removed });
+}
+
+/** Repair a manually dropped projects table without resetting migration history. */
+async function restoreMissingProjectsTable(db: Kysely<DB>): Promise<void> {
+  await db.transaction().execute(async trx => {
+    await sql`SELECT pg_advisory_xact_lock(3853314791062309107)`.execute(trx);
+    const state = await sql<{ migration_exists: boolean; projects_exists: boolean }>`
+      SELECT to_regclass('kysely_migration') IS NOT NULL AS migration_exists,
+             to_regclass('projects') IS NOT NULL AS projects_exists
+    `.execute(trx);
+    if (!state.rows[0]?.migration_exists || state.rows[0].projects_exists) return;
+    const baseline = await sql<{ applied: boolean }>`
+      SELECT EXISTS (SELECT 1 FROM kysely_migration WHERE name = ${BASELINE_MIGRATION}) AS applied
+    `.execute(trx);
+    if (!baseline.rows[0]?.applied) return;
+
+    await sql`
+      CREATE TABLE projects (
+        project_id UUID PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+        session_id TEXT UNIQUE,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        embedding vector(768),
+        cover_media_id TEXT,
+        goal JSONB NOT NULL DEFAULT '{}'::jsonb,
+        content TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'queued',
+        version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0),
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
+      )
+    `.execute(trx);
+    await sql`CREATE INDEX idx_projects_user_status_updated ON projects(user_id, status, updated_at DESC, project_id DESC)`.execute(trx);
+    logInfo('database', 'Restored manually dropped projects table');
+  });
 }
 
 /** 动态加载 migrations 目录下的 .ts/.js 文件 */
@@ -128,6 +164,7 @@ async function createMigrationProvider(): Promise<MigrationProvider> {
 
 export async function runMigrations(kyselyDb: Kysely<DB>) {
   await consolidateMigrationHistory(kyselyDb);
+  await restoreMissingProjectsTable(kyselyDb);
   const provider = await createMigrationProvider();
 
   const migrator = new Migrator({ db: kyselyDb, provider });

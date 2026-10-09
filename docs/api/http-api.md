@@ -119,7 +119,7 @@ Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒�
 
 ## Proposal / Project
 
-Proposal 的列表、详情和决策响应包含 `sessionId: string | null`，表示生成提议的内部 Agent 会话，仅供追踪；不能通过公共 Session / 历史接口访问该会话。
+Proposal 的列表/详情保留 `sessionId: string | null`（对应内部提议分析会话）；具有 Session 归属权限的用户可通过通用 History 查看，但不能通过公共执行接口调用内部 Agent。
 
 所有接口按 Access JWT 的 userId 隔离。列表响应为 `{ data, hasMore, nextCursor, pageSize }`，limit 默认 20、最大 100，必须为正整数；Proposal 参考记录默认 5。实体时间为 ISO 8601，空字段明确返回 null。
 
@@ -128,9 +128,9 @@ Proposal 的列表、详情和决策响应包含 `sessionId: string | null`，�
 | GET | `/api/proposals?type=&status=&targetProjectId=&limit=&cursor=` | type 为 create / extend，status 为 pending / accepted / rejected；默认不过滤 |
 | GET | `/api/proposals/:id` | 提议详情及 referenceRecordCount |
 | GET | `/api/proposals/:id/records?limit=&cursor=` | 完整参考 Record，按 eventAt / recordId 倒序分页 |
-| POST | `/api/proposals/:id/accept` | 请求体可选 `{ userInput }`；返回 `{ proposal, resultProjectId, addedRecordCount, sessionId }`；用户补充会并入已接受 goal，同决策重试新增数为 0 |
+| POST | `/api/proposals/:id/accept` | 请求体 `{ selectedIdeaId?: string }`；同步创建/更新 Project，返回 `{ projectId }`；后台执行状态仅通过 Project 查询 |
 | POST | `/api/proposals/:id/reject` | 返回 `{ proposal }`，同决策幂等 |
-| GET | `/api/projects?status=&limit=&cursor=` | 默认 active，可选 archived；摘要列表不含 content |
+| GET | `/api/projects?status=&limit=&cursor=` | 默认包含 queued/running/completed/failed，可筛选任一状态或 archived；摘要列表不含 content |
 | GET | `/api/projects/:id` | 完整 Project，包含 recordCount / referenceRecords（最近最多 5 条） |
 | PATCH | `/api/projects/:id` | `{ expectedVersion, title?, summary?, goal?, coverMediaId?, content? }`，返回 Project |
 | POST | `/api/projects/:id/archive` | `{ expectedVersion }`，返回 Project；重复归档幂等 |
@@ -141,15 +141,15 @@ PATCH 不接受用户身份、Session ID 或状态字段；缺省字段保留，
 
 ## Project Agent Session
 
-Creative Runtime 启用时开放经过当前用户 Project 归属及 creator-agent 会话绑定校验的 API，不提供独立的 /creation 进度或 Record proposal-analysis Run 状态。
+Project 与 Session 分别管理：`projects.status` 表示任务是否在排队/执行/成功/失败/归档，不代表 Session 是否存在。Project `sessionId` 单独返回，可能为 null。
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
-| GET | `/api/projects/:id/session/history?limit=&cursor=` | Pi Session 原生历史消息按既有 Tool Presentation 投影；包含 messages、hasMore、nextCursor |
-| GET | `/api/projects/:id/session/events` | 订阅后台 Agent 增量消息和工具事件的 SSE；断线后重新拉 History |
-| POST | `/api/projects/:id/session/stream` | `{ message: string }`，在已绑定 creator Session 中追加用户对话，返回与主会话一致的 SSE |
+| GET | `/api/agent/sessions/:sessionId/history?limit=&cursor=` | 通用 Session 历史，按 Session userId 校验，无 Creator 专属处理 |
+| GET | `/api/agent/sessions/:sessionId/events` | 订阅该 Session 的通用 SSE（不缓存和回放；断线后重拉 History） |
+| POST | `/api/agent/stream` | 统一多轮会话 SSE：传入 `agentId`、`sessionId`、`message`；Creator Session 由服务端解析绑定 Project 并执行权限与状态校验 |
 
-内部 Agent 通过普通 `/api/agent/sessions/:id/history` 或 `/api/agent/stream` 仍不可被用户直接访问。Project 无 Session 时 History 返回 404，归档项目不可再提交消息。过程不使用 progress、imageCount、stage 等业务字段。
+内部 Proposal/Task/Creator Session 可以读取属于当前用户的历史；公共创建 Session 和 `POST /api/agent/stream` 仍禁止执行内部 Agent。已删除 Project 专属 /session/history、/events、/stream、/start 四条旧路由。**本次 Server 已变更协议，H5/iOS 客户端尚未同步适配。**
 
 ## 上传图片
 
@@ -170,7 +170,7 @@ Task 只能由 `main` Agent 的 `create_task` Tool 创建；当前没有客户�
 | DELETE | `/api/tasks/:taskId` | 取消 Task；不再创建后续 Run，已运行的 Run 由其 Worker 自行收尾 |
 | GET | `/api/tasks/artifacts/:mediaId/preview` | 读取当前用户已交付的 HTML / Markdown / Text Task Artifact 原文，用于域内预览 |
 
-`create_task` 使用面向用户意图的 Goal 模型：`objective` 必填，另有可选 `context / constraints / successCriteria`；`output.format` 必填且必须与用户明确要求一致。当前系统只有一个 `task-worker`，由 Server 自动选择，LLM 不传 `agentId`、timeout、mediaId 或文件协议。已确认相关的历史资料只通过可选 `references.recordIds` 传递真实 Record ID，Worker 再通过 Record Tool 获取正文与媒体。Goal 只描述用户最终想得到什么、背景、真实约束与用户视角的完成标准，不包含 Workspace、文件路径、`fanto-media`、OSS、`deliver_task_result` 等执行细节。同一 Main Session 可创建多个 Task，系统不自动去重、替代或版本化。Task 创建时只写入 `nextRunAt`，包括 immediate Task 的创建时刻；Scheduler 每 5 分钟按 WorkerPool 可用容量扫描到期 Task，只有获得 Worker 与独立 Session 后才创建并启动 TaskRun。
+`create_task` 使用面向用户意图的 Goal 模型：`objective` 必填，另有可选 `context / constraints / successCriteria`；`output.format` 必填且必须与用户明确要求一致。当前系统只有一个 `task-worker`，由 Server 自动选择，LLM 不传 `agentId`、timeout、mediaId 或文件协议。已确认相关的历史资料只通过可选 `references.recordIds` 传递真实 Record ID，Worker 再通过 Record Tool 获取正文与媒体。Goal 只描述用户最终想得到什么、背景、真实约束与用户视角的完成标准，不包含 Workspace、文件路径、`fanto-media`、OSS、`deliver_task_result` 等执行细节。同一 Main Session 可创建多个 Task，系统不自动去重、替代或版本化。Task 创建时只写入 `nextRunAt`，包括 immediate Task 的创建时刻；Scheduler 每 5 分钟扫描到期 Task（即时任务创建时主动唤醒扫描），先提交 status=queued 的 TaskRun 并向 AgentExecutionQueue 发布执行消息；TaskHandler 认领后标记 running，再创建/绑定 Session，执行一次，不自动重试。
 
 TaskRun 成功响应中的结果形态为：
 

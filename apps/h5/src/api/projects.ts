@@ -1,7 +1,7 @@
 import { requestJson } from "./http";
 import type { RecordItem } from "./records";
 
-export type ProjectStatus = "active" | "archived";
+export type ProjectStatus = "queued" | "running" | "completed" | "failed" | "archived";
 export type ProposalStatus = "pending" | "accepted" | "rejected";
 export type ProposalType = "create" | "extend";
 
@@ -55,9 +55,9 @@ const queryPage = (limit: number, cursor?: string | null) => {
   return query;
 };
 
-export function listProjects(status: ProjectStatus = "active", cursor?: string | null) {
+export function listProjects(status?: ProjectStatus, cursor?: string | null) {
   const query = queryPage(20, cursor);
-  query.set("status", status);
+  if (status) query.set("status", status);
   return requestJson<Page<Project>>(`/api/projects?${query}`);
 }
 
@@ -86,7 +86,7 @@ export function listProposalRecords(id: string, cursor?: string | null) {
 }
 
 export function acceptProposal(id: string, selectedIdeaId: string) {
-  return requestJson<{ proposal: Proposal; resultProjectId: string; addedRecordCount: number }>(
+  return requestJson<{ projectId: string }>(
     `/api/proposals/${encodeURIComponent(id)}/accept`,
     { method: "POST", body: JSON.stringify({ selectedIdeaId }) },
   );
@@ -94,12 +94,4 @@ export function acceptProposal(id: string, selectedIdeaId: string) {
 
 export function rejectProposal(id: string) {
   return requestJson<{ proposal: Proposal }>(`/api/proposals/${encodeURIComponent(id)}/reject`, { method: "POST" });
-}
-
-export function startProjectSession(id: string) {
-  return requestJson<{projectId: string; sessionId: string}>(`/api/projects/${encodeURIComponent(id)}/session/start`, {method:"POST"});
-}
-
-export function fetchProjectHistory(id: string) {
-  return requestJson<{ messages: import("./agent").AgentHistoryMessage[]; hasMore: boolean; nextCursor: number | null }>(`/api/projects/${encodeURIComponent(id)}/session/history?limit=100`);
 }

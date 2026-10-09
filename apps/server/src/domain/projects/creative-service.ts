@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Kysely } from "kysely";
-import type { DB } from "../infrastructure/database/schema.js";
-import type { RecordService } from "../domain/records/index.js";
-import type { MediaService } from "../domain/media/index.js";
-import type { ProjectService, ProposalService, CreateProposalInput } from "../domain/projects/index.js";
-import type { ImageGenerationClient } from "../infrastructure/clients/creative-image-client.js";
-import { CreativeError, projectManageSchema, type CreativeContext, type ImageInput, type ProjectManageInput } from "./model.js";
+import type { DB } from "../../infrastructure/database/schema.js";
+import type { RecordService } from "../records/index.js";
+import type { MediaService } from "../media/index.js";
+import type { ProjectService, ProposalService, CreateProposalInput } from "./index.js";
+import type { ImageGenerationClient } from "../../infrastructure/clients/creative-image-client.js";
+import { CreativeError, projectManageSchema, type CreativeContext, type ImageInput, type ProjectManageInput } from "./creative-model.js";
 
 export class CreativeService {
   constructor(readonly db: Kysely<DB>, private readonly records: RecordService,
@@ -23,7 +23,11 @@ export class CreativeService {
   }
 
   async context(context: CreativeContext) {
-    if (context.creative?.role === "proposal") return { projectId: null, role: "proposal", recordIds: [context.creative.recordId] };
+    if (context.creative?.role === "proposal") {
+      const record=await this.records.find(context.userId,context.creative.recordId);
+      if(!record||record.version!==context.creative.recordVersion||record.status!=="processed")throw new CreativeError("SOURCE_RECORD_CHANGED");
+      return {role:"proposal",projectId:null,sourceRecord:{recordId:record.id,version:record.version,eventAt:record.eventAt,content:record.content}};
+    }
     const project = await this.authorizedProject(context);
     return { projectId: project.projectId, title: project.title, goal: project.goal, version: project.version, summary: project.summary };
   }

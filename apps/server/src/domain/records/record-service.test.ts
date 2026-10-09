@@ -4,7 +4,7 @@ import type { RecordRepository } from "./repository.js";
 import type { Record } from "./record.js";
 import { encodeRecordCursor } from "./cursor.js";
 import { RecordService } from "./record-service.js";
-import { RecordPostprocessQueue } from "../../infrastructure/queue/record-postprocess-queue.js";
+import { RecordPostprocessQueue } from "../../event/record-postprocess-queue.js";
 import { TtlCache } from "../../infrastructure/cache/ttl-cache.js";
 
 function record(id: string): Record {
@@ -43,7 +43,7 @@ function createRepository(rows: Record[]) {
     async findById(id) { return record(id); },
     async findByIds(_userId, ids) { return ids.map(record); },
     async updateContent(id) { return record(id); },
-    async delete(id) { return record(id); },
+    async delete(id) { return {record:record(id),objectKeys:[]}; },
     async claimPostprocess(input) { return record(input.recordId); },
     async completePostprocess(input) { return record(input.recordId); },
     async releasePostprocess() {},

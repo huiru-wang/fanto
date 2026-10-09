@@ -19,6 +19,8 @@ const { RRule } = rrulePackage;
 
 export class TaskService {
   private readonly repository: TaskRepository;
+  private onCreated?:()=>void;
+  setSchedulerWake(wake:()=>void){this.onCreated=wake;}
 
   constructor(
     db: Kysely<DB>,
@@ -70,6 +72,7 @@ export class TaskService {
     };
 
     await this.repository.createTask(row);
+    if(trigger.type==="immediate")this.onCreated?.();
     logInfo("task", "task_created", {
       traceId: context.traceId,
       taskId,
@@ -171,7 +174,7 @@ export class TaskService {
     return this.repository.dueTasks(now, limit);
   }
 
-  async startDueRun(task: Task, workerSessionId: string, now = new Date()): Promise<TaskRun | undefined> {
+  async startDueRun(task: Task, now = new Date()): Promise<TaskRun | undefined> {
     if (!task.nextRunAt) return undefined;
     const expectedNextRunAt = new Date(task.nextRunAt);
     let scheduledAt = expectedNextRunAt;
@@ -187,10 +190,12 @@ export class TaskService {
       expectedNextRunAt,
       scheduledAt,
       nextRunAt,
-      workerSessionId,
     });
   }
 
+  claimRun(userId:string,taskId:string,runId:string) {
+    return this.repository.claimRun(userId,taskId,runId);
+  }
   completeRun(input: Parameters<TaskRepository["completeRun"]>[0]): Promise<void> {
     return this.repository.completeRun(input);
   }
@@ -199,9 +204,6 @@ export class TaskService {
     return this.repository.failRun(run, error);
   }
 
-  recoverRunning(): Promise<number> {
-    return this.repository.recoverRunning();
-  }
 
   private resolveTimeout(requested: number | undefined, policy: TaskAgentPolicy): number {
     const value = requested ?? policy.defaultTimeoutSeconds;

@@ -14,8 +14,22 @@ export class MediaService {
   static enqueueRecordDeletion(userId: string, ids: string[], transaction: Transaction<DB>) {
     return PostgresMediaRepository.enqueueRecordDeletion(userId, ids, transaction);
   }
-  cleanupDeletedObjects() {
-    return this.media.cleanupDeletedObjects(key => this.oss.remove(key), (mediaId, attempts) => logWarn("media-cleanup", "OSS deletion will retry", { mediaId, attempts }));
+  async deleteRecordObjects(keys: string[]): Promise<void> {
+    await Promise.allSettled(keys.map(async key => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          this.oss.remove(key),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error("OSS deletion timed out")), 2000);
+          }),
+        ]);
+      } catch (error) {
+        logWarn("record-delete", "OSS cleanup failed", { objectKey: key, error: String(error) });
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }));
   }
   async createGeneratedImage(input: { userId: string; projectId: string; mediaId: string; data: Buffer; width: number; height: number }) {
     const decoded = await sharp(input.data, { limitInputPixels: 40_000_000 }).metadata();

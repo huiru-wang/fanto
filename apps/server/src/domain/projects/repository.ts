@@ -25,8 +25,8 @@ export class ProjectRepository {
     const q = this.db.selectFrom("proposals").selectAll().where("user_id", "=", userId).where("proposal_id", "=", id);
     return (lock ? q.forUpdate() : q).executeTakeFirst();
   }
-  projects(userId: string, status: "active" | "archived", cursor: Cursor | undefined, limit: number) {
-    let q = this.db.selectFrom("projects").select(["project_id", "user_id", "session_id", "title", "summary", "cover_media_id", "goal", "status", "version", "created_at", "updated_at"]).where("user_id", "=", userId).where("status", "=", status);
+  projects(userId: string, status: "queued" | "running" | "completed" | "failed" | "archived" | undefined, cursor: Cursor | undefined, limit: number) {
+    let q = this.db.selectFrom("projects").select(["project_id", "user_id", "session_id", "title", "summary", "cover_media_id", "goal", "status", "version", "created_at", "updated_at"]).where("user_id", "=", userId).where("status", "in", status ? [status] : ["queued","running","completed","failed"]);
     if (cursor) q = q.where(eb => eb.or([eb("updated_at", "<", new Date(cursor.time)), eb.and([eb("updated_at", "=", new Date(cursor.time)), eb("project_id", "<", cursor.id)])]));
     return q.orderBy("updated_at", "desc").orderBy("project_id", "desc").limit(limit).execute();
   }
@@ -41,7 +41,7 @@ export class ProjectRepository {
   async search(userId: string, embedding: string) {
     const result = await sql<{ project_id: string; title: string; summary: string; version: number; similarity: number }>`
       SELECT project_id, title, summary, version, (1 - (embedding <=> ${embedding}::vector))::float8 AS similarity
-      FROM projects WHERE user_id = ${userId} AND status = 'active' AND embedding IS NOT NULL
+      FROM projects WHERE user_id = ${userId} AND status <> 'archived' AND embedding IS NOT NULL
       ORDER BY embedding <=> ${embedding}::vector, project_id LIMIT 3
     `.execute(this.db);
     return result.rows.map(r => ({ projectId: r.project_id, title: r.title, summary: r.summary, version: r.version, similarity: Number(r.similarity) }));

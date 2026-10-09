@@ -1,6 +1,6 @@
 import type { Transaction } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
-export type ProjectStatus = "active" | "archived";
+export type ProjectStatus = "queued" | "running" | "completed" | "failed" | "archived";
 export type ProposalType = "create" | "extend";
 export type ProposalStatus = "pending" | "accepted" | "rejected";
 export interface ProjectGoal {

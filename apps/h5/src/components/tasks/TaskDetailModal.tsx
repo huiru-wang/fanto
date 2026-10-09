@@ -34,9 +34,10 @@ export function TaskDetailModal({ taskId, onClose }: { taskId: string; onClose: 
 
   const latestRun = runs[0] ?? null;
   const running = latestRun?.status === "running";
+  const activeRun = latestRun?.status === "queued" || running;
 
   useEffect(() => {
-    if (!running) return;
+    if (!activeRun) return;
     let cancelled = false;
     const timer = window.setInterval(() => {
       void listTaskRuns(taskId).then(next => {
@@ -47,7 +48,7 @@ export function TaskDetailModal({ taskId, onClose }: { taskId: string; onClose: 
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [running, taskId]);
+  }, [activeRun, taskId]);
 
   const artifacts = useMemo(() => latestRun?.result?.artifacts ?? [], [latestRun]);
 
@@ -90,14 +91,14 @@ export function TaskDetailModal({ taskId, onClose }: { taskId: string; onClose: 
                   <ol>{latestRun.plan.steps.map(step => <li key={step.id}><strong>{step.title}</strong>{step.description && <span>{step.description}</span>}</li>)}</ol>
                 </div>
               ) : (
-                <p className="task-empty-copy">{running ? "正在整理执行计划…" : "暂未生成执行计划。"}</p>
+                <p className="task-empty-copy">{running ? "正在整理执行计划…" : latestRun?.status === "queued" ? "等待开始执行。" : "暂未生成执行计划。"}</p>
               )}
             </section>
 
             <section className="task-detail-section">
               <h3>结果</h3>
               {latestRun?.result?.summary ? <p className="task-result-summary">{latestRun.result.summary}</p> : (
-                <p className="task-empty-copy">{running ? "任务正在执行。" : latestRun?.error?.message ?? "还没有生成结果。"}</p>
+                <p className="task-empty-copy">{running ? "任务正在执行。" : latestRun?.status === "queued" ? "任务等待执行。" : latestRun?.error?.message ?? "还没有生成结果。"}</p>
               )}
               {artifacts.length > 0 && (
                 <div className="task-artifact-list simple-artifact-list">

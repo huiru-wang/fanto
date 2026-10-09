@@ -1,4 +1,4 @@
-import { isInternalAgent } from "../../creative-runtime/model.js";
+import { isInternalAgent } from "../../domain/projects/creative-model.js";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -109,7 +109,6 @@ export class AgentSessionManager {
   ): Promise<{ agentId: string; entries: Entry[]; hasMore: boolean; nextCursor: number | null }> {
     const { agentId, session, close } = await this.openForRead(id, userId);
     try {
-      if (isInternalAgent(agentId) && !options.internal) throw new SessionOwnershipError("Internal session is not publicly accessible");
       const visible: Entry[] = [];
       let currentCursor = cursor;
       let exhausted = false;

@@ -18,4 +18,4 @@ export const acceptProposalSchema = z.object({ selectedIdeaId: uuid.optional() }
 export const patchSchema = z.object({ title: text(200).optional(), summary: text(2000).optional(), coverMediaId: uuid.nullable().optional(), content: z.string().optional(), goal: goalSchema.optional() }).strict().refine(v => Object.keys(v).length > 0);
 export const versionSchema = z.number().int().positive();
 export const proposalListSchema = paginationSchema.extend({ type: z.enum(["create", "extend"]).optional(), status: z.enum(["pending", "accepted", "rejected"]).optional(), targetProjectId: uuid.optional() });
-export const projectListSchema = paginationSchema.extend({ status: z.enum(["active", "archived"]).optional() });
+export const projectListSchema = paginationSchema.extend({ status: z.enum(["queued","running","completed","failed","archived"]).optional() });

@@ -289,7 +289,6 @@ export class TaskRepository {
     expectedNextRunAt: Date;
     scheduledAt: Date;
     nextRunAt: Date | null;
-    workerSessionId: string;
   }): Promise<TaskRun | undefined> {
     return this.db.transaction().execute(async trx => {
       const task = await trx.selectFrom("tasks")
@@ -306,14 +305,14 @@ export class TaskRepository {
         run_id: crypto.randomUUID(),
         task_id: input.taskId,
         user_id: input.userId,
-        status: "running",
+        status: "queued",
         scheduled_at: input.scheduledAt,
-        worker_session_id: input.workerSessionId,
+        worker_session_id: null,
         result_media_id: null,
         result: null,
         error: null,
         ext_data: runExtData(task.ext_data),
-        started_at: now,
+        started_at: null,
         finished_at: null,
         created_at: now,
         updated_at: now,
@@ -329,6 +328,13 @@ export class TaskRepository {
     });
   }
 
+  async claimRun(userId:string,taskId:string,runId:string):Promise<TaskRun|undefined>{
+    const now=new Date();
+    const row=await this.db.updateTable("task_runs").set({status:"running",started_at:now,updated_at:now})
+      .where("user_id","=",userId).where("task_id","=",taskId).where("run_id","=",runId)
+      .where("status","=","queued").returningAll().executeTakeFirst();
+    return row?toRun(row):undefined;
+  }
   async completeRun(input: {
     run: TaskRun;
     resultMediaId: string;
@@ -345,36 +351,6 @@ export class TaskRepository {
 
   async failRun(run: TaskRun, error: Record<string, unknown>): Promise<void> {
     await this.finishRun({ run, status: "failed", resultMediaId: null, result: null, error });
-  }
-
-  async recoverRunning(): Promise<number> {
-    return this.db.transaction().execute(async trx => {
-      const running = await trx.selectFrom("task_runs")
-        .select(["run_id", "task_id", "user_id"])
-        .where("status", "=", "running")
-        .forUpdate()
-        .execute();
-      if (running.length === 0) return 0;
-
-      const now = new Date();
-      await trx.updateTable("task_runs")
-        .set({
-          status: "failed",
-          error: { code: "SERVER_RESTARTED", message: "Server restarted while task was running" },
-          finished_at: now,
-          updated_at: now,
-        })
-        .where("run_id", "in", running.map(run => run.run_id))
-        .where("status", "=", "running")
-        .execute();
-
-      const oneShotTasks = new Set(running.map(run => `${run.user_id}\0${run.task_id}`));
-      for (const key of oneShotTasks) {
-        const [userId, taskId] = key.split("\0");
-        await completeOneShotTask(trx, userId!, taskId!, now);
-      }
-      return running.length;
-    });
   }
 
   private async finishRun(input: {

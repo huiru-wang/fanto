@@ -10,7 +10,12 @@ enum AgentAPIError: LocalizedError {
         case .invalidResponse:
             "服务返回的数据无法识别。"
         case let .httpStatus(status):
-            "服务暂时不可用（\(status)）。"
+            switch status {
+            case 409: "这份作品正在创作或状态已经变化，请刷新后再继续。"
+            case 401, 403: "登录状态已失效或没有访问权限。"
+            case 404: "会话暂时不可用，请重新打开作品。"
+            default: "服务暂时不可用（\(status)）。"
+            }
         case let .server(message):
             message
         }
@@ -88,8 +93,8 @@ struct AgentAPIClient {
         return response.sessionID
     }
 
-    func fetchHistory(sessionID: String, cursor: Int? = nil, projectID: String? = nil) async throws -> AgentHistoryPage {
-        var components = URLComponents(url: baseURL.appending(path: projectID.map { "api/projects/\($0)/session/history" } ?? "api/agent/sessions/\(sessionID)/history"), resolvingAgainstBaseURL: false)
+    func fetchHistory(sessionID: String, cursor: Int? = nil) async throws -> AgentHistoryPage {
+        var components = URLComponents(url: baseURL.appending(path: "api/agent/sessions/\(sessionID)/history"), resolvingAgainstBaseURL: false)
         var queryItems = [URLQueryItem(name: "limit", value: "10")]
         if let cursor {
             queryItems.append(URLQueryItem(name: "cursor", value: String(cursor)))
@@ -114,13 +119,14 @@ struct AgentAPIClient {
         try await request(path: "api/tasks/artifacts/\(mediaID)/preview", method: "GET")
     }
 
-    func observeProject(projectID: String, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
-        var request = try await makeRequest(url: baseURL.appending(path: "api/projects/\(projectID)/session/events"), method: "GET")
+    func observeSession(sessionID: String, onConnected: @escaping () -> Void, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
+        var request = try await makeRequest(url: baseURL.appending(path: "api/agent/sessions/\(sessionID)/events"), method: "GET")
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse, (200 ... 299).contains(http.statusCode) else {
             throw AgentAPIError.invalidResponse
         }
+        onConnected()
         var eventName: String?
         var dataLines: [String] = []
         var lineBytes: [UInt8] = []
@@ -147,14 +153,9 @@ struct AgentAPIClient {
         if !lineBytes.isEmpty { consume(String(decoding: lineBytes, as: UTF8.self)) }
     }
 
-    func stream(sessionID: String, message: String, projectID: String? = nil, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
-        var request: URLRequest
-        if let projectID {
-            request = try await makeRequest(path: "api/projects/\(projectID)/session/stream", method: "POST", body: ["message": message])
-        } else {
-            let body = StreamRequest(agentID: agentID, sessionID: sessionID, message: message)
-            request = try await makeRequest(path: "api/agent/stream", method: "POST", body: body)
-        }
+    func stream(sessionID: String, message: String, agentID requestedAgentID: String? = nil, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
+        let body = StreamRequest(agentID: requestedAgentID ?? agentID, sessionID: sessionID, message: message)
+        var request = try await makeRequest(path: "api/agent/stream", method: "POST", body: body)
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
 
         let (bytes, response) = try await URLSession.shared.bytes(for: request)

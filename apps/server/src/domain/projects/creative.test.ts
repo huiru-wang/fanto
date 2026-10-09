@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { imageInputSchema, projectManageSchema, isInternalAgent } from "./model.js";
+import { imageInputSchema, projectManageSchema, isInternalAgent } from "./creative-model.js";
 
 test("image_generate accepts multiple references and produces one image per call without run state", () => {
   const input = {prompt:"保留原始场景，绘制新风格",referenceMediaIds:[

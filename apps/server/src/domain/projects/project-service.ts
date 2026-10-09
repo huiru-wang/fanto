@@ -22,10 +22,14 @@ export class ProjectService {
     const row = await new ProjectRepository(options.transaction ?? this.db).project(userId, id);
     return row ? projectEntity(row) : null;
   }
+  async findBySession(userId: string, sessionId: string) {
+    const row = await this.db.selectFrom("projects").selectAll().where("user_id", "=", userId).where("session_id", "=", sessionId).executeTakeFirst();
+    return row ? projectEntity(row) : null;
+  }
   async list(userId: string, input: Pagination & { status?: ProjectStatus }) {
     const parsed = projectListSchema.safeParse(input);
     if (!parsed.success) return failure("INVALID_INPUT");
-    const { limit, status = "active" } = parsed.data;
+    const { limit, status } = parsed.data;
     const scope = ["projects", userId, status];
     const cursor = decodeCursor(input.cursor, scope);
     if (cursor === null) return failure("INVALID_CURSOR");
@@ -38,7 +42,7 @@ export class ProjectService {
     if (!parsed.success) return failure("INVALID_INPUT");
     try {
       // Existing Projects receive their derived vector lazily, without altering business versions.
-      const missing = await this.db.selectFrom("projects").select(["project_id", "summary"]).where("user_id", "=", userId).where("status", "=", "active").where("embedding", "is", null).execute();
+      const missing = await this.db.selectFrom("projects").select(["project_id", "summary"]).where("user_id", "=", userId).where("status", "!=", "archived").where("embedding", "is", null).execute();
       for (const row of missing) {
         const embedding = await embedProjectText(this.embeddings, row.summary);
         await this.db.updateTable("projects").set({ embedding }).where("user_id", "=", userId).where("project_id", "=", row.project_id).where("summary", "=", row.summary).where("embedding", "is", null).execute();
@@ -81,7 +85,7 @@ export class ProjectService {
       const repo = new ProjectRepository(transaction);
       const row = await repo.project(userId, id, true);
       if (!row) return failure("NOT_FOUND");
-      if (row.status !== "active") return failure("INVALID_STATE");
+      if (row.status === "archived" || row.status === "queued") return failure("INVALID_STATE");
       if (row.version !== expectedVersion) return failure("VERSION_CONFLICT");
       const fullContent = patch.content ?? row.content;
       const inspected = inspectProjectContent(fullContent);
@@ -110,6 +114,16 @@ export class ProjectService {
       if (error instanceof Error && /MEDIA_NOT_READY|not found|NoSuchKey/i.test(error.message)) return failure("MEDIA_NOT_READY");
       throw error;
     }
+  }
+  async claimExecution(userId:string, projectId:string, from:readonly ("queued"|"completed"|"failed")[], to:"running") {
+    const row=await this.db.updateTable("projects").set({status:to,updated_at:new Date()})
+      .where("user_id","=",userId).where("project_id","=",projectId).where("status","in", [...from])
+      .returning("project_id").executeTakeFirst();
+    return Boolean(row);
+  }
+  async finishExecution(userId:string, projectId:string, status:"completed"|"failed") {
+    await this.db.updateTable("projects").set({status,updated_at:new Date()})
+      .where("user_id","=",userId).where("project_id","=",projectId).where("status","=","running").execute();
   }
   async bindSession(userId: string, projectId: string, sessionId: string) {
     const existing = await this.find(userId, projectId);
@@ -154,8 +168,13 @@ export class ProjectService {
       const repo = new ProjectRepository(trx), row = await repo.project(userId, id, true);
       if (!row) return failure("NOT_FOUND");
       if (row.status === "archived") return success(projectEntity(row));
+      if (row.status === "queued" || row.status === "running") return failure("INVALID_STATE");
       if (row.version !== expectedVersion) return failure("VERSION_CONFLICT");
-      return success(projectEntity(await repo.updateProject(userId, id, { status: "archived" })));
+      const archived = await trx.updateTable("projects")
+        .set({ status: "archived", updated_at: new Date() })
+        .where("user_id", "=", userId).where("project_id", "=", id)
+        .returningAll().executeTakeFirstOrThrow();
+      return success(projectEntity(archived));
     });
   }
 }

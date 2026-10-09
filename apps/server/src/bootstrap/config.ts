@@ -25,8 +25,9 @@ export interface AppConfig {
   oss: { region: string; endpoint?: string; bucket: string; accessKeyId: string; accessKeySecret: string };
   dashscope: { apiKey: string; baseUrl: string; embeddingModel: string; embeddingDimension: number; visionModel: string; asrModel: string };
   agent: { sessionDatabasePath: string; workspaceRoot: string; definitionPath: string; deepseekApiKey: string };
-  creative: { enabled: boolean; workers: number; proposalTimeoutMs: number; creatorTimeoutMs: number; image: { endpoint: string; apiKey: string; model: string; timeoutMs: number } };
-  tasks: { schedulerIntervalMs: number; workerConcurrency: number; timeoutMinSeconds: number; timeoutMaxSeconds: number };
+  agentExecutionConcurrency: number;
+  creative: { enabled: boolean; proposalTimeoutMs: number; creatorTimeoutMs: number; image: { endpoint: string; apiKey: string; model: string; timeoutMs: number } };
+  tasks: { schedulerIntervalMs: number; timeoutMinSeconds: number; timeoutMaxSeconds: number };
 }
 
 export function loadEnv(path = ".env") {
@@ -115,16 +116,15 @@ export function loadConfig(): AppConfig {
       definitionPath: projectPath(process.env.AGENT_CONFIG_PATH, "apps/server/agent.yaml"),
       deepseekApiKey: required("DEEPSEEK_API_KEY"),
     },
+    agentExecutionConcurrency: positiveInt("AGENT_EXECUTION_CONCURRENCY", 2),
     creative: {
       enabled: creativeEnabled,
-      workers: positiveInt("CREATIVE_WORKERS", 1),
       proposalTimeoutMs: positiveInt("CREATIVE_PROPOSAL_TIMEOUT_MS", 120_000),
       creatorTimeoutMs: positiveInt("CREATIVE_CREATOR_TIMEOUT_MS", 900_000),
       image: { endpoint: imageEndpoint, apiKey: imageApiKey, model: process.env.CREATIVE_IMAGE_MODEL?.trim() || "qwen-image-3.0-pro", timeoutMs: positiveInt("CREATIVE_IMAGE_TIMEOUT_MS", 300_000) },
     },
     tasks: {
       schedulerIntervalMs: positiveInt("TASK_SCHEDULER_INTERVAL_MS", 300_000),
-      workerConcurrency: positiveInt("TASK_WORKER_CONCURRENCY", 1),
       timeoutMinSeconds: taskTimeoutMinSeconds,
       timeoutMaxSeconds: taskTimeoutMaxSeconds,
     },
