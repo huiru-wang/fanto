@@ -1,4 +1,4 @@
 version: 1
-reviewed_through: 0fd1debe682880b6af2402350e147dd752e2aade
-reviewed_commit_message: "feat: consolidate project domain and current app updates"
+reviewed_through: 0824e949ba4e97a1a44ee9827edde16822a9d533
+reviewed_commit_message: "feat: unify agent sessions and complete async v3 client adaptation"
 meaning: "All repository changes through reviewed_through have completed documentation impact review."

@@ -79,7 +79,7 @@ Record save
 → Vision / ASR
 → completePostprocess
 → processed Record
-→ RecordRetrievalService.replaceRecord
+→ 分别发布 RecordEmbeddingQueue（向量）与 AgentExecutionQueue（可选 Proposal）
 ```
 
 图片描述写回 image block；音频转写正文与 ASR 状态 / 模型 / 语言 / 情绪 / 完成时间写回 audio block。Record 的读取数据因此由 `records.content.blocks` 自包含；旧 task 不能覆盖已经变化的版本。
@@ -88,8 +88,8 @@ Record Retrieval 是派生能力。Record 已经成功变成 `processed` 后，�
 
 ## 删除
 
-删除使用当前 `version` 进行乐观并发校验，同事务硬删除 Record、清理 Proposal / Project 来源关联并使受影响 Project version 递增。媒体处理与 OSS 清理登记也在该事务内：独占媒体资产立即删除，被已有成果直接引用的媒体解除 Record 占用并保留，具体边界见 [Media 清理](media.md#record-删除与媒体清理)。Record 向量随主表行删除；提交后失效用户列表缓存。已入队或执行中的后置任务无法写回已删除 Record。删除不可恢复；重复删除返回 NOT_FOUND，客户端可按已删除处理。
+删除使用当前 `version` 进行乐观并发校验，同事务硬删除 Record、清理 Proposal / Project 来源关联并使受影响 Project version 递增。媒体资产清理与待删除 objectKey 收集也在该事务内：独占媒体资产元数据立即删除，TaskRun 引用的媒体解除 Record 占用并保留；Project 正式成果使用自己的对象副本，具体边界见 [Media 清理](media.md#record-删除与媒体清理)。Record 向量随主表行删除；提交后失效用户列表缓存。已入队或执行中的后置任务无法写回已删除 Record。删除不可恢复；重复删除返回 NOT_FOUND，客户端可按已删除处理。
 
 Record HTTP 返回不再生成额外 `media[]` 投影，也不会在读取路径查询 `media_assets`。媒体二进制访问按 block 的 `mediaId` 单独通过 [Media](media.md) 读取接口获取。
 
-启用 Creative Runtime 后，创建 / 更新 Record 在同一事务登记当前版本的分析运行；proposal-agent 等待 processed 后使用已保存的图片 / 音频理解判断价值与创意。分析运行可针对丢失事件重新投递现有 postprocess，并按版本与原 runId 恢复超过十分钟的 processing；不重复处理已有图片 description。详见 [创作运行](../architecture/creative-runtime.md)。
+当 Record 当前版本成功写入 `processed` 后，Listener 将 Embedding 与 Proposal 投递到两个独立的进程内队列；Proposal 仅在创作能力启用时消费。队列不持久化，不提供丢失消息重放、自动分析恢复或处理超时补偿。详见 [创作执行](../architecture/creative-runtime.md)。

@@ -81,8 +81,8 @@ Current State 文档只描述**当前最终仓库状态**。它不仅包括 `doc
 - `apps/server/src/domain/records/**`、Record routes → `docs/domain/records.md`、必要时 `docs/api/http-api.md`
 - `apps/server/src/domain/media/**`、媒体 Client → `docs/domain/media.md`
 - `apps/server/src/domain/records/retrieval/**` → `docs/domain/record-retrieval.md`
-- `apps/server/src/domain/creations/**` → `docs/domain/creations.md`
-- `apps/server/src/creative-runtime/**` → `docs/architecture/creative-runtime.md`，必要时 `docs/api/http-api.md`、`docs/engineering/configuration.md`
+- `apps/server/src/domain/projects/**` → `docs/domain/projects.md`、`docs/architecture/creative-runtime.md`
+- `apps/server/src/execution/**`、`apps/server/src/event/**`、`apps/server/src/domain/tasks/**` → `docs/architecture/server.md`、`docs/architecture/creative-runtime.md`、`docs/engineering/testing.md`
 - `apps/server/src/agent/**`、`apps/server/src/routes/agent/**` → `docs/architecture/agent-runtime.md`，必要时根 `README.md`
 - `apps/h5/**` → `docs/product/current-scope.md`、`docs/engineering/local-development.md`、`docs/architecture/overview.md`，必要时根 `README.md`
 - `apps/ios/fanto/**` → `docs/clients/ios.md`、`apps/ios/fanto/AGENTS.md`

@@ -70,6 +70,6 @@ Audio block 在 Record postprocess 中调用 ASR。成功后，transcription 与
 
 ## Record 删除与媒体清理
 
-删除 Record 时锁定其媒体资产，同事务删除原 Record 独占媒体的 media_assets 并向 `media_object_deletions` 登记 object_key；Task 结果有独立保留规则。Project 最终作品已使用独立 mediaId 和 objectKey，不再阻止原 Record 媒体被删除。聊天历史的原 Record 图片引用也不会阻止删除。
+删除 Record 时锁定其媒体资产，同事务删除 Record 独占媒体的 `media_assets` 并收集待清理 objectKey；Task 交付引用的媒体解除 Record 绑定并保留。Project 最终作品已使用独立 mediaId 和 objectKey，不再阻止原 Record 媒体被删除。聊天历史的原 Record 图片引用也不会阻止删除。
 
-Server 启动后每 5 秒处理 OSS 删除队列；网络删除失败按退避重试。HTTP Record 删除成功表示业务行已提交，对象异步移除。
+事务提交后 Server 尽力逐个删除 OSS 对象（单对象清理限时）；网络删除失败只记录日志，不存在持久化删除队列、周期扫描或退避重试。HTTP 删除成功只保证业务事务已提交，不保证 OSS 对象必已删除。

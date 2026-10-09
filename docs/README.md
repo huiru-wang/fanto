@@ -13,6 +13,7 @@
 - [系统总览](architecture/overview.md)：当前运行组件、依赖关系与数据边界。
 - [业务 Server](architecture/server.md)：Hono Server 的模块边界、请求与异步处理链路。
 - [Agent Runtime](architecture/agent-runtime.md)：Pi AgentHarness、Session、Task、Workspace 与安全边界。
+- [创作执行](architecture/creative-runtime.md)：Proposal → Creator、Project Session 与媒体归属。
 
 ## 领域
 
@@ -26,6 +27,7 @@
 
 - [HTTP API](api/http-api.md)：当前实际注册的 HTTP 接口。
 - [iOS](clients/ios.md)：当前 SwiftUI 客户端页面、真实数据源与未接入能力。
+- [H5](clients/h5.md)：测试客户端、Project / Proposal、统一会话与 TaskRun。
 
 ## 工程
 
@@ -47,5 +49,3 @@
 > 截至这个 commit 的仓库变化，已经判断过它们是否需要反映到 Current Docs。
 
 具体执行规则见根目录 [AGENTS.md](../AGENTS.md)。
-
-- [创作运行](architecture/creative-runtime.md)：自动提议、接受后创作与付费图片恢复。

@@ -18,7 +18,7 @@ domain/records/
 
 ## 索引与失败语义
 
-Record 创建或更新后的图片理解完成并成功写回当前版本后，postprocess listener 调用 `RecordRetrievalService.replaceRecord(processedRecord)`。canonical 文本按固定顺序组合用户正文、格式化地点和图片 description；当前不将音频转写写入新的整体向量。
+Record 创建或更新后的图片理解完成并成功写回当前版本后，postprocess listener 向 `RecordEmbeddingQueue` 发布版本消息，由独立的 Embedding Listener 调用 `RecordRetrievalService.replaceRecord(processedRecord)`。canonical 文本按固定顺序组合用户正文、格式化地点和图片 description；当前不将音频转写写入新的整体向量。
 
 Embedding 失败只记录错误日志，不回滚已完成的 Record，也不自动重试、补偿或批量重建。更新 Record 时先将 `embedding` 清空，新的 postprocess 成功后写入当前版本向量；删除 Record 时向量随业务行删除。
 

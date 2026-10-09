@@ -1,43 +1,38 @@
-# 异步执行架构 v3（Project Session）
+# 创作执行：Proposal → Project → Creator
 
-## 总体结构
+当前创作能力由 `domain/projects/` 维护业务事实，`execution/handlers/` 发起后台运行，`agent/` 提供同一 Pi Session / Run 能力。
 
-Server 内统一使用进程内、非持久化 Queue + Listener：
+## 发现与接受
 
-- `RecordPostprocessQueue`：图片理解、音频转写；`processed` 成功写入数据库后分别投递两个独立消息。
-- `RecordEmbeddingQueue`：Record 按版本检查后单独生成与存储向量，失败不会阻塞 Proposal。
-- `AgentExecutionQueue`：Proposal/Creator/Task 统一由 `AgentExecutionListener` 分发，后台并发由 `AGENT_EXECUTION_CONCURRENCY` 控制。
-- `execution/handlers/` 持有业务执行入口；Agent Harness 保持原有 `agent/` 模块结构，唯一执行入口为 `runAgent`。
-- `SessionEventBus`：运行事件按 `sessionId` 发布，HTTP SSE 可订阅，无独立 Project EventBus、无事件持久化与重放。
+Record postprocess 成功后（配置 `CREATIVE_ENABLED=true`），向 `AgentExecutionQueue` 发布 Proposal 消息。ProposalHandler 运行内部 `proposal-agent`，按需读取 `skills/creative/SKILL.md` 和「入画 / 异想 / 成章 / 回声」参考，使用 `proposal_create` 存储至多两条真正不同的候选。没有明确价值时不产生 Proposal，不向用户追问。
 
-不引入消息持久化、自动重试、补投、重启恢复、失败补偿或背压。进程终止后的 queued/running 可能保留原状态。
+Proposal `content={reason,ideas:[{id,title,idea,tags,goal}],selectedIdeaId}`；`idea` 面向用户预告可想象的成品，`goal` 则记录目标、背景和约束。两者不是执行计划，不存图片槽位、预算或自动决定用户选择。Proposal Session 与 Creator Session 不混用。
 
-## Project 状态
+接受时 `POST /api/proposals/:id/accept` 返回 `{projectId}`：事务内按选中 Idea 创建/更新 Project、关联 Record、状态变为 `queued`，随后发布后台 Creator 消息。重复接受同一方向只返回原 projectId。
 
-`queued → running → completed | failed`，以及 `archived`；删除原 `active`。
+## Project 生命周期
 
-- `queued`：已提交、等待执行，与 Session 是否创建/绑定无关。
-- `running`：Handler 已认领工作，包括创建/绑定 Session 和 Agent 执行；不由 Session 状态推断。
-- `completed`：最近一次创作/对话成功；保留已发表最新成果。
-- `failed`：最近一次执行失败；保留现有成果和 Session，允许用户继续。
-- `archived`：不可继续修改或执行。
+`queued → running → completed | failed`，可以归档为 `archived`。
 
-`ProposalService.accept` 事务内同步创建 Project 或更新 extend 目标及 Record 关联，设置 `queued`；事务提交后发布 Creator 消息，API 只返回 `projectId`。CreatorHandler 认领 queued→running 后创建/复用 Session，通过已有 `SessionManager.reserve` 保证会话串行。Creator 使用 `project_read` / `skill_read` / `record_read`、`image_generate`、`project_manage` 完成创作；必须有有效 Project 保存才算完成。业务字段更新保留 version 乐观锁，纯状态改变不增加 version。
+- queued：排队等待，和 Session 是否已绑定无关。
+- running：Handler 已认领，包括初始化会话与执行阶段。
+- completed / failed：本轮成功或失败；失败保留已发布内容，允许用户继续尝试。
+- archived：只读，不继续执行。
 
-## Task
+CreatorHandler 基于 Project 已确认的 Goal 和 Record，创建或复用长期 `creator-agent` Session，用 `image_generate` 生成单张图（可多次调用）、用 `project_manage` 保存完整正文、摘要和封面。成果以完整 Markdown / 安全 `html-preview` 字符串保存，媒体使用 `fanto-media://<mediaId>`；不存专用 Project Run、Tool Trace、租约、图片槽位或数量预算。Agent 最终回复应该简洁介绍作品与可调整方向，不写技术执行报告或泄露内部 ID。
 
-TaskScheduler 仍以固定间隔扫描到期 Task；即时任务创建可主动唤醒扫描。Scheduler **在事务中创建 status=queued 的 TaskRun** 并投递 AgentExecutionQueue；TaskHandler 消费后 `queued→running`，独立创建并绑定 Session。`task_plan_manage` 和 `deliver_task_result` 沿用当前鉴权与产物协议；只执行一次，不自动重试。
+## 唯一多轮会话接口
 
-## Session HTTP 协议
+Main Chat 和 Project Chat 统一调用：
 
-- `GET /api/agent/sessions/:sessionId/history`：按用户 Session 所有权直接读取；内部 Agent Session 也可读取历史，不开放内部 Agent 公共执行权限。
-- `GET /api/agent/sessions/:sessionId/events`：按 Session 订阅已有 AgentStreamEvent（start/delta/tool_start/tool_end/done/error 等）。
-- `POST /api/agent/stream`：Main 和 Creator 共用的会话流式接口；Creator 根据用户与 sessionId 查询绑定 Project，校验状态，注入 projectId 到 RunContext 并更新执行状态。异步首次创作仍可通过通用 Session SSE 只读订阅。
-- 普通 Main Agent `POST /api/agent/stream` 保留请求驱动 SSE。
-- 旧 Project 专属 start/stream/events/history 路由已删除。
+- `GET /api/agent/sessions/:sessionId/history`：按 Session 用户归属读取、投影文本/Tool Presentation/媒体。
+- `POST /api/agent/stream`：`{agentId,sessionId,message}` 的请求驱动 SSE。Creator 在 Server 侧按 userId + sessionId 查找 Project；只有 `completed/failed` 且 Session 已绑定才允许继续，Run Context 中注入可信 projectId，执行时 `running`，执行成功/失败更新状态。
+- `GET /api/agent/sessions/:sessionId/events`：只读订阅后台首次创作的 Session EventBus，不会启动执行；无事件重放。客户端订阅失败仍可在 Project 可继续时通过 `/stream` 发送，掉线后从 History 恢复。
 
-Server API 已重设计；**H5/iOS 仍需要后续适配**。
+公开 Session 创建和 Stream 不允许执行 proposal-agent、task-worker；creator-agent 仅通过已授权的 Project Session 运行。History 支持当前用户拥有的内部 Session。客户端不应展示内部媒体 ID 或原始 Tool JSON，Tool Presentation 由服务端工具声明决定。
 
-## 媒体和清理
+## 媒体和失败边界
 
-`project_manage` 保存正式成果时把引用的 Record 图片/音频复制到 `users/{userId}/project/{projectId}/`，Record 仅保留原始引用。删除 Record 在 DB 事务内清理关联并收集可删 objectKey，事务提交后限时尝试 OSS 删除；失败只记日志，不补删，不再运行 media cleanup scanner 或持久化删除表。TaskRun 的媒体产物引用继续受保护。
+`image_generate` 生成图直接放在 `users/{userId}/project/{projectId}/` 下。只有 Record 或其它外部 Media 真正写入 Project 正式正文/封面时，`project_manage` 才在保存时复制对象、分配新的 mediaId 并替换引用；仅作为参考的源媒体不复制。Record 删除时按自身独占资产正常清理，已保存作品的副本不受影响。OSS 清理在 DB 提交后尽力执行，失败记日志，不存在持久队列重试。
+
+进程内消息、SSE 发布事件不持久化；服务重启可能导致 queued/running 状态遗留。Creator 生图没有持久化补单机制，失败后由用户在会话中决定是否继续，不承诺自动恢复或付费幂等。

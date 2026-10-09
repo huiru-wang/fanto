@@ -1,28 +1,25 @@
 # Proposal 与 Project
 
-## 数据与状态
+## 数据模型
 
-- `proposals`：待确认的 create/extend 提议，`content = {reason, idea, plan, tags, goal}`；`session_id` 是 proposal-agent 的分析会话；状态 pending/accepted/rejected。
-- `projects`：最新 `goal`、`content`、title、summary、cover_media_id、`session_id`、version、status（queued/running/completed/failed/archived）；不用冗余 creatorQueued 字段或进度表。
-- `record_links`：两类主体与 Record 的用户隔离关联；Record 删除时清理关系。
-- Agent Session 持久化于 SQLite；Project 的 `session_id` 指向长期 creator-agent 会话，不与 Proposal 的会话混用。
+- `proposals`：`type=create|extend`、`status=pending|accepted|rejected`、`proposedSummary`、`sessionId`（Proposal 分析会话）、`content={reason, ideas:[{id,title,idea,tags,goal}], selectedIdeaId}`。候选 Goal 包含 `objective/context?/constraints?/successCriteria?`。
+- `projects`：`projectId`、用户、`title/summary/goal/content/coverMediaId`、`status=queued|running|completed|failed|archived`、`version`、`sessionId`（Creator 长期会话）、时间；`embedding` 是 summary 的 768 维派生向量。
+- `record_links`：Proposal 或 Project 与 Record 的归属关联；Record 删除时事务内清除。Project 列表默认不含 archived，也不返回正文；详情包含正文、参考 Record 总数和最近最多五条完整 Record；当前公开 Project Route 未注册额外的参考 Record 分页接口。
 
-## Proposal 接受
+## 接受与执行
 
-`ProposalService.create` 只由可信服务端调用，要求同用户可读取的 Record：create 必须提供 proposedSummary，extend 必须指定 completed/failed Project。提议标题、idea、plan、tags 用于用户浏览；goal 包含 objective、可选 context/constraints/successCriteria。
+只有后端可信的 Proposal Agent 可以创建 Proposal；不暴露客户端创建入口。Proposal 的 create/extend 使用同一个 Record 来源集合，extend 目标必须是同用户 `completed/failed` Project。接受时由用户选择 Idea（仅一个候选可省略 `selectedIdeaId`），在事务中创建新 Project 或更新已有 Project 的 Goal/关联，将状态设为 `queued`。接口只返回 `projectId`，异步发布 Creator 消息。重复相同接受幂等，不重复运行。
 
-`POST /api/proposals/:id/accept` 验证用户与选中的 Idea；create 事务内初始化 Project 并设置 queued，extend 只接受 completed/failed Project，更新目标和参考 Record 后设置 queued，保留最新内容与已有 Session。成功只返回 `{ projectId }`，异步向 AgentExecutionQueue 发布 Creator 工作。首次执行由 Handler 认领 `queued→running` 后创建或复用 Session；成功变为 completed，失败变为 failed。重复接受只返回原 projectId，不重新投递。`queued` 与 Session 创建/绑定没有任何关联。
+Project 状态只表示执行进度，与 Session 是否存在无关：queued 等待 Handler，running 正在创作，completed/failed 表示最近一次运行结果，archived 只读。首次 Handler 在认领后创建/复用 Session；后续用户通过统一 Agent Stream 继续同一 Session，无法自行提供 projectId 冒用其它 Project。
 
-## 更新与查询
+## 更新与检索
 
-`ProjectService.update` 以 expectedVersion 做并发校验；允许按字段更新 title、summary、goal、content、coverMediaId，不传则保留，content 为完整替换文本。归档后只允许查看。摘要修改同时重建 summary 的 768 维向量；向量服务失败则保持原值。相似搜索限定当前用户的非 archived Project，返回最多 3 条候选，并不自动证明主题关联。
+Project `PATCH` 和 Agent `project_manage` 使用 expectedVersion 乐观并发，`content` 完整覆盖，不做增量 patch；状态或 Session 绑定不强制增加业务版本。summary 变更时生成新的 embedding，失败不提交新 summary。项目搜索仅限当前用户的非归档数据，相关性不等于事实关联；`project_read` 仅支持 search/get。
 
-Project 列表包含 goal、sessionId 和摘要，但省略正文；详情包含完整 content、Goal 和最近最多五条完整参考 Record。更多参考记录可用游标分页。Project 的最终成果采用 string 内容、Markdown 和受限 `html-preview` 协议，以 `fanto-media://<mediaId>` 引用媒体；禁用任意脚本、网络资源和危险 HTML/CSS。
+正文允许受限 Markdown 和静态 `html-preview`；禁止任意脚本、危险 HTML/CSS 和未经授权网络资源。Project 保存时只复制正式正文或封面使用的外部 Media，生成当前 Project OSS 前缀的新 mediaId 并替换引用。未采纳的 Record 生图参考不复制。源 Record 删除不会破坏已保存作品副本。
 
-## 最终媒体归属
+## 对话与执行信息
 
-Project 正文或封面保存时，检查每个实际 mediaId 对应 `media_assets.object_key`。已经属于 `users/{userId}/project/{projectId}/` 的直接保留；其他用户自己可访问的 ready 媒体才在最终保存时复制入当前 Project 文件夹，**生成新 mediaId** 并改写正文/封面引用。仅用作生图参考的 Record 媒体不复制；删除 Record 可正常清理原资产，不影响正式保存的 Project 副本。历史 Project 在启动迁移时归一化已有媒体。
+Project 保存最新成果，不保存工具 trace、独立 creator run、进度/图片槽位。Creator 长期 Session 中的助手消息和 Tool Results 是过程的唯一事实来源。通用 `GET /api/agent/sessions/:id/history` 可读取历史；`GET .../events` 只订阅进行中的事件；`POST /api/agent/stream` 发送后续 Creator 消息，Server 根据 userId + sessionId 解析所属 Project，校验 `completed/failed` 状态并注入上下文。Proposal 和 Project 的 sessionId 语义不同，不允许混用。
 
-## Agent 会话
-
-Creator Agent 的可信 `creation_context` 仅提供 projectId；需要最新 goal/content 时调用 `project_read`。创作或后续修改由 `project_manage` 更新完整 Project，图像工具 `image_generate` 每次只生成一张图。没有独立的进度/Run/图片槽位表。用户通过通用 Session History、Session Events 和 Project Messages 接口查看并继续同一 Session；具体见 [创作运行](../architecture/creative-runtime.md) 和 [HTTP API](../api/http-api.md#proposal--project)。
+详见 [创作执行](../architecture/creative-runtime.md)、[HTTP API](../api/http-api.md#proposal--project)、[Media](media.md)。
