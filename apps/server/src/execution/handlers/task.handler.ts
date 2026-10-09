@@ -20,7 +20,7 @@ export class TaskHandler {
         if(!bound)throw Error("TASK_RUN_SESSION_BIND_FAILED");
         handedOff=true;
         await this.worker.run(session,renderTaskBrief(task),task.timeoutSeconds*1000,{
-          traceId:taskTraceId(task),timeZone:taskTimeZone(task),task:{taskId,taskRunId:runId},taskPlanReady:Boolean(bound.plan)
+          traceId:taskTraceId(task),timeZone:taskTimeZone(task),task:{taskId,taskRunId:runId}
         });
       }finally{
         if(!handedOff)await this.agent.sessions.release(session.id).catch(()=>{});

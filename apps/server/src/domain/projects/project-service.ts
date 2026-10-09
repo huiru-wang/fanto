@@ -144,7 +144,7 @@ export class ProjectService {
       return success({ ...projectEntity(row), recordCount: await repo.count(userId, "project", id), referenceRecords: await this.records.findMany(userId, links.map(r => r.record_id), { transaction: trx }) });
     });
   }
-  async update(userId: string, id: string, expectedVersion: number, input: ProjectPatch, options: TransactionOptions = {}) {
+  async update(userId: string, id: string, expectedVersion: number, input: ProjectPatch, options: TransactionOptions & { completeFailedOnSave?: boolean } = {}) {
     if (!uuid.safeParse(id).success || !versionSchema.safeParse(expectedVersion).success) return failure("INVALID_INPUT");
     const parsed = patchSchema.safeParse(input);
     if (!parsed.success) return failure("INVALID_INPUT");
@@ -174,6 +174,8 @@ export class ProjectService {
       if (canonicalCover !== row.cover_media_id) values.cover_media_id = canonicalCover;
       if (content !== row.content) values.content = content;
       if (patch.goal !== undefined) values.goal = patch.goal;
+      // Only an authorized Creator save can recover a failed publication. Chat completion never changes Project status.
+      if (options.completeFailedOnSave && row.status === "failed" && content.trim()) values.status = "completed";
       if (Object.entries(values).every(([key, value]) => row[key as keyof typeof row] === value)) return success(projectEntity(row));
       return success(projectEntity(await repo.updateProject(userId, id, values)));
     };

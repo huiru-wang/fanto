@@ -1,4 +1,3 @@
-import type { CreativeContext } from "../../domain/projects/creative-model.js";
 import { createContextKey, TODO_CONTEXT, type Context, withContextValue } from "@earendil-works/pi-agent-core";
 import { createSlotStore, type SlotStore } from "./internal/slot-store.js";
 
@@ -6,8 +5,9 @@ export type ContextMessage = { role: "user" | "assistant"; text: string };
 
 type RunContextInput = {
   runId: string;
-  creative?: CreativeContext["creative"];
   projectId?: string;
+  recordId?: string;
+  recordVersion?: number;
   userId: string;
   query: string;
   slots: Record<string, string>;
@@ -17,12 +17,12 @@ type RunContextInput = {
   recentMessages: readonly ContextMessage[];
   sourceMessageId?: string;
   task?: { taskId: string; taskRunId: string };
-  taskPlanReady?: boolean;
 };
 
-export type RunData = Omit<RunContextInput, "slots" | "taskPlanReady"> & {
+export type RunData = Omit<RunContextInput, "slots"> & {
   readonly slots: SlotStore;
   taskPlanReady: boolean;
+  taskAuthorized: boolean;
 };
 
 const runDataContextKey = createContextKey<RunData>("fanto.context.runData");
@@ -32,7 +32,8 @@ function create(input: RunContextInput): Context {
     ...input,
     recentMessages: [...input.recentMessages],
     slots: createSlotStore(input.slots),
-    taskPlanReady: input.taskPlanReady ?? false,
+    taskPlanReady: false,
+    taskAuthorized: false,
   };
   return withContextValue(runDataContextKey, data, TODO_CONTEXT);
 }

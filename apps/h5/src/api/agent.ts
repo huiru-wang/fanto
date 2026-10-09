@@ -202,14 +202,14 @@ export async function streamAgentMessage(
   message: string,
   onEvent: (event: AgentStreamEvent) => void,
   signal?: AbortSignal,
-  agentId: string = FANTO_AGENT_ID,
+  metadata?: { projectId?: string },
 ): Promise<void> {
   const headers = agentHeaders();
   headers.set("Accept", "text/event-stream");
   const response = await authorizedFetch("/api/agent/stream", {
     method: "POST",
     headers,
-    body: JSON.stringify({ agentId, sessionId, message }),
+    body: JSON.stringify({ sessionId, message, ...(metadata ? { metadata } : {}) }),
     signal,
   });
   if (!response.ok || !response.body) {

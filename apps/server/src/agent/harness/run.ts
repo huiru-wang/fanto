@@ -1,5 +1,3 @@
-import type { CreativeContext } from "../../domain/projects/creative-model.js";
-import { isInternalAgent } from "../../domain/projects/creative-model.js";
 import { randomUUID } from "node:crypto";
 import { withAbortSignal, type Context } from "@earendil-works/pi-agent-core";
 import { createRunContext } from "../context/index.js";
@@ -7,7 +5,7 @@ import { subscribeHarnessEvents, type AgentStreamEvent } from "./events.js";
 import type { HarnessRuntime } from "./build-runtime.js";
 
 export type RunSession = { id: string; userId: string; agentId?: string; runtime: HarnessRuntime };
-type RunMetadata = { creative?: CreativeContext["creative"]; projectId?: string; traceId?: string; timeZone?: string; task?: { taskId: string; taskRunId: string }; taskPlanReady?: boolean };
+export type RunMetadata = { projectId?: string; recordId?: string; recordVersion?: number; traceId?: string; timeZone?: string; task?: { taskId: string; taskRunId: string } };
 
 export function runAgent(
   session: RunSession,
@@ -27,7 +25,6 @@ async function run(
   emit: (event: AgentStreamEvent) => Promise<void>,
   invoke: (context: Context) => ReturnType<HarnessRuntime["prompt"]>,
 ): Promise<string> {
-  if (session.agentId && isInternalAgent(session.agentId) && (session.agentId === "proposal-agent" ? metadata.creative?.role !== "proposal" : !metadata.projectId)) throw new Error("CREATIVE_AUTHORITY_REQUIRED");
   let output = "";
   const abort = () => { void session.runtime.abort().catch(() => {}); };
   signal.addEventListener("abort", abort, { once: true });
@@ -35,7 +32,7 @@ async function run(
     signal.throwIfAborted();
     const context = withAbortSignal(signal, createRunContext({
       runId: randomUUID(), userId: session.userId, sessionId: session.id, query, slots: {},
-      creative: metadata.creative, projectId: metadata.projectId, traceId: metadata.traceId, timeZone: metadata.timeZone, task: metadata.task, taskPlanReady: metadata.taskPlanReady, recentMessages: await session.runtime.readRecentMessages(),
+      projectId: metadata.projectId, recordId: metadata.recordId, recordVersion: metadata.recordVersion, traceId: metadata.traceId, timeZone: metadata.timeZone, task: metadata.task, recentMessages: await session.runtime.readRecentMessages(),
     }));
     const data = createRunContext.read(context);
     const unsubscribe = subscribeHarnessEvents(session.runtime.harness, session.runtime.tools, data, query, emit, () => signal.aborted, text => { output += text; });

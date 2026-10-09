@@ -6,7 +6,7 @@ import { runWithRequestPrincipal } from "../request-user.js";
 import { SessionOwnershipError } from "../../agent/harness/session-manager.js";
 import { SessionEventBus } from "../../event/session-event-bus.js";
 
-test("generic Session History reads internal agent sessions by ownership without Project lookup",async()=>{
+test("generic Session History reads Creator sessions by ownership without Project lookup",async()=>{
   const id=randomUUID();
   const sessions={
     history:async (requested:string,_cursor:number|undefined,_limit:number,userId:string)=>{
@@ -31,4 +31,17 @@ test("generic Session History reads internal agent sessions by ownership without
   assert.equal(forbidden.status,403);
   const forbiddenEvents=await request("different",`/sessions/${id}/events`);
   assert.equal(forbiddenEvents.status,403);
+});
+
+
+test("Session creation allows all registered Agent identities without internal flags", async () => {
+  const created: string[] = [];
+  const registry = {get:(agentId?:string) => agentId && ["main","proposal-agent","creator-agent","task-worker"].includes(agentId) ? {id:agentId} : undefined};
+  const sessions = {create:async (definition:{id:string},userId:string)=>{assert.equal(userId,"owner");created.push(definition.id);return {id:randomUUID(),agentId:definition.id};}};
+  const app = createSessionRoutes(registry as never,sessions as never);
+  for (const agentId of ["main","proposal-agent","creator-agent","task-worker"]) {
+    const response = await runWithRequestPrincipal({userId:"owner",source:"user"}, () => app.request("/sessions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({agentId})}));
+    assert.equal(response.status,201);
+  }
+  assert.deepEqual(created,["main","proposal-agent","creator-agent","task-worker"]);
 });

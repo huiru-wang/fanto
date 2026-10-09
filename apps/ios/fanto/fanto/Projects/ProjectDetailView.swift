@@ -112,6 +112,7 @@ struct ProjectDetailView: View {
             if let sessionID = displayedProject.sessionID {
                 NavigationStack {
                     ProjectSessionConversation(
+                        projectID: displayedProject.id,
                         sessionID: sessionID,
                         status: displayedProject.status,
                         onUpdated: { Task { await load() } }
@@ -177,6 +178,7 @@ struct ProjectDetailView: View {
 }
 
 private struct ProjectSessionConversation: View {
+    let projectID: String
     let sessionID: String
     let status: ProjectStatus
     let onUpdated: () -> Void
@@ -333,7 +335,7 @@ private struct ProjectSessionConversation: View {
         errorText = nil
         do {
             draft = ""
-            try await AgentAPIClient.shared.stream(sessionID: sessionID, message: message, agentID: "creator-agent") { event in
+            try await AgentAPIClient.shared.stream(sessionID: sessionID, message: message, metadata: StreamMetadata(projectID: projectID)) { event in
                 Task { @MainActor in
                     switch event {
                     case let .delta(text): liveText += text

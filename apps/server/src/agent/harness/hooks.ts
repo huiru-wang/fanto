@@ -17,6 +17,9 @@ export function installHarnessHooks(
   });
   harness.hooks.on("before_tool", ({ toolName, args }, context) => {
     const run = createRunContext.read(context);
+    if ([...planRequiredTools, "read", "task_plan_manage"].includes(toolName) && !run.taskAuthorized) {
+      return { block: { reason: "TASK_AUTHORITY_REQUIRED", terminate: true } };
+    }
     if (run.task && planRequiredTools.has(toolName) && !run.taskPlanReady) {
       return { block: { reason: "开始制作或交付结果前，必须先调用 task_plan_manage(action=create) 保存用户可读的执行计划。" } };
     }

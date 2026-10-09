@@ -10,8 +10,9 @@ import type { DeepSeekWebSearchClient, WebSearchResult } from "./web/deepseek-we
 
 export type AgentRequestContext = {
   userId: string;
-  creative?: CreativeContext["creative"];
   projectId?: string;
+  recordId?: string;
+  recordVersion?: number;
   traceId?: string;
   signal?: AbortSignal;
   sessionId?: string;
@@ -31,6 +32,7 @@ export type AgentBusinessServices = {
   creativeContext?(context: AgentRequestContext): ReturnType<CreativeService["context"]>;
   readProject?(context: AgentRequestContext, input: Parameters<CreativeService["readProject"]>[1]): ReturnType<CreativeService["readProject"]>;
   createProposal?(context: AgentRequestContext, input: CreateProposalInput): ReturnType<CreativeService["createProposal"]>;
+  getTaskExecution(context: AgentRequestContext, taskId: string, runId: string): Promise<{ task: NonNullable<Awaited<ReturnType<TaskService["find"]>>>; run: NonNullable<Awaited<ReturnType<TaskService["findRun"]>>> }>;
   generateImage?(context: AgentRequestContext, input: ImageInput): ReturnType<CreativeService["generateImage"]>;
   reviewImage?(context: AgentRequestContext, input: {mediaId: string; brief: string; referenceMediaIds?: string[]}): ReturnType<CreativeService["reviewImage"]>;
   manageProject?(context: AgentRequestContext, input: ProjectManageInput): ReturnType<CreativeService["projectManage"]>;
@@ -78,7 +80,7 @@ export function createAgentBusinessServices(services: {
     reviewImage: (context, input) => creative().reviewImage(context, input),
     manageProject: (context, input) => creative().projectManage(context, input),
     async readRecords(context, input) {
-      if (context.creative) return withRunAbort(context, () => creative().readRecords(context, input));
+      if (context.recordId || context.projectId) return withRunAbort(context, () => creative().readRecords(context, input));
       const recordIds = input.recordIds
         ?? (await withRunAbort(context, () => services.records.search(context.userId, input.query!, 3))).map(result => result.recordId);
       return withRunAbort(context, () => services.records.findMany(context.userId, recordIds));
@@ -111,6 +113,14 @@ export function createAgentBusinessServices(services: {
       const task = await withRunAbort(context, () => services.tasks.update(context.userId, taskId, input, policy));
       if (!task) throw new Error("Task could not be updated");
       return task;
+    },
+    async getTaskExecution(context, taskId, runId) {
+      return withRunAbort(context, async () => {
+        const task = await services.tasks.find(context.userId, taskId);
+        const run = await services.tasks.findRun(context.userId, taskId, runId);
+        if (!task || !run) throw new Error("TASK_AUTHORITY_REQUIRED");
+        return { task, run };
+      });
     },
     async getTask(context, taskId) {
       const task = await withRunAbort(context, () => services.tasks.find(context.userId, taskId));

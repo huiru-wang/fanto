@@ -113,7 +113,7 @@ export function createApp(services: ServerServices) {
   if (services.agent) {
     app.use("/api/agent/*", bodyLimit({ maxSize: 64 * 1024 }));
     app.route("/api/agent", createSessionRoutes(services.agent.registry, services.agent.sessions, services.events));
-    app.route("/api/agent", createAgentRoutes(services.agent.registry, services.agent.sessions, projectService ?? undefined));
+    app.route("/api/agent", createAgentRoutes(services.agent.registry, services.agent.sessions));
   }
   app.get("/api/media/:id/meta", async c => {
     const result = await mediaService.readyMetadata(requireUserId(c.req.raw), c.req.param("id"));

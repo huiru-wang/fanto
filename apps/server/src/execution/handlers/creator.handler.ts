@@ -14,7 +14,7 @@ export class CreatorHandler {
     if(project.sessionId)return project.sessionId;
     const definition=this.agent.registry.get("creator-agent");
     if(!definition)throw Error("CREATOR_AGENT_UNAVAILABLE");
-    const session=await this.agent.sessions.create(definition,userId,{internal:true});
+    const session=await this.agent.sessions.create(definition,userId);
     let bound:string|null=null;
     try {
       bound=await this.projects.bindSession(userId,projectId,session.id);
@@ -34,7 +34,7 @@ export class CreatorHandler {
       const initial=await this.projects.find(userId,projectId);
       if(!initial)throw Error("PROJECT_NOT_FOUND");
       const sessionId=await this.ensureSession(userId,projectId);
-      const session=await this.agent.sessions.acquire(definition,sessionId,userId,{internal:true});
+      const session=await this.agent.sessions.acquire(definition,sessionId,userId);
       let handedOff=false;
       try {
         const prior=await session.session.findEntries({order:"desc",limit:2000},TODO_CONTEXT);

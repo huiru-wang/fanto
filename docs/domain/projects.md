@@ -20,6 +20,6 @@ Project `PATCH` 和 Agent `project_manage` 使用 expectedVersion 乐观并发�
 
 ## 对话与执行信息
 
-Project 保存最新成果，不保存工具 trace、独立 creator run、进度/图片槽位。Creator 长期 Session 中的助手消息和 Tool Results 是过程的唯一事实来源。通用 `GET /api/agent/sessions/:id/history` 可读取历史；`GET .../events` 只订阅进行中的事件；`POST /api/agent/stream` 发送后续 Creator 消息，Server 根据 userId + sessionId 解析所属 Project，校验 `completed/failed` 状态并注入上下文。Proposal 和 Project 的 sessionId 语义不同，不允许混用。
+Project 保存最新成果，不保存工具 trace、独立 creator run、进度/图片槽位。Creator 长期 Session 中的助手消息和 Tool Results 是过程的唯一事实来源。通用 `GET /api/agent/sessions/:id/history` 可读取历史；`GET .../events` 只订阅进行中的事件；`POST /api/agent/stream` 发送后续 Creator 消息，客户端携带 metadata.projectId，Server 从 Session 解析 Agent 身份，Project Tool 校验 userId + projectId + sessionId 绑定及归档写保护。正常续聊不修改 Project.status；failed 项目经 Creator 保存实际作品成功恢复 completed。Proposal 和 Project 的 sessionId 语义不同，不允许混用。
 
 详见 [创作执行](../architecture/creative-runtime.md)、[HTTP API](../api/http-api.md#proposal--project)、[Media](media.md)。

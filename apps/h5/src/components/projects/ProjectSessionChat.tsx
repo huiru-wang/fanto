@@ -4,11 +4,11 @@ import { fetchAgentHistory, streamAgentMessage, watchSessionEvents, type AgentHi
 import type { ProjectStatus } from "../../api/projects";
 import { ChatMessageItem, type ChatMessage } from "../../pages/ChatPage";
 
-type Props = { sessionId: string; status: ProjectStatus; onUpdated: () => void };
+type Props = { sessionId: string; projectId: string; status: ProjectStatus; onUpdated: () => void };
 const newId = () => crypto.randomUUID();
 const hideInternalIds = (text: string) => text.replace(/(?:mediaId|projectId|sessionId)\s*(?:是|为|[:=])\s*`?[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}`?/gi, "素材已确认");
 const displayedBlocks = (blocks: AgentMessageBlock[]) => blocks.map(block => block.type === "text" ? { ...block, content: hideInternalIds(block.content) } : block);
-export function ProjectSessionChat({ sessionId, status, onUpdated }: Props) {
+export function ProjectSessionChat({ sessionId, projectId, status, onUpdated }: Props) {
   const [messages, setMessages] = useState<AgentHistoryMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -83,7 +83,7 @@ export function ProjectSessionChat({ sessionId, status, onUpdated }: Props) {
     setDraft("");
     setMessages(current => [...current, { id: newId(), role: "user", blocks: [{ type: "text", content: message }] }]);
     try {
-      await streamAgentMessage(sessionId, message, apply, undefined, "creator-agent");
+      await streamAgentMessage(sessionId, message, apply, undefined, { projectId });
     } catch (e) {
       setError(e instanceof Error ? e.message : "创作未完成，请检查历史后再试");
     } finally {

@@ -40,7 +40,7 @@ const manage = Type.Object({
 }, {additionalProperties:false});
 function request(context: Context) {
   const r = createRunContext.read(context);
-  return { userId: r.userId, sessionId: r.sessionId, projectId: r.projectId, creative: r.creative, signal: context.abortSignal };
+  return { userId: r.userId, sessionId: r.sessionId, projectId: r.projectId, recordId: r.recordId, recordVersion: r.recordVersion, signal: context.abortSignal };
 }
 function result(details: unknown) { return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details }; }
 const quiet = { visible: false } as const;

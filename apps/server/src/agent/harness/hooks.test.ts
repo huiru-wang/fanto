@@ -37,12 +37,25 @@ test("Task Worker cannot write, execute bash, or deliver before saving a plan", 
     runId: "run", userId: "user", query: "task", slots: {}, sessionId: "session", recentMessages: [],
     task: { taskId: "task", taskRunId: "task-run" },
   });
+  createRunContext.read(withoutPlan).taskAuthorized = true;
   const blocked = await beforeTool({ toolName: "write", args: { path: "result.html" } }, withoutPlan) as any;
   assert.match(blocked.block.reason, /task_plan_manage/);
 
   const withPlan = createRunContext({
     runId: "run", userId: "user", query: "task", slots: {}, sessionId: "session", recentMessages: [],
-    task: { taskId: "task", taskRunId: "task-run" }, taskPlanReady: true,
+    task: { taskId: "task", taskRunId: "task-run" },
   });
+  createRunContext.read(withPlan).taskAuthorized = true;
+  createRunContext.read(withPlan).taskPlanReady = true;
   assert.equal(await beforeTool({ toolName: "write", args: { path: "result.html" } }, withPlan), undefined);
+});
+
+
+test("Untrusted Task Worker cannot invoke workspace tools even without a TaskRun", async () => {
+  const beforeTool = harnessWithHandlers().get("before_tool")!;
+  const context = createRunContext({ runId: "r", userId: "u", query: "q", slots: {}, sessionId: "s", recentMessages: [] });
+  for (const toolName of ["read", "write", "edit", "bash", "task_plan_manage", "deliver_task_result"]) {
+    const result = await beforeTool({ toolName, args: { path: "example.txt" } }, context) as any;
+    assert.equal(result.block.reason, "TASK_AUTHORITY_REQUIRED");
+  }
 });

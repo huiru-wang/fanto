@@ -17,20 +17,31 @@ export class CreativeService {
     private readonly imageUnderstanding?: ImageUnderstanding) {}
 
   private async authorizedProject(context: CreativeContext) {
-    if (!context.projectId || !context.sessionId) throw new CreativeError("PROJECT_CONTEXT_REQUIRED");
+    if (context.recordId || context.recordVersion !== undefined || !context.projectId || !context.sessionId) throw new CreativeError("PROJECT_CONTEXT_REQUIRED");
     await this.activeUser(context.userId);
     const project = await this.projects.find(context.userId, context.projectId);
     if (!project || project.sessionId !== context.sessionId) throw new CreativeError("PROJECT_NOT_AUTHORIZED");
+    if (project.status === "archived") throw new CreativeError("PROJECT_ARCHIVED");
     context.signal?.throwIfAborted();
     return project;
   }
 
+  private async authorizedSourceRecord(context: CreativeContext) {
+    if (context.projectId || !context.recordId || !Number.isSafeInteger(context.recordVersion) || (context.recordVersion ?? 0) < 1 || !context.sessionId) {
+      throw new CreativeError("CREATIVE_AUTHORITY_REQUIRED");
+    }
+    await this.activeUser(context.userId);
+    const record = await this.records.find(context.userId, context.recordId);
+    if (!record || record.version !== context.recordVersion || record.status !== "processed") throw new CreativeError("SOURCE_RECORD_CHANGED");
+    context.signal?.throwIfAborted();
+    return record;
+  }
+
   async context(context: CreativeContext) {
-    if (context.creative?.role === "proposal") {
-      const record=await this.records.find(context.userId,context.creative.recordId);
-      if(!record||record.version!==context.creative.recordVersion||record.status!=="processed")throw new CreativeError("SOURCE_RECORD_CHANGED");
+    if (context.recordId !== undefined || context.recordVersion !== undefined) {
+      const record = await this.authorizedSourceRecord(context);
       const candidateProjects = await this.projects.candidates(context.userId, record.content);
-      return {role:"proposal",projectId:null,sourceRecord:{recordId:record.id,version:record.version,eventAt:record.eventAt,content:record.content},
+      return {projectId:null,sourceRecord:{recordId:record.id,version:record.version,eventAt:record.eventAt,content:record.content},
         candidateProjects };
     }
     const project = await this.authorizedProject(context);
@@ -39,21 +50,24 @@ export class CreativeService {
 
   async readRecords(context: CreativeContext, input: { recordIds?: string[]; query?: string }) {
     await this.activeUser(context.userId);
-    if (context.creative?.role !== "proposal") await this.authorizedProject(context);
+    if (context.recordId !== undefined || context.recordVersion !== undefined) await this.authorizedSourceRecord(context);
+    else await this.authorizedProject(context);
     const ids = input.recordIds ?? (await this.records.search(context.userId, input.query ?? "", 3)).map(r => r.recordId);
     return this.records.findMany(context.userId, ids);
   }
 
   async readProject(context: CreativeContext, input: { action: "search" | "get"; projectId?: string; query?: string }) {
     if (input.action === "search") {
-      if (context.creative?.role !== "proposal") await this.authorizedProject(context);
+      if (context.recordId !== undefined || context.recordVersion !== undefined) await this.authorizedSourceRecord(context);
+      else await this.authorizedProject(context);
       const result = await this.projects.search(context.userId, { query: input.query ?? "" });
       if (result.kind === "error") throw new CreativeError(result.code);
       return result.data;
     }
     const id = input.projectId ?? context.projectId;
     if (!id) throw new CreativeError("INVALID_INPUT");
-    if (context.creative?.role !== "proposal") {
+    if (context.recordId !== undefined || context.recordVersion !== undefined) await this.authorizedSourceRecord(context);
+    else {
       const bound = await this.authorizedProject(context);
       if (bound.projectId !== id) throw new CreativeError("PROJECT_NOT_AUTHORIZED");
     }
@@ -63,10 +77,9 @@ export class CreativeService {
   }
 
   async createProposal(context: CreativeContext, input: CreateProposalInput) {
-    if (context.creative?.role !== "proposal" || !context.sessionId) throw new CreativeError("PROPOSAL_NOT_AUTHORIZED");
-    if (!input.recordIds.includes(context.creative.recordId)) throw new CreativeError("REFERENCE_RECORDS_UNAVAILABLE");
-    const record = await this.records.find(context.userId, context.creative.recordId);
-    if (!record || record.version !== context.creative.recordVersion || record.status !== "processed") throw new CreativeError("SOURCE_RECORD_CHANGED");
+    if (!context.recordId) throw new CreativeError("PROPOSAL_NOT_AUTHORIZED");
+    if (!input.recordIds.includes(context.recordId)) throw new CreativeError("REFERENCE_RECORDS_UNAVAILABLE");
+    await this.authorizedSourceRecord(context);
     const result = await this.proposals.create(context.userId, input, { sessionId: context.sessionId });
     if (result.kind === "error") throw new CreativeError(result.code);
     return { proposalId: result.data.proposalId, type: result.data.type, status: result.data.status, title: result.data.title };
@@ -98,7 +111,7 @@ export class CreativeService {
           throw new CreativeError("IMAGE_REVIEW_REQUIRED");
       }
     }
-    const result = await this.projects.update(context.userId, project.projectId, expectedVersion, inputPatch);
+    const result = await this.projects.update(context.userId, project.projectId, expectedVersion, inputPatch, { completeFailedOnSave: true });
     if (result.kind === "error") throw new CreativeError(result.code);
     return result.data;
   }

@@ -8,7 +8,7 @@ iOS 采用原生 SwiftUI Project 列表与详情：Proposal 接受只返回 `pro
 
 `Project.status` 使用 `queued/running/completed/failed/archived`：queued 表示等待执行，**与 Session 是否存在/绑定无关**。详情优先显示当前有效作品，queued/running 时继续保留上次内容；completed/failed 且有 Session 时可以继续创作，queued/running/archived 不允许发送新消息；只有 completed/failed 能归档。
 
-会话统一按 `sessionId` 读取 `GET /api/agent/sessions/:sessionId/history` 和订阅 `GET /api/agent/sessions/:sessionId/events`（JWT + `URLSession.bytes(for:)`）；继续创作通过统一 `POST /api/agent/stream` 传入 `creator-agent` 和当前 sessionId，直接消费流式响应。断线后补读 History、不自动重发消息；只读订阅失败不阻止 completed/failed Project 主动发送。Project Session 复用 Main Chat 原生消息气泡、Markdown、媒体和 Tool Presentation，按 toolCallId 更新执行状态，不把工具内部 ID 当成自然语言展示。列表有活动 Project 时短间隔刷新；详情 queued/running 时每约 5 秒刷新，并在 App 进入后台时暂停。
+会话统一按 `sessionId` 读取 `GET /api/agent/sessions/:sessionId/history` 和订阅 `GET /api/agent/sessions/:sessionId/events`（JWT + `URLSession.bytes(for:)`）；继续创作通过统一 `POST /api/agent/stream` 传入当前 sessionId 和 `metadata.projectId`，不发送 agentId，直接消费流式响应。断线后补读 History、不自动重发消息；只读订阅失败不阻止 completed/failed Project 主动发送。Project Session 复用 Main Chat 原生消息气泡、Markdown、媒体和 Tool Presentation，按 toolCallId 更新执行状态，不把工具内部 ID 当成自然语言展示。列表有活动 Project 时短间隔刷新；详情 queued/running 时每约 5 秒刷新，并在 App 进入后台时暂停。
 
 TaskRun.status 增加 queued（等待执行），与 running（正在执行）区分。Project 和 Task 不共享状态枚举。
 

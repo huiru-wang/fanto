@@ -231,7 +231,7 @@ function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }
         {error && <div className="project-form-error" role="alert">{error} <button type="button" onClick={() => void load()}>重新加载</button></div>}
       </div>
       {project.sessionId && <div className="project-session-float">
-        {showChat && <div className="project-session-popover"><ProjectSessionChat sessionId={project.sessionId} status={project.status} onUpdated={() => void load()} /></div>}
+        {showChat && <div className="project-session-popover"><ProjectSessionChat sessionId={project.sessionId} projectId={project.projectId} status={project.status} onUpdated={() => void load()} /></div>}
         <button type="button" className="project-session-launch" onClick={() => setShowChat(!showChat)}><MessageCircle size={19}/>{showChat ? "收起对话" : project.status === "completed" || project.status === "failed" ? "继续创作" : "查看创作过程"}</button>
       </div>}
       <div className="project-sheet-bottom project-sheet-footer">

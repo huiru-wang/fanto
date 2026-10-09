@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { imageInputSchema, projectManageSchema, isInternalAgent } from "./creative-model.js";
+import { imageInputSchema, projectManageSchema } from "./creative-model.js";
 
 test("image_generate accepts multiple references and produces one image per call without run state", () => {
   const input = {prompt:"保留原始场景，绘制新风格",referenceMediaIds:[
@@ -16,8 +16,6 @@ test("project_manage updates goal and complete content independently", () => {
     goal:{objective:"写一首诗"},content:"# 新作品"};
   assert.equal(projectManageSchema.safeParse(input).success,true);
   assert.equal(projectManageSchema.safeParse({...input,creationRunId:"unused"}).success,false);
-  assert.equal(isInternalAgent("creator-agent"),true);
-  assert.equal(isInternalAgent("main"),false);
 });
 
 import { CreativeService } from "./creative-service.js";
@@ -40,4 +38,33 @@ test("new generated media cannot be published without an actual image review", a
   reviewedAt="2026-10-09T00:00:00Z";
   await service.projectManage(context,input);
   assert.equal(updated,1);
+});
+
+
+test("Archived Project and cross-session Project are not authorized for tools", async () => {
+  const projectId="11111111-1111-4111-8111-111111111111";
+  let status = "archived";
+  const service = new CreativeService({} as never, {} as never,
+    { find: async () => ({ projectId, sessionId: "session-1", status, content: "", version: 1 }) } as never,
+    {} as never, {} as never, {} as never, async () => ({}));
+  const context = {userId:"user-1",sessionId:"session-1",projectId};
+  await assert.rejects(service.context(context), /PROJECT_ARCHIVED/);
+  status = "completed";
+  await assert.rejects(service.context({...context,sessionId:"session-2"}), /PROJECT_NOT_AUTHORIZED/);
+  await assert.rejects(service.context({...context,recordId:"record-1",recordVersion:1}), /PROJECT_CONTEXT_REQUIRED|CREATIVE_AUTHORITY_REQUIRED/);
+});
+
+test("CreativeService restores failed Project only through an authorized successful Creator save", async () => {
+  const projectId="11111111-1111-4111-8111-111111111111";
+  const context={userId:"user-1",sessionId:"session-1",projectId};
+  let completeFailedOnSave = false;
+  const service = new CreativeService({} as never, {} as never,
+    {find:async()=>({projectId,sessionId:context.sessionId,status:"failed",version:2,content:"# 旧内容"}),
+      update:async (_userId:string,_projectId:string,_version:number,_patch:unknown, options:{completeFailedOnSave?:boolean})=>{
+        completeFailedOnSave = options.completeFailedOnSave === true;
+        return {kind:"ok",data:{projectId,status:"completed"}};
+      }} as never,
+    {} as never, {findOwnedByIds:async()=>[]} as never, {} as never,async()=>({}));
+  await service.projectManage(context,{action:"update",projectId,expectedVersion:2,content:"# 已恢复"});
+  assert.equal(completeFailedOnSave,true);
 });

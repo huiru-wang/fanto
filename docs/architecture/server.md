@@ -50,7 +50,7 @@ postprocess 按 `userId/recordId/version/runId` 认领与写回；单个图片�
 
 ## Project / Agent 执行
 
-Proposal accept 在事务中确定所选 Idea，创建或更新 Project 为 `queued`，提交后向 AgentExecutionQueue 发布 Creator 消息。CreatorHandler 认领 `queued→running`，创建/复用绑定 Session，执行并将 Project 状态设置为 `completed` 或 `failed`。后续用户消息直接走通用 `/api/agent/stream`，按 userId + sessionId 解析 Project，再校验状态和权限并注入可信 projectId；不再有 Project 专属 POST 消息路由。更多语义见 [创作执行](creative-runtime.md)。
+Proposal accept 在事务中确定所选 Idea，创建或更新 Project 为 `queued`，提交后向 AgentExecutionQueue 发布 Creator 消息。CreatorHandler 认领 `queued→running`，创建/复用绑定 Session，执行并将 Project 状态设置为 `completed` 或 `failed`。后续用户消息直接走通用 `/api/agent/stream`，请求 metadata 可包含 projectId；Creator Tool 通过 userId、projectId 和 Session 绑定校验权限。Stream 不更新 Project 状态；失败作品经授权 Creator 保存成功可恢复 completed；不再有 Project 专属 POST 消息路由。更多语义见 [创作执行](creative-runtime.md)。
 
 ## 数据库与可靠性
 

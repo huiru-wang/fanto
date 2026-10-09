@@ -31,13 +31,13 @@ Tool 和 Context Provider 通过 `agent/business-services.ts` 调用领域 Servi
 
 ## Session
 
-通过 `POST /api/agent/sessions` 创建面向用户的 Main Session；Pi SQLite 中的 `fanto.session_owner` custom entry 绑定用户、Agent 与 revision。会话工作区 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。同 Session 的 `reserve` 防止并发执行；历史按用户归属读取。内部 Proposal / Task / Creator Session 由服务端创建；公共 Session 创建不能任意指定内部 Agent。
+通过 `POST /api/agent/sessions` 创建任意已配置 Agent 的 Session；Pi SQLite 中的 `fanto.session_owner` custom entry 绑定用户、Agent 与 revision。会话工作区 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。同 Session 的 `reserve` 防止并发执行；历史按用户归属读取。后台 Proposal / Task / Creator Session 仍由服务端创建，公共 Session 可以创建对应 Agent 的无业务授权 Session。
 
-空闲 Session 可以应用更新后的 Agent definition revision，但不能以请求中的 agentId 绕过内部 Agent 权限。Creator 对外继续创作必须满足：存在属于当前用户且绑定该 sessionId 的 Project、Project `completed/failed`、服务端注入 projectId。Proposal 和 Task Worker 不允许由用户直接 Stream 执行。
+空闲 Session 可以应用更新后的 Agent definition revision，但 `agentId`、`userId` 一经绑定不可改变。Stream 从当前用户的 Session 解析 Agent ID；Creator 仅在 Project↔Session 绑定和归档写保护校验通过后获得 Project 工具权限。Proposal 缺可信 Record 上下文、Task Worker 缺正在运行且绑定自身 Session 的 TaskRun 时，必需 Provider 在模型调用前拒绝执行。
 
 ## 唯一对话 HTTP 协议
 
-- `POST /api/agent/stream`：`{agentId?,sessionId,message}`，POST 响应 SSE；用于 Main 和继续创作的 Creator。断开时取消该请求驱动 Run；SSE 按阶段发送 `turn_start/message_start/message_end/delta/tool_start/tool_end`，结束为 `done/error`。
+- `POST /api/agent/stream`：`{sessionId,message,metadata?:{projectId?}}`，POST 响应 SSE；Agent 身份由 Session 解析，外部 metadata 仅允许 Project ID。断开时取消该请求驱动 Run；SSE 按阶段发送 `turn_start/message_start/message_end/delta/tool_start/tool_end`，结束为 `done/error`。
 - `GET /api/agent/sessions/:sessionId/history?cursor=&limit=`：按 Session 所有权读取，返回产品化 `messages[].blocks`，包含文本、可见 Tool 活动、媒体、Task 卡及澄清表单信息；内部 Session 也可按用户归属读取。
 - `GET /api/agent/sessions/:sessionId/events`：只读订阅既有 Session 的执行事件。适用于后台 Creator 首次创作；不发起 Run，不缓存和回放消息。断开后查询 History 补齐事实。
 

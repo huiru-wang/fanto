@@ -147,9 +147,9 @@ Project 与 Session 分别管理：`projects.status` 表示任务是否在排队
 | --- | --- | --- |
 | GET | `/api/agent/sessions/:sessionId/history?limit=&cursor=` | 通用 Session 历史，按 Session userId 校验，无 Creator 专属处理 |
 | GET | `/api/agent/sessions/:sessionId/events` | 订阅该 Session 的通用 SSE（不缓存和回放；断线后重拉 History） |
-| POST | `/api/agent/stream` | 统一多轮会话 SSE：传入 `agentId`、`sessionId`、`message`；Creator Session 由服务端解析绑定 Project 并执行权限与状态校验 |
+| POST | `/api/agent/stream` | 统一多轮会话 SSE：传入 `sessionId`、`message`、可选 `metadata.projectId`；从 Session 解析 Agent，Creative Tool 层验证项目权限 |
 
-内部 Proposal/Task/Creator Session 都可按归属读取历史。公共 Session 创建仍禁止内部 Agent；公共 Stream 仅允许已经绑定同用户、处于 completed/failed 状态的 Creator Project Session，禁止直接执行 Proposal/Task Worker。Project 专属消息提交、启动、History、Events 和 Stream 路由已移除；H5/iOS 均已适配通用 Session 协议。
+所有 Agent 都允许公开创建 Session，但 Proposal、Creator、Task Worker 无业务授权时不得执行模型或专用工具。Project 续聊不修改业务状态；Creator 保存非空作品成功可将 failed 恢复 completed。Project 专属消息提交、启动、History、Events 和 Stream 路由已移除；H5/iOS 均已适配通用 Session 协议。
 
 ## 上传图片
 
@@ -226,11 +226,11 @@ X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC
 | 方法 | 路径 | 请求 | 成功响应 |
 | --- | --- | --- | --- |
 | POST | `/api/agent/sessions` | `{ agentId? }` | `201`，返回 `sessionId` 与 `agentId` |
-| POST | `/api/agent/stream` | `{ agentId?, sessionId, message }` | `200`，SSE 事件流 |
+| POST | `/api/agent/stream` | `{ sessionId, message, metadata?: { projectId?: uuid } }` | `200`，SSE 事件流 |
 | GET | `/api/agent/sessions/:sessionId/history?cursor=&limit=` | 无请求体 | `200`，倒序历史页，包含 `messages` 投影 |
 | GET | `/api/agent/sessions/:sessionId/events` | 无请求体 | `200`，只读 SSE 订阅，不发起执行或重放 |
 
-先创建 Session；`stream` 必须使用已有的 `sessionId`。`agentId` 可省略，省略时固定使用 `main`。Session 固定绑定 `userId` 和工作区；公共接口不能创建内部 Agent Session。Creator Stream 通过当前 userId 与 sessionId 反查所属 Project、校验 completed/failed 后注入 projectId，再执行并更新 Project 状态；不得仅凭请求指定内部 agentId 来获得业务权限。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<userId>/<sessionId>`。TaskRun 也使用同样的两层用户隔离路径，并创建独立 Session。
+先创建 Session；`stream` 必须使用已有的 `sessionId`。创建 Session 时 `agentId` 可省略（默认 `main`）。Stream 不接受 `agentId`，只从 Session 所有权绑定解析其类型；所有 Agent 都可公开创建 Session，但 Proposal/Task Worker 需要服务端注入可信 Record/TaskRun 才能执行。Creator 的 `metadata.projectId` 需经过当前用户及 Project↔Session 绑定校验，普通续聊不更新 Project 执行状态。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<userId>/<sessionId>`。TaskRun 也使用同样的两层用户隔离路径，并创建独立 Session。
 
 ```sh
 export ACCESS_TOKEN='替换为服务端 ACCESS_TOKEN'
@@ -250,10 +250,10 @@ curl -N http://127.0.0.1:3000/api/agent/stream \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'X-Trace-Id: trace_002' \
   -H 'Content-Type: application/json' \
-  -d "{\"agentId\":\"main\",\"sessionId\":\"$SESSION_ID\",\"message\":\"你好\"}"
+  -d "{\"sessionId\":\"$SESSION_ID\",\"message\":\"你好\"}"
 ```
 
-请求响应 SSE 以 `start` 开始，期间可发送 `turn_start`、`message_start`、`message_end`、`tool_start`（`toolCallId`、`toolName`）、`tool_end`（再加 `status: succeeded | failed`）和零到多个 `delta`，最终为 `done` 或 `error`。工具事件以 `presentation.visible/displayContent/animation` 控制可见性与产品化文案，客户端只呈现声明为可见的活动状态，不展示原始工具参数、技术 ID、内部错误或 reasoning。当前有三个产品化白名单例外：成功的 `present_media` 返回稳定媒体 metadata；成功的 `create_task` 返回 `kind=task_created` 与 Task Card 所需摘要；成功的 `collect_user_input` 返回 `kind=user_input_requested`、`interactionId` 和结构化问题，H5 渲染为原生表单。`collect_user_input` 成功后当前 Agent Run 立即结束，用户提交答案后以同一 Session 的下一条 User Message 继续；回答消息带内部 interaction 标记供历史恢复识别，History API 将其投影为 `user_input_response`，使 H5 渲染为“用户澄清”卡片而不展示内部标记。其他 Tool Result 仍不对客户端公开。单次请求最长 120 秒；同一 Session 已在运行时返回 `409`。
+请求响应 SSE 以 `start` 开始，期间可发送 `turn_start`、`message_start`、`message_end`、`tool_start`（`toolCallId`、`toolName`）、`tool_end`（再加 `status: succeeded | failed`）和零到多个 `delta`，最终为 `done` 或 `error`。工具事件以 `presentation.visible/displayContent/animation` 控制可见性与产品化文案，客户端只呈现声明为可见的活动状态，不展示原始工具参数、技术 ID、内部错误或 reasoning。当前有三个产品化白名单例外：成功的 `present_media` 返回稳定媒体 metadata；成功的 `create_task` 返回 `kind=task_created` 与 Task Card 所需摘要；成功的 `collect_user_input` 返回 `kind=user_input_requested`、`interactionId` 和结构化问题，H5 渲染为原生表单。`collect_user_input` 成功后当前 Agent Run 立即结束，用户提交答案后以同一 Session 的下一条 User Message 继续；回答消息带内部 interaction 标记供历史恢复识别，History API 将其投影为 `user_input_response`，使 H5 渲染为“用户澄清”卡片而不展示内部标记。其他 Tool Result 仍不对客户端公开。单次 Stream 请求最长 10 分钟（模型请求另有独立限制）；同一 Session 已在运行时返回 `409`。
 
 历史接口按 `seq` 从新到旧返回。`cursor` 填上页最后一项的 `seq`；`limit` 默认 50，范围为 1–100。`compaction` 和内部 `fanto.*` 条目不对外返回，敏感字段会被脱敏：
 

@@ -1,35 +1,38 @@
 import type { Context } from "@earendil-works/pi-agent-core";
-import type { Task, TaskRun } from "../../../domain/tasks/index.js";
 import type { AgentBusinessServices } from "../../business-services.js";
 import { createRunContext } from "../run-context.js";
 
 export class TaskExecutionContextProvider {
   readonly slot = "task_execution_context";
+  readonly required = true;
 
-  constructor(private readonly client: Pick<AgentBusinessServices, "getTask">) {}
+  constructor(private readonly client: Pick<AgentBusinessServices, "getTaskExecution">) {}
 
   async build(context: Context): Promise<{ slot: string; content: string }> {
     const data = createRunContext.read(context);
-    if (!data.task) return { slot: this.slot, content: "" };
-    const loaded = await this.client.getTask({
+    if (!data.task) throw new Error("TASK_AUTHORITY_REQUIRED");
+    const { task, run } = await this.client.getTaskExecution({
       userId: data.userId,
       traceId: data.traceId,
       signal: context.abortSignal,
       sessionId: data.sessionId,
       timeZone: data.timeZone,
       task: data.task,
-    }, data.task.taskId) as { task: Task; runs: TaskRun[] };
-    const run = loaded.runs.find(item => item.runId === data.task!.taskRunId);
-    if (!run) throw new Error("Current TaskRun is unavailable");
-    const filename = loaded.task.output.format === "html" ? "result.html" : loaded.task.output.format === "markdown" ? "result.md" : "result.txt";
+    }, data.task.taskId, data.task.taskRunId);
+    if (run.taskId !== task.taskId || run.workerSessionId !== data.sessionId || run.status !== "running") {
+      throw new Error("TASK_AUTHORITY_REQUIRED");
+    }
+    data.taskAuthorized = true;
+    data.taskPlanReady = Boolean(run.plan);
+    const filename = task.output.format === "html" ? "result.html" : task.output.format === "markdown" ? "result.md" : "result.txt";
     const lines = [
-      `Output format: ${loaded.task.output.format}`,
+      `Output format: ${task.output.format}`,
       `Primary result file: ${filename}`,
       `Scheduled at: ${run.scheduledAt}`,
       `Time zone: ${data.timeZone ?? "UTC"}`,
     ];
-    if (loaded.task.references.recordIds.length) {
-      lines.push("Reference Record IDs:", ...loaded.task.references.recordIds.map(id => `- ${id}`));
+    if (task.references.recordIds.length) {
+      lines.push("Reference Record IDs:", ...task.references.recordIds.map(id => `- ${id}`));
     } else {
       lines.push("Reference Record IDs: none");
     }

@@ -82,6 +82,12 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
       error(await projects.update(userId, projectId, p.version, { coverMediaId: uploading }), "MEDIA_NOT_READY");
       assert.equal((await request(`projects/${projectId}`, "PATCH", { expectedVersion: p.version, content: "中".repeat(700000) })).status, 413);
       const cleared = data(await projects.update(userId, projectId, p.version, { content: "", coverMediaId: null })); assert.equal(cleared.content, ""); assert.equal(cleared.coverMediaId, null);
+      // A normal Project update does not change failed state; an authorized Creator publication does.
+      await db.updateTable("projects").set({status:"failed"}).where("project_id","=",projectId).execute();
+      const ordinary = data(await projects.update(userId, projectId, cleared.version, {content:"# 草稿"}));
+      assert.equal(ordinary.status,"failed");
+      const restored = data(await projects.update(userId, projectId, ordinary.version, {content:"# 完整作品"}, {completeFailedOnSave:true}));
+      assert.equal(restored.status,"completed");
     });
     await t.test("extend, deletions, missing references, reject and archive", async () => {
       const original = (await projects.find(userId, projectId))!;

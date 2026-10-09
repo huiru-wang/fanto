@@ -9,9 +9,9 @@ export const createSessionSchema = z.object({
 }).strict();
 
 export const streamRequestSchema = z.object({
-  agentId: id.optional(),
   sessionId: z.string().uuid(),
   message: z.string().trim().min(1).max(16_000),
+  metadata: z.object({ projectId: z.string().uuid().optional() }).strict().optional(),
 }).strict();
 export const sessionParamsSchema = z.object({ sessionId: z.string().uuid() });
 export const cursorSchema = z.coerce.number().int().positive().optional();

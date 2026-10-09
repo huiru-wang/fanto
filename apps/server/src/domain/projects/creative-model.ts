@@ -1,7 +1,6 @@
 import { z } from "zod";
-export type CreativeContext = { userId: string; sessionId?: string; projectId?: string; creative?: { role: "proposal"; recordId: string; recordVersion: number }; signal?: AbortSignal };
+export type CreativeContext = { userId: string; sessionId?: string; projectId?: string; recordId?: string; recordVersion?: number; signal?: AbortSignal };
 export class CreativeError extends Error { constructor(readonly code: string) { super(code); } }
-export const isInternalAgent = (id: string) => ["proposal-agent", "creator-agent"].includes(id);
 export const imageInputSchema = z.object({
   prompt: z.string().trim().min(1).max(6000),
   referenceMediaIds: z.array(z.string().uuid()).min(1).max(10),

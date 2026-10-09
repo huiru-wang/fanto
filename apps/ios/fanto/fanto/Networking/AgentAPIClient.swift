@@ -153,8 +153,8 @@ struct AgentAPIClient {
         if !lineBytes.isEmpty { consume(String(decoding: lineBytes, as: UTF8.self)) }
     }
 
-    func stream(sessionID: String, message: String, agentID requestedAgentID: String? = nil, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
-        let body = StreamRequest(agentID: requestedAgentID ?? agentID, sessionID: sessionID, message: message)
+    func stream(sessionID: String, message: String, metadata: StreamMetadata? = nil, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
+        let body = StreamRequest(sessionID: sessionID, message: message, metadata: metadata)
         var request = try await makeRequest(path: "api/agent/stream", method: "POST", body: body)
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
 
@@ -311,15 +311,20 @@ private struct CreateSessionRequest: Encodable {
     enum CodingKeys: String, CodingKey { case agentID = "agentId" }
 }
 
+struct StreamMetadata: Encodable {
+    let projectID: String?
+
+    enum CodingKeys: String, CodingKey { case projectID = "projectId" }
+}
+
 private struct StreamRequest: Encodable {
-    let agentID: String
     let sessionID: String
     let message: String
+    let metadata: StreamMetadata?
 
     enum CodingKeys: String, CodingKey {
-        case agentID = "agentId"
         case sessionID = "sessionId"
-        case message
+        case message, metadata
     }
 }
 

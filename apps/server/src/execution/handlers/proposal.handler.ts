@@ -12,9 +12,9 @@ export class ProposalHandler {
     if(!source || source.version!==version || source.status!=="processed")return;
     const definition=this.agent.registry.get("proposal-agent");
     if(!definition)throw Error("PROPOSAL_AGENT_UNAVAILABLE");
-    const session=await this.agent.sessions.create(definition,userId,{internal:true});
+    const session=await this.agent.sessions.create(definition,userId);
     const output=await this.worker.run(session,"完整理解当前 Record，先核查是否应补充或纠正已有 Project，再判断是否需要新提议。允许对任意生活、职业、情绪、学习、思考等记录做有价值的延续；无实质变化则输出 no_proposal。不要询问用户。",
-      this.timeoutMs,{creative:{role:"proposal",recordId,recordVersion:version}});
+      this.timeoutMs,{recordId,recordVersion:version});
     const created=await this.proposals.findBySession(userId,session.id);
     if(created) {
       logInfo("proposal", "decision", {recordId, sessionId:session.id, decision:created.type, targetProjectId:created.targetProjectId, proposalId:created.proposalId});

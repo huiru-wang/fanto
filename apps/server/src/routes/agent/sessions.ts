@@ -1,4 +1,3 @@
-import { isInternalAgent } from "../../domain/projects/creative-model.js";
 import type { SessionEventBus } from "../../event/session-event-bus.js";
 import { streamSSE } from "hono/streaming";
 import { writeStreamEvent } from "./stream.js";
@@ -18,7 +17,6 @@ export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSess
     const traceId = traceIdSchema.safeParse(c.req.header("x-trace-id"));
     if (!body.success || !traceId.success) return c.json({ error: "agentId or x-trace-id is invalid" }, 400);
     const definition = registry.get(body.data.agentId);
-    if (definition && isInternalAgent(definition.id)) return c.json({ error: "Agent is internal" }, 403);
     if (!definition) return c.json({ error: "Agent not found" }, 404);
     const session = await sessions.create(definition, userId);
     return c.json({ success: true, result: { sessionId: session.id, agentId: session.agentId, createdAt: new Date().toISOString(), traceId: traceId.data } }, 201);

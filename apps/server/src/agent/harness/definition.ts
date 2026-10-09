@@ -113,7 +113,7 @@ export function readAgentDefinitions(
     if (definition.data.tools.includes("deliver_task_result") && !definition.data.task?.enabled) {
       throw new Error(`Agent "${id}" enables deliver_task_result but is not task-enabled`);
     }
-    if (definition.data.tools.some(t => ["project_read", "proposal_create", "image_generate", "image_review", "project_manage"].includes(t)) && !["proposal-agent", "creator-agent"].includes(id)) throw new Error("Creative tools require an internal creative agent");
+    if (definition.data.tools.some(t => ["project_read", "proposal_create", "image_generate", "image_review", "project_manage"].includes(t)) && !["proposal-agent", "creator-agent"].includes(id)) throw new Error("Creative tools require proposal-agent or creator-agent");
     if (id === "proposal-agent" && (definition.data.tools.some(t => !["record_read", "project_read", "proposal_create", "skill_read"].includes(t)) || systemPromptModule !== "proposal-agent" || definition.data.task?.enabled)) throw new Error("Invalid proposal-agent permissions");
     if (id === "creator-agent" && (definition.data.tools.some(t => !["record_read", "project_read", "image_generate", "image_review", "project_manage", "skill_read"].includes(t)) || systemPromptModule !== "creator-agent" || definition.data.task?.enabled)) throw new Error("Invalid creator-agent permissions");
     if (new Set(definition.data.tools).size !== definition.data.tools.length) throw new Error(`Agent "${id}" has duplicate tools`);

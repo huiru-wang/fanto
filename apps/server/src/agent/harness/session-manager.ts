@@ -1,4 +1,3 @@
-import { isInternalAgent } from "../../domain/projects/creative-model.js";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -56,8 +55,7 @@ export class AgentSessionManager {
     });
   }
 
-  async create(definition: AgentDefinition, userId: string, options: { internal?: boolean } = {}): Promise<ManagedSession> {
-    if (isInternalAgent(definition.id) && !options.internal) throw new SessionOwnershipError("Internal agent is not publicly accessible");
+  async create(definition: AgentDefinition, userId: string): Promise<ManagedSession> {
     const id = randomUUID();
     const session = await this.repository.create({ id }, TODO_CONTEXT);
     try {
@@ -71,18 +69,27 @@ export class AgentSessionManager {
     }
   }
 
-  async acquire(definition: AgentDefinition, id: string, userId?: string, options: { internal?: boolean } = {}): Promise<ManagedSession> {
-    if (isInternalAgent(definition.id) && !options.internal) throw new SessionOwnershipError("Internal agent is not publicly accessible");
+  async acquire(definition: AgentDefinition, id: string, userId?: string): Promise<ManagedSession> {
     if (!validSessionId.test(id)) throw new SessionNotFoundError("Invalid session id");
     const cached = this.sessions.get(id);
     if (cached) {
-      if (isInternalAgent(cached.agentId) && !options.internal) throw new SessionOwnershipError("Internal session is not publicly accessible");
       this.assertOwner(cached, userId);
+      if (cached.agentId !== definition.id) throw new SessionOwnershipError("Session agent identity cannot change");
       if (cached.agentId === definition.id && cached.revision === definition.revision) return cached;
       if (this.running.has(id)) throw new SessionBusyError("Session is already running");
-      return this.replaceCachedHarness(cached, definition, options.internal);
+      return this.replaceCachedHarness(cached, definition);
     }
-    return this.openAndConfigure(definition, id, userId, options.internal);
+    return this.openAndConfigure(definition, id, userId);
+  }
+
+  async resolveAgentId(id: string, userId: string): Promise<string> {
+    const { owner, close } = await this.openOwner(id);
+    try {
+      if (owner.userId !== userId) throw new SessionOwnershipError("Session belongs to another user");
+      return owner.agentId;
+    } finally {
+      await close();
+    }
   }
 
   async assertOwnership(id: string, userId: string): Promise<void> {
@@ -105,7 +112,6 @@ export class AgentSessionManager {
     cursor: number | undefined,
     limit: number,
     userId: string,
-    options: { internal?: boolean } = {},
   ): Promise<{ agentId: string; entries: Entry[]; hasMore: boolean; nextCursor: number | null }> {
     const { agentId, session, close } = await this.openForRead(id, userId);
     try {
@@ -166,23 +172,23 @@ export class AgentSessionManager {
     await this.repository.close(TODO_CONTEXT);
   }
 
-  private async replaceCachedHarness(current: ManagedSession, definition: AgentDefinition, internal = false): Promise<ManagedSession> {
+  private async replaceCachedHarness(current: ManagedSession, definition: AgentDefinition): Promise<ManagedSession> {
     this.sessions.delete(current.id);
     await current.runtime.close();
-    return this.openAndConfigure(definition, current.id, current.userId, internal);
+    return this.openAndConfigure(definition, current.id, current.userId);
   }
 
-  private async openAndConfigure(definition: AgentDefinition, id: string, userId?: string, internal = false): Promise<ManagedSession> {
+  private async openAndConfigure(definition: AgentDefinition, id: string, userId?: string): Promise<ManagedSession> {
     const metadata = (await this.repository.list(undefined, TODO_CONTEXT)).find(item => item.id === id);
     if (!metadata) throw new SessionNotFoundError("Session not found");
     const session = await this.repository.open(metadata, TODO_CONTEXT);
     try {
       const owner = await this.readOwner(session);
       if (!owner) throw new SessionNotFoundError("Session is not an agent session");
-      if (isInternalAgent(owner.agentId) && !internal) throw new SessionOwnershipError("Internal session is not publicly accessible");
       if (userId && owner.userId !== userId) throw new SessionOwnershipError("Session belongs to another user");
+      if (owner.agentId !== definition.id) throw new SessionOwnershipError("Session agent identity cannot change");
       const managed = await this.createManaged(session, id, owner.userId, definition);
-      if (owner.agentId !== definition.id || owner.revision !== definition.revision) {
+      if (owner.revision !== definition.revision) {
         await this.writeBinding(managed, definition);
       }
       this.sessions.set(id, managed);
