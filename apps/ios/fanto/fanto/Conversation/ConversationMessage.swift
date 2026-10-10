@@ -95,10 +95,17 @@ nonisolated struct FantoTaskSummary: Identifiable, Decodable, Equatable {
     }
 }
 
+enum ConversationStreamBlock: Equatable {
+    case text(String)
+    case activity(String)
+    case task(String)
+}
+
 struct ConversationMessage: Identifiable, Equatable {
     let id: String
     let role: ConversationRole
     var text: String
+    var streamBlocks: [ConversationStreamBlock] = []
     var media: [PresentedMedia] = []
     var activities: [ConversationToolActivity] = []
     var tasks: [FantoTaskSummary] = []

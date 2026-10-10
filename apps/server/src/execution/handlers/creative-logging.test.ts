@@ -32,7 +32,7 @@ test("Proposal logs distinguish no-proposal, stale records and failed runs with 
   await handler.execute("user", "record", 1);
   const decision = logs().find(e=>e.scope==="proposal"&&e.event==="decision");
   assert.equal(decision.decision,"no_proposal");
-  assert.equal(decision.reason,"没有新增变化");
+  assert.equal(decision.reason,"no_proposal_saved");
   assert.equal(decision.sessionId,"proposal-session");
   assert.equal(decision.recordId,"record");
   assert.equal(decision.userId,"user");
@@ -41,11 +41,8 @@ test("Proposal logs distinguish no-proposal, stale records and failed runs with 
   await handler.execute("user","record",1);
   assert.equal(logs().at(-1).reason,"record_version_changed");
   version=1; response="invalid decision";
-  await assert.rejects(handler.execute("user","record",1),/PROPOSAL_DECISION_INVALID/);
-  const failed=logs().at(-1);
-  assert.equal(failed.event,"failed");
-  assert.equal(failed.stage,"validate_decision");
-  assert.equal(failed.sessionId,"proposal-session");
+  await handler.execute("user","record",1);
+  assert.equal(logs().at(-1).decision,"no_proposal");
 });
 
 test("Creator logs reference records and saved versions, and identifies an unsaved result", async () => {

@@ -4,6 +4,13 @@ import test from "node:test";
 import { sql } from "kysely";
 import { createDatabase, runMigrations } from "./database.js";
 
+const previousMigrations = [
+  "create_current_schema",
+  "zzzzzz_async_v3",
+  "zzzzzzzzzzzz_agent_sessions_pg",
+  "zzzzzzzzzzzzz_drop_users_wx_openid",
+];
+
 const oldMigrations = [
   "extend_auth_schema",
   "update_auth_challenge_purpose",
@@ -34,7 +41,7 @@ integration("baseline initializes fresh databases and consolidates only complete
     await runMigrations(db);
     await runMigrations(db);
     const names = async () => (await sql<{ name: string }>`SELECT name FROM kysely_migration ORDER BY name`.execute(db)).rows.map(row => row.name);
-    assert.deepEqual(await names(), ["create_current_schema", "zzzzzz_async_v3"]);
+    assert.deepEqual(await names(), ["create_current_schema_20261011"]);
 
     const tables = (await sql<{ table_name: string }>`
       SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()
@@ -57,17 +64,43 @@ integration("baseline initializes fresh databases and consolidates only complete
     const now = new Date();
     await db.insertInto("users").values({ user_id: userId, status: "active", created_at: now, updated_at: now, disabled_at: null }).execute();
     // Reproduce the old Kysely metadata without recreating or dropping user data.
-    for (const [index, migration] of oldMigrations.entries()) {
+    await sql`DELETE FROM kysely_migration`.execute(db);
+    for (const [index, migration] of previousMigrations.entries()) {
       await sql`INSERT INTO kysely_migration (name, timestamp) VALUES (${migration}, ${new Date(Date.now() + index * 1000).toISOString()})`.execute(db);
     }
     await runMigrations(db);
-    assert.deepEqual(await names(), ["create_current_schema", "zzzzzz_async_v3"]);
+    assert.deepEqual(await names(), ["create_current_schema_20261011"]);
     assert.equal((await db.selectFrom("users").select("user_id").executeTakeFirstOrThrow()).user_id, userId);
     await runMigrations(db); // Idempotent after consolidation.
 
+    // Fully executed pre-2026-10-08 history is also supported.
+    await sql`DELETE FROM kysely_migration`.execute(db);
+    for (const [index, migration] of [...previousMigrations, ...oldMigrations].entries()) {
+      await sql`INSERT INTO kysely_migration (name, timestamp) VALUES (${migration}, ${new Date(Date.now() + index * 1000).toISOString()})`.execute(db);
+    }
+    await runMigrations(db);
+    assert.deepEqual(await names(), ["create_current_schema_20261011"]);
+    assert.equal((await db.selectFrom("users").select("user_id").executeTakeFirstOrThrow()).user_id, userId);
+
+    const sessionTables = (await sql<{ table_name: string }>`
+      SELECT table_name FROM information_schema.tables WHERE table_schema = 'agent_session'
+    `.execute(db)).rows.map(row => row.table_name);
+    assert.equal(sessionTables.length, 7);
+    assert.equal((await sql`SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'wx_openid'`.execute(db)).rows.length, 0);
+    // Incomplete modern histories must not be marked as the new baseline.
+    await sql`DELETE FROM kysely_migration`.execute(db);
+    for (const migration of previousMigrations.slice(0, -1)) {
+      await sql`INSERT INTO kysely_migration (name, timestamp) VALUES (${migration}, ${new Date().toISOString()})`.execute(db);
+    }
+    await assert.rejects(runMigrations(db), /Cannot consolidate incomplete\/unknown migration history/);
+    assert.deepEqual(await names(), previousMigrations.slice(0, -1));
+    await sql`DELETE FROM kysely_migration`.execute(db);
+    await sql`INSERT INTO kysely_migration (name, timestamp) VALUES ('create_current_schema_20261011', ${new Date().toISOString()})`.execute(db);
+
     await sql`INSERT INTO kysely_migration (name, timestamp) VALUES ('extend_auth_schema', ${new Date().toISOString()})`.execute(db);
     await assert.rejects(runMigrations(db), /Cannot consolidate incomplete\/unknown migration history/);
-    assert.deepEqual(await names(), ["create_current_schema", "extend_auth_schema", "zzzzzz_async_v3"]);
+    assert.deepEqual(await names(), ["create_current_schema_20261011", "extend_auth_schema"]);
   } finally {
     await db.destroy();
     await sql.raw(`DROP DATABASE ${name} WITH (FORCE)`).execute(admin);

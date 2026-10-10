@@ -70,6 +70,8 @@ struct AgentHistoryPage {
 
 enum AgentStreamEvent {
     case processing(String)
+    case messageStart
+    case messageEnd
     case delta(String)
     case presentation([PresentedMedia])
     case toolActivity(ConversationToolActivity)
@@ -201,7 +203,9 @@ struct AgentAPIClient {
         case "turn_start":
             onEvent(.processing("Fanto 正在思考…"))
         case "message_start":
-            onEvent(.processing("正在组织回复…"))
+            onEvent(.messageStart)
+        case "message_end":
+            onEvent(.messageEnd)
         case "tool_start":
             guard let payload = try? JSONDecoder().decode(StreamToolEvent.self, from: Data(data.utf8)),
                   payload.presentation.visible

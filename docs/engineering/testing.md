@@ -18,7 +18,7 @@ xcodebuild -project apps/ios/fanto/fanto.xcodeproj -scheme fanto -sdk iphonesimu
 
 ## 按领域验证
 
-- **数据库**：空库基线 `create_current_schema.ts`、已有数据库迁移历史合并与后续 `zzzzzz_async_v3.ts`，保留业务数据；不要手动删除 `kysely_migration`。
+- **数据库**：空库基线 `create_current_schema_20261011.ts`、已有数据库完整迁移历史合并与不完整历史拒绝，保留业务数据；不要手动删除 `kysely_migration`。
 - **Record / Media**：按用户、版本、位置字段、五媒体限制、后置 Vision/ASR、独立 EmbeddingQueue、语义检索；真实 OSS PUT/HEAD/URL、删除后的尽力清理以及 Project 最终副本归属。
 - **Proposal / Project**：Proposal 1–2 个 Idea、accept 幂等、create/extend 状态、Record 关联、version 乐观并发、媒体复制、旧内容保留和失败状态收敛；测试文件位于 `domain/projects/`、`routes/project-http.test.ts`。
 - **PG Session SDK conformance**：设置只指向独立测试库的 `TEST_DATABASE_URL`（库名需包含 test），运行 `pnpm --filter @fanto/server exec tsx --test src/agent/session/pg-session.test.ts`，验证 Pi Core Storage / SessionRepo 一致性、Fork、失败回滚与 PG 无外键。测试会清空并删除测试数据库中的 `agent_session` schema，不可使用生产数据库。

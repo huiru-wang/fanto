@@ -25,6 +25,6 @@
 - 脉络页区分 Proposal 与 Project；建议决策走 Proposal API，项目详情从单个详情响应读取参考记录，不请求 Project records 接口。项目 html-preview 必须禁用脚本、桥接、任意网络资源和导航；内部图片走受保护媒体接口，签名 URL 只保留运行态。
 - 脉络页跟进新建议；后台提议分析全程静默，信息不足时不提议。Project 详情读取通用 Session History，后台过程订阅只读 Events，继续创作走统一 Agent Stream，并与主对话共享 Tool Presentation/消息 UI；已有作品右下角允许进入同一 Project Session 继续对话，项目内容以 Server 当前版本为准。
 - 音频 Record 当前主要展示播放动作与时长，不在客户端自行生成 AI 摘要。
-- Fanto 对话须按 Server 的 SSE `presentation` 渲染可见进度；`create_task` 与 `collect_user_input` 的结构化结果分别渲染为任务卡和导航区域下方的逐题表单。`required: false` 的表单项允许跳过；不展示内部工具参数、结果或 interaction 标记。对话初次出现时定位到最新消息，向上滚动到历史顶部时使用 Server `nextCursor` 读取更早页，并保持阅读位置。任务详情使用现有受保护 Task / TaskRun 接口按需读取，不新增独立任务管理页；交付文件在详情 Sheet 的既有导航栈内预览，不叠加第二个 Sheet。已完成任务的详情与成果内容仅在当前账号的 App 运行期内缓存，用户手动刷新或切换账号时再读取 / 清空。
+- Fanto 对话按 SSE message_start/message_end 划分文本块，与工具和任务按事件顺序展示，仅 done 表示回复完成；须按 Server 的 SSE `presentation` 渲染可见进度；`create_task` 与 `collect_user_input` 的结构化结果分别渲染为任务卡和导航区域下方的逐题表单。`required: false` 的表单项允许跳过；不展示内部工具参数、结果或 interaction 标记。对话初次出现时定位到最新消息，向上滚动到历史顶部时使用 Server `nextCursor` 读取更早页，并保持阅读位置。任务详情使用现有受保护 Task / TaskRun 接口按需读取，不新增独立任务管理页；交付文件在详情 Sheet 的既有导航栈内预览，不叠加第二个 Sheet。已完成任务的详情与成果内容仅在当前账号的 App 运行期内缓存，用户手动刷新或切换账号时再读取 / 清空。
 
 修改网络契约前先核对 `../../../docs/api/http-api.md`。

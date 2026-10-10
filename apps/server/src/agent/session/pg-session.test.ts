@@ -10,7 +10,7 @@ import {
   createStorageConformance, createSessionRepoConformance,
 } from "@earendil-works/pi-agent-core/harness/session/testing";
 import type { DB } from "../../infrastructure/database/schema.js";
-import { up as migrate } from "../../migrations/zzzzzzzzzzzz_agent_sessions_pg.js";
+import { createAgentSessionSchema as migrate } from "../../migrations/create_current_schema_20261011.js";
 import { PgSessionRepo } from "./pg-session-repo.js";
 import { PgStorage } from "./pg-storage.js";
 

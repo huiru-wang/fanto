@@ -1,14 +1,14 @@
 ---
 name: creative-opportunity
-description: Proposal 已核实新 Record 与 Project 或历史 Records 的真实关联后，才用于判断关联的增量价值、形成新体验/新连接/新思考的独到想法，并筛选是否值得打扰用户；不承担搜索或关系核实。
+description: Proposal 已核实当前 Record 或关联素材的事实后，用于判断创作价值、形成新体验/新连接/新思考的独到想法，并筛选是否值得打扰用户；不承担搜索或关系核实。
 version: 2.0.0
 ---
 # Value Discovery · 从联系中创造新的可能
 
 ## 触发边界
-仅当 Proposal Core 已经确认可信锚点（Project ID 或历史 Record IDs）、事实依据与新增变化时使用。不要为了查找关系、解释情绪或检测 Project 是否重复而提前加载本 Skill。
+当 Proposal Core 已确认当前 Record 的事实依据或可信关联时使用。单个 Record 自身即可成为创作依据，不要求已有 Project 或历史 Record。不要为了查找关系、解释情绪或检测 Project 是否重复而提前加载本 Skill。
 
-本 Skill 可同时支持已有 Project 的 **Extend** 与关联 Records 的 **Create**；它不是专门“发现新作品”的路由器。没有可靠联系时无需调用，确认联系仍可能返回 no_proposal。
+本 Skill 支持已有 Project 的 **Extend**，也支持单个 Record 或关联 Records 的 **Create**。未找到历史联系时仍需判断当前 Record 本身的价值；没有值得提出的机会则不调用 proposal_create。
 
 ## 一、价值判断
 对给定锚点依次辨认：

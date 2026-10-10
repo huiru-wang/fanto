@@ -190,11 +190,15 @@ struct ConversationMessageBubble: View {
             if message.role == .user { Spacer(minLength: 54) }
 
             VStack(alignment: .leading, spacing: 8) {
-                messageText
-                activities
+                if message.role == .assistant, !message.streamBlocks.isEmpty {
+                    streamedContent
+                } else {
+                    messageText
+                    activities
+                }
                 if message.role == .assistant {
                     ConversationMediaPresentation(items: displayedMedia)
-                    taskCards
+                    if message.streamBlocks.isEmpty { taskCards }
                 }
                 stateText
             }
@@ -208,6 +212,26 @@ struct ConversationMessageBubble: View {
         .accessibilityElement(children: .contain)
         .sheet(item: $selectedTask) { task in
             TaskDetailSheet(task: task, cache: taskDetailCache)
+        }
+    }
+
+    @ViewBuilder
+    private var streamedContent: some View {
+        ForEach(Array(message.streamBlocks.enumerated()), id: \.offset) { _, block in
+            switch block {
+            case let .text(text):
+                MarkdownContentView(markdown: LegacyConversationMedia.extract(from: text).markdown, leadingTitleToOmit: nil)
+            case let .activity(id):
+                if let activity = message.activities.first(where: { $0.id == id }) {
+                    ConversationActivityRow(activity: activity)
+                }
+            case let .task(id):
+                if let task = message.tasks.first(where: { $0.taskID == id }) {
+                    Button { selectedTask = task } label: { TaskSummaryCard(task: task) }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("打开任务详情")
+                }
+            }
         }
     }
 

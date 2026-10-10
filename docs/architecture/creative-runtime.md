@@ -4,7 +4,7 @@
 
 ## 发现与接受
 
-Record postprocess 成功后（配置 `CREATIVE_ENABLED=true`），向 `AgentExecutionQueue` 发布 Proposal 消息。ProposalHandler 运行内部 `proposal-agent`，按需读取 `skills/creative/SKILL.md` 和「入画 / 异想 / 成章 / 回声」参考，使用 `proposal_create` 存储至多两条真正不同的候选。没有明确价值时不产生 Proposal，不向用户追问。
+Record postprocess 成功后（配置 `CREATIVE_ENABLED=true`），向 `AgentExecutionQueue` 发布 Proposal 消息。ProposalHandler 运行内部 `proposal-agent`，按需读取 `skills/creative/SKILL.md` 和「入画 / 异想 / 成章 / 回声」参考，使用 `proposal_create` 存储至多两条真正不同的候选。单个 Record 自身也可支撑 Proposal，不要求历史关联。没有明确价值时不产生 Proposal，不向用户追问；正常完成但未通过 proposal_create 保存提议时记为 no_proposal，不解析助手文字或要求决策 JSON。
 
 Proposal `content={reason,ideas:[{id,title,idea,tags,goal}],selectedIdeaId}`；`idea` 面向用户预告可想象的成品，`goal` 则记录目标、背景和约束。两者不是执行计划，不存图片槽位、预算或自动决定用户选择。Proposal Session 与 Creator Session 不混用。
 

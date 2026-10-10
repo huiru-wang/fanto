@@ -63,11 +63,13 @@ export function createApp(services: ServerServices) {
   app.use("*", cors({ origin: "*", allowHeaders: ["Authorization", "Content-Type", "X-Client-Fingerprint", "X-Trace-Id", "X-Time-Zone"], allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] }));
   app.use("/api/projects/*", bodyLimit({ maxSize: 13 * 1024 * 1024, onError: c => c.json({ success: false, result: null, errorCode: "CONTENT_TOO_LARGE", errorMsg: "Content too large" }, 413) }));
   app.use("/api/*", async (c, next) => {
+    const startedAt = performance.now();
     const requestBody = c.req.header("content-type")?.includes("application/json")
       ? await c.req.raw.clone().json().then(value => logSafeBody(c.req.path, value)).catch(() => null)
       : null;
     await next();
-    logAccess({ method: c.req.method, path: c.req.path, requestBody, responseBody: await jsonBody(c.res, c.req.path), status: c.res.status });
+    const cost = Math.round((performance.now() - startedAt) * 100) / 100;
+    logAccess({ cost, method: c.req.method, path: c.req.path, requestBody, responseBody: await jsonBody(c.res, c.req.path), status: c.res.status });
   });
   app.use("/api/*", async (c, next) => {
     if (c.req.method === "OPTIONS") return next();

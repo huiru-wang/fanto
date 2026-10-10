@@ -8,7 +8,7 @@ import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { DB } from "./schema.js";
-import { logError, logInfo } from "../logging/logger.js";
+import { logError, logInfo, logSql } from "../logging/logger.js";
 
 export function createDatabase(databaseUrl: string): Kysely<DB> {
   const pool = new Pool({
@@ -37,6 +37,7 @@ export function createDatabase(databaseUrl: string): Kysely<DB> {
 
   return new Kysely<DB>({
     dialect: new PostgresDialect({ pool }),
+    log: logSql,
   });
 }
 
@@ -59,11 +60,17 @@ export async function checkDatabaseHealth(db: Kysely<DB>, timeoutMs = 5_000): Pr
   }
 }
 
-// All migrations through 2026-10-08 are incorporated into create_current_schema.
+// All migrations through 2026-10-11 are incorporated into the dated baseline.
 // Keep these names only to safely consolidate Kysely metadata on databases
 // that have already finished the old migration chain. Partial histories must
 // first be brought up to date using the previous release.
-const BASELINE_MIGRATION = "create_current_schema";
+const BASELINE_MIGRATION = "create_current_schema_20261011";
+const PREVIOUS_MIGRATIONS = [
+  "create_current_schema",
+  "zzzzzz_async_v3",
+  "zzzzzzzzzzzz_agent_sessions_pg",
+  "zzzzzzzzzzzzz_drop_users_wx_openid",
+] as const;
 const SQUASHED_MIGRATIONS = [
   "extend_auth_schema",
   "update_auth_challenge_purpose",
@@ -91,10 +98,11 @@ async function consolidateMigrationHistory(db: Kysely<DB>): Promise<void> {
     const names = new Set(history.rows.map(row => row.name));
     // After the squash, future migrations may legitimately appear alongside the baseline.
     // Let Kysely validate those names instead of treating them as old history.
-    if (!SQUASHED_MIGRATIONS.some(name => names.has(name))) return 0;
+    if (![...SQUASHED_MIGRATIONS, ...PREVIOUS_MIGRATIONS].some(name => names.has(name))) return 0;
 
-    const expected = [BASELINE_MIGRATION, ...SQUASHED_MIGRATIONS];
-    const known = new Set<string>([...expected, "zzzzzz_async_v3"]);
+    const hasLegacy = SQUASHED_MIGRATIONS.some(name => names.has(name));
+    const expected = [...PREVIOUS_MIGRATIONS, ...(hasLegacy ? SQUASHED_MIGRATIONS : [])];
+    const known = new Set<string>(expected);
     const missing = expected.filter(name => !names.has(name));
     const unknown = [...names].filter(name => !known.has(name));
     if (missing.length || unknown.length) {
@@ -104,8 +112,10 @@ async function consolidateMigrationHistory(db: Kysely<DB>): Promise<void> {
       );
     }
 
-    await sql`DELETE FROM kysely_migration WHERE name <> ${BASELINE_MIGRATION} AND name <> 'zzzzzz_async_v3'`.execute(trx);
-    return SQUASHED_MIGRATIONS.length;
+    await sql`INSERT INTO kysely_migration (name, timestamp)
+      SELECT ${BASELINE_MIGRATION}, MAX(timestamp) FROM kysely_migration`.execute(trx);
+    await sql`DELETE FROM kysely_migration WHERE name <> ${BASELINE_MIGRATION}`.execute(trx);
+    return expected.length;
   });
   if (removed) logInfo("database", "Consolidated migration history", { removed });
 }

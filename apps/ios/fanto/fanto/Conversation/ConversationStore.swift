@@ -26,6 +26,7 @@ final class ConversationStore {
     private var historyNextCursor: Int?
     private var activeAssistantMessageID: String?
     private var activePrompt: String?
+    private var textBlockOpen = false
     private var pendingPresentedMedia: [PresentedMedia] = []
     private var runTask: Task<Void, Never>?
     private var localMessageSequence = 0
@@ -119,6 +120,7 @@ final class ConversationStore {
         messages.append(assistant)
         activeAssistantMessageID = assistant.id
         activePrompt = message
+        textBlockOpen = false
         pendingPresentedMedia = []
         scrollAnchorID = assistant.id
 
@@ -134,7 +136,7 @@ final class ConversationStore {
                 try await client.stream(sessionID: sessionID, message: message) { [weak self] event in
                     self?.receive(event)
                 }
-                if !Task.isCancelled { self.completeActiveMessage() }
+                // Only the SSE done event completes the reply; EOF alone is incomplete.
             } catch is CancellationError {
                 // stop() already sets the visible terminal state. Other cancellation paths
                 // are converted to a retryable failure by the deferred terminal-state guard.
@@ -205,10 +207,21 @@ final class ConversationStore {
         switch event {
         case .processing:
             updateMessage(id: id) { $0.state = .processing }
+        case .messageStart, .messageEnd:
+            textBlockOpen = false
         case let .delta(text):
-            updateMessage(id: id) {
-                $0.text.append(text)
-                $0.state = .streaming
+            let startsNewBlock = !textBlockOpen
+            textBlockOpen = true
+            updateMessage(id: id) { message in
+                if startsNewBlock {
+                    if !message.text.isEmpty { message.text.append("\n\n") }
+                    message.streamBlocks.append(.text(text))
+                } else if let index = message.streamBlocks.lastIndex(where: { if case .text = $0 { return true }; return false }),
+                          case let .text(current) = message.streamBlocks[index] {
+                    message.streamBlocks[index] = .text(current + text)
+                }
+                message.text.append(text)
+                message.state = .streaming
             }
             scrollAnchorID = id
         case let .presentation(items):
@@ -219,6 +232,7 @@ final class ConversationStore {
                     message.activities[index] = activity
                 } else {
                     message.activities.append(activity)
+                    message.streamBlocks.append(.activity(activity.id))
                 }
                 message.state = .processing
             }
@@ -227,6 +241,7 @@ final class ConversationStore {
             updateMessage(id: id) { message in
                 if !message.tasks.contains(where: { $0.taskID == task.taskID }) {
                     message.tasks.append(task)
+                    message.streamBlocks.append(.task(task.taskID))
                 }
             }
             scrollAnchorID = id

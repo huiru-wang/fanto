@@ -54,6 +54,6 @@ Proposal accept 在事务中确定所选 Idea，创建或更新 Project 为 `que
 
 ## 数据库与可靠性
 
-启动先执行 Kysely migrations、健康预热再监听端口。最新空库基线是 `create_current_schema.ts`，异步 V3 的前向变更是 `zzzzzz_async_v3.ts`。已经完整应用旧迁移的数据库按 Kysely 元数据归并规则保留业务表，再执行新前向 migration；不要删除 `kysely_migration` 以强制重建。生产连接、健康与部署见 [本地开发](../engineering/local-development.md)。
+启动先执行 Kysely migrations、健康预热再监听端口。最新空库基线是 `create_current_schema_20261011.ts`。已完整应用旧迁移的数据库仅归并 Kysely 元数据并保留业务表；不要删除 `kysely_migration` 以强制重建。具体归并条件见本地开发文档。生产连接、健康与部署见 [本地开发](../engineering/local-development.md)。
 
 目前不提供队列消息持久化、自动失败重试、重启执行恢复或跨实例调度协调；任何规模评估应考虑这些真实限制。

@@ -70,7 +70,8 @@ Business Server 使用 Supabase PostgreSQL；Agent Runtime 保持 SQLite，不�
 
 Server 使用 Kysely migration 管理 PostgreSQL schema。`src/bootstrap/main.ts` 在服务监听端口前自动执行 `runMigrations()`；生产部署脚本也会在重启 Server 前显式执行一次 migration，因此正常启动和 `pnpm deploy` 都会自动创建尚未存在的表和索引。已执行过的 migration 由 Kysely migration 元数据记录，不会在每次重启时重复执行。
 
-`create_current_schema.ts` 是 2026-10-08 合并后的完整 PostgreSQL Schema 基线；新数据库运行基线后还会执行 `zzzzzz_async_v3.ts` 前向迁移。已完整执行原有 14 个 migration 的现有数据库，启动时在事务与 Kysely 迁移锁下，仅将 `kysely_migration` 元数据压缩为 `create_current_schema`，不重建表或修改业务数据；`legacy_projects` / `legacy_project_records` 保持原状。迁移历史不完整或有未知版本时拒绝合并，须先使用合并前版本升至最新；后续结构变更新增前向 migration。不要手动清空迁移历史或强行重跑基线。**历史归并后禁止回滚运行归并前的 Server 版本**（旧 Migrator 会将被移除的增量版本视为未执行）；务必先完成新版本部署再让其处理现有数据库。本地集成验证使用隔离的 `TEST_DATABASE_URL`。
+`create_current_schema_20261011.ts` 是当前完整 PostgreSQL Schema 基线，包含异步 Project / TaskRun 状态、`agent_session` Schema，且不含 `users.wx_openid` 和 `media_object_deletions`。已完整执行旧基线及 `zzzzzz_async_v3`、`zzzzzzzzzzzz_agent_sessions_pg`、`zzzzzzzzzzzzz_drop_users_wx_openid` 的数据库，启动时在事务与 Kysely 迁移锁下仅将迁移元数据归并到新基线，不重建表或修改业务数据。若还保留更早的迁移历史，则这些历史也必须完整。历史不完整或包含未知版本时拒绝合并，须先使用归并前版本升至最新；后续结构变更新增前向 migration。不要手动清空迁移历史或强行重跑基线。历史归并后禁止回滚运行归并前的 Server 版本。本地集成验证使用隔离的 `TEST_DATABASE_URL`。
+
 
 ## 常用命令
 

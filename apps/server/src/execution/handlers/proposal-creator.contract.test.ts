@@ -12,11 +12,14 @@ test("Proposal handler recognizes valuable no-proposal decisions without conflat
   const records = { findMany: async () => [{ id: recordId, version: 1, status: "processed" }] };
   const agent = { registry: { get: () => ({id:"proposal-agent"}) }, sessions: {create: async () => ({id})} };
   const proposals = {findBySession: async () => null};
-  const worker = {run: async () => response};
+  let failed=false;
+  const worker = {run: async () => {if(failed)throw Error("MODEL_FAILED");return response;}};
   const handler = new ProposalHandler(records as never,proposals as never,agent as never,worker as never,60000);
   await handler.execute(id,recordId,1);
-  response = "我不确定，先不提议";
-  await assert.rejects(handler.execute(id,recordId,1),/PROPOSAL_DECISION_INVALID/);
+  response = "中间说明。最终判断不提议。";
+  await handler.execute(id,recordId,1);
+  failed=true;
+  await assert.rejects(handler.execute(id,recordId,1),/MODEL_FAILED/);
 });
 
 test("Creator receives the accepted Extend change and does not silently replace the original goal", async () => {

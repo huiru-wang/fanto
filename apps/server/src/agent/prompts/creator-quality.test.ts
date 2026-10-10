@@ -35,18 +35,19 @@ test("Creator keeps existing save and media review guardrails", () => {
   assert.match(creatorAgentPrompt,/实际产出对应视觉内容/);
 });
 
-test("Proposal owns Project-first / Record-second and reads one Skill after verified linkage", () => {
+test("Proposal owns Project-first / Record-second and reads one Skill after verified facts", () => {
   const project = proposalAgentPrompt.indexOf("Project-first");
   const record = proposalAgentPrompt.indexOf("Record-second");
   const gate = proposalAgentPrompt.indexOf("Evidence Gate");
   const skill = proposalAgentPrompt.indexOf("Value Discovery");
   assert.ok(project >= 0 && project < record && record < gate && gate < skill);
   for(const required of ["proposal_record","proposal_projects","project_read","record_read",
-    "creative-opportunity","enrich","correct","refine","continue","no_proposal","opening"]) {
+    "creative-opportunity","enrich","correct","refine","continue","opening"]) {
     assert.ok(proposalAgentPrompt.includes(required), required);
   }
   assert.doesNotMatch(proposalAgentPrompt,/project-evolution|creative_context/);
-  assert.match(proposalAgentPrompt,/没有可靠 Project\/历史 Record 锚点/);
+  assert.match(proposalAgentPrompt,/单个 Record/);
+  assert.match(proposalAgentPrompt,/不要求 JSON/);
 });
 
 test("new methodology Skills have valid references and removed domain-process skills are gone", () => {

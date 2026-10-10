@@ -46,3 +46,9 @@ OSS 使用中国内地无地域 Bucket 时，默认 Region/Endpoint 可参考 `.
 ## H5 测试模式
 
 `apps/h5/.env` 的 `VITE_H5_TEST_AUTH=true`、`VITE_H5_TEST_REFRESH_TOKEN` 仅供受控测试；H5 调用 `/api/auth/tokens/refresh` 换取 Access JWT 并用于业务/Agent API。Refresh token 会进入客户端构建产物，**不得作为正式面向公众的登录方案或接触生产特权资源**。不要把真实 Token、私钥、OSS Key 或 Authorization 提交到仓库。
+
+## 日志耗时
+
+日志写入 `LOG_DIR`，标准启动目录下默认是仓库 `logs/`。`access.log` 的 `cost` 单位为毫秒，记录 API 中间件从读取请求体到响应就绪的耗时，不包含日志响应体提取、客户端网络传输或 SSE 完整流生命周期。
+
+`sql.log` 通过统一 Kysely 数据库入口记录成功/失败 SQL 模板与 `cost`（毫秒）；耗时覆盖连接上的 query 执行，不包含等待连接池，也不等于整个业务事务耗时。SQL 参数、结果、原始数据库错误内容不写入日志，字符串字面量和注释被过滤；失败保留 SQLSTATE errorCode。该入口覆盖业务与 Agent Session SQL，直接绕过 Kysely 的 pg 调用不覆盖。
