@@ -8,7 +8,7 @@ import { createProposalSchema } from "../../domain/projects/validation.js";
 const here=dirname(fileURLToPath(import.meta.url));
 const serverRoot=resolve(here,"../../../");
 const cases=JSON.parse(readFileSync(resolve(here,"cases.json"),"utf8")) as Array<{
-  id:string;domain:string;triggerRecord:string;existingProject:null|{alias:string;summary:string};
+  id:string;domain:string;triggerRecord:string;relatedRecords?:string[];existingProject:null|{alias:string;summary:string};
   expected:{decision:string;changeKind?:string;targetProjectAlias?:string};
 }>;
 const envFile=resolve(serverRoot,".env");
@@ -22,7 +22,8 @@ const start=Number(process.argv[3]??"0");
 const stride=Math.max(1,Number(process.argv[4]??"1"));
 const projectId="33333333-3333-4333-8333-333333333333";
 const recordId="22222222-2222-4222-8222-222222222222";
-const allowedSkills=new Set(["project-evolution","creative-opportunity"]);
+const relatedRecordId = (index:number) => "99999999-9999-4999-8999-" + String(index+1).padStart(12,"0");
+const allowedSkills=new Set(["creative-opportunity"]);
 const skillRoot=resolve(serverRoot,"skills");
 const tools = [
  {type:"function",function:{name:"project_read",description:"按 Project ID 读取完整内容、目标和关联记录；或搜索相关项目",parameters:{type:"object",properties:{action:{type:"string",enum:["search","get"]},projectId:{type:"string"},query:{type:"string"}},required:["action"]}}},
@@ -35,9 +36,10 @@ for(const c of cases.filter((_case,i)=>i>=start && (i-start)%stride===0).slice(0
  const candidate=c.existingProject?{projectId,title:"既有项目",summary:c.existingProject.summary,goal:{objective:c.existingProject.summary},contentExcerpt:c.existingProject.summary,source:"semantic",status:"completed",version:2}:null;
  const context={role:"proposal",sourceRecord:{recordId,version:1,eventAt:"2026-10-09T00:00:00+08:00",content:{text:c.triggerRecord,blocks:[]}},
   candidateProjects:{search:"semantic_lexical_recent",candidates:candidate?[candidate]:[]}};
- const index=`\n<available_skills>\n<skill><name>project-evolution</name><description>Project 增量判断</description><location>skills/project-evolution/SKILL.md</location></skill>\n<skill><name>creative-opportunity</name><description>新创意机会判断</description><location>skills/creative-opportunity/SKILL.md</location></skill>\n</available_skills>\nUse skill_read with skill=one of these names and path=SKILL.md to read the full skill. Use references/foo.md for subtopics.`;
- const system=proposalAgentPrompt.replace("{{creative_context}}",JSON.stringify(context))+index;
- const messages:any[]=[{role:"system",content:system},{role:"user",content:"完整理解这条 Record，先核查已有 Project 延续价值，再判断是否有新提议。不要追问。"}];
+ const index=`\n<available_skills>\n<skill><name>creative-opportunity</name><description>已确认关联后的价值判断与联想</description><location>skills/creative-opportunity/SKILL.md</location></skill>\n</available_skills>\nUse skill_read with skill=one of these names and path=SKILL.md to read the full skill. Use references/foo.md for subtopics.`;
+ const system=proposalAgentPrompt.replace("{{proposal_record}}",JSON.stringify(context.sourceRecord))
+  .replace("{{proposal_projects}}",JSON.stringify(context.candidateProjects))+index;
+ const messages:any[]=[{role:"system",content:system},{role:"user",content:"理解新 Record，Project-first，其次核实相关历史 Records，确认关联后才加载创意机会 Skill。无真实关联则 no_proposal。"}];
  let answer:any=null;
  try{
   for(let turn=0;turn<9;turn++){
@@ -61,7 +63,11 @@ for(const c of cases.filter((_case,i)=>i>=start && (i-start)%stride===0).slice(0
       if(!allowedSkills.has(args.skill)||typeof args.path!=="string"||!(/^(SKILL\.md|references\/[a-z-]+\.md)$/).test(args.path))throw Error(`invalid skill path: ${String(args.skill)} / ${String(args.path)}`);
       data=readFileSync(resolve(skillRoot,args.skill,args.path),"utf8");
     } else if(call.function.name==="record_read"){
-      data={records:[{recordId,content:{text:c.triggerRecord,blocks:[]}}]};
+      const references=(c.relatedRecords??[]).map((text,index)=>({recordId:relatedRecordId(index),eventAt:"2026-09-09T00:00:00+08:00",
+        content:{text,blocks:[]}}));
+      data={records:args.recordIds
+        ? [ {recordId,eventAt:"2026-10-09T00:00:00+08:00",content:{text:c.triggerRecord,blocks:[]}},...references].filter(r=>args.recordIds.includes(r.recordId))
+        : references};
     } else if(call.function.name==="project_read"){
       data=args.action==="search"?{data:candidate?[candidate]:[]}:(candidate&&(!args.projectId||args.projectId===projectId)?{...candidate,referenceRecords:[],recordCount:0}:{error:"NOT_FOUND"});
     } else if(call.function.name==="proposal_create"){

@@ -45,8 +45,8 @@ test("creative agents have constrained toolsets and object-root schemas and cann
   const registry = new AgentRegistry(resolve("agent.yaml"), builtinModels(), new SkillLoader(resolve("skills")));
   assert.deepEqual(registry.get("proposal-agent")?.tools, ["record_read", "project_read", "proposal_create", "skill_read"]);
   assert.deepEqual(registry.get("creator-agent")?.tools, ["record_read", "project_read", "image_generate", "image_review", "project_manage", "skill_read"]);
-  assert.deepEqual(registry.get("proposal-agent")?.skills, ["project-evolution", "creative-opportunity"]);
-  assert.deepEqual(registry.get("creator-agent")?.skills, ["art-direction", "photography", "storytelling", "editorial-design", "image-creation", "creative-review"]);
+  assert.deepEqual(registry.get("proposal-agent")?.skills, ["creative-opportunity"]);
+  assert.deepEqual(registry.get("creator-agent")?.skills, ["aesthetic-judgment", "artistic-thinking", "intellectual-depth", "emotional-nuance"]);
   assert.deepEqual(registry.get("proposal-agent")?.skills.filter(id => registry.get("creator-agent")?.skills.includes(id)), []);
   assert.equal(registry.taskAgents().some(agent => agent.id === "creator-agent" || agent.id === "proposal-agent"), false);
   const { createTools } = await import("../tools/index.js");
@@ -58,7 +58,7 @@ test("Proposal and Creator skill overlap is rejected at config loading", () => {
   const dir=mkdtempSync(join(tmpdir(),"fanto-skill-test-"));
   try {
     const config=readFileSync(resolve("agent.yaml"),"utf8");
-    writeFileSync(join(dir,"agent.yaml"),config.replace("skills: [art-direction, photography", "skills: [project-evolution, art-direction, photography"));
+    writeFileSync(join(dir,"agent.yaml"),config.replace("skills: [aesthetic-judgment, artistic-thinking", "skills: [creative-opportunity, aesthetic-judgment, artistic-thinking"));
     assert.throws(()=>new AgentRegistry(join(dir,"agent.yaml"),builtinModels(),new SkillLoader(resolve("skills"))),/cannot share skills/);
   } finally {rmSync(dir,{recursive:true,force:true});}
 });

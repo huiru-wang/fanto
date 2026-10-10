@@ -1,3 +1,4 @@
+import { logInfo, logWarn } from "../infrastructure/logging/logger.js";
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import type { DomainResult, ProjectService, ProposalService, ProjectStatus, ProposalStatus, ProposalType } from "../domain/projects/index.js";
@@ -35,10 +36,19 @@ export function createProposalRoutes(service: ProposalService, queue?: AgentExec
   app.get("/proposals/:id/records", async c => respond(c, await service.recordsPage(requireUserId(c.req.raw), c.req.param("id"), pagination(c, 5))));
   app.post("/proposals/:id/accept", async c => {
     const parsed = acceptProposal.safeParse(await c.req.json().catch(() => ({})));
-    if (!parsed.success) return respond(c, {kind:"error",code:"INVALID_INPUT"});
     const userId = requireUserId(c.req.raw);
+    if (!parsed.success) {
+      logWarn("proposal", "accept rejected", {userId,proposalId:c.req.param("id"),errorCode:"INVALID_INPUT"});
+      return respond(c, {kind:"error",code:"INVALID_INPUT"});
+    }
     const accepted = await service.accept(userId,c.req.param("id"),parsed.data);
-    if (accepted.kind === "error") return respond(c,accepted);
+    if (accepted.kind === "error") {
+      logWarn("proposal", "accept rejected", {userId,proposalId:c.req.param("id"),selectedIdeaId:parsed.data.selectedIdeaId,errorCode:accepted.code});
+      return respond(c,accepted);
+    }
+    logInfo("proposal", "accepted", {userId,proposalId:c.req.param("id"),selectedIdeaId:parsed.data.selectedIdeaId,
+      projectId:accepted.data.projectId,firstAccepted:accepted.data.firstAccepted});
+    if(accepted.data.firstAccepted && !queue)logWarn("creator","dispatch skipped",{userId,proposalId:c.req.param("id"),projectId:accepted.data.projectId,reason:"queue_unavailable"});
     if(accepted.data.firstAccepted)queue?.publish({type:"creator",userId,proposalId:c.req.param("id"),projectId:accepted.data.projectId});
     return c.json(ok({projectId:accepted.data.projectId}));
   });

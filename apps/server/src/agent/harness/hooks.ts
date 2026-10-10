@@ -1,3 +1,5 @@
+import { logSummary } from "../../infrastructure/logging/logger.js";
+import { logRunEvent } from "./run-logging.js";
 import type { AgentHarness, ExecutionToolContext } from "@earendil-works/pi-agent-core";
 import type { createSystemPrompt } from "../context/index.js";
 import { createRunContext } from "../context/index.js";
@@ -38,9 +40,21 @@ export function installHarnessHooks(
   harness.hooks.on("before_run_end", async (_event, context) => { options.systemPrompt.release(context); return undefined; });
   harness.hooks.on("before_run", async () => undefined);
   harness.hooks.on("before_drive", async () => undefined);
-  harness.hooks.on("before_request", async () => undefined);
+  const requests=new WeakMap<object,number>();
+  harness.hooks.on("before_request", async (event,context) => {
+    const data=createRunContext.read(context);
+    requests.set(data,Date.now());
+    logRunEvent(data,"model request started",{provider:event.model.provider,model:event.model.id,step:event.step,attempt:event.attempt,timeoutMs:event.streamOptions.timeoutMs});
+    return undefined;
+  });
   harness.hooks.on("before_payload", async () => undefined);
-  harness.hooks.on("after_response", async () => undefined);
+  harness.hooks.on("after_response", async (event,context) => {
+    const data=createRunContext.read(context);
+    const startedAt=requests.get(data);
+    logRunEvent(data,"model response completed",{httpStatus:event.status,stopReason:event.message.stopReason,error:event.message.errorMessage?logSummary(event.message.errorMessage):undefined,durationMs:startedAt===undefined?undefined:Date.now()-startedAt});
+    requests.delete(data);
+    return undefined;
+  });
   harness.hooks.on("after_tool", async ({ toolName, isError }) => {
     if (["deliver_task_result", "collect_user_input", "proposal_create"].includes(toolName) && !isError) return { terminate: true };
     return undefined;

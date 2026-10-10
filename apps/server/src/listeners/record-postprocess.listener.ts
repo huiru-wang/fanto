@@ -7,7 +7,7 @@ import type { RecordEmbeddingQueue } from "../event/record-embedding-queue.js";
 import type { AgentExecutionQueue } from "../event/agent-execution-queue.js";
 import type { MediaService } from "../domain/media/index.js";
 import type { RecordService } from "../domain/records/index.js";
-import { logError } from "../infrastructure/logging/logger.js";
+import { logError, logInfo, logSummary } from "../infrastructure/logging/logger.js";
 
 export function registerRecordPostprocessListener(
   queue: RecordPostprocessQueue,
@@ -20,9 +20,15 @@ export function registerRecordPostprocessListener(
   agentQueue: AgentExecutionQueue,
 ) {
   queue.on(async task => {
+    const startedAt = Date.now();
     const runId = randomUUID();
+    const details = {...task, runId};
     const record = await records.claimPostprocess({ ...task, runId });
-    if (!record) return;
+    if (!record) {
+      logInfo("record-postprocess", "skipped", {...details, reason:"record_not_claimable"});
+      return;
+    }
+    logInfo("record-postprocess", "started", details);
 
     let completed;
     try {
@@ -35,9 +41,9 @@ export function registerRecordPostprocessListener(
               .then(result => ({ mediaId: block.mediaId, description: result.description }))
               .catch(error => {
                 logError("record-postprocess", "Image understanding failed", {
-                  recordId: task.recordId,
+                  ...details,
                   mediaId: block.mediaId,
-                  error: error instanceof Error ? error.message : String(error),
+                  error: logSummary(error),
                 });
                 return null;
               })]
@@ -60,9 +66,9 @@ export function registerRecordPostprocessListener(
               }))
               .catch(error => {
                 logError("record-postprocess", "Audio transcription failed", {
-                  recordId: task.recordId,
+                  ...details,
                   mediaId: block.mediaId,
-                  error: error instanceof Error ? error.message : String(error),
+                  error: logSummary(error),
                 });
                 return { mediaId: block.mediaId, asr: { status: "failed" as const, errorCode: "TRANSCRIPTION_FAILED" } };
               })]
@@ -77,11 +83,16 @@ export function registerRecordPostprocessListener(
         audio: audioResults,
       });
     } catch (error) {
+      logError("record-postprocess", "failed", {...details, error:logSummary(error), durationMs:Date.now()-startedAt});
       await records.releasePostprocess({ ...task, runId });
       throw error;
     }
 
-    if (!completed) return;
+    if (!completed) {
+      logInfo("record-postprocess", "skipped", {...details, reason:"completion_not_applied", durationMs:Date.now()-startedAt});
+      return;
+    }
+    logInfo("record-postprocess", "completed", {...details, durationMs:Date.now()-startedAt});
 
     embeddingQueue.publish({...task});
     agentQueue.publish({type:"proposal", ...task});

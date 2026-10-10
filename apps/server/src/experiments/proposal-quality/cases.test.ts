@@ -11,4 +11,7 @@ test("quality benchmark spans multiple everyday domains and adversarial create/e
   assert.ok(cases.some(c=>c.existingProject===null&&c.expected.decision==="no_proposal"));
   assert.ok(cases.every(c=>c.expected.decision!=="extend"||Boolean(c.expected.changeKind)));
   assert.equal(new Set(cases.map(c=>c.id)).size,cases.length);
+  assert.ok(cases.filter(c=>c.expected.decision==="create").every(c=>c.relatedRecords?.length>0),
+    "Create benchmark cases require a genuine historical Record fixture under Project-first / Record-second.");
+  assert.ok(cases.some(c=>c.existingProject===null && c.relatedRecords===undefined && c.expected.decision==="no_proposal"));
 });

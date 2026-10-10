@@ -39,15 +39,15 @@ agents:
     description: 基于可信上下文判断值得用户继续的下一步，并创建待确认 Proposal。
     systemPromptModule: proposal-agent
     tools: [record_read, project_read, proposal_create, skill_read]
-    skills: [project-evolution, creative-opportunity]
+    skills: [creative-opportunity]
     task: { enabled: false }
     compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 }
 
   - id: creator-agent
     model_id: deepseek/deepseek-v4-pro
-    description: 在已接受创作目标与授权素材范围内完成视觉创作并发布 Project。
+    description: 按已确认的 Goal 与授权素材创作、打磨并保存作品，运用审美、艺术、思想和情绪方法论提升质量。
     systemPromptModule: creator-agent
     tools: [record_read, project_read, image_generate, image_review, project_manage, skill_read]
-    skills: [art-direction, photography, storytelling, editorial-design, image-creation, creative-review]
+    skills: [aesthetic-judgment, artistic-thinking, intellectual-depth, emotional-nuance]
     task: { enabled: false }
     compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 }

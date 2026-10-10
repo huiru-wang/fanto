@@ -68,3 +68,24 @@ test("CreativeService restores failed Project only through an authorized success
   await service.projectManage(context,{action:"update",projectId,expectedVersion:2,content:"# 已恢复"});
   assert.equal(completeFailedOnSave,true);
 });
+
+test("Authorized Creator Context includes Goal, existing Project and linked Records", async () => {
+  const projectId="11111111-1111-4111-8111-111111111111";
+  const recordId="22222222-2222-4222-8222-222222222222";
+  const project={projectId,sessionId:"session-1",status:"running",title:"写真",summary:"红楼梦主题",
+    goal:{objective:"制作角色写真"},content:"# 旧作品",version:2};
+  const calls:Array<{userId:string;projectId:string;limit:number}>=[];
+  const service=new CreativeService({} as never,{} as never,
+    {find:async()=>project,recordsPage:async (userId:string,id:string,input:{limit:number})=>{
+      calls.push({userId,projectId:id,limit:input.limit});
+      return {kind:"ok",data:{data:[{id:recordId,eventAt:"2026-10-08T00:00:00Z",content:{text:"园林照片",blocks:[]}}],
+        hasMore:false,nextCursor:null,pageSize:12}};
+    }} as never,{} as never,{} as never,{} as never,async()=>({}));
+  const result=await service.context({userId:"owner",sessionId:"session-1",projectId});
+  assert.ok("goal" in result && result.project && result.records);
+  if (!("goal" in result) || !result.project || !result.records) return;
+  assert.equal(result.goal.objective,"制作角色写真");
+  assert.equal(result.project.content,"# 旧作品");
+  assert.deepEqual(result.records.data.map(record=>record.id),[recordId]);
+  assert.deepEqual(calls,[{userId:"owner",projectId,limit:12}]);
+});

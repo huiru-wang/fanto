@@ -1,3 +1,4 @@
+import { logInfo, logSummary } from "../../infrastructure/logging/logger.js";
 import { randomUUID } from "node:crypto";
 import type { Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
@@ -45,7 +46,9 @@ export class CreativeService {
         candidateProjects };
     }
     const project = await this.authorizedProject(context);
-    return { projectId: project.projectId, title: project.title, goal: project.goal, version: project.version, summary: project.summary };
+    const records = await this.projects.recordsPage(context.userId, project.projectId, { limit: 12 });
+    if (records.kind === "error") throw new CreativeError(records.code);
+    return { goal: project.goal, project, records: records.data };
   }
 
   async readRecords(context: CreativeContext, input: { recordIds?: string[]; query?: string }) {
@@ -81,6 +84,9 @@ export class CreativeService {
     if (!input.recordIds.includes(context.recordId)) throw new CreativeError("REFERENCE_RECORDS_UNAVAILABLE");
     await this.authorizedSourceRecord(context);
     const result = await this.proposals.create(context.userId, input, { sessionId: context.sessionId });
+    if(result.kind === "ok") logInfo("proposal", "created", {userId:context.userId, recordId:context.recordId,
+      sessionId:context.sessionId, proposalId:result.data.proposalId, decision:result.data.type,
+      targetProjectId:result.data.targetProjectId, recordIds:[...new Set(input.recordIds)], reason:logSummary(result.data.content.reason)});
     if (result.kind === "error") throw new CreativeError(result.code);
     return { proposalId: result.data.proposalId, type: result.data.type, status: result.data.status, title: result.data.title };
   }

@@ -36,3 +36,18 @@ Main Chat 和 Project Chat 统一调用：
 `image_generate` 生成图直接放在 `users/{userId}/project/{projectId}/` 下。只有 Record 或其它外部 Media 真正写入 Project 正式正文/封面时，`project_manage` 才在保存时复制对象、分配新的 mediaId 并替换引用；仅作为参考的源媒体不复制。Record 删除时按自身独占资产正常清理，已保存作品的副本不受影响。OSS 清理在 DB 提交后尽力执行，失败记日志，不存在持久队列重试。
 
 进程内消息、SSE 发布事件不持久化；服务重启可能导致 queued/running 状态遗留。Creator 生图没有持久化补单机制，失败后由用户在会话中决定是否继续，不承诺自动恢复或付费幂等。
+
+## 日志排查
+
+上述后台链路的业务日志写入 `LOG_DIR/service.log`（按标准启动目录默认是仓库 `logs/`）。按 `userId`、触发 `recordId/version`、`proposalId`、`projectId` 和 `sessionId` 关联：
+
+- `record-postprocess`：投递、开始、完成、跳过和失败；完成后对应 `agent-execution queued` 的 Proposal 消息。
+- `proposal`：开始、Session 创建完成（绑定触发 recordId/version 与 sessionId）、跳过原因、`created` 的关联 `recordIds` 与决策原因、`decision` 的 create/extend/no_proposal 结果；失败包含阶段、错误摘要和耗时。正常 no_proposal 不是执行失败。
+- `proposal accepted`：接受结果、请求提供的 selectedIdeaId 和 firstAccepted；仅首次接受对应 Creator 投递，重复接受不再次执行。接受拒绝记录 errorCode。
+- `creator`：开始、Session 创建/复用/绑定与获取（绑定 proposalId、projectId 与 sessionId）、跳过原因、加载的 Record 集合、完成时的成果版本变化；失败包含阶段、错误摘要和耗时。共享 Worker 另记录超时事件。
+
+- `agent-run`：Run 开始即记录 sessionId 与本轮 runId，以及可用的 Record/Proposal/Project ID；记录历史读取、模型请求/响应（provider/model、HTTP 状态、耗时）、轮次、工具开始/结束（toolCallId、状态、耗时）、Harness 挂起/结束/故障与 handler 错误。Harness 自身的 runId 单独记为 harnessRunId。
+- `agent-run waiting`：运行每 60 秒检查一次，无模型流式事件或阶段进展超过 60 秒时记录最后阶段、空闲时长与未结束工具；用于定位等待模型、工具或历史读取。流式文本/推理事件只更新活动时间，不逐段打印。Run 结束时移除检查器。
+- `agent-execution`：Worker 开始、带当前阶段的超时、Session 释放开始/完成/失败。超时只是取消请求；若底层尚未退出，可结合 waiting 和 Harness 日志继续定位。
+
+原因与错误摘要限长并过滤 URL、Bearer 和常见凭据赋值；不记录完整 Tool 参数或创作正文。日志只用于排障，不提供队列持久化、重放或自动恢复。

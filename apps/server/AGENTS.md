@@ -25,6 +25,8 @@
 - `create_current_schema.ts` 是合并后的历史完整空库基线，`zzzzzz_async_v3.ts` 是新前向增量。旧库遵循迁移元数据合并机制，不手动清空 Kysely 表，也不改已发布基线伪装成迁移。保持旧数据和用户隔离。
 - Current docs 描述已实现语义；`plan/` 只作为方案历史，不作为现状依据。密钥、URL Token 和内部 Tool 参数不得写入面向用户的回复、日志或文档。
 
+Proposal / Creator 创建或复用 Session 后立即记录业务 ID 绑定；Agent Run 日志携带 sessionId/runId，记录阶段与工具耗时，不记录原始参数、模型内容或流式 delta。链路排障日志见 [创作执行：日志排查](../../docs/architecture/creative-runtime.md#日志排查)。
+
 ## 验证
 
 ```bash

@@ -34,3 +34,12 @@ function formatLog(level: string, scope: string, message: string, details?: Reco
   const payload = details ? ` ${JSON.stringify(details)}` : "";
   return `[${nowIso()}] [${level}] [${scope}] ${message}${payload}`;
 }
+
+/** Safe, bounded summaries for business decisions and external errors. */
+export function logSummary(value: unknown): string {
+  return (value instanceof Error ? value.message : String(value))
+    .replace(/https?:\/\/[^\s<>"']+/gi, "[URL REDACTED]")
+    .replace(/Bearer\s+[^\s,;]+/gi, "Bearer [REDACTED]")
+    .replace(/((?:authorization|password|secret|token|api[_-]?key)\s*[=:]\s*)[^\s,;]+/gi, "$1[REDACTED]")
+    .slice(0, 1000);
+}
