@@ -31,7 +31,9 @@ export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSess
     const startedAt = Date.now();
     try {
       await sessions.assertOwnership(params.data.sessionId,userId);
+      logInfo("agent-stop", "requested", {userId,sessionId:params.data.sessionId});
       const stopped = await stopAgentRun(params.data.sessionId);
+      logInfo("agent-stop", "run settled", {userId,sessionId:params.data.sessionId,stopped,durationMs:Date.now()-startedAt});
       await sessions.waitUntilIdle(params.data.sessionId);
       logInfo("agent-stop", "completed", {userId,sessionId:params.data.sessionId,stopped,durationMs:Date.now()-startedAt});
       return c.json({success:true,result:{sessionId:params.data.sessionId,stopped}});

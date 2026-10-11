@@ -2,6 +2,7 @@ import { Archive, ArrowLeft, Check, ChevronDown, ChevronUp, CircleAlert, Clock3,
 import { useCallback, useEffect, useRef, useState } from "react";
 import { archiveProject, acceptProposal, getProject, getProposal, listProposalRecords, rejectProposal, type ProjectDetail, type Proposal } from "../../api/projects";
 import type { RecordItem } from "../../api/records";
+import { DebugId } from "../DebugId";
 import { RecordMediaList } from "../RecordMedia";
 import { ProjectDocument } from "./ProjectHtmlPreview";
 import { ProjectSessionChat } from "./ProjectSessionChat";
@@ -122,6 +123,7 @@ function ProposalSheet({ id, onAccepted, onRejected }: { id: string; onAccepted:
     <div className="project-sheet-scroll">
       <div className="project-sheet-kicker"><Sparkles size={15} />{proposal.type === "extend" ? "延续已有脉络" : "新的提议"}</div>
       <h2 className="project-sheet-title">{proposal.title}</h2>
+      <DebugId label="proposalId" value={proposal.proposalId} />
       {proposal.content.opening && <p className="proposal-opening">{proposal.content.opening}</p>}
       <p className="proposal-direction-title">{proposal.content.ideas.length > 1 ? "我想到了两个方向" : "我想这样来做"}</p>
       <div className="proposal-choices" role="group" aria-label={proposal.type === "extend" ? "确认延续建议" : "选择创意方向"}>
@@ -215,6 +217,12 @@ function ProjectSheet({ id, onArchived }: { id: string; onArchived: () => void }
       <div className="project-sheet-scroll">
         <div className="project-sheet-kicker"><Check size={15}/>作品<span>·</span><time>{formatDate(project.updatedAt)}</time></div>
         <h2 className="project-sheet-title">{project.title}</h2>
+        <div className="project-detail-debug">
+          <DebugId label="projectId" value={project.projectId} />
+          <DebugId label="sessionId" value={project.sessionId} />
+          <span>版本 {project.version} · 更新于 {new Date(project.updatedAt).toLocaleString("zh-CN")}</span>
+          <button type="button" className="secondary-button compact" onClick={() => void load()}>刷新状态</button>
+        </div>
         <div className={`project-creation-status is-${project.status}`} role="status">
           {project.status === "running" && <span className="project-pulse" aria-hidden="true"/>}
           {({queued:"等待创作",running:"正在创作",completed:"创作完成",failed:"本次创作未完成",archived:"已归档"} as const)[project.status]}

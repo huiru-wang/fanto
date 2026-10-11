@@ -1,4 +1,4 @@
-import { logError, logSummary } from "../../infrastructure/logging/logger.js";
+import { logInfo, logError, logSummary } from "../../infrastructure/logging/logger.js";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -46,17 +46,27 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
       }, 15_000);
 
       try {
-        await runAgent(
-          session,
-          body.data.message,
-          controller.signal,
-          { traceId: runTraceId, timeZone, ...body.data.metadata },
-          event => writeStreamEvent(stream, event),
-          () => stream.writeSSE({
-            event: "start",
-            data: JSON.stringify({sessionId:session.id,agentId:session.agentId,traceId:runTraceId}),
-          }),
-        );
+        try {
+          await runAgent(
+            session,
+            body.data.message,
+            controller.signal,
+            { traceId: runTraceId, timeZone, ...body.data.metadata },
+            event => writeStreamEvent(stream, event),
+            () => stream.writeSSE({
+              event: "start",
+              data: JSON.stringify({sessionId:session.id,agentId:session.agentId,traceId:runTraceId}),
+            }),
+          );
+        } finally {
+          // Durable Agent cleanup is complete. Network backpressure must not
+          // keep the Session reserved or block the separate stop request.
+          release?.();
+          release = undefined;
+          clearTimeout(timeout);
+          clearInterval(heartbeat);
+          logInfo("agent-stream", "session released", {userId,sessionId:session.id,agentId:session.agentId,traceId:runTraceId});
+        }
         controller.signal.throwIfAborted();
         await stream.writeSSE({ event: "done", data: "{}" });
       } catch (error) {

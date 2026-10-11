@@ -31,7 +31,7 @@
 ## 客户端与运营范围
 
 - iOS：SwiftUI，Google/Apple 原生登录、品牌启动页预加载、Record、Fanto 主对话、Proposal/Project；正式的多会话管理和独立任务中心尚未提供。
-- H5：React/Vite，作为受控测试客户端使用构建时 refresh token 换取 JWT；没有公开的正式登录流程。
+- H5：React/Vite，作为受控测试客户端使用构建时 refresh token 换取 JWT；没有公开的正式登录流程。提供主会话 Session ID、Project 状态筛选与绑定 ID 的调试展示，限当前用户。
 - Server：单 Hono 进程内嵌 Pi Agent、PostgreSQL + pgvector、OSS、内存事件队列；部署依赖 Nginx/PM2。所有受保护 API 使用 Fanto JWT 用户归属校验。
 - 路由和 UI 的已接入不代表当前线上服务已经部署相同版本；实际在线功能需另做生产环境验收。
 

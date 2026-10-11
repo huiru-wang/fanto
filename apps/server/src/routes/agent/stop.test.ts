@@ -5,6 +5,49 @@ import { createSessionRoutes } from "./sessions.js";
 import { runWithRequestPrincipal } from "../request-user.js";
 import { AgentSessionManager, SessionOwnershipError } from "../../agent/harness/session-manager.js";
 import { runAgent } from "../../agent/harness/run.js";
+import { createAgentRoutes } from "./stream.js";
+
+test("stop releases Session even when the SSE client stops reading terminal events", async () => {
+  const id = randomUUID();
+  const manager = Object.create(AgentSessionManager.prototype) as AgentSessionManager;
+  let admitted!: () => void, complete!: () => void;
+  const ready = new Promise<void>(resolve => { admitted = resolve; });
+  const session = {id, userId:"owner", agentId:"main", runtime:{
+    tools:[], harness:{events:{on:()=>()=>{}}}, readRecentMessages:async()=>[],
+    prompt:async()=>{admitted();await new Promise<void>(resolve=>{complete=resolve;});return {ok:true,value:{status:"completed"}};},
+    abort:async()=>{complete();},
+  }};
+  Object.assign(manager, {running:new Set(), idleWaiters:new Map(),
+    resolveAgentId:async()=>"main", acquire:async()=>session, assertOwnership:async()=>{},
+  });
+  const registry = {get:()=>({id:"main"})};
+  const streams = createAgentRoutes(registry as never, manager);
+  const stops = createSessionRoutes(registry as never, manager);
+  const principal = {userId:"owner", source:"user"} as const;
+  const response = await runWithRequestPrincipal(principal, ()=>streams.request("/stream", {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({sessionId:id,message:"hello"}),
+  }));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await ready;
+    // Leave the response unread, so writing the terminal SSE event blocks.
+    const stopped = await Promise.race([
+      runWithRequestPrincipal(principal, ()=>stops.request(`/sessions/${id}/stop`, {method:"POST"})),
+      new Promise<never>((_, reject)=>{timer=setTimeout(()=>reject(new Error("stop blocked on SSE")),1000);}),
+    ]);
+    assert.equal(stopped.status,200);
+    assert.equal((manager as any).running.has(id),false);
+    // A subsequent reservation must survive the old stream's final cleanup.
+    const release = manager.reserve(session as never);
+    await response.body?.cancel();
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal((manager as any).running.has(id),true);
+    release();
+  } finally {
+    if(timer)clearTimeout(timer);
+    await response.body?.cancel();
+  }
+});
 
 test("stop checks ownership before cancellation and waits for Session release", async () => {
   const id=randomUUID();

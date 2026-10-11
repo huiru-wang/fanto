@@ -10,6 +10,7 @@ import {
   type AgentMessageBlock,
   type PresentedUserInputRequest,
 } from "../api/agent";
+import { DebugId } from "../components/DebugId";
 import { ApiError } from "../api/http";
 import { ChatMarkdown } from "../components/ChatMarkdown";
 import { MediaPresentation } from "../components/MediaPresentation";
@@ -342,6 +343,8 @@ export function ChatPage() {
           <Plus size={16} /><span>新对话</span>
         </button>
       </header>
+
+      <div className="chat-debug"><DebugId label="sessionId" value={sessionId} /></div>
 
       <div className="chat-scroll" ref={scrollRef}>
         <div className="chat-content">

@@ -74,7 +74,6 @@ export function archiveProject(id: string, expectedVersion: number) {
 
 export function listProposals(cursor?: string | null) {
   const query = queryPage(20, cursor);
-  query.set("status", "pending");
   return requestJson<Page<Proposal>>(`/api/proposals?${query}`);
 }
 
