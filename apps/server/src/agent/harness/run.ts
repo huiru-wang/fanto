@@ -9,14 +9,46 @@ import type { HarnessRuntime } from "./build-runtime.js";
 export type RunSession = { id: string; userId: string; agentId?: string; runtime: HarnessRuntime };
 export type RunMetadata = { proposalId?: string; projectId?: string; recordId?: string; recordVersion?: number; traceId?: string; timeZone?: string; task?: { taskId: string; taskRunId: string } };
 
-export function runAgent(
+type ActiveRun = {controller: AbortController; settled: Promise<void>; finish: () => void; error?: unknown};
+const activeRuns = new Map<string, ActiveRun>();
+
+/** Stop the current turn and wait for durable cancellation; never start or replay a run. */
+export async function stopAgentRun(sessionId: string): Promise<boolean> {
+  const active = activeRuns.get(sessionId);
+  if (!active) return false;
+  active.controller.abort();
+  await active.settled;
+  if (active.error) throw active.error;
+  return true;
+}
+
+export async function runAgent(
   session: RunSession,
   message: string,
   signal: AbortSignal,
   metadata: RunMetadata,
   emit: (event: AgentStreamEvent) => Promise<void>,
+  onStarted?: () => Promise<void>,
 ): Promise<string> {
-  return run(session, message, signal, metadata, emit, context => session.runtime.prompt(message, context));
+  if (activeRuns.has(session.id)) throw new Error("AGENT_RUN_REJECTED:LaneBusy");
+  const controller = new AbortController();
+  let finish!: () => void;
+  const active: ActiveRun = {controller, settled: new Promise<void>(resolve => {finish=resolve;}), finish: () => finish()};
+  activeRuns.set(session.id, active);
+  const onAbort = () => controller.abort(signal.reason);
+  signal.addEventListener("abort", onAbort, {once:true});
+  if (signal.aborted) onAbort();
+  try {
+    await onStarted?.();
+    return await run(session, message, controller.signal, metadata, emit, context => session.runtime.prompt(message, context));
+  } catch (error) {
+    if (controller.signal.aborted && !(error instanceof Error && error.name === "AbortError")) active.error=error;
+    throw error;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+    activeRuns.delete(session.id);
+    active.finish();
+  }
 }
 
 async function run(
@@ -36,7 +68,11 @@ async function run(
   }));
   const data=createRunContext.read(context);
   const stopLogging=startRunLogging(data);
-  const abort = () => { void session.runtime.abort().catch(error => {logRunEvent(data,"abort failed",{error:logSummary(error)},"error");}); };
+  let abortPromise: Promise<void> | undefined;
+  const abort = () => {
+    abortPromise ??= session.runtime.abort();
+    void abortPromise.catch(error => {logRunEvent(data,"abort failed",{error:logSummary(error)},"error");});
+  };
   signal.addEventListener("abort", abort, { once: true });
   try {
     signal.throwIfAborted();
@@ -47,7 +83,8 @@ async function run(
     try {
       const result = await invoke(context);
       signal.throwIfAborted();
-      if (!result.ok || result.value.status !== "completed") throw new Error("Agent run did not complete");
+      if (!result.ok) throw new Error(`AGENT_RUN_REJECTED:${result.error._tag}`);
+      if (result.value.status !== "completed") throw new Error(`AGENT_RUN_NOT_COMPLETED:${result.value.status}`);
       logRunEvent(data,"completed",{durationMs:Date.now()-startedAt});
       return output;
     } finally {
@@ -57,7 +94,18 @@ async function run(
     logRunEvent(data,signal.aborted?"aborted":"failed",{error:logSummary(error),durationMs:Date.now()-startedAt},"error");
     throw error;
   } finally {
-    stopLogging();
-    signal.removeEventListener("abort", abort);
+    // Durable cancellation must settle before the caller releases/closes this Session.
+    // Otherwise close can race the abort commit and leave the lane occupied.
+    try {
+      await abortPromise;
+      if (signal.aborted && data.sourceMessageId) {
+        await session.runtime.appendCustomEntry("fanto.run_stopped", {runId:data.runId,sourceMessageId:data.sourceMessageId});
+        logRunEvent(data,"stop persisted",{sourceMessageId:data.sourceMessageId});
+      }
+    }
+    finally {
+      stopLogging();
+      signal.removeEventListener("abort", abort);
+    }
   }
 }

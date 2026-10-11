@@ -40,7 +40,7 @@ test("Creator receives the accepted Extend change and does not silently replace 
   const agent = {registry:{get:() => ({id:"creator-agent"})},sessions:{
     release:async()=>{},acquire:async () => ({id,session:{findEntries:async () => entries},runtime}),
   }};
-  const worker={run:async (_session:unknown,message:string,_timeout:unknown,_meta:unknown,_events:unknown,_signal:unknown,onCompleted:()=>Promise<void>) => {messages.push(message);version++;await onCompleted();return "done";}};
+  const worker={events:{publish:(_id:string,event:{type:string})=>{assert.equal(statuses.at(-1),"completed");assert.equal(event.type,"done");}},run:async (_session:unknown,message:string,_timeout:unknown,_meta:unknown,_events:unknown,_signal:unknown,onCompleted:()=>Promise<void>) => {messages.push(message);version++;await onCompleted();return "done";}};
   const handler = new CreatorHandler(projects as never,proposals as never,agent as never,worker as never,60000);
   await handler.execute(id,projectId,id);
   assert.match(messages[0]!,/职业|求职/);
@@ -60,7 +60,7 @@ test("An unsuccessful creator run cannot be marked as applied and can be retried
   const proposals={recordsPage:async()=>({kind:"ok",data:{data:[{id:recordId}]}}),find:async () => ({status:"accepted",type:"create",resultProjectId:projectId,
     content:{selectedIdeaId:id,ideas:[{id,title:"一页深度思考",idea:"对照两种解释",goal:{objective:"写有依据的札记"}}]}})};
   const agent={registry:{get:()=>({id:"creator-agent"})},sessions:{acquire:async()=>({id,session:{findEntries:async()=>entries},runtime:{appendCustomEntry:async(type:string,data:unknown)=>{entries.push({type:"custom",customType:type,data});}}})}};
-  const worker={run:async (_s:unknown,_m:unknown,_t:unknown,_meta:unknown,_e:unknown,_signal:unknown,onCompleted:()=>Promise<void>)=>{attempts++;if(attempts===1)throw Error("vision unavailable");version++;await onCompleted();return "ok";}};
+  const worker={events:{publish:(_id:string,event:{type:string})=>{assert.equal(statuses.at(-1),event.type==="error"?"failed":"completed");}},run:async (_s:unknown,_m:unknown,_t:unknown,_meta:unknown,_e:unknown,_signal:unknown,onCompleted:()=>Promise<void>)=>{attempts++;if(attempts===1)throw Error("vision unavailable");version++;await onCompleted();return "ok";}};
   const handler=new CreatorHandler(projects as never,proposals as never,agent as never,worker as never,60000);
   await assert.rejects(handler.execute(id,projectId,id),/vision unavailable/);
   assert.equal(entries.length,0);

@@ -264,7 +264,7 @@ private struct ProjectSessionConversation: View {
                             case let .failure(reason):
                                 errorText = reason
                                 awaitFinish()
-                            case .done: awaitFinish()
+                            case .stopped, .done: awaitFinish()
                             default: break
                             }
                         }

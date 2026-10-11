@@ -60,6 +60,7 @@ struct AgentHistoryMessage: Identifiable {
     let tasks: [FantoTaskSummary]
     let userInputRequest: FantoUserInputRequest?
     let userInputResponse: FantoUserInputResponse?
+    let stopped: Bool
 }
 
 struct AgentHistoryPage {
@@ -77,6 +78,7 @@ enum AgentStreamEvent {
     case toolActivity(ConversationToolActivity)
     case taskCreated(FantoTaskSummary)
     case userInputRequested(FantoUserInputRequest)
+    case stopped
     case done
     case failure(String)
 }
@@ -93,6 +95,10 @@ struct AgentAPIClient {
         let body = CreateSessionRequest(agentID: agentID)
         let response: CreateSessionResponse = try await request(path: "api/agent/sessions", method: "POST", body: body)
         return response.sessionID
+    }
+
+    func stopSession(sessionID: String) async throws {
+        let _: StopSessionResponse = try await request(path: "api/agent/sessions/\(sessionID)/stop", method: "POST", body: EmptyStopRequest())
     }
 
     func fetchHistory(sessionID: String, cursor: Int? = nil) async throws -> AgentHistoryPage {
@@ -239,6 +245,8 @@ struct AgentAPIClient {
             if let request = payload.result?.userInputRequest {
                 onEvent(.userInputRequested(request))
             }
+        case "stopped":
+            onEvent(.stopped)
         case "done":
             onEvent(.done)
         case "error":
@@ -338,6 +346,9 @@ private struct CreateSessionResponse: Decodable {
     enum CodingKeys: String, CodingKey { case sessionID = "sessionId" }
 }
 
+private struct EmptyStopRequest: Encodable {}
+private struct StopSessionResponse: Decodable { let sessionId: String; let stopped: Bool }
+
 private struct HistoryResponse: Decodable {
     let messages: [HistoryMessage]
     let hasMore: Bool
@@ -348,6 +359,7 @@ private struct HistoryMessage: Decodable {
     let id: String
     let role: String
     let blocks: [HistoryBlock]
+    let state: String?
 }
 
 private struct HistoryBlock: Decodable {
@@ -464,8 +476,8 @@ private func projectHistory(_ entries: [HistoryMessage]) -> [AgentHistoryMessage
             guard let interactionID = block.interactionID, let content = block.content else { return nil }
             return .init(interactionID: interactionID, content: content)
         }
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !media.isEmpty || !activities.isEmpty || !tasks.isEmpty || request != nil || response != nil else { return nil }
-        return .init(id: entry.id, role: role, text: text, media: media, activities: activities, tasks: tasks, userInputRequest: request, userInputResponse: response)
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !media.isEmpty || !activities.isEmpty || !tasks.isEmpty || request != nil || response != nil || entry.state == "stopped" else { return nil }
+        return .init(id: entry.id, role: role, text: text, media: media, activities: activities, tasks: tasks, userInputRequest: request, userInputResponse: response, stopped: entry.state == "stopped")
     }
 }
 

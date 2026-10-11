@@ -5,6 +5,7 @@ import {
   encodeUserInputResponse,
   fetchAgentHistory,
   streamAgentMessage,
+  stopAgentSession,
   type AgentHistoryMessage,
   type AgentMessageBlock,
   type PresentedUserInputRequest,
@@ -18,7 +19,7 @@ import { UserInputCard } from "../components/UserInputCard";
 import { AGENT_SESSION_KEY } from "../config";
 
 type MessageState = "complete" | "processing" | "streaming" | "stopped" | "failed";
-export type ChatMessage = AgentHistoryMessage & { state: MessageState };
+export type ChatMessage = Omit<AgentHistoryMessage, "state"> & { state: MessageState };
 
 const localId = () => `local-${crypto.randomUUID()}`;
 
@@ -50,12 +51,12 @@ export const ChatMessageItem = memo(function ChatMessageItem({
               />
             ))}
           </div>
-        ) : (
+        ) : message.state === "processing" || message.state === "streaming" ? (
           <div className="thinking-row">
             <span className="thinking-dots"><i /><i /><i /></span>
             <span>正在想…</span>
           </div>
-        )}
+        ) : null}
         {message.state === "stopped" && <span className="message-state">已停止生成</span>}
         {message.state === "failed" && <span className="message-state error">回复未完成</span>}
       </div>
@@ -106,6 +107,7 @@ export function ChatPage() {
   const [draft, setDraft] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [stopping, setStopping] = useState(false);
   const [responding, setResponding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -143,7 +145,7 @@ export function ChatPage() {
         try {
           const history = await fetchAgentHistory(stored);
           setSessionId(stored);
-          setMessages(history.map(message => ({ ...message, state: "complete" })));
+          setMessages(history.map(message => ({ ...message, state: message.state ?? "complete" })));
         } catch (cause) {
           if (cause instanceof ApiError && (cause.status === 403 || cause.status === 404)) {
             localStorage.removeItem(AGENT_SESSION_KEY);
@@ -165,6 +167,7 @@ export function ChatPage() {
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const newConversation = async () => {
+    if (stopping) return;
     if (responding) abortRef.current?.abort();
     setResponding(false);
     setLoading(true);
@@ -179,7 +182,7 @@ export function ChatPage() {
   };
 
   const sendMessage = async (wireText: string, visibleText: string, clarificationInteractionId?: string) => {
-    if (!wireText.trim() || !sessionId || responding) return;
+    if (!wireText.trim() || !sessionId || responding || stopping) return;
     const userMessage: ChatMessage = {
       id: localId(),
       role: "user",
@@ -268,6 +271,8 @@ export function ChatPage() {
           } else if (event.type === "user_input") {
             appendBlock({ type: "user_input", request: event.request });
             scrollToEnd();
+          } else if (event.type === "stopped") {
+            updateAssistant(message => ({...message,state:"stopped"}));
           } else if (event.type === "done") {
             const follow = isNearEnd();
             updateAssistant(message => ({ ...message, state: "complete" }));
@@ -287,8 +292,10 @@ export function ChatPage() {
         setError(cause instanceof Error ? cause.message : "这次回复没有完成");
       }
     } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      setResponding(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+        setResponding(false);
+      }
       if (isNearEnd()) scrollToEnd();
     }
   };
@@ -301,7 +308,7 @@ export function ChatPage() {
   };
 
   const submitUserInput = (request: PresentedUserInputRequest, visibleText: string) => {
-    if (responding) return;
+    if (responding || stopping) return;
     setMessages(current => current.map(message => ({
       ...message,
       blocks: message.blocks.map(block => block.type === "user_input" && block.request.interactionId === request.interactionId
@@ -311,7 +318,18 @@ export function ChatPage() {
     void sendMessage(encodeUserInputResponse(request.interactionId, visibleText), visibleText, request.interactionId);
   };
 
-  const stop = () => { abortRef.current?.abort(); };
+  const stop = async () => {
+    if (!sessionId || stopping) return;
+    setStopping(true);
+    const controller=abortRef.current;
+    try {
+      await stopAgentSession(sessionId);
+      controller?.abort();
+      const history=await fetchAgentHistory(sessionId);
+      setMessages(history.map(message=>({...message,state:message.state ?? "complete"})));
+    } catch(cause) {setError(cause instanceof Error ? cause.message : "停止未确认，请重试");}
+    finally {setStopping(false);}
+  };
 
   return (
     <div className="chat-page">
@@ -320,7 +338,7 @@ export function ChatPage() {
           <span className="chat-avatar"><Sparkles size={17} /></span>
           <div><strong>Fanto</strong><span>基于你的记录继续聊</span></div>
         </div>
-        <button className="secondary-button compact" onClick={() => void newConversation()} disabled={loading}>
+        <button className="secondary-button compact" onClick={() => void newConversation()} disabled={loading || stopping}>
           <Plus size={16} /><span>新对话</span>
         </button>
       </header>
@@ -369,7 +387,7 @@ export function ChatPage() {
             onChange={event => setDraft(event.target.value)}
             rows={1}
             placeholder="和 Fanto 聊聊"
-            disabled={loading || !sessionId}
+            disabled={loading || stopping || !sessionId}
             onKeyDown={event => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
@@ -379,8 +397,8 @@ export function ChatPage() {
           />
           <button
             className={`chat-send ${responding ? "stop" : ""}`}
-            disabled={!responding && (!draft.trim() || !sessionId || loading)}
-            onClick={responding ? stop : () => void send()}
+            disabled={stopping || (!responding && (!draft.trim() || !sessionId || loading))}
+            onClick={responding ? () => void stop() : () => void send()}
             aria-label={responding ? "停止生成" : "发送消息"}
           >
             {responding ? <Square size={15} fill="currentColor" /> : <ArrowUp size={19} />}

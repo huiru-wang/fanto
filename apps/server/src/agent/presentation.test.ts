@@ -97,3 +97,18 @@ test("history exposes a submitted clarification as a distinct user block", () =>
     }],
   }]);
 });
+
+test("history keeps an empty stopped turn and isolates its state from the next turn", () => {
+  const entries = [
+    {id:"a2",type:"message",message:{role:"assistant",content:[{type:"text",text:"next answer"}]}},
+    {id:"u2",type:"message",message:{role:"user",content:"next"}},
+    {id:"stop",type:"custom",customType:"fanto.run_stopped",data:{sourceMessageId:"u1"}},
+    {id:"u1",type:"message",message:{role:"user",content:"first"}},
+  ] as any;
+  assert.deepEqual(projectHistory(entries,[]),[
+    {id:"u1",role:"user",blocks:[{type:"text",content:"first"}]},
+    {id:"stop",role:"assistant",blocks:[],state:"stopped"},
+    {id:"u2",role:"user",blocks:[{type:"text",content:"next"}]},
+    {id:"a2",role:"assistant",blocks:[{type:"text",content:"next answer"}]},
+  ]);
+});

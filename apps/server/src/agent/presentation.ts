@@ -24,6 +24,7 @@ export type AgentHistoryMessagePresentation = {
   id: string;
   role: "user" | "assistant";
   blocks: AgentHistoryBlock[];
+  state?: "stopped";
 };
 
 const USER_INPUT_RESPONSE = /^\[\[fanto-user-input:([^\]]+)\]\]\s*\n?/;
@@ -56,20 +57,28 @@ export function projectHistory(entries: Entry[], tools: readonly FantoTool[]): A
   const messages: AgentHistoryMessagePresentation[] = [];
   let assistantId: string | null = null;
   let assistantBlocks: AgentHistoryBlock[] = [];
+  let assistantStopped = false;
 
   const flushAssistant = () => {
-    if (assistantBlocks.length > 0) {
+    if (assistantBlocks.length > 0 || assistantStopped) {
       messages.push({
         id: assistantId ?? `history-assistant-${messages.length}`,
         role: "assistant",
         blocks: assistantBlocks,
+        ...(assistantStopped ? {state:"stopped" as const} : {}),
       });
     }
     assistantId = null;
     assistantBlocks = [];
+    assistantStopped = false;
   };
 
   for (const entry of ordered) {
+    if (entry.type === "custom" && entry.customType === "fanto.run_stopped") {
+      assistantId ??= entry.id;
+      assistantStopped=true;
+      continue;
+    }
     if (entry.type !== "message") continue;
     const message = entry.message;
 
@@ -91,6 +100,7 @@ export function projectHistory(entries: Entry[], tools: readonly FantoTool[]): A
     }
 
     if (message.role === "assistant") {
+      if (message.stopReason === "aborted") {assistantStopped=true;assistantId ??= entry.id;}
       const text = messageText(message).trim();
       if (text) {
         assistantId ??= entry.id;

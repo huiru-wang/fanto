@@ -29,6 +29,8 @@ final class ConversationStore {
     private var textBlockOpen = false
     private var pendingPresentedMedia: [PresentedMedia] = []
     private var runTask: Task<Void, Never>?
+    private var stopTask: Task<Void, Never>?
+    private var isStopping = false
     private var localMessageSequence = 0
 
     init(client: AgentAPIClient = .shared, persistence: AgentSessionPersistence = .init()) {
@@ -41,7 +43,7 @@ final class ConversationStore {
         return false
     }
 
-    var isResponding: Bool { runTask != nil }
+    var isResponding: Bool { runTask != nil || isStopping }
 
     func load() async {
         guard !isReady, loadState != .loading else { return }
@@ -75,6 +77,9 @@ final class ConversationStore {
     }
 
     func reset() {
+        stopTask?.cancel()
+        stopTask = nil
+        isStopping = false
         runTask?.cancel()
         runTask = nil
         sessionID = nil
@@ -95,7 +100,7 @@ final class ConversationStore {
 
     func send() {
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty else { return }
+        guard isReady, runTask == nil, !isStopping, sessionID != nil, !prompt.isEmpty else { return }
 
         draft = ""
         messages.append(.user(id: nextLocalMessageID(), text: prompt))
@@ -103,7 +108,7 @@ final class ConversationStore {
     }
 
     func submitUserInput(request: FantoUserInputRequest, answers: [String]) {
-        guard isReady, runTask == nil, sessionID != nil, answers.count == request.questions.count else { return }
+        guard isReady, runTask == nil, !isStopping, sessionID != nil, answers.count == request.questions.count else { return }
         let visibleText = zip(request.questions, answers)
             .map { "\($0.label)：\($1)" }
             .joined(separator: "\n")
@@ -115,7 +120,7 @@ final class ConversationStore {
     }
 
     private func beginRun(message: String) {
-        guard isReady, runTask == nil, let sessionID else { return }
+        guard isReady, runTask == nil, !isStopping, let sessionID else { return }
         let assistant = ConversationMessage.assistantPlaceholder(id: nextLocalMessageID())
         messages.append(assistant)
         activeAssistantMessageID = assistant.id
@@ -134,6 +139,7 @@ final class ConversationStore {
 
             do {
                 try await client.stream(sessionID: sessionID, message: message) { [weak self] event in
+                    guard self?.activeAssistantMessageID == assistant.id else { return }
                     self?.receive(event)
                 }
                 // Only the SSE done event completes the reply; EOF alone is incomplete.
@@ -141,18 +147,47 @@ final class ConversationStore {
                 // stop() already sets the visible terminal state. Other cancellation paths
                 // are converted to a retryable failure by the deferred terminal-state guard.
             } catch {
-                self.failActiveMessage(self.userVisibleError(for: error))
+                if self.activeAssistantMessageID == assistant.id {
+                    self.failActiveMessage(self.userVisibleError(for: error))
+                }
             }
         }
     }
 
     func stop() {
+        guard !isStopping, let id = activeAssistantMessageID, let sessionID else { return }
+        isStopping = true
+        let runningTask = runTask
+        stopTask = Task { [weak self, client] in
+            guard let self else { return }
+            defer {
+                if self.sessionID == sessionID { self.isStopping = false; self.stopTask = nil }
+            }
+            do {
+                try await client.stopSession(sessionID: sessionID)
+                guard self.sessionID == sessionID else { return }
+                runningTask?.cancel()
+                if self.activeAssistantMessageID == id { self.stopActiveMessage() }
+                guard let page = try? await client.fetchHistory(sessionID: sessionID) else { return }
+                guard self.sessionID == sessionID else { return }
+                self.messages = self.project(page.messages)
+                self.hasMoreHistory = page.hasMore
+                self.historyNextCursor = page.nextCursor
+            } catch {
+                self.updateMessage(id: id) { $0.state = .failed("停止未确认，请重试。") }
+            }
+        }
+    }
+
+    private func stopActiveMessage() {
         guard let id = activeAssistantMessageID else { return }
-        updateMessage(id: id) { $0.state = .stopped }
+        updateMessage(id: id) {
+            $0.media = pendingPresentedMedia
+            $0.state = .stopped
+        }
         activeAssistantMessageID = nil
         activePrompt = nil
         pendingPresentedMedia = []
-        runTask?.cancel()
         runTask = nil
     }
 
@@ -248,6 +283,8 @@ final class ConversationStore {
         case let .userInputRequested(request):
             updateMessage(id: id) { $0.userInputRequest = request }
             scrollAnchorID = id
+        case .stopped:
+            stopActiveMessage()
         case .done:
             completeActiveMessage()
         case .failure:
@@ -318,7 +355,7 @@ final class ConversationStore {
                 tasks: $0.tasks,
                 userInputRequest: $0.userInputRequest,
                 userInputResponse: $0.userInputResponse,
-                state: .complete
+                state: $0.stopped ? .stopped : .complete
             )
         }
     }

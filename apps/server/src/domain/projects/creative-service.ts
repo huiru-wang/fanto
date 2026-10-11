@@ -1,4 +1,4 @@
-import { logInfo, logSummary } from "../../infrastructure/logging/logger.js";
+import { logError, logInfo, logSummary } from "../../infrastructure/logging/logger.js";
 import { randomUUID } from "node:crypto";
 import type { Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
@@ -6,7 +6,7 @@ import type { RecordService } from "../records/index.js";
 import type { MediaService } from "../media/index.js";
 import type { ProjectService, ProposalService, CreateProposalInput } from "./index.js";
 import type { ImageUnderstanding } from "../../infrastructure/clients/image-client.js";
-import type { ImageGenerationClient } from "../../infrastructure/clients/creative-image-client.js";
+import { ImageClientError, type ImageGenerationClient } from "../../infrastructure/clients/creative-image-client.js";
 import { inspectProjectContent } from "./content.js";
 import { CreativeError, projectManageSchema, type CreativeContext, type ImageInput, type ProjectManageInput } from "./creative-model.js";
 
@@ -146,13 +146,27 @@ export class CreativeService {
     const project = await this.authorizedProject(context);
     const unique = [...new Set(input.referenceMediaIds)];
     if (!unique.length || unique.length !== input.referenceMediaIds.length) throw new CreativeError("INVALID_INPUT");
-    return this.media.withGenerationReferences(context.userId, unique, project.projectId, async urls => {
-      const result = await this.image.generate({ prompt: input.prompt, referenceUrls: urls, aspectRatio: input.aspectRatio }, context.signal);
-      const downloaded = await this.image.download(result.recovery, context.signal);
-      const saved = await this.media.createGeneratedImage({
-        userId: context.userId, mediaId: randomUUID(), projectId: project.projectId, ...downloaded,
+    const startedAt = Date.now();
+    const details = {userId: context.userId, sessionId: context.sessionId, projectId: project.projectId,
+      generationId: randomUUID(), referenceMediaIds: unique};
+    let stage = "reference_urls";
+    try {
+      return await this.media.withGenerationReferences(context.userId, unique, project.projectId, async urls => {
+        stage = "generate";
+        const result = await this.image.generate({ prompt: input.prompt, referenceUrls: urls, aspectRatio: input.aspectRatio }, context.signal);
+        stage = "download";
+        const downloaded = await this.image.download(result.recovery, context.signal);
+        stage = "save_media";
+        const saved = await this.media.createGeneratedImage({
+          userId: context.userId, mediaId: randomUUID(), projectId: project.projectId, ...downloaded,
+        });
+        logInfo("image-generation", "completed", {...details, mediaId: saved.mediaId, durationMs: Date.now()-startedAt});
+        return { mediaId: saved.mediaId, mimeType: saved.mimeType, width: downloaded.width, height: downloaded.height };
       });
-      return { mediaId: saved.mediaId, mimeType: saved.mimeType, width: downloaded.width, height: downloaded.height };
-    });
+    } catch (error) {
+      logError("image-generation", "failed", {...details, stage, durationMs: Date.now()-startedAt,
+        error: logSummary(error), ...(error instanceof ImageClientError ? {errorCode: error.code, diagnostics: error.diagnostics} : {})});
+      throw error;
+    }
   }
 }

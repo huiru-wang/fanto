@@ -38,6 +38,7 @@ export class AgentSessionManager {
   private readonly repository: PgSessionRepo;
   private readonly sessions = new Map<string, ManagedSession>();
   private readonly running = new Set<string>();
+  private readonly idleWaiters = new Map<string, Set<() => void>>();
 
   constructor(
     private readonly models: Models,
@@ -67,6 +68,7 @@ export class AgentSessionManager {
 
   async acquire(definition: AgentDefinition, id: string, userId?: string): Promise<ManagedSession> {
     if (!validSessionId.test(id)) throw new SessionNotFoundError("Invalid session id");
+    if (this.running.has(id)) throw new SessionBusyError("Session is already running");
     const cached = this.sessions.get(id);
     if (cached) {
       this.assertOwner(cached, userId);
@@ -100,7 +102,20 @@ export class AgentSessionManager {
   reserve(session: ManagedSession): () => void {
     if (this.running.has(session.id)) throw new SessionBusyError("Session is already running");
     this.running.add(session.id);
-    return () => this.running.delete(session.id);
+    return () => {
+      this.running.delete(session.id);
+      for (const resolve of this.idleWaiters.get(session.id) ?? []) resolve();
+      this.idleWaiters.delete(session.id);
+    };
+  }
+
+  async waitUntilIdle(id: string): Promise<void> {
+    if (!this.running.has(id)) return;
+    await new Promise<void>(resolve => {
+      const waiters = this.idleWaiters.get(id) ?? new Set<() => void>();
+      waiters.add(resolve);
+      this.idleWaiters.set(id, waiters);
+    });
   }
 
   async history(
@@ -154,8 +169,8 @@ export class AgentSessionManager {
     );
   }
 
-  async release(id: string): Promise<void> {
-    if (this.running.has(id)) throw new SessionBusyError("Session is still running");
+  async release(id: string, reservedOwner = false): Promise<void> {
+    if (this.running.has(id) && !reservedOwner) throw new SessionBusyError("Session is still running");
     const current = this.sessions.get(id);
     if (!current) return;
     this.sessions.delete(id);
@@ -288,5 +303,5 @@ export class AgentSessionManager {
 }
 
 function isVisibleHistoryEntry(entry: Entry): boolean {
-  return entry.type !== "compaction" && !(entry.type === "custom" && entry.customType.startsWith("fanto."));
+  return entry.type !== "compaction" && !(entry.type === "custom" && entry.customType.startsWith("fanto.") && entry.customType !== "fanto.run_stopped");
 }

@@ -1,5 +1,5 @@
 import type { AgentStreamEvent } from "../agent/harness/events.js";
-export type SessionEvent = AgentStreamEvent | {type:"start"; agentId:string} | {type:"done"} | {type:"error"; message?:string};
+export type SessionEvent = AgentStreamEvent | {type:"start"; agentId:string} | {type:"stopped"} | {type:"done"} | {type:"error"; message?:string};
 export class SessionEventBus {
   private readonly listeners = new Map<string, Set<(event:SessionEvent)=>void>>();
   publish(sessionId:string, event:SessionEvent) {

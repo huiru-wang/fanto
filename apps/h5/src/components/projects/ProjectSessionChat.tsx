@@ -52,7 +52,7 @@ export function ProjectSessionChat({ sessionId, projectId, status, onUpdated }: 
           await watchSessionEvents(sessionId, controller.signal, event => {
             if (sendingRef.current) return; // POST stream owns its own live events
             apply(event);
-            if (event.type === "done" || event.type === "error") {
+            if (event.type === "done" || event.type === "stopped" || event.type === "error") {
               setLiveBlocks([]);
               void refresh().then(() => updated.current());
             }
@@ -97,7 +97,7 @@ export function ProjectSessionChat({ sessionId, projectId, status, onUpdated }: 
   return <section className="project-session-chat" aria-label="创作对话">
     <div className="project-session-messages" ref={view}>
       {messages.length === 0 && liveBlocks.length === 0 && <p className="project-muted">创作过程会在这里出现。</p>}
-      {messages.map(message => <ChatMessageItem key={message.id} message={{ ...message, blocks: message.role === "assistant" ? displayedBlocks(message.blocks) : message.blocks, state: "complete" } as ChatMessage} responding={sending} onSubmitInput={() => {}} />)}
+      {messages.map(message => <ChatMessageItem key={message.id} message={{ ...message, blocks: message.role === "assistant" ? displayedBlocks(message.blocks) : message.blocks, state: message.state ?? "complete" } as ChatMessage} responding={sending} onSubmitInput={() => {}} />)}
       {liveBlocks.length > 0 && <ChatMessageItem message={{ id: "live", role: "assistant", blocks: displayedBlocks(liveBlocks), state: "streaming" }} responding={sending} onSubmitInput={() => {}} />}
       {sending && liveBlocks.length === 0 && <p className="project-muted">正在回应…</p>}
       {error && <p className="project-form-error" role="alert">{error}</p>}

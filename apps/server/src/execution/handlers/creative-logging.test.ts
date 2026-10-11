@@ -55,7 +55,7 @@ test("Creator logs reference records and saved versions, and identifies an unsav
     {find:async()=>({status:"accepted",resultProjectId:"project",type:"create",content:{selectedIdeaId:"idea",ideas:[{id:"idea",goal:{},title:"title",idea:"idea"}]}}),
       recordsPage:async()=>({kind:"ok",data:{data:[{id:"record-a"},{id:"record-b"}]}})} as never,
     {registry:{get:()=>({})},sessions:{acquire:async()=>({id:"creator-session",session:{findEntries:async()=>[]},runtime:{appendCustomEntry:async()=>{}}})}} as never,
-    {run:async(_s:unknown,_m:unknown,_t:unknown,_meta:unknown,_e:unknown,_signal:unknown,completed:()=>Promise<void>)=>{if(save)version++;await completed();}} as never,1000);
+    {events:{publish:()=>{}},run:async(_s:unknown,_m:unknown,_t:unknown,_meta:unknown,_e:unknown,_signal:unknown,completed:()=>Promise<void>)=>{if(save)version++;await completed();}} as never,1000);
   await handler.execute("user","project","proposal");
   const completed=logs().find(e=>e.scope==="creator"&&e.event==="completed");
   const binding=logs().find(e=>e.scope==="creator"&&e.event==="execution session bound");
@@ -106,4 +106,20 @@ test("Accept logs distinguish first acceptance, duplicates and rejection without
   rejected=true;
   assert.equal((await request()).status,409);
   assert.equal(logs().at(-1).errorCode,"INVALID_STATE");
+});
+
+test("image generation logs correlate upstream failure diagnostics with the creative Session", async () => {
+  const { CreativeService } = await import("../../domain/projects/creative-service.js");
+  const { ImageClientError } = await import("../../infrastructure/clients/creative-image-client.js");
+  const error=new ImageClientError("IMAGE_RESULT_UNKNOWN",{stage:"http_response",reason:"http_error",durationMs:12,httpStatus:503,requestId:"upstream-request"});
+  const service=new CreativeService({} as never,{} as never,
+    {find:async()=>({projectId:"project",sessionId:"session",status:"running"})} as never,{} as never,
+    {withGenerationReferences:async(_u:unknown,_r:unknown,_p:unknown,callback:(urls:string[])=>Promise<unknown>)=>callback(["https://signed.example/?Signature=private"])} as never,
+    {generate:async()=>{throw error;}} as never,async()=>({}));
+  await assert.rejects(service.generateImage({userId:"user",sessionId:"session",projectId:"project"},{prompt:"private prompt",referenceMediaIds:["source"]}),/IMAGE_RESULT_UNKNOWN/);
+  const entry=logs().at(-1);
+  assert.equal(entry.scope,"image-generation");assert.equal(entry.sessionId,"session");
+  assert.equal(entry.projectId,"project");assert.deepEqual(entry.referenceMediaIds,["source"]);
+  assert.equal(entry.diagnostics.httpStatus,503);assert.equal(entry.diagnostics.requestId,"upstream-request");
+  assert.equal(typeof entry.generationId,"string");assert.doesNotMatch(JSON.stringify(entry),/Signature|private/);
 });

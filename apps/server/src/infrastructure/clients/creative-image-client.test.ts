@@ -39,3 +39,34 @@ test("uncertain requests are not retried; disallowed URLs and non-images are rej
   });
   await assert.rejects(fakeImage.download((await fakeImage.generate({ prompt: "edit", referenceUrls: ["https://source.example"] })).recovery), /IMAGE_SAVE_RETRYABLE/);
 });
+
+test("image failures preserve actionable diagnostics without signed URLs or credentials", async () => {
+  const { ImageClientError } = await import("./creative-image-client.js");
+  const input = {prompt:"private-prompt",referenceUrls:[vendor]};
+  const diagnostics = async (client: CreativeImageClient, signal?: AbortSignal) => {
+    try { await client.generate(input, signal); assert.fail("expected failure"); }
+    catch (error) { assert.ok(error instanceof ImageClientError); return error.diagnostics!; }
+  };
+  const http = await diagnostics(new CreativeImageClient(options, async()=>Response.json({code:"ServiceUnavailable",message:`token=private ${vendor}`,request_id:"vendor-request"},{status:503})));
+  assert.equal(http.httpStatus,503); assert.equal(http.reason,"http_error");
+  assert.equal(http.vendorCode,"ServiceUnavailable"); assert.equal(http.requestId,"vendor-request");
+  assert.doesNotMatch(JSON.stringify(http),/Signature|private|private-prompt/);
+  const network = await diagnostics(new CreativeImageClient(options, async()=>{throw Object.assign(new TypeError("fetch failed"),{cause:{code:"ECONNRESET"}});}));
+  assert.equal(network.reason,"network_error"); assert.equal(network.causeCode,"ECONNRESET");
+  assert.equal(network.errorName,"TypeError");
+  const invalid = await diagnostics(new CreativeImageClient(options, async()=>new Response("not json")));
+  assert.equal(invalid.reason,"invalid_json"); assert.equal(invalid.httpStatus,200);
+  const abortingFetch: typeof fetch = async (_url, init) => new Promise((_resolve,reject)=> {
+    const signal=init!.signal!;
+    if(signal.aborted) reject(signal.reason);
+    else {
+      const deadline=setTimeout(()=>reject(new Error("test deadline")),200);
+      signal.addEventListener("abort",()=>{clearTimeout(deadline);reject(signal.reason);},{once:true});
+    }
+  });
+  const timeout = await diagnostics(new CreativeImageClient({...options,timeoutMs:10},abortingFetch));
+  assert.equal(timeout.reason,"request_timeout");
+  const controller=new AbortController(); controller.abort();
+  const cancelled=await diagnostics(new CreativeImageClient(options,abortingFetch),controller.signal);
+  assert.equal(cancelled.reason,"caller_aborted");
+});

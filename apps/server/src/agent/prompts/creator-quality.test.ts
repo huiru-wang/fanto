@@ -70,3 +70,26 @@ test("new methodology Skills have valid references and removed domain-process sk
   assert.match(loader.get("creative-opportunity")!.content,/不得检查 Creator 当前可交付性/);
   assert.match(loader.get("creative-opportunity")!.content,/延续|Extend/);
 });
+
+test("Proposal defines the outcome before saving while leaving production choices to Creator", () => {
+  const skill = loader.get("creative-opportunity")!.content;
+  for (const content of [proposalAgentPrompt, skill]) {
+    for (const field of ["goal.objective", "constraints", "successCriteria"]) {
+      assert.ok(content.includes(field), field);
+    }
+    assert.match(content, /素材.*变化/);
+    assert.match(content, /保存前/);
+    assert.match(content, /关键.*选择/);
+    assert.match(content, /先重写/);
+    assert.match(content, /工具、模型、制作步骤和排版细节.*Creator/);
+    assert.match(content, /单个 Record/);
+  }
+  assert.match(proposalAgentPrompt, /opening.*不能代替 idea/);
+  assert.match(proposalAgentPrompt, /Extend.*旧作品哪里变化/);
+  for (const reference of ["moment-to-experience", "fragments-to-connection", "idea-to-insight"]) {
+    const content = readFileSync(resolve(root, "creative-opportunity", "references", `${reference}.md`), "utf8");
+    assert.match(content, /好例/);
+    assert.match(content, /坏例/);
+    assert.match(content, /没有.*说明|没有交代|没有明确/);
+  }
+});

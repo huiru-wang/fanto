@@ -53,6 +53,7 @@ export type AgentHistoryMessage = {
   id: string;
   role: "user" | "assistant";
   blocks: AgentMessageBlock[];
+  state?: "stopped";
 };
 
 type HistoryResult = {
@@ -69,6 +70,7 @@ export type AgentStreamEvent =
   | { type: "media"; items: PresentedMedia[] }
   | { type: "task"; task: PresentedTask }
   | { type: "user_input"; request: PresentedUserInputRequest }
+  | { type: "stopped" }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -192,6 +194,10 @@ export async function createAgentSession(): Promise<string> {
   return result.sessionId;
 }
 
+export async function stopAgentSession(sessionId: string): Promise<void> {
+  await requestJson(`/api/agent/sessions/${encodeURIComponent(sessionId)}/stop`, {method:"POST",headers:agentHeaders()});
+}
+
 export async function fetchAgentHistory(sessionId: string): Promise<AgentHistoryMessage[]> {
   const result = await requestJson<HistoryResult>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/history?limit=100`, { headers: agentHeaders() });
   return result.messages;
@@ -220,6 +226,7 @@ export async function streamAgentMessage(
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let terminal = false;
   const deliver = (block: string) => {
     if (!block.trim() || block.startsWith(":")) return;
     let eventName = "";
@@ -267,10 +274,16 @@ export async function streamAgentMessage(
         if (payload.text) onEvent({ type: "delta", text: payload.text });
         break;
       }
+      case "stopped":
+        terminal = true;
+        onEvent({type:"stopped"});
+        break;
       case "done":
+        terminal = true;
         onEvent({ type: "done" });
         break;
       case "error": {
+        terminal = true;
         const payload = JSON.parse(rawData) as { error?: string };
         onEvent({ type: "error", message: payload.error ?? "这次回复没有完成。" });
         break;
@@ -278,6 +291,7 @@ export async function streamAgentMessage(
     }
   };
 
+  try {
   while (true) {
     const { value, done } = await reader.read();
     buffer += decoder.decode(value, { stream: !done });
@@ -289,6 +303,8 @@ export async function streamAgentMessage(
       break;
     }
   }
+  } finally { reader.releaseLock(); }
+  if (!terminal) throw new Error("回复连接已中断，请检查历史后重试。");
 }
 
 /** Subscribe to an existing, user-owned Agent session. Never starts Agent execution. */
@@ -309,6 +325,7 @@ export async function watchSessionEvents(
     if(event==="turn_start")return onEvent({type:"processing"});
     if(event==="message_start")return onEvent({type:"message_start"});
     if(event==="message_end")return onEvent({type:"message_end"});
+    if(event==="stopped")return onEvent({type:"stopped"});
     if(event==="done")return onEvent({type:"done"});
     if(event==="error"){
       const payload=JSON.parse(raw) as {error?:string};return onEvent({type:"error",message:payload.error??"本次创作没有完成"});

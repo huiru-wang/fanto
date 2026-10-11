@@ -1,3 +1,4 @@
+import { logError, logSummary } from "../../infrastructure/logging/logger.js";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -45,23 +46,25 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
       }, 15_000);
 
       try {
-        await stream.writeSSE({
-          event: "start",
-          data: JSON.stringify({ sessionId: session.id, agentId: session.agentId, traceId: runTraceId }),
-        });
         await runAgent(
           session,
           body.data.message,
           controller.signal,
           { traceId: runTraceId, timeZone, ...body.data.metadata },
           event => writeStreamEvent(stream, event),
+          () => stream.writeSSE({
+            event: "start",
+            data: JSON.stringify({sessionId:session.id,agentId:session.agentId,traceId:runTraceId}),
+          }),
         );
         controller.signal.throwIfAborted();
         await stream.writeSSE({ event: "done", data: "{}" });
-      } catch {
+      } catch (error) {
+        logError("agent-stream", "run failed", {userId, sessionId:session.id, agentId:session.agentId,
+          traceId:runTraceId, projectId:body.data.metadata?.projectId, aborted:controller.signal.aborted || (error instanceof Error && error.name === "AbortError"), error:logSummary(error)});
         if (!stream.aborted) {
           await stream.writeSSE({
-            event: "error",
+            event: error instanceof Error && error.name === "AbortError" ? "stopped" : "error",
             data: JSON.stringify({ error: controller.signal.aborted ? "Request timed out" : "Agent run failed" }),
           });
         }

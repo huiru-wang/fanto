@@ -4,9 +4,9 @@
 
 ## 发现与接受
 
-Record postprocess 成功后（配置 `CREATIVE_ENABLED=true`），向 `AgentExecutionQueue` 发布 Proposal 消息。ProposalHandler 运行内部 `proposal-agent`，按需读取 `skills/creative/SKILL.md` 和「入画 / 异想 / 成章 / 回声」参考，使用 `proposal_create` 存储至多两条真正不同的候选。单个 Record 自身也可支撑 Proposal，不要求历史关联。没有明确价值时不产生 Proposal，不向用户追问；正常完成但未通过 proposal_create 保存提议时记为 no_proposal，不解析助手文字或要求决策 JSON。
+Record postprocess 成功后（配置 `CREATIVE_ENABLED=true`），向 `AgentExecutionQueue` 发布 Proposal 消息。ProposalHandler 运行内部 `proposal-agent`，核实事实后读取 `skills/creative-opportunity/SKILL.md`，按需使用「瞬间 → 新体验 / 碎片 → 新连接 / 想法 → 新思考」参考，使用 `proposal_create` 存储至多两条真正不同的候选。单个 Record 自身也可支撑 Proposal，不要求历史关联。没有明确价值时不产生 Proposal，不向用户追问；正常完成但未通过 proposal_create 保存提议时记为 no_proposal，不解析助手文字或要求决策 JSON。
 
-Proposal `content={reason,ideas:[{id,title,idea,tags,goal}],selectedIdeaId}`；`idea` 面向用户预告可想象的成品，`goal` 则记录目标、背景和约束。两者不是执行计划，不存图片槽位、预算或自动决定用户选择。Proposal Session 与 Creator Session 不混用。
+Proposal `content={reason,ideas:[{id,title,idea,tags,goal}],selectedIdeaId}`；`idea` 面向用户说明要做什么、素材如何变化、用户将获得什么；影响接受的选择（如原照配文或改编画面）由 Proposal 明确。`goal.objective` 描述成果与价值，`constraints` 约束素材变化和事实边界，`successCriteria` 提供可判断的效果。保存前 Agent 自检成果清晰度，工具仍只校验结构，不做语义质量判定。两者不是执行计划，不存图片槽位、预算或自动决定用户选择。Proposal Session 与 Creator Session 不混用。
 
 接受时 `POST /api/proposals/:id/accept` 返回 `{projectId}`：事务内按选中 Idea 创建/更新 Project、关联 Record、状态变为 `queued`，随后发布后台 Creator 消息。重复接受同一方向只返回原 projectId。
 
@@ -35,7 +35,7 @@ Main Chat 和 Project Chat 统一调用：
 
 `image_generate` 生成图直接放在 `users/{userId}/project/{projectId}/` 下。只有 Record 或其它外部 Media 真正写入 Project 正式正文/封面时，`project_manage` 才在保存时复制对象、分配新的 mediaId 并替换引用；仅作为参考的源媒体不复制。Record 删除时按自身独占资产正常清理，已保存作品的副本不受影响。OSS 清理在 DB 提交后尽力执行，失败记日志，不存在持久队列重试。
 
-进程内消息、SSE 发布事件不持久化；服务重启可能导致 queued/running 状态遗留。Creator 生图没有持久化补单机制，失败后由用户在会话中决定是否继续，不承诺自动恢复或付费幂等。
+进程内消息、SSE 发布事件不持久化；服务重启可能导致 queued/running 状态遗留。Creator 超时只打断本轮运行，保留 Session、历史与已生成媒体；运行取消时等待 Pi Lane 的持久化取消完成；下次续聊前清理遗留 Operation（不重放生图等工具）。运行退出并释放 Session 后将 Project 标记为 failed，再通知客户端，可使用同一 Session 继续聊天，后续保存非空作品可恢复 completed。Creator 生图没有持久化补单机制，失败后由用户在会话中决定是否继续，不承诺自动恢复或付费幂等。
 
 ## 日志排查
 
@@ -45,6 +45,8 @@ Main Chat 和 Project Chat 统一调用：
 - `proposal`：开始、Session 创建完成（绑定触发 recordId/version 与 sessionId）、跳过原因、`created` 的关联 `recordIds` 与决策原因、`decision` 的 create/extend/no_proposal 结果；失败包含阶段、错误摘要和耗时。正常 no_proposal 不是执行失败。
 - `proposal accepted`：接受结果、请求提供的 selectedIdeaId 和 firstAccepted；仅首次接受对应 Creator 投递，重复接受不再次执行。接受拒绝记录 errorCode。
 - `creator`：开始、Session 创建/复用/绑定与获取（绑定 proposalId、projectId 与 sessionId）、跳过原因、加载的 Record 集合、完成时的成果版本变化；失败包含阶段、错误摘要和耗时。共享 Worker 另记录超时事件。
+
+- `image-generation`：生成完成或失败绑定 generationId、userId、sessionId、projectId、referenceMediaIds；失败记录阶段、总耗时及客户端诊断（请求耗时、HTTP 状态、供应商 requestId/code、脱敏消息、网络异常类型/causeCode），区分请求超时、调用方取消、网络、响应解析、下载与媒体保存问题。不记录 Prompt、签名 URL 或完整响应。
 
 - `agent-run`：Run 开始即记录 sessionId 与本轮 runId，以及可用的 Record/Proposal/Project ID；记录历史读取、模型请求/响应（provider/model、HTTP 状态、耗时）、轮次、工具开始/结束（toolCallId、状态、耗时）、Harness 挂起/结束/故障与 handler 错误。Harness 自身的 runId 单独记为 harnessRunId。
 - `agent-run waiting`：运行每 60 秒检查一次，无模型流式事件或阶段进展超过 60 秒时记录最后阶段、空闲时长与未结束工具；用于定位等待模型、工具或历史读取。流式文本/推理事件只更新活动时间，不逐段打印。Run 结束时移除检查器。

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { AgentSessionManager, SessionOwnershipError } from "./session-manager.js";
+import { AgentSessionManager, SessionOwnershipError, SessionBusyError } from "./session-manager.js";
 
 test("Session agent identity cannot change for cached Sessions", async () => {
   const id = randomUUID();
@@ -44,4 +44,18 @@ test("Same Session agent identity allows revision upgrades", async () => {
   assert.equal(session.agentId,"creator-agent");
   assert.equal(session.revision,"new");
   assert.equal(savedRevision,"new");
+});
+
+
+test("a Session being closed by its reserved owner cannot reopen until released", async () => {
+  const id=randomUUID();const manager=Object.create(AgentSessionManager.prototype) as any;
+  manager.sessions=new Map();manager.running=new Set();manager.idleWaiters=new Map();
+  let close!:()=>void;
+  manager.sessions.set(id,{runtime:{close:()=>new Promise<void>(resolve=>{close=resolve;})}});
+  const release=manager.reserve({id});
+  const closing=manager.release(id,true);
+  await assert.rejects(manager.acquire({id:"main"},id,"owner"),SessionBusyError);
+  let idle=false;const wait=manager.waitUntilIdle(id).then(()=>{idle=true;});
+  close();await closing;assert.equal(idle,false);
+  release();await wait;assert.equal(idle,true);
 });

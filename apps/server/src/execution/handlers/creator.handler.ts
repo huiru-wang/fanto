@@ -91,9 +91,10 @@ export class CreatorHandler {
           details.initialVersion=initial.version;
           details.savedVersion=current.version;
           await session.runtime.appendCustomEntry("fanto.proposal_applied",{proposalId});
-        });
+        }, false);
         stage="finish_project";
         await this.projects.finishExecution(userId,projectId,"completed");
+        this.worker.events.publish(sessionId,{type:"done"});
         logInfo("creator", "completed", {...details,reason:"project_result_saved",durationMs:Date.now()-startedAt});
       } finally {
         if(!handedOff)await this.agent.sessions.release(session.id).catch(()=>{});
@@ -101,6 +102,8 @@ export class CreatorHandler {
     } catch(error) {
       logError("creator", "failed", {...details,stage,error:logSummary(error),durationMs:Date.now()-startedAt});
       if(claimed)await this.projects.finishExecution(userId,projectId,"failed");
+      if(typeof details.sessionId === "string")this.worker.events.publish(details.sessionId,error instanceof Error && error.name === "AbortError"
+        ? {type:"stopped"} : {type:"error",message:"本轮创作未完成，可以继续聊天。"});
       throw error;
     }
   }
