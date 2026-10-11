@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createRunContext } from "../context/run-context.js";
 import { installHarnessHooks } from "./hooks.js";
 
 function harnessWithHandlers() {
@@ -18,44 +17,12 @@ function harnessWithHandlers() {
   return handlers;
 }
 
-test("successful task delivery and user input collection terminate the current turn", async () => {
+test("user input collection and proposal creation terminate the current turn", async () => {
   const handlers = harnessWithHandlers();
   const afterTool = handlers.get("after_tool")!;
-  assert.deepEqual(await afterTool({ toolName: "deliver_task_result", isError: false }), { terminate: true });
   assert.deepEqual(await afterTool({ toolName: "collect_user_input", isError: false }), { terminate: true });
-  assert.equal(await afterTool({ toolName: "deliver_task_result", isError: true }), undefined);
   assert.equal(await afterTool({ toolName: "write", isError: false }), undefined);
   assert.deepEqual(await afterTool({ toolName: "proposal_create", isError: false }), { terminate: true });
   assert.equal(await afterTool({ toolName: "project_manage", isError: false }), undefined);
   assert.equal(await afterTool({ toolName: "project_manage", isError: true }), undefined);
-});
-
-test("Task Worker cannot write, execute bash, or deliver before saving a plan", async () => {
-  const handlers = harnessWithHandlers();
-  const beforeTool = handlers.get("before_tool")!;
-  const withoutPlan = createRunContext({
-    runId: "run", userId: "user", query: "task", slots: {}, sessionId: "session", recentMessages: [],
-    task: { taskId: "task", taskRunId: "task-run" },
-  });
-  createRunContext.read(withoutPlan).taskAuthorized = true;
-  const blocked = await beforeTool({ toolName: "write", args: { path: "result.html" } }, withoutPlan) as any;
-  assert.match(blocked.block.reason, /task_plan_manage/);
-
-  const withPlan = createRunContext({
-    runId: "run", userId: "user", query: "task", slots: {}, sessionId: "session", recentMessages: [],
-    task: { taskId: "task", taskRunId: "task-run" },
-  });
-  createRunContext.read(withPlan).taskAuthorized = true;
-  createRunContext.read(withPlan).taskPlanReady = true;
-  assert.equal(await beforeTool({ toolName: "write", args: { path: "result.html" } }, withPlan), undefined);
-});
-
-
-test("Untrusted Task Worker cannot invoke workspace tools even without a TaskRun", async () => {
-  const beforeTool = harnessWithHandlers().get("before_tool")!;
-  const context = createRunContext({ runId: "r", userId: "u", query: "q", slots: {}, sessionId: "s", recentMessages: [] });
-  for (const toolName of ["read", "write", "edit", "bash", "task_plan_manage", "deliver_task_result"]) {
-    const result = await beforeTool({ toolName, args: { path: "example.txt" } }, context) as any;
-    assert.equal(result.block.reason, "TASK_AUTHORITY_REQUIRED");
-  }
 });

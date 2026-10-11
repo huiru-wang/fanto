@@ -7,7 +7,6 @@ import type { MessageTransform } from "../context/transform-context.js";
 import { assertBashRequest } from "../workspace/bash.js";
 import { assertWorkspacePath } from "../workspace/paths.js";
 
-const planRequiredTools = new Set(["write", "edit", "bash", "deliver_task_result"]);
 
 export function installHarnessHooks(
   harness: AgentHarness<ExecutionToolContext>,
@@ -17,14 +16,7 @@ export function installHarnessHooks(
     const messages = await options.transformContext(event.messages, context);
     return messages ? { messages: [...messages] } : undefined;
   });
-  harness.hooks.on("before_tool", ({ toolName, args }, context) => {
-    const run = createRunContext.read(context);
-    if ([...planRequiredTools, "read", "task_plan_manage"].includes(toolName) && !run.taskAuthorized) {
-      return { block: { reason: "TASK_AUTHORITY_REQUIRED", terminate: true } };
-    }
-    if (run.task && planRequiredTools.has(toolName) && !run.taskPlanReady) {
-      return { block: { reason: "开始制作或交付结果前，必须先调用 task_plan_manage(action=create) 保存用户可读的执行计划。" } };
-    }
+  harness.hooks.on("before_tool", ({ toolName, args }) => {
     if (["read", "write", "edit"].includes(toolName) && args && typeof args === "object") {
       const path = (args as Record<string, unknown>).path;
       if (typeof path !== "string") return { block: { reason: "A file path is required", terminate: true } };
@@ -56,7 +48,7 @@ export function installHarnessHooks(
     return undefined;
   });
   harness.hooks.on("after_tool", async ({ toolName, isError }) => {
-    if (["deliver_task_result", "collect_user_input", "proposal_create"].includes(toolName) && !isError) return { terminate: true };
+    if (["collect_user_input", "proposal_create"].includes(toolName) && !isError) return { terminate: true };
     return undefined;
   });
   harness.hooks.on("before_compaction", async () => undefined);

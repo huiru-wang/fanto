@@ -157,7 +157,7 @@ export function RecordComposer({ onCreated }: { onCreated: (record: RecordItem) 
       setEventAt(localDateTimeValue());
       setUploadProgress("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "记录没有保存成功");
+      setError("保存失败，请重试");
     } finally {
       setSaving(false);
       setUploadProgress("");

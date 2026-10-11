@@ -14,7 +14,6 @@ import { DebugId } from "../components/DebugId";
 import { ApiError } from "../api/http";
 import { ChatMarkdown } from "../components/ChatMarkdown";
 import { MediaPresentation } from "../components/MediaPresentation";
-import { TaskCard } from "../components/TaskCard";
 import { UserClarificationCard } from "../components/UserClarificationCard";
 import { UserInputCard } from "../components/UserInputCard";
 import { AGENT_SESSION_KEY } from "../config";
@@ -91,7 +90,6 @@ function MessageBlock({
     );
   }
   if (block.type === "media") return <MediaPresentation items={block.items} />;
-  if (block.type === "task") return <div className="chat-task-list"><TaskCard task={block.task} /></div>;
   return (
     <div className="chat-input-request-list">
       <UserInputCard
@@ -270,9 +268,6 @@ export function ChatPage() {
             scrollToEnd();
           } else if (event.type === "media") {
             appendBlock({ type: "media", items: event.items });
-            scrollToEnd();
-          } else if (event.type === "task") {
-            appendBlock({ type: "task", task: event.task });
             scrollToEnd();
           } else if (event.type === "user_input") {
             appendBlock({ type: "user_input", request: event.request });

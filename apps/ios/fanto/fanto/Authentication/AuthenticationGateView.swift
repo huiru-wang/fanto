@@ -4,7 +4,6 @@ struct AuthenticationGateView: View {
     @Environment(FantoStore.self) private var fantoStore
     @State private var auth = AuthenticationStore.shared
     @State private var conversationStore = ConversationStore()
-    @State private var taskDetailCache = TaskDetailCache()
     @State private var preparedUserID: String?
 
     var body: some View {
@@ -16,7 +15,7 @@ struct AuthenticationGateView: View {
                 AuthenticationEntryView(auth: auth)
             case let .signedIn(user):
                 if preparedUserID == user.userId {
-                    AppRootView(conversationStore: conversationStore, taskDetailCache: taskDetailCache)
+                    AppRootView(conversationStore: conversationStore)
                 } else {
                     StartupExperienceView()
                         .task(id: user.userId) {
@@ -34,7 +33,6 @@ struct AuthenticationGateView: View {
             if case .signedIn = oldValue, case .signedOut = newValue {
                 fantoStore.resetUserData()
                 conversationStore.reset()
-                taskDetailCache.reset()
                 preparedUserID = nil
             }
         }

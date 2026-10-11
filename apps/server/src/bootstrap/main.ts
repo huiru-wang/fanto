@@ -15,8 +15,7 @@ import { AgentWorker } from "../execution/agent-worker.js";
 import { AgentExecutionListener } from "../execution/agent-execution.listener.js";
 import { ProposalHandler } from "../execution/handlers/proposal.handler.js";
 import { CreatorHandler } from "../execution/handlers/creator.handler.js";
-import { TaskHandler } from "../execution/handlers/task.handler.js";
-import { OssStorage } from "../infrastructure/clients/oss-client.js";
+import { createObjectStorage } from "./create-object-storage.js";
 import { registerRecordPostprocessListener } from "../listeners/record-postprocess.listener.js";
 import { createApp, type ServerServices } from "./app.js";
 import { logError, logInfo } from "../infrastructure/logging/logger.js";
@@ -28,10 +27,8 @@ import { AuthService } from "../domain/auth/index.js";
 import { RecordRetrievalService, RecordService, type Record } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
 import { ProjectService, ProposalService } from "../domain/projects/index.js";
-import { TaskService } from "../domain/tasks/index.js";
 import { MemoryService } from "../domain/memory/index.js";
 import { createAgentRuntime } from "../agent/agent-runtime.js";
-import { TaskScheduler } from "../domain/tasks/scheduler.js";
 import { TtlCache } from "../infrastructure/cache/ttl-cache.js";
 
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -41,6 +38,7 @@ const HEALTH_CHECK_FAILURE_THRESHOLD = 3;
 
 loadEnv();
 const config = loadConfig();
+const oss = createObjectStorage(config);
 const db = createDatabase(config.databaseUrl);
 await runMigrations(db);
 await checkDatabaseHealth(db, HEALTH_CHECK_TIMEOUT_MS);
@@ -60,7 +58,6 @@ const recordListCache = new TtlCache<string, { records: Record[]; hasMoreAfterTo
   ttlMs: CACHE_TTL_MS,
   maxEntries: 2_000,
 });
-const oss = new OssStorage(config.oss);
 const media = MediaService.create(db, oss);
 const embeddings = new EmbeddingsClient(
   config.dashscope.apiKey,
@@ -72,25 +69,18 @@ const retrieval = RecordRetrievalService.create(db, embeddings);
 const memories = MemoryService.create(db, embeddings);
 const queue = new RecordPostprocessQueue();
 const records = RecordService.create(db, queue, retrieval, recordListCache, undefined, media);
-const tasks = new TaskService(db, {
-  minSeconds: config.tasks.timeoutMinSeconds,
-  maxSeconds: config.tasks.timeoutMaxSeconds,
-});
 const projects = ProjectService.create(db, records, media, embeddings);
 const proposals = ProposalService.create(db, records, media, embeddings);
 const creative = config.creative.enabled ? new CreativeService(db, records, projects, proposals, media, new CreativeImageClient(config.creative.image), userId => auth.assertActiveUser(userId),
   new QwenImageUnderstanding(config.dashscope.apiKey, config.dashscope.baseUrl, config.dashscope.visionModel)) : undefined;
-const agent = createAgentRuntime({ db, records, media, tasks, memories, creative, ...config.agent });
+const agent = createAgentRuntime({ db, records, media, memories, creative, ...config.agent });
 const embeddingQueue=new RecordEmbeddingQueue();
 const agentQueue=new AgentExecutionQueue();
 const events=new SessionEventBus();
 const worker=new AgentWorker(agent.sessions,events);
 const proposalHandler=creative?new ProposalHandler(records,proposals,agent,worker,config.creative.proposalTimeoutMs):undefined;
 const creatorHandler=creative?new CreatorHandler(projects,proposals,agent,worker,config.creative.creatorTimeoutMs):undefined;
-const taskHandler=new TaskHandler(tasks,agent,worker);
-const agentExecution=new AgentExecutionListener(agentQueue,config.agentExecutionConcurrency,proposalHandler,creatorHandler,taskHandler);
-const taskScheduler=new TaskScheduler(tasks,agentQueue,config.tasks.schedulerIntervalMs);
-tasks.setSchedulerWake(()=>taskScheduler.wake());
+const agentExecution=new AgentExecutionListener(agentQueue,config.agentExecutionConcurrency,proposalHandler,creatorHandler);
 
 registerRecordPostprocessListener(
   queue,records,media,oss,
@@ -99,7 +89,6 @@ registerRecordPostprocessListener(
   embeddingQueue,agentQueue
 );
 registerRecordEmbeddingListener(embeddingQueue,records,retrieval);
-taskScheduler.start();
 
 if (creative) await projects.normalizeLegacyMedia();
 
@@ -113,7 +102,6 @@ const services: ServerServices = {
   agentWorker: worker,
   proposals,
   creative,
-  tasks,
   agent,
   healthCheck,
 };
@@ -165,7 +153,6 @@ const shutdown = async (signal: string) => {
   clearInterval(healthMonitor);
   logInfo("main", "Shutting down", { signal });
 
-  taskScheduler.stop();
   await new Promise<void>((resolve, reject) => {
     server.close(error => error ? reject(error) : resolve());
   });

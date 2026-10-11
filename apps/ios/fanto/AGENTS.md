@@ -23,9 +23,12 @@
 - 日历与时间线支持长按记录确认删除，使用服务端 version；成功后移除本地 Record 并保存快照，版本冲突刷新后需重新确认。取消网络请求不展示为失败；静默建议刷新保留既有内容，旧请求不得覆盖新状态。
 - Record 快照按当前认证用户隔离，最多保留最近 200 条；新增与成功分页后写回快照，认证失效或账号切换时清除。未来接入更新入口时，必须在对应写入成功后同步更新或失效该快照。
 - 脉络页区分 Proposal 与 Project；建议决策走 Proposal API，项目详情从单个详情响应读取参考记录，不请求 Project records 接口。项目 html-preview 必须禁用脚本、桥接、任意网络资源和导航；内部图片走受保护媒体接口，签名 URL 只保留运行态。
+- 脉络页的待确认 Proposal 使用堆叠卡片，按服务端顺序上下滑动浏览，保留按钮与 VoiceOver 等价操作；切换不执行接受 / 拒绝，刷新时保持当前 Proposal 身份。
 - 脉络页跟进新建议；后台提议分析全程静默，信息不足时不提议。Project 详情读取通用 Session History，后台过程订阅只读 Events，继续创作走统一 Agent Stream，并与主对话共享 Tool Presentation/消息 UI；已有作品右下角允许进入同一 Project Session 继续对话，项目内容以 Server 当前版本为准。
 - 音频 Record 当前主要展示播放动作与时长，不在客户端自行生成 AI 摘要。
 - 停止对话调用通用 Session stop 接口，等待服务端取消与记录保存后才恢复发送；stop 请求最多等待 25 秒；确认后恢复发送，再补载历史，补载失败保留本地内容，旧请求不能覆盖新轮次。历史的 `state: stopped` 恢复为已停止消息，空输出也需保留停止状态。
-- Fanto 对话按 SSE message_start/message_end 划分文本块，与工具和任务按事件顺序展示，仅 done 表示回复完成；须按 Server 的 SSE `presentation` 渲染可见进度；`create_task` 与 `collect_user_input` 的结构化结果分别渲染为任务卡和导航区域下方的逐题表单。`required: false` 的表单项允许跳过；不展示内部工具参数、结果或 interaction 标记。对话初次出现时定位到最新消息，向上滚动到历史顶部时使用 Server `nextCursor` 读取更早页，并保持阅读位置。任务详情使用现有受保护 Task / TaskRun 接口按需读取，不新增独立任务管理页；交付文件在详情 Sheet 的既有导航栈内预览，不叠加第二个 Sheet。已完成任务的详情与成果内容仅在当前账号的 App 运行期内缓存，用户手动刷新或切换账号时再读取 / 清空。
+- Fanto 对话按 SSE message_start/message_end 划分文本块，与工具活动按事件顺序展示，仅 done 表示回复完成；须按 Server 的 SSE `presentation` 渲染可见进度；`collect_user_input` 的结构化结果渲染为导航区域下方的逐题表单。`required: false` 的表单项允许跳过；不展示内部工具参数、结果或 interaction 标记。对话初次出现时定位到最新消息，向上滚动到历史顶部时使用 Server `nextCursor` 读取更早页，并保持阅读位置。不提供 Task 页面、Task 卡片或 Task 文件预览。
 
 修改网络契约前先核对 `../../../docs/api/http-api.md`。
+
+- Record 附件草稿保留上传凭据和阶段；失败不自动重试，统一提示“保存失败，请重试”，用户再次保存后才继续。图片 ready 包含服务端小图完成，客户端通过 variant 选择读取。

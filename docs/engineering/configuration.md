@@ -15,6 +15,7 @@
 | `DASHSCOPE_API_KEY` / `DASHSCOPE_BASE_URL` | 向量、图片理解和音频转写所需凭据/兼容地址 |
 | `DASHSCOPE_EMBEDDING_MODEL` / `DASHSCOPE_EMBEDDING_DIMENSION` | 默认 qwen3.7-text-embedding-flash / 768；Record、Memory、Project 共用 |
 | `DASHSCOPE_VL_MODEL` / `DASHSCOPE_ASR_MODEL` | 视觉理解、语音转写模型 |
+| `OBJECT_STORAGE_PROVIDER` | 存储 Client，默认且当前仅支持 `aliyun-oss`；未知值拒绝启动 |
 | `OSS_REGION` / `OSS_ENDPOINT` / `OSS_BUCKET` | OSS 地区、公网 Endpoint、Bucket |
 | `OSS_ACCESS_KEY_ID` / `OSS_ACCESS_KEY_SECRET` | 仅服务端保存的 OSS 密钥 |
 | `AGENT_CONFIG_PATH` | 默认 `apps/server/agent.yaml` |
@@ -41,7 +42,7 @@ OSS 使用中国内地无地域 Bucket 时，默认 Region/Endpoint 可参考 `.
 
 ## Agent 定义
 
-`agent.yaml` 使用 `systemPromptModule` 指向 `src/agent/prompts/`，包含 main、proposal-agent、creator-agent 和 task-worker。Tool、Skill、compaction、Task 能力均受定义约束。不存在 `corePromptModule`；修改定义/Prompt 后需要重启 Server。Creator 的对外继续会话通过统一 `/api/agent/stream` 运行，而不是新增 Project 聊天 API。
+`agent.yaml` 使用 `systemPromptModule` 指向 `src/agent/prompts/`，只包含 main、proposal-agent、creator-agent。Tool、Skill、compaction 均受定义约束。不存在 `corePromptModule`；修改定义/Prompt 后需要重启 Server。Creator 的对外继续会话通过统一 `/api/agent/stream` 运行，而不是新增 Project 聊天 API。
 
 ## H5 测试模式
 

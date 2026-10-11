@@ -81,24 +81,9 @@ struct FantoUserInputResponse: Equatable {
     let content: String
 }
 
-nonisolated struct FantoTaskSummary: Identifiable, Decodable, Equatable {
-    let taskID: String
-    let title: String
-    let status: String
-    let nextRunAt: String
-
-    var id: String { taskID }
-
-    enum CodingKeys: String, CodingKey {
-        case taskID = "taskId"
-        case title, status, nextRunAt
-    }
-}
-
 enum ConversationStreamBlock: Equatable {
     case text(String)
     case activity(String)
-    case task(String)
 }
 
 struct ConversationMessage: Identifiable, Equatable {
@@ -108,7 +93,6 @@ struct ConversationMessage: Identifiable, Equatable {
     var streamBlocks: [ConversationStreamBlock] = []
     var media: [PresentedMedia] = []
     var activities: [ConversationToolActivity] = []
-    var tasks: [FantoTaskSummary] = []
     var userInputRequest: FantoUserInputRequest?
     var userInputResponse: FantoUserInputResponse?
     var state: ConversationMessageState

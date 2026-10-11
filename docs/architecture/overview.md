@@ -10,7 +10,7 @@ flowchart LR
   API --> OSS[Aliyun OSS]
   API --> AI[DeepSeek / DashScope]
   API --> AGENT[Embedded Pi Agent Runtime]
-  AGENT --> SQ[(SQLite Agent Sessions)]
+  AGENT --> PG
   AGENT --> WS[Session Workspaces]
   API --> Q[In-process Queues / Listeners]
   Q --> AGENT
@@ -20,18 +20,18 @@ flowchart LR
 
 ## 事实与派生数据
 
-- PostgreSQL：用户、身份、Records、Media 元数据、Memory、Proposal、Project、Record 关联、Task 与 TaskRun。
+- PostgreSQL：用户、身份、Records、Media 元数据、Memory、Proposal、Project、Record 关联。
 - pgvector：`records.embedding`（可重建的派生字段）、`memories.embedding`、`projects.embedding`。
-- OSS：Record 上传媒体、生成的 Project 媒体、Task 交付文件；客户端读取短期签名 URL。
-- SQLite：Pi Session transcript / session owner；工作区位于 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。
-- Session transcript 记录 Agent 过程；Project 只存最新 `goal/content/status`，TaskRun 存任务计划与交付结果，不从 UI 消息反推业务事实。
+- OSS：Record 上传媒体、生成的 Project 媒体；客户端读取短期签名 URL。
+- PostgreSQL 的 `agent_session` Schema：Pi Session transcript / session owner；工作区位于 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。
+- Session transcript 记录 Agent 过程；Project 只存最新 `goal/content/status`，不从 UI 消息反推业务事实。
 
 ## 异步与会话
 
 - Record 保存后向非持久化 `RecordPostprocessQueue` 发布消息；图片理解/音频转写成功标记 processed，之后分别向 `RecordEmbeddingQueue` 和 `AgentExecutionQueue` 投递。
-- `AgentExecutionQueue` 统一分发 Proposal、Creator 和 Task，监听器在内存中限制并发；TaskScheduler 按间隔扫描到期 Task，并在创建 queued TaskRun 后投递。
+- `AgentExecutionQueue` 统一分发 Proposal 和 Creator，监听器在内存中限制并发；不提供 Task 调度。
 - Creator 首次创作由后台 Handler 执行，用户随后可通过统一 `POST /api/agent/stream` 继续同一 Session；通用 Session History 和只读 Events SSE 用于查看过程。
-- 所有内存队列和 Session 事件 **不持久化、不重放、不跨进程恢复**；重启可能丢失待执行消息。Task/Project 持久状态可能仍为 queued/running，不能声称自动补偿。
+- 所有内存队列和 Session 事件 **不持久化、不重放、不跨进程恢复**；重启可能丢失待执行消息。Project 持久状态可能仍为 queued/running，不能声称自动补偿。
 
 详见 [业务 Server](server.md)、[Agent Runtime](agent-runtime.md) 和 [创作执行](creative-runtime.md)。
 

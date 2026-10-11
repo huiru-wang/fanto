@@ -6,6 +6,8 @@ import { createDatabase, runMigrations } from "../../infrastructure/database/dat
 import { RecordService } from "../records/index.js";
 import { RecordPostprocessQueue } from "../../event/record-postprocess-queue.js";
 import { MediaService } from "./index.js";
+import sharp from "sharp";
+import { MemoryStorage } from "./testing/memory-storage.js";
 import { ProjectService, ProposalService } from "../projects/index.js";
 
 const integration = process.env.TEST_DATABASE_URL ? test : test.skip;
@@ -16,21 +18,20 @@ integration("Record deletion commits before one bounded OSS attempt, preserves f
   const url=new URL(process.env.TEST_DATABASE_URL!);url.pathname="/"+name;
   const db=createDatabase(url.href);
   const userId=randomUUID(),foreignId=randomUUID(),now=new Date();
-  const objects=new Map<string,Buffer>();
+  const oss=new MemoryStorage();
+  const png=await sharp({create:{width:32,height:24,channels:3,background:"white"}}).png().toBuffer();
+  const objects=oss.objects;
   let fail=false,calls=0;
-  const oss={
-    remove:async(key:string)=>{calls++;if(fail)throw new Error("OSS unavailable");objects.delete(key);},
-    getObject:async(key:string)=>objects.get(key)!,
-    putObject:async(key:string,data:Buffer)=>{objects.set(key,data);}
-  };
+  const remove=oss.remove.bind(oss);
+  oss.remove=async(key:string)=>{calls++;if(fail)throw new Error("OSS unavailable");await remove(key);};
   const media=MediaService.create(db,oss as never);
   const records=RecordService.create(db,new RecordPostprocessQueue(),undefined,undefined,undefined,media);
   const embed={embed:async()=>Array.from({length:768},(_,i)=>i===0?1:0)};
   const projects=ProjectService.create(db,records,media,embed),proposals=ProposalService.create(db,records,media,embed);
   const make=async(owner=userId)=>{
     const id=randomUUID(),key=`users/${owner}/${id}.png`;
-    objects.set(key,Buffer.from("image content"));
-    await db.insertInto("media_assets").values({media_id:id,user_id:owner,object_key:key,media_type:"image",mime_type:"image/png",bytes:13,status:"ready",ext_data:"{}",created_at:now.toISOString(),updated_at:now.toISOString()}).execute();
+    await oss.putObject(key,png,"image/png");
+    await db.insertInto("media_assets").values({media_id:id,user_id:owner,object_key:key,media_type:"image",mime_type:"image/png",bytes:png.length,status:"ready",ext_data:"{}",created_at:now.toISOString(),updated_at:now.toISOString()}).execute();
     const created=await records.create(owner,{text:"园林记录",media:[{mediaId:id}],eventAt:now.toISOString()});
     assert.equal(created.kind,"ok");
     return {id,key,record:created.record};
@@ -51,7 +52,7 @@ integration("Record deletion commits before one bounded OSS attempt, preserves f
     assert.equal((await records.delete(userId,first.record.id,1)).kind,"ok");
     assert.equal(await records.find(userId,first.record.id),null);
     assert.equal(await media.readyMetadata(userId,first.id),null);
-    assert.ok(objects.has(first.key));assert.equal(calls,1);
+    assert.ok(objects.has(first.key));assert.equal(calls,2);
     fail=false;
     const second=await make();
     const proposal=await proposals.create(userId,{type:"create",title:"园林",proposedSummary:"园林写真",recordIds:[second.record.id],content:{reason:"旅行",ideas:[{title:"园林画卷",idea:"把这次旅行绘制成一张温暖的记忆海报。",tags:["园林回忆","旅行画卷"],goal:{objective:"一页写真"}}]}});
@@ -69,7 +70,7 @@ integration("Record deletion commits before one bounded OSS attempt, preserves f
     const owned=await db.selectFrom("media_assets").selectAll().where("media_id","=",published.coverMediaId).executeTakeFirstOrThrow();
     assert.ok(owned.object_key.startsWith(`users/${userId}/project/${projectId}/`));
     assert.ok(objects.has(owned.object_key));
-    assert.ok(objects.has(foreign.key));assert.equal(calls,2);
+    assert.ok(objects.has(foreign.key));assert.equal(calls,4);
   }finally{
     await db.destroy();await sql.raw(`DROP DATABASE "${name}" WITH (FORCE)`).execute(admin);await admin.destroy();
   }

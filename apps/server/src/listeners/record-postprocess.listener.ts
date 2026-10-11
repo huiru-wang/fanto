@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { AudioTranscriptionClient } from "../infrastructure/clients/audio-client.js";
 import type { ImageUnderstanding } from "../infrastructure/clients/image-client.js";
-import type { OssStorage } from "../infrastructure/clients/oss-client.js";
+import type { ObjectStorage } from "../infrastructure/clients/storage/object-storage.js";
 import type { RecordPostprocessQueue } from "../event/record-postprocess-queue.js";
 import type { RecordEmbeddingQueue } from "../event/record-embedding-queue.js";
 import type { AgentExecutionQueue } from "../event/agent-execution-queue.js";
@@ -13,7 +13,7 @@ export function registerRecordPostprocessListener(
   queue: RecordPostprocessQueue,
   records: RecordService,
   media: MediaService,
-  oss: OssStorage,
+  oss: ObjectStorage,
   image: ImageUnderstanding,
   audio: AudioTranscriptionClient,
   embeddingQueue: RecordEmbeddingQueue,
@@ -37,7 +37,7 @@ export function registerRecordPostprocessListener(
       const imageJobs = record.content.blocks.filter(block => block.type === "image").flatMap(block => {
         const asset = byId.get(block.mediaId);
         return asset && !block.description
-          ? [image.describe({ imageUrl: oss.readUrl(asset.objectKey) })
+          ? [oss.signRead(asset.objectKey, 300).then(({ url }) => image.describe({ imageUrl: url }))
               .then(result => ({ mediaId: block.mediaId, description: result.description }))
               .catch(error => {
                 logError("record-postprocess", "Image understanding failed", {
@@ -52,7 +52,7 @@ export function registerRecordPostprocessListener(
       const audioJobs = record.content.blocks.filter(block => block.type === "audio").flatMap(block => {
         const asset = byId.get(block.mediaId);
         return asset && !block.transcription
-          ? [audio.transcribe({ audioUrl: oss.readUrl(asset.objectKey) })
+          ? [oss.signRead(asset.objectKey, 300).then(({ url }) => audio.transcribe({ audioUrl: url }))
               .then(result => ({
                 mediaId: block.mediaId,
                 transcription: result.transcript,

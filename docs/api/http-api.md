@@ -47,7 +47,7 @@
 
 `POST /api/records/search` 的每个命中返回 `recordId`、原始 Record 的 `eventAt`、从完整 Record 内容构建的 `preview` 和向量 `distance`。
 
-创建体：`{ text, media, location?, eventAt, source? }`；更新体：`{ text, media, location?, expectedVersion }`；删除体：`{ expectedVersion }`。`location` 为 `{ name, countryCode?, country?, province?, city?, district?, latitude, longitude }`；`countryCode` 为 ISO 3166-1 alpha-2，两位字母，其他行政区字段均可选。创建时省略表示无地点，更新时省略保留原地点、`null` 删除、对象替换。坐标固定为 WGS-84。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`，最多 5 项。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。保存 Record 时，音频 capture 中已有的 `durationMs` 会写入对应 audio block；后置处理完成后，图片 description、音频 transcription 与 ASR metadata 写回 `content.blocks`。Record 读取不再查询 `media_assets`，也不返回冗余 `media[]`。删除会同事务移除 Record（含向量）与独占媒体资产、清理来源关联，并在提交后尽力清理 OSS 对象，清理失败仅记录日志、不持久化重试；TaskRun 正式交付引用的媒体按独立保留规则处理，详见 [媒体清理](../domain/media.md#record-删除与媒体清理)；已排队的后置任务因找不到 Record 而失效。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
+创建体：`{ text, media, location?, eventAt, source? }`；更新体：`{ text, media, location?, expectedVersion }`；删除体：`{ expectedVersion }`。`location` 为 `{ name, countryCode?, country?, province?, city?, district?, latitude, longitude }`；`countryCode` 为 ISO 3166-1 alpha-2，两位字母，其他行政区字段均可选。创建时省略表示无地点，更新时省略保留原地点、`null` 删除、对象替换。坐标固定为 WGS-84。`eventAt` 为必填的带时区 ISO 8601 时间，服务端规范化为 UTC；`media` 为 `{ mediaId }[]`，最多 5 项。Record 列表按 `eventAt`、`id` 倒序，`nextCursor` 同样基于这两个字段。保存 Record 时，音频 capture 中已有的 `durationMs` 会写入对应 audio block；后置处理完成后，图片 description、音频 transcription 与 ASR metadata 写回 `content.blocks`。Record 读取不再查询 `media_assets`，也不返回冗余 `media[]`。删除会同事务移除 Record（含向量）与独占媒体资产、清理来源关联，并在提交后尽力清理 OSS 对象，清理失败仅记录日志、不持久化重试；已排队的后置任务因找不到 Record 而失效。处理期间 Record 状态为 `processing`，更新返回 `409 VERSION_CONFLICT`。常见错误：`INVALID_INPUT`、`INVALID_CONTENT`、`INVALID_MEDIA`、`INVALID_CURSOR`、`VERSION_CONFLICT`、`NOT_FOUND`。
 
 列表结果：`{ data, hasMore, nextCursor, pageSize }`。`nextCursor` 只应在 `hasMore=true` 时使用。
 
@@ -108,14 +108,14 @@ Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒�
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | `/api/uploads` | 根据 MIME 创建上传凭据，返回直传 URL |
-| POST | `/api/uploads/:mediaId/complete` | 校验对象并将媒体标记 ready |
+| POST | `/api/uploads/:mediaId/complete` | 校验原对象，图片生成并存储小图后标记 ready |
 | GET | `/api/media/:mediaId` | 已就绪且属于当前用户的媒体重定向到 OSS |
 | GET | `/api/media/:mediaId/url?variant=original|thumbnail` | 返回已就绪媒体的短期 OSS 签名读取地址与过期时间 |
 | GET | `/api/media/:mediaId/meta` | 返回已就绪媒体的稳定类型与 capture metadata |
 
 创建上传体：`{ mimeType, bytes }`。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
 
-`GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Access JWT。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到原始媒体的短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，`variant` 默认为 `original`，图片可请求 `thumbnail`（OSS 实时宽 600、q80、WebP），音频无论 variant 都返回 original；非法 variant 返回 `400 INVALID_INPUT`。读取签名有效期为五分钟，客户端不应持久化，thumbnail / original 应分键缓存，并在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 对客户端上传的图片 / 音频返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`。Task Worker 生成的结果文件由 Server 内部直接上传，不经过 `/api/uploads`，其 `mediaType=file`，meta 额外返回 `bytes / filename`。所有 meta 都不包含 signed URL。
+`GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Access JWT。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到原始媒体的短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，`variant` 默认为 `original`，图片可请求 `thumbnail`（服务端保存的宽不超过 600、q80、WebP 小图），音频无论 variant 都返回 original；非法 variant 返回 `400 INVALID_INPUT`。读取签名有效期为五分钟，客户端不应持久化，thumbnail / original 应分键缓存，并在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 对客户端上传的图片 / 音频返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`。Task Worker 生成的结果文件由 Server 内部直接上传，不经过 `/api/uploads`，其 `mediaType=file`，meta 额外返回 `bytes / filename`。所有 meta 都不包含 signed URL。
 
 ## Proposal / Project
 
@@ -141,7 +141,7 @@ PATCH 不接受用户身份、Session ID 或状态字段；缺省字段保留，
 
 ## Project Agent Session
 
-Project 与 Session 分别管理：`projects.status` 表示任务是否在排队/执行/成功/失败/归档，不代表 Session 是否存在。Project `sessionId` 单独返回，可能为 null。
+Project 与 Session 分别管理：`projects.status` 表示本轮创作是否在排队/执行/成功/失败/归档，不代表 Session 是否存在。Project `sessionId` 单独返回，可能为 null。
 
 | 方法 | 路径 | 作用 |
 | --- | --- | --- |
@@ -149,73 +149,15 @@ Project 与 Session 分别管理：`projects.status` 表示任务是否在排队
 | GET | `/api/agent/sessions/:sessionId/events` | 订阅该 Session 的通用 SSE（不缓存和回放；断线后重拉 History） |
 | POST | `/api/agent/stream` | 统一多轮会话 SSE：传入 `sessionId`、`message`、可选 `metadata.projectId`；从 Session 解析 Agent，Creative Tool 层验证项目权限 |
 
-所有 Agent 都允许公开创建 Session，但 Proposal、Creator、Task Worker 无业务授权时不得执行模型或专用工具。Project 续聊不修改业务状态；Creator 保存非空作品成功可将 failed 恢复 completed。Project 专属消息提交、启动、History、Events 和 Stream 路由已移除；H5/iOS 均已适配通用 Session 协议。
+所有 Agent 都允许公开创建 Session，但 Proposal、Creator 无业务授权时不得执行模型或专用工具。Project 续聊不修改业务状态；Creator 保存非空作品成功可将 failed 恢复 completed。Project 专属消息提交、启动、History、Events 和 Stream 路由已移除；H5/iOS 均已适配通用 Session 协议。
 
 ## 上传图片
 
-`POST /api/uploads` 声明 image MIME 时最大 10 MiB，超限返回 413 IMAGE_TOO_LARGE；上传完成继续核验 OSS 实际长度与 MIME。音频沿用原有限制。
-
-## Agent Tasks
-
-Task 只能由 `main` Agent 的 `create_task` Tool 创建；当前没有客户端直接创建 Task 的 POST API。`main` 使用 `get_task` 和 `update_task` 管理既有 Task；Task 定义与 TaskRun 持久化在 PostgreSQL，所有查询和状态变更按 Access JWT `sub` 强制 user-scoped。
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/tasks` | 当前用户 Task 列表 |
-| GET | `/api/tasks/:taskId` | Task 详情 |
-| GET | `/api/tasks/:taskId/runs` | TaskRun 列表 |
-| GET | `/api/tasks/:taskId/runs/:runId` | TaskRun 详情 |
-| POST | `/api/tasks/:taskId/pause` | 暂停后续 scheduled Run 生成 |
-| POST | `/api/tasks/:taskId/resume` | 恢复 scheduled Task |
-| DELETE | `/api/tasks/:taskId` | 取消 Task；不再创建后续 Run，已运行的 Run 由其 Worker 自行收尾 |
-| GET | `/api/tasks/artifacts/:mediaId/preview` | 读取当前用户已交付的 HTML / Markdown / Text Task Artifact 原文，用于域内预览 |
-
-`create_task` 使用面向用户意图的 Goal 模型：`objective` 必填，另有可选 `context / constraints / successCriteria`；`output.format` 必填且必须与用户明确要求一致。当前系统只有一个 `task-worker`，由 Server 自动选择，LLM 不传 `agentId`、timeout、mediaId 或文件协议。已确认相关的历史资料只通过可选 `references.recordIds` 传递真实 Record ID，Worker 再通过 Record Tool 获取正文与媒体。Goal 只描述用户最终想得到什么、背景、真实约束与用户视角的完成标准，不包含 Workspace、文件路径、`fanto-media`、OSS、`deliver_task_result` 等执行细节。同一 Main Session 可创建多个 Task，系统不自动去重、替代或版本化。Task 创建时只写入 `nextRunAt`，包括 immediate Task 的创建时刻；Scheduler 每 5 分钟扫描到期 Task（即时任务创建时主动唤醒扫描），先提交 status=queued 的 TaskRun 并向 AgentExecutionQueue 发布执行消息；TaskHandler 认领后标记 running，再创建/绑定 Session，执行一次，不自动重试。
-
-TaskRun 成功响应中的结果形态为：
-
-```json
-{
-  "runId": "...",
-  "taskId": "...",
-  "status": "completed",
-  "scheduledAt": "2026-09-29T10:00:00.000Z",
-  "startedAt": "...",
-  "finishedAt": "...",
-  "plan": {
-    "summary": "先整理旅行素材，再完成卡片并检查最终效果。",
-    "steps": [
-      { "id": "material", "title": "整理旅行素材" },
-      { "id": "design", "title": "完成卡片设计" }
-    ],
-    "createdAt": "...",
-    "updatedAt": "...",
-    "version": 1
-  },
-  "result": {
-    "summary": "...",
-    "artifacts": [
-      {
-        "filename": "result.html",
-        "role": "primary",
-        "mediaId": "...",
-        "mimeType": "text/html",
-        "bytes": 1024,
-        "checksum": "sha256:..."
-      }
-    ]
-  },
-  "error": null
-}
-```
-
-Task Worker 接收到的 User Message 只有纯 Task Brief（objective / context / constraints / successCriteria）。输出格式、主文件名、Record references、时区、已有 Plan 等执行信息由 `TaskExecutionContextProvider` 注入 Worker System Prompt 的内部上下文，不再混入用户 Goal。Worker 可先用 Record Tool 补齐用户资料；任务依赖当前、变化中或公开事实时可调用 `web_search` 获取公开网页资料与来源 URL；正式 write/edit/bash/交付前必须调用 `task_plan_manage`，首次 `action=create`，需要修订时 `action=update`，Plan 直接保存到 `task_runs.ext_data.plan`，API 只投影解析后的 `plan`，不公开完整 ext_data。当前不要求逐步确认或更新 step 状态。
-
-Worker 最终将主结果写为 `result.md` / `result.txt` / `result.html`，再调用 `deliver_task_result` 声明主文件和可选附属文件。该工具校验相对路径与文件内容、上传 OSS、注册 ready Media，最后完成 TaskRun；普通模型文本不能作为任务结果。HTML / Markdown 内部引用 Fanto 图片或音频时使用真实 `fanto-media://<mediaId>`，但这一协议属于平台实现，不得作为使用说明或交付摘要暴露给用户；`images/foo.jpg`、`./foo.png` 等本地相对媒体路径仍会在交付阶段被拒绝。成功交付会立即结束 Worker 回合。模型调用失败、超时或未交付时，当前只运行一次，失败/超时/没有交付则标记 failed，不自动创建新的 Worker Session 重试。`GET /api/tasks/artifacts/:mediaId/preview` 只允许当前用户自己的 ready `media_type=file` Task Artifact，且必须仍被对应 TaskRun 的 `result.artifacts[]` 声明；仅支持 `text/html / text/markdown / text/plain`，最大 2 MiB。
+`POST /api/uploads` 声明 image MIME 时最大 10 MiB，超限返回 413 IMAGE_TOO_LARGE；上传完成继续核验 OSS 实际长度与 MIME。音频沿用原有限制。图片完整上传链路、小图元数据、手动重试与存储适配见 [Media](../domain/media.md)。complete 还可能返回 `409 UPLOAD_NOT_FOUND`、`422 INVALID_IMAGE`、`409 UPLOAD_INCOMPLETE`；thumbnail 补图或签名暂时失败返回 `503 MEDIA_UNAVAILABLE`。
 
 ## Agent Runtime
 
-Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 仍使用独立 SQLite，不与业务 PostgreSQL 共用。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间、当前 Task 摘要和最近 2 条紧凑 Recent Records，再填充 System Prompt；Recent Records 通过 `listRecords(limit=2)` 读取，可命中 Record 首页缓存，不执行 Query Rewrite 或向量搜索，记录时间按请求时区展示。Record Tool、`present_media` 与 Task Tool 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
+Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 使用 PostgreSQL 的独立 `agent_session` Schema，与业务共用数据库连接。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间和最近 2 条紧凑 Recent Records，再填充 System Prompt；Recent Records 通过 `listRecords(limit=2)` 读取，可命中 Record 首页缓存，不执行 Query Rewrite 或向量搜索，记录时间按请求时区展示。Record Tool、`present_media` 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
 
 ```text
 Authorization: Bearer <ACCESS_TOKEN>
@@ -231,7 +173,7 @@ X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC
 | GET | `/api/agent/sessions/:sessionId/history?cursor=&limit=` | 无请求体 | `200`，倒序历史页，包含 `messages` 投影 |
 | GET | `/api/agent/sessions/:sessionId/events` | 无请求体 | `200`，只读 SSE 订阅，不发起执行或重放 |
 
-先创建 Session；`stream` 必须使用已有的 `sessionId`。创建 Session 时 `agentId` 可省略（默认 `main`）。Stream 不接受 `agentId`，只从 Session 所有权绑定解析其类型；所有 Agent 都可公开创建 Session，但 Proposal/Task Worker 需要服务端注入可信 Record/TaskRun 才能执行。Creator 的 `metadata.projectId` 需经过当前用户及 Project↔Session 绑定校验，普通续聊不更新 Project 执行状态。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<userId>/<sessionId>`。TaskRun 也使用同样的两层用户隔离路径，并创建独立 Session。
+先创建 Session；`stream` 必须使用已有的 `sessionId`。创建 Session 时 `agentId` 可省略（默认 `main`）。Stream 不接受 `agentId`，只从 Session 所有权绑定解析其类型；所有 Agent 都可公开创建 Session，但 Proposal 需要服务端注入可信 Record 才能执行。Creator 的 `metadata.projectId` 需经过当前用户及 Project↔Session 绑定校验，普通续聊不更新 Project 执行状态。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<userId>/<sessionId>`。
 
 ```sh
 export ACCESS_TOKEN='替换为服务端 ACCESS_TOKEN'
@@ -254,7 +196,7 @@ curl -N http://127.0.0.1:3000/api/agent/stream \
   -d "{\"sessionId\":\"$SESSION_ID\",\"message\":\"你好\"}"
 ```
 
-请求响应 SSE 以 `start` 开始，期间可发送 `turn_start`、`message_start`、`message_end`、`tool_start`（`toolCallId`、`toolName`）、`tool_end`（再加 `status: succeeded | failed`）和零到多个 `delta`，最终为 `done`、`stopped` 或 `error`。工具事件以 `presentation.visible/displayContent/animation` 控制可见性与产品化文案，客户端只呈现声明为可见的活动状态，不展示原始工具参数、技术 ID、内部错误或 reasoning。当前有三个产品化白名单例外：成功的 `present_media` 返回稳定媒体 metadata；成功的 `create_task` 返回 `kind=task_created` 与 Task Card 所需摘要；成功的 `collect_user_input` 返回 `kind=user_input_requested`、`interactionId` 和结构化问题，H5 渲染为原生表单。`collect_user_input` 成功后当前 Agent Run 立即结束，用户提交答案后以同一 Session 的下一条 User Message 继续；回答消息带内部 interaction 标记供历史恢复识别，History API 将其投影为 `user_input_response`，使 H5 渲染为“用户澄清”卡片而不展示内部标记。其他 Tool Result 仍不对客户端公开。单次 Stream 请求最长 10 分钟（模型请求另有独立限制）；同一 Session 已在运行时返回 `409`。
+请求响应 SSE 以 `start` 开始，期间可发送 `turn_start`、`message_start`、`message_end`、`tool_start`（`toolCallId`、`toolName`）、`tool_end`（再加 `status: succeeded | failed`）和零到多个 `delta`，最终为 `done`、`stopped` 或 `error`。工具事件以 `presentation.visible/displayContent/animation` 控制可见性与产品化文案，客户端只呈现声明为可见的活动状态，不展示原始工具参数、技术 ID、内部错误或 reasoning。当前有两个产品化白名单例外：成功的 `present_media` 返回稳定媒体 metadata；成功的 `collect_user_input` 返回 `kind=user_input_requested`、`interactionId` 和结构化问题，H5 渲染为原生表单。`collect_user_input` 成功后当前 Agent Run 立即结束，用户提交答案后以同一 Session 的下一条 User Message 继续；回答消息带内部 interaction 标记供历史恢复识别，History API 将其投影为 `user_input_response`，使 H5 渲染为“用户澄清”卡片而不展示内部标记。其他 Tool Result 仍不对客户端公开。单次 Stream 请求最长 10 分钟（模型请求另有独立限制）；同一 Session 已在运行时返回 `409`。
 
 停止当前轮次使用 `POST /api/agent/sessions/:sessionId/stop`，客户端等待确认后才允许续聊；请求断开和超时也会取消本轮。取消保存已接受的用户输入、已输出文本及工具结果；History 的中断助手消息携带 `state: "stopped"`，未输出文本时也保留中断占位。停止确认不删除 Session，下一轮沿用同一 sessionId。stop 响应最多等待 20 秒，未确认收尾时返回 `503` 与 `error`，不会提前宣称停止成功；客户端可重试。SSE 输出等待响应取消信号，单次写入阻塞超过 5 秒会中断请求驱动的本轮。
 

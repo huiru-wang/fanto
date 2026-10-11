@@ -8,6 +8,7 @@ struct DraftRecordImage: Identifiable {
     let width: Int
     let height: Int
     var mediaID: String?
+    var uploadProgress: MediaUploadProgress?
 
     init(data originalData: Data) throws {
         guard let source = CGImageSourceCreateWithData(originalData as CFData, nil),

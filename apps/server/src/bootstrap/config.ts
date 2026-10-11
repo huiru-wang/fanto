@@ -22,12 +22,12 @@ export interface AppConfig {
     googleAllowedClientIds: string[];
     appleAllowedClientIds: string[];
   };
+  objectStorageProvider: "aliyun-oss";
   oss: { region: string; endpoint?: string; bucket: string; accessKeyId: string; accessKeySecret: string };
   dashscope: { apiKey: string; baseUrl: string; embeddingModel: string; embeddingDimension: number; visionModel: string; asrModel: string };
   agent: { workspaceRoot: string; definitionPath: string; deepseekApiKey: string };
   agentExecutionConcurrency: number;
   creative: { enabled: boolean; proposalTimeoutMs: number; creatorTimeoutMs: number; image: { endpoint: string; apiKey: string; model: string; timeoutMs: number } };
-  tasks: { schedulerIntervalMs: number; timeoutMinSeconds: number; timeoutMaxSeconds: number };
 }
 
 export function loadEnv(path = ".env") {
@@ -59,6 +59,10 @@ export function loadConfig(): AppConfig {
   const ossEndpoint = endpoint ? (endpoint.startsWith("http://") || endpoint.startsWith("https://") ? endpoint : `https://${endpoint}`) : undefined;
   if (ossEndpoint?.includes("-internal.")) throw new Error("OSS_ENDPOINT must be publicly reachable");
 
+  const objectStorageProvider = process.env.OBJECT_STORAGE_PROVIDER?.trim() || "aliyun-oss";
+  if (objectStorageProvider !== "aliyun-oss") throw new Error("Unsupported OBJECT_STORAGE_PROVIDER");
+  for (const key of ["OSS_BUCKET", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET"]) required(key);
+
   const activeKid = required("AUTH_JWT_ACTIVE_KID");
   const privateKeyPem = normalizePem(required("AUTH_JWT_PRIVATE_KEY"));
   const publicKeys = parsePublicKeys(required("AUTH_JWT_PUBLIC_KEYS"));
@@ -68,11 +72,6 @@ export function loadConfig(): AppConfig {
   const appleAllowedClientIds = required("APPLE_ALLOWED_CLIENT_IDS").split(",").map(value => value.trim()).filter(Boolean);
   if (appleAllowedClientIds.length === 0) throw new Error("APPLE_ALLOWED_CLIENT_IDS is required");
 
-  const taskTimeoutMinSeconds = positiveInt("TASK_TIMEOUT_MIN_SECONDS", 30);
-  const taskTimeoutMaxSeconds = positiveInt("TASK_TIMEOUT_MAX_SECONDS", 3600);
-  if (taskTimeoutMinSeconds > taskTimeoutMaxSeconds) {
-    throw new Error("TASK_TIMEOUT_MIN_SECONDS must not exceed TASK_TIMEOUT_MAX_SECONDS");
-  }
 
   const creativeEnabled = process.env.CREATIVE_ENABLED === "true";
   if (process.env.CREATIVE_ENABLED && !["true", "false"].includes(process.env.CREATIVE_ENABLED)) throw new Error("CREATIVE_ENABLED must be true or false");
@@ -95,6 +94,7 @@ export function loadConfig(): AppConfig {
       googleAllowedClientIds,
       appleAllowedClientIds,
     },
+    objectStorageProvider,
     oss: {
       region: process.env.OSS_REGION ?? "oss-rg-china-mainland",
       endpoint: ossEndpoint,
@@ -121,11 +121,6 @@ export function loadConfig(): AppConfig {
       proposalTimeoutMs: positiveInt("CREATIVE_PROPOSAL_TIMEOUT_MS", 120_000),
       creatorTimeoutMs: positiveInt("CREATIVE_CREATOR_TIMEOUT_MS", 900_000),
       image: { endpoint: imageEndpoint, apiKey: imageApiKey, model: process.env.CREATIVE_IMAGE_MODEL?.trim() || "qwen-image-3.0-pro", timeoutMs: positiveInt("CREATIVE_IMAGE_TIMEOUT_MS", 300_000) },
-    },
-    tasks: {
-      schedulerIntervalMs: positiveInt("TASK_SCHEDULER_INTERVAL_MS", 300_000),
-      timeoutMinSeconds: taskTimeoutMinSeconds,
-      timeoutMaxSeconds: taskTimeoutMaxSeconds,
     },
   };
 }

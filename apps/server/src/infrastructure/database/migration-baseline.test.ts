@@ -41,16 +41,15 @@ integration("baseline initializes fresh databases and consolidates only complete
     await runMigrations(db);
     await runMigrations(db);
     const names = async () => (await sql<{ name: string }>`SELECT name FROM kysely_migration ORDER BY name`.execute(db)).rows.map(row => row.name);
-    assert.deepEqual(await names(), ["create_current_schema_20261011"]);
+    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011"]);
 
     const tables = (await sql<{ table_name: string }>`
       SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()
     `.execute(db)).rows.map(row => row.table_name);
-    for (const required of ["users", "records", "media_assets", "tasks",
-      "task_runs", "memories", "projects", "proposals", "record_links"]) {
+    for (const required of ["users", "records", "media_assets", "memories", "projects", "proposals", "record_links"]) {
       assert.ok(tables.includes(required), `Missing ${required}`);
     }
-    for (const obsolete of ["proposal_runs", "creation_runs", "creation_image_steps", "legacy_projects", "media_object_deletions"]) {
+    for (const obsolete of ["tasks", "task_runs", "proposal_runs", "creation_runs", "creation_image_steps", "legacy_projects", "media_object_deletions"]) {
       assert.ok(!tables.includes(obsolete), `Unexpected ${obsolete}`);
     }
 
@@ -69,7 +68,7 @@ integration("baseline initializes fresh databases and consolidates only complete
       await sql`INSERT INTO kysely_migration (name, timestamp) VALUES (${migration}, ${new Date(Date.now() + index * 1000).toISOString()})`.execute(db);
     }
     await runMigrations(db);
-    assert.deepEqual(await names(), ["create_current_schema_20261011"]);
+    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011"]);
     assert.equal((await db.selectFrom("users").select("user_id").executeTakeFirstOrThrow()).user_id, userId);
     await runMigrations(db); // Idempotent after consolidation.
 
@@ -79,7 +78,7 @@ integration("baseline initializes fresh databases and consolidates only complete
       await sql`INSERT INTO kysely_migration (name, timestamp) VALUES (${migration}, ${new Date(Date.now() + index * 1000).toISOString()})`.execute(db);
     }
     await runMigrations(db);
-    assert.deepEqual(await names(), ["create_current_schema_20261011"]);
+    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011"]);
     assert.equal((await db.selectFrom("users").select("user_id").executeTakeFirstOrThrow()).user_id, userId);
 
     const sessionTables = (await sql<{ table_name: string }>`

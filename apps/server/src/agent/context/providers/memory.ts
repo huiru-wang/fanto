@@ -15,8 +15,7 @@ export class MemoryProvider {
       signal: context.abortSignal,
       sessionId: run.sessionId,
       timeZone: run.timeZone,
-      task: run.task,
-    }, { kind: "guidance" });
+      }, { kind: "guidance" });
     return {
       slot: this.slot,
       content: memories.map(memory => `- [${memory.memoryId}] ${memory.content}`).join("\n"),

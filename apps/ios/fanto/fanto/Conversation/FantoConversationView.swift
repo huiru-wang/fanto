@@ -2,7 +2,6 @@ import SwiftUI
 
 struct FantoConversationView: View {
     @Bindable var store: ConversationStore
-    let taskDetailCache: TaskDetailCache
     @State private var hasLeftHistoryTop = false
 
     var body: some View {
@@ -35,8 +34,7 @@ struct FantoConversationView: View {
                         ForEach(store.messages) { message in
                             ConversationMessageBubble(
                                 message: message,
-                                retry: store.retryLastMessage,
-                                taskDetailCache: taskDetailCache
+                                retry: store.retryLastMessage
                             )
                             .id(message.id)
                         }
@@ -174,8 +172,6 @@ struct FantoConversationView: View {
 struct ConversationMessageBubble: View {
     let message: ConversationMessage
     let retry: () -> Void
-    let taskDetailCache: TaskDetailCache
-    @State private var selectedTask: FantoTaskSummary?
 
     private var legacyMedia: LegacyConversationMedia {
         LegacyConversationMedia.extract(from: message.text)
@@ -198,7 +194,6 @@ struct ConversationMessageBubble: View {
                 }
                 if message.role == .assistant {
                     ConversationMediaPresentation(items: displayedMedia)
-                    if message.streamBlocks.isEmpty { taskCards }
                 }
                 stateText
             }
@@ -210,9 +205,6 @@ struct ConversationMessageBubble: View {
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
         .accessibilityElement(children: .contain)
-        .sheet(item: $selectedTask) { task in
-            TaskDetailSheet(task: task, cache: taskDetailCache)
-        }
     }
 
     @ViewBuilder
@@ -224,12 +216,6 @@ struct ConversationMessageBubble: View {
             case let .activity(id):
                 if let activity = message.activities.first(where: { $0.id == id }) {
                     ConversationActivityRow(activity: activity)
-                }
-            case let .task(id):
-                if let task = message.tasks.first(where: { $0.taskID == id }) {
-                    Button { selectedTask = task } label: { TaskSummaryCard(task: task) }
-                        .buttonStyle(.plain)
-                        .accessibilityHint("打开任务详情")
                 }
             }
         }
@@ -265,21 +251,6 @@ struct ConversationMessageBubble: View {
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(message.activities) { activity in
                     ConversationActivityRow(activity: activity)
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var taskCards: some View {
-        if !message.tasks.isEmpty {
-            VStack(spacing: 8) {
-                ForEach(message.tasks) { task in
-                    Button { selectedTask = task } label: {
-                        TaskSummaryCard(task: task)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("打开任务详情")
                 }
             }
         }
@@ -346,39 +317,5 @@ private struct UserInputResponseCard: View {
         }
         .padding(10)
         .background(.white.opacity(0.13), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-}
-
-private struct TaskSummaryCard: View {
-    let task: FantoTaskSummary
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "checklist.checked")
-                .font(.title3)
-                .foregroundStyle(FantoTheme.accent)
-                .frame(width: 34, height: 34)
-                .background(FantoTheme.softAccent, in: Circle())
-            VStack(alignment: .leading, spacing: 3) {
-                Text("已创建任务")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(task.title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
-            }
-            Spacer(minLength: 8)
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
-        }
-        .padding(12)
-        .background(.background, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(.quaternary, lineWidth: 1)
-        }
-        .contentShape(Rectangle())
     }
 }

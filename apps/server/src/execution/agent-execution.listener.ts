@@ -2,7 +2,6 @@ import type { AgentExecutionQueue, AgentExecutionMessage } from "../event/agent-
 import { logError, logInfo, logSummary } from "../infrastructure/logging/logger.js";
 import type { ProposalHandler } from "./handlers/proposal.handler.js";
 import type { CreatorHandler } from "./handlers/creator.handler.js";
-import type { TaskHandler } from "./handlers/task.handler.js";
 
 export class AgentExecutionListener {
   private readonly pending:AgentExecutionMessage[]=[];
@@ -10,7 +9,7 @@ export class AgentExecutionListener {
   private stopped=false;
   constructor(private readonly queue:AgentExecutionQueue,private readonly limit:number,
     private readonly proposal:ProposalHandler|undefined,private readonly creator:CreatorHandler|undefined,
-    private readonly task:TaskHandler) {
+) {
     if(!Number.isInteger(limit)||limit<1)throw Error("Invalid agent concurrency");
     queue.on(async message=>{if(this.stopped){logInfo("agent-execution","skipped",{...message,reason:"listener_stopped"});return;}this.pending.push(message);this.drain();});
   }
@@ -25,7 +24,6 @@ export class AgentExecutionListener {
           case "creator":
             if(!this.creator){logInfo("creator","skipped",{...msg,reason:"creative_disabled"});return;}
             return this.creator.execute(msg.userId,msg.projectId,msg.proposalId);
-          case "task":return this.task.execute(msg.userId,msg.taskId,msg.taskRunId);
         }
       }).catch(error=>logError("agent-execution","Agent handler failed",{...msg,error:logSummary(error)}))
         .finally(()=>{this.active.delete(run);this.drain();});

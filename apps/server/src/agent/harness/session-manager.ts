@@ -11,7 +11,6 @@ import { createTools } from "../tools/index.js";
 import type { FantoTool } from "../tools/types.js";
 import type { AgentBusinessServices } from "../business-services.js";
 import type { SkillLoader } from "../skills/loader.js";
-import type { TaskAgentCatalogEntry } from "./registry.js";
 import { createWorkspace } from "../workspace/paths.js";
 
 const SESSION_OWNER_ENTRY = "fanto.session_owner";
@@ -44,7 +43,6 @@ export class AgentSessionManager {
     private readonly models: Models,
     private readonly fanto: AgentBusinessServices,
     private readonly skills: SkillLoader,
-    private readonly taskAgents: readonly TaskAgentCatalogEntry[],
     private readonly db: Kysely<DB>,
     private readonly workspaceRoot: string,
   ) {
@@ -166,7 +164,6 @@ export class AgentSessionManager {
       definition.tools,
       createWorkspace(this.workspaceRoot, userId, id),
       this.fanto,
-      this.taskAgents,
       this.skills,
       definition.skills,
     );
@@ -223,7 +220,7 @@ export class AgentSessionManager {
       session,
       definition,
       createWorkspace(this.workspaceRoot, userId, id),
-      { models: this.models, fanto: this.fanto, skills: this.skills, taskAgents: this.taskAgents },
+      { models: this.models, fanto: this.fanto, skills: this.skills },
     );
     return {
       id,

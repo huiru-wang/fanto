@@ -29,7 +29,7 @@ struct ContinuousRecordTimelineView: View {
                 ForEach(dayGroups) { group in
                     Section {
                         ForEach(group.records) { record in
-                            ContinuousTimelineRecordRow(
+                            TimelineRecordRow(
                                 record: record,
                                 showsLineAfter: record.id != group.records.last?.id
                             )
@@ -132,55 +132,4 @@ private struct TimelineDayGroup: Identifiable {
     let records: [Record]
 
     var id: Date { date }
-}
-
-private struct ContinuousTimelineRecordRow: View {
-    let record: Record
-    let showsLineAfter: Bool
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Text(FantoDateText.time(record.eventAt))
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .frame(width: 56, alignment: .trailing)
-                .padding(.top, 1)
-
-            VStack(spacing: 0) {
-                Circle()
-                    .fill(FantoTheme.accent)
-                    .frame(width: 10, height: 10)
-                    .padding(.top, 5)
-                Rectangle()
-                    .fill(Color.secondary.opacity(0.25))
-                    .frame(width: 1)
-                    .frame(maxHeight: .infinity)
-                    .opacity(showsLineAfter ? 1 : 0)
-            }
-            .frame(width: 10)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text(record.text)
-                    .font(.body)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if let media = record.media {
-                    RecordMediaView(media: media)
-                }
-
-                if let location = record.location {
-                    Label(location.name, systemImage: "location")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Text(FantoDateText.timestamp(record.eventAt))
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.bottom, 24)
-        }
-        .offset(x: -8)
-        .accessibilityElement(children: .combine)
-    }
 }

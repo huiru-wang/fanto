@@ -12,9 +12,6 @@ test("Agent business services forward only the Run user to domain services", asy
     } as never,
     media: { readyMetadata: async (userId: string) => { calls.push({ method: "media", userId }); return { mediaId: "m1", mediaType: "image", mimeType: "image/jpeg" }; } } as never,
     memories: {} as never,
-    tasks: {} as never,
-    webSearch: { search: async () => ({ query: "q", summary: "s", sources: [] }) } as never,
-    resolveTaskAgent: () => undefined,
   });
   const context = { userId: "user-from-run" };
   await services.readRecords(context, { recordIds: ["r1"] });

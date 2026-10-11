@@ -15,46 +15,6 @@ export async function up(db: Kysely<any>) {
     CREATE INDEX idx_records_map_lon ON records(user_id, location_longitude) WHERE location_longitude IS NOT NULL;
     CREATE TABLE media_assets (id SERIAL PRIMARY KEY, media_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, object_key TEXT NOT NULL UNIQUE, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, status TEXT NOT NULL, ext_data TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE INDEX idx_media_assets_user_created ON media_assets(user_id, created_at);
-    CREATE TABLE tasks (
-      task_id UUID PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-      title TEXT NOT NULL,
-      goal JSONB NOT NULL,
-      agent_id TEXT NOT NULL,
-      timeout_seconds INTEGER NOT NULL,
-      trigger_type TEXT NOT NULL CHECK (trigger_type IN ('immediate','scheduled')),
-      trigger JSONB NOT NULL,
-      output JSONB NOT NULL DEFAULT '{}'::jsonb,
-      ext_data JSONB NOT NULL DEFAULT '{}'::jsonb,
-      status TEXT NOT NULL CHECK (status IN ('active','paused','completed','cancelled')),
-      next_run_at TIMESTAMPTZ,
-      source_session_id TEXT,
-      source_message_id TEXT,
-      created_at TIMESTAMPTZ NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL
-    );
-    CREATE INDEX idx_tasks_due ON tasks(status, next_run_at) WHERE next_run_at IS NOT NULL;
-    CREATE INDEX idx_tasks_user_status_updated ON tasks(user_id, status, updated_at DESC, task_id DESC);
-    CREATE TABLE task_runs (
-      run_id UUID PRIMARY KEY,
-      task_id UUID NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
-      user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-      status TEXT NOT NULL CHECK (status IN ('queued','running','completed','failed','cancelled')),
-      scheduled_at TIMESTAMPTZ NOT NULL,
-      worker_session_id TEXT,
-      result_media_id TEXT REFERENCES media_assets(media_id),
-      result JSONB,
-      error JSONB,
-      ext_data JSONB NOT NULL DEFAULT '{}'::jsonb,
-      started_at TIMESTAMPTZ,
-      finished_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL,
-      CONSTRAINT uq_task_runs_task_scheduled_at UNIQUE(task_id, scheduled_at)
-    );
-    CREATE INDEX idx_task_runs_status_scheduled ON task_runs(status, scheduled_at ASC, created_at ASC);
-    CREATE INDEX idx_task_runs_task_created ON task_runs(task_id, created_at DESC);
-    CREATE INDEX idx_task_runs_user_created ON task_runs(user_id, created_at DESC);
     CREATE TABLE memories (memory_id UUID PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, kind TEXT NOT NULL CHECK (kind IN ('profile', 'goal', 'guidance')), content TEXT NOT NULL, embedding vector(768) NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL);
     CREATE INDEX idx_memories_user_updated ON memories(user_id, updated_at DESC, memory_id DESC);
     CREATE TABLE projects (

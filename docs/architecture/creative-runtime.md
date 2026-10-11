@@ -29,7 +29,7 @@ Main Chat 和 Project Chat 统一调用：
 - `POST /api/agent/stream`：`{sessionId,message,metadata?:{projectId?}}` 的请求驱动 SSE。Agent ID 由 Session 绑定解析，Creator 的 `projectId` 经 Project↔Session 归属校验；普通续聊不执行 `running/completed/failed` 状态流转。仅 `project_manage` 成功保存非空作品时，可将 `failed` 恢复为 `completed`。
 - `GET /api/agent/sessions/:sessionId/events`：只读订阅后台首次创作的 Session EventBus，不会启动执行；无事件重放。客户端订阅失败仍可在 Project 可继续时通过 `/stream` 发送，掉线后从 History 恢复。
 
-所有已配置 Agent 都可以创建公开 Session，但没有可信 Record/Project/TaskRun 上下文时，专用 Provider 在模型调用前拒绝执行。Proposal 的 recordId/version 和 Worker 的 task 信息仅服务端注入；Creator 项目权限由领域服务验证。History 只校验 Session 所有权。客户端不应展示内部媒体 ID 或原始 Tool JSON，Tool Presentation 由服务端工具声明决定。
+所有已配置 Agent 都可以创建公开 Session，但没有可信 Record/Project 上下文时，专用 Provider 在模型调用前拒绝执行。Proposal 的 recordId/version 仅服务端注入；Creator 项目权限由领域服务验证。History 只校验 Session 所有权。客户端不应展示内部媒体 ID 或原始 Tool JSON，Tool Presentation 由服务端工具声明决定。
 
 ## 媒体和失败边界
 

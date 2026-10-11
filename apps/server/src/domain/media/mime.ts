@@ -19,12 +19,9 @@ export function mediaMime(value: string | undefined | null) {
 }
 
 export function mediaObjectKey(userId: string, mediaId: string, extension: string, createdAt = new Date()) {
-  return `users/${userId}/media/${yearMonth(createdAt)}/${mediaId}${extension}`;
+  return `users/${userId}/record/${yearMonth(createdAt)}/${mediaId}${extension}`;
 }
 
-export function taskObjectKey(userId: string, workerSessionId: string, filename: string, completedAt = new Date()) {
-  return `users/${userId}/task/${yearMonth(completedAt)}/${workerSessionId}/${filename}`;
-}
 
 function yearMonth(value: Date): string {
   return value.toISOString().slice(0, 7);

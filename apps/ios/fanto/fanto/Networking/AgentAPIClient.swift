@@ -57,7 +57,6 @@ struct AgentHistoryMessage: Identifiable {
     let text: String
     let media: [PresentedMedia]
     let activities: [ConversationToolActivity]
-    let tasks: [FantoTaskSummary]
     let userInputRequest: FantoUserInputRequest?
     let userInputResponse: FantoUserInputResponse?
     let stopped: Bool
@@ -76,7 +75,6 @@ enum AgentStreamEvent {
     case delta(String)
     case presentation([PresentedMedia])
     case toolActivity(ConversationToolActivity)
-    case taskCreated(FantoTaskSummary)
     case userInputRequested(FantoUserInputRequest)
     case stopped
     case done
@@ -117,16 +115,6 @@ struct AgentAPIClient {
             hasMore: response.hasMore,
             nextCursor: response.nextCursor
         )
-    }
-
-    func fetchTaskDetails(taskID: String) async throws -> FantoTaskDetails {
-        let response: TaskDetailResponse = try await request(path: "api/tasks/\(taskID)", method: "GET")
-        let runs: TaskRunsResponse? = try? await request(path: "api/tasks/\(taskID)/runs", method: "GET")
-        return FantoTaskDetails(task: response.task, runs: runs?.data ?? [])
-    }
-
-    func fetchTaskArtifactPreview(mediaID: String) async throws -> FantoTaskArtifactPreview {
-        try await request(path: "api/tasks/artifacts/\(mediaID)/preview", method: "GET")
     }
 
     func observeSession(sessionID: String, onConnected: @escaping () -> Void, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
@@ -243,9 +231,6 @@ struct AgentAPIClient {
             guard payload.status == "succeeded" else { return }
             if let items = payload.result?.items, !items.isEmpty {
                 onEvent(.presentation(items))
-            }
-            if let task = payload.result?.task {
-                onEvent(.taskCreated(task))
             }
             if let request = payload.result?.userInputRequest {
                 onEvent(.userInputRequested(request))
@@ -373,12 +358,11 @@ private struct HistoryBlock: Decodable {
     let status: String?
     let presentation: ToolPresentationPayload?
     let items: [PresentedMedia]?
-    let task: FantoTaskSummary?
     let request: HistoryUserInputRequest?
     let interactionID: String?
 
     enum CodingKeys: String, CodingKey {
-        case type, content, status, presentation, items, task, request
+        case type, content, status, presentation, items, request
         case interactionID = "interactionId"
     }
 }
@@ -422,14 +406,13 @@ private struct StreamToolEvent: Decodable {
 
 private struct StreamToolResult: Decodable {
     let items: [PresentedMedia]?
-    let task: FantoTaskSummary?
     let interactionID: String?
     let title: String?
     let description: String?
     let questions: [FantoUserInputQuestion]?
 
     enum CodingKeys: String, CodingKey {
-        case items, task
+        case items
         case interactionID = "interactionId"
         case title, description, questions
     }
@@ -440,26 +423,6 @@ private struct StreamToolResult: Decodable {
     }
 }
 private struct StreamFailure: Decodable { let error: String }
-private nonisolated struct TaskDetailResponse: Decodable {
-    let task: FantoTaskDetail
-
-    private enum CodingKeys: String, CodingKey { case task, data }
-
-    init(from decoder: Decoder) throws {
-        if let direct = try? FantoTaskDetail(from: decoder) {
-            task = direct
-            return
-        }
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        if let value = try? container.decode(FantoTaskDetail.self, forKey: .task) {
-            task = value
-            return
-        }
-        task = try container.decode(FantoTaskDetail.self, forKey: .data)
-    }
-}
-private nonisolated struct TaskRunsResponse: Decodable { let data: [FantoTaskRun] }
-
 private func projectHistory(_ entries: [HistoryMessage]) -> [AgentHistoryMessage] {
     entries.compactMap { entry in
         guard let role = ConversationRole(rawValue: entry.role) else { return nil }
@@ -474,15 +437,14 @@ private func projectHistory(_ entries: [HistoryMessage]) -> [AgentHistoryMessage
                 state: block.status == "failed" ? .failed : .succeeded
             )
         }
-        let tasks = entry.blocks.compactMap { $0.type == "task" ? $0.task : nil }
         let request = entry.blocks.compactMap { $0.type == "user_input" ? $0.request?.value : nil }.first
         let responseBlock = entry.blocks.first { $0.type == "user_input_response" }
         let response = responseBlock.flatMap { block -> FantoUserInputResponse? in
             guard let interactionID = block.interactionID, let content = block.content else { return nil }
             return .init(interactionID: interactionID, content: content)
         }
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !media.isEmpty || !activities.isEmpty || !tasks.isEmpty || request != nil || response != nil || entry.state == "stopped" else { return nil }
-        return .init(id: entry.id, role: role, text: text, media: media, activities: activities, tasks: tasks, userInputRequest: request, userInputResponse: response, stopped: entry.state == "stopped")
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !media.isEmpty || !activities.isEmpty || request != nil || response != nil || entry.state == "stopped" else { return nil }
+        return .init(id: entry.id, role: role, text: text, media: media, activities: activities, userInputRequest: request, userInputResponse: response, stopped: entry.state == "stopped")
     }
 }
 

@@ -18,13 +18,10 @@ type RunContextInput = {
   timeZone?: string;
   recentMessages: readonly ContextMessage[];
   sourceMessageId?: string;
-  task?: { taskId: string; taskRunId: string };
 };
 
 export type RunData = Omit<RunContextInput, "slots"> & {
   readonly slots: SlotStore;
-  taskPlanReady: boolean;
-  taskAuthorized: boolean;
 };
 
 const runDataContextKey = createContextKey<RunData>("fanto.context.runData");
@@ -34,8 +31,6 @@ function create(input: RunContextInput): Context {
     ...input,
     recentMessages: [...input.recentMessages],
     slots: createSlotStore(input.slots),
-    taskPlanReady: false,
-    taskAuthorized: false,
   };
   return withContextValue(runDataContextKey, data, TODO_CONTEXT);
 }

@@ -1,0 +1,54 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { randomUUID } from "node:crypto";
+import { sql } from "kysely";
+import sharp from "sharp";
+import { createDatabase, runMigrations } from "../../infrastructure/database/database.js";
+import { RecordService } from "../records/index.js";
+import { RecordPostprocessQueue } from "../../event/record-postprocess-queue.js";
+import { MediaService } from "./media-service.js";
+import { MemoryStorage } from "./testing/memory-storage.js";
+import { thumbnailObjectKey } from "./image-thumbnail.js";
+const integration = process.env.TEST_DATABASE_URL ? test : test.skip;
+integration("stored thumbnails: DB rollback retry, concurrent completion, legacy metadata merge and deletion race", async () => {
+ const admin=createDatabase(process.env.TEST_DATABASE_URL!);const name="media_test_"+randomUUID().replaceAll("-","");
+ await sql.raw(`CREATE DATABASE "${name}"`).execute(admin);
+ const url=new URL(process.env.TEST_DATABASE_URL!);url.pathname="/"+name;
+ const db=createDatabase(url.href),storage=new MemoryStorage(),media=MediaService.create(db,storage);
+ const records=RecordService.create(db,new RecordPostprocessQueue(),undefined,undefined,undefined,media);
+ const userId=randomUUID(),now=new Date();
+ try {
+  await runMigrations(db);await db.insertInto("users").values({user_id:userId,status:"active",created_at:now,updated_at:now,disabled_at:null}).execute();
+  const png=await sharp({create:{width:1000,height:800,channels:3,background:"blue"}}).png().toBuffer();
+  const ticket=(await media.createUpload(userId,{mimeType:"image/png",bytes:png.length}))!;
+  const row=await db.selectFrom("media_assets").selectAll().where("media_id","=",ticket.mediaId).executeTakeFirstOrThrow();
+  await storage.putObject(row.object_key,png,"image/png");
+  await sql`CREATE FUNCTION reject_media_ready() RETURNS trigger AS $$ BEGIN IF NEW.status = 'ready' THEN RAISE EXCEPTION 'forced rollback'; END IF; RETURN NEW; END; $$ LANGUAGE plpgsql;
+   CREATE TRIGGER reject_media_ready BEFORE UPDATE ON media_assets FOR EACH ROW EXECUTE FUNCTION reject_media_ready();`.execute(db);
+  assert.equal((await media.completeUpload(userId,ticket.mediaId,{})).kind,"incomplete");
+  assert.equal((await db.selectFrom("media_assets").select("status").where("media_id","=",ticket.mediaId).executeTakeFirstOrThrow()).status,"uploading");
+  assert.equal((await records.create(userId,{text:"blocked",media:[{mediaId:ticket.mediaId}],eventAt:now.toISOString()})).kind,"invalid_media");
+  const writes=storage.writes.length;
+  await sql`DROP TRIGGER reject_media_ready ON media_assets; DROP FUNCTION reject_media_ready();`.execute(db);
+  const completed=await Promise.all([media.completeUpload(userId,ticket.mediaId,{}),media.completeUpload(userId,ticket.mediaId,{width:1})]);
+  assert.ok(completed.every(result=>result.kind==="ok"));assert.equal(storage.writes.length,writes);
+  const clear=async()=>{await db.updateTable("media_assets").set({ext_data:JSON.stringify({recordId:null,capture:{width:1000,height:800}})}).where("media_id","=",ticket.mediaId).execute();await storage.remove(thumbnailObjectKey(row.object_key));};
+  await clear();
+  const originalGet=storage.getObject.bind(storage);
+  let unblock!:()=>void,entered!:()=>void;
+  const blocked=new Promise<void>(resolve=>unblock=resolve),started=new Promise<void>(resolve=>entered=resolve);
+  storage.getObject=async(key,options)=>{entered();await blocked;return originalGet(key,options);};
+  const reading=media.readUrl(userId,ticket.mediaId,"thumbnail");await started;
+  const record=await records.create(userId,{text:"attached during generation",media:[{mediaId:ticket.mediaId}],eventAt:now.toISOString()});assert.equal(record.kind,"ok");
+  unblock();assert.ok(await reading);
+  const updated=await db.selectFrom("media_assets").selectAll().where("media_id","=",ticket.mediaId).executeTakeFirstOrThrow();assert.equal(JSON.parse(updated.ext_data!).recordId,record.record.id);
+  // Start another old-image read while the user deletes its Record.
+  const data=JSON.parse(updated.ext_data!);delete data.variants;
+  await db.updateTable("media_assets").set({ext_data:JSON.stringify(data)}).where("media_id","=",ticket.mediaId).execute();await storage.remove(thumbnailObjectKey(row.object_key));
+  let release!:()=>void,ready!:()=>void;const gate=new Promise<void>(resolve=>release=resolve),begun=new Promise<void>(resolve=>ready=resolve);
+  storage.getObject=async(key,options)=>{const source=await originalGet(key,options);ready();await gate;return source;};
+  const removedRead=media.readUrl(userId,ticket.mediaId,"thumbnail");await begun;
+  assert.equal((await records.delete(userId,record.record.id,1)).kind,"ok");release();assert.equal(await removedRead,null);
+  assert.equal(await media.readyMetadata(userId,ticket.mediaId),null);assert.equal(await storage.head(thumbnailObjectKey(row.object_key)),null);
+ } finally {await db.destroy();await sql.raw(`DROP DATABASE "${name}" WITH (FORCE)`).execute(admin);await admin.destroy();}
+});

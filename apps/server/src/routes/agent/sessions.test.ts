@@ -36,14 +36,14 @@ test("generic Session History reads Creator sessions by ownership without Projec
 
 test("Session creation allows all registered Agent identities without internal flags", async () => {
   const created: string[] = [];
-  const registry = {get:(agentId?:string) => agentId && ["main","proposal-agent","creator-agent","task-worker"].includes(agentId) ? {id:agentId} : undefined};
+  const registry = {get:(agentId?:string) => agentId && ["main","proposal-agent","creator-agent"].includes(agentId) ? {id:agentId} : undefined};
   const sessions = {create:async (definition:{id:string},userId:string)=>{assert.equal(userId,"owner");created.push(definition.id);return {id:randomUUID(),agentId:definition.id};}};
   const app = createSessionRoutes(registry as never,sessions as never);
-  for (const agentId of ["main","proposal-agent","creator-agent","task-worker"]) {
+  for (const agentId of ["main","proposal-agent","creator-agent"]) {
     const response = await runWithRequestPrincipal({userId:"owner",source:"user"}, () => app.request("/sessions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({agentId})}));
     assert.equal(response.status,201);
   }
-  assert.deepEqual(created,["main","proposal-agent","creator-agent","task-worker"]);
+  assert.deepEqual(created,["main","proposal-agent","creator-agent"]);
 });
 
 test("stop returns unconfirmed within its deadline while durable cleanup remains pending",async()=>{

@@ -6,9 +6,9 @@ Fanto 是建立在个人长期记录上的 AI 产品：**记住 → 发现 → �
 
 ## 仓库组成
 
-- `apps/server`：Hono / TypeScript 服务，内嵌 Pi Agent Runtime、Record/Media/Memory、Proposal/Project、Task/TaskRun 和进程内异步执行。
+- `apps/server`：Hono / TypeScript 服务，内嵌 Pi Agent Runtime、Record/Media/Memory、Proposal/Project 和进程内异步创作。
 - `apps/ios/fanto`：SwiftUI，Google/Apple 登录、Record 日历与时间线、Fanto 对话、Proposal / Project。
-- `apps/h5`：React/Vite 受控测试客户端，Record、多轮对话、后台 Task、Proposal / Project 及作品预览。
+- `apps/h5`：React/Vite 受控测试客户端，Record、多轮对话、Proposal / Project 及作品预览。
 - `packages/shared`：跨端类型和 Record 相关共享定义。
 
 Main Chat 与 Project Chat **共用一套 Agent 多轮协议**：`POST /api/agent/stream`、`GET /api/agent/sessions/:id/history` 和只读 `GET /api/agent/sessions/:id/events`。首次 Creator 创作通过非持久化后台执行队列启动，继续创作使用绑定的 Creator Session；没有 Project 专属聊天 API。

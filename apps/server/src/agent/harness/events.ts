@@ -2,7 +2,6 @@ import { logSummary } from "../../infrastructure/logging/logger.js";
 import { logRunEvent, touchRun, trackTool } from "./run-logging.js";
 import type { AgentHarness, ExecutionToolContext } from "@earendil-works/pi-agent-core";
 import { sanitizePresentMediaDetails, type PresentMediaDetails } from "../tools/media.js";
-import { sanitizeCreateTaskDetails, type CreateTaskPresentation } from "../tools/task-management.js";
 import { sanitizeUserInputRequestDetails, type UserInputRequestDetails } from "../tools/user-input.js";
 import type { RunData } from "../context/run-context.js";
 import { resolveToolPresentation, type ToolPresentation } from "../presentation.js";
@@ -13,7 +12,7 @@ export type AgentStreamEvent =
   | { type: "message_start" }
   | { type: "message_end" }
   | { type: "tool_start"; toolCallId: string; toolName: string; presentation: ToolPresentation }
-  | { type: "tool_end"; toolCallId: string; toolName: string; status: "succeeded" | "failed"; presentation: ToolPresentation; result?: PresentMediaDetails | CreateTaskPresentation | UserInputRequestDetails }
+  | { type: "tool_end"; toolCallId: string; toolName: string; status: "succeeded" | "failed"; presentation: ToolPresentation; result?: PresentMediaDetails | UserInputRequestDetails }
   | { type: "delta"; text: string };
 
 export function subscribeHarnessEvents(
@@ -59,8 +58,6 @@ export function subscribeHarnessEvents(
         ? undefined
         : event.toolName === "present_media"
           ? sanitizePresentMediaDetails(event.result.details)
-          : event.toolName === "create_task"
-            ? sanitizeCreateTaskDetails(event.result.details)
             : event.toolName === "collect_user_input"
               ? sanitizeUserInputRequestDetails(event.result.details)
               : undefined;

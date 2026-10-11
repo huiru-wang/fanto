@@ -1,7 +1,6 @@
 import { FANTO_AGENT_ID } from "../config";
 import { authorizedFetch } from "../auth/test-session";
 import { ApiError, requestJson } from "./http";
-import type { TaskOutput, TaskTrigger } from "./tasks";
 
 export type PresentedMedia = {
   mediaId: string;
@@ -10,15 +9,6 @@ export type PresentedMedia = {
   width?: number;
   height?: number;
   durationMs?: number;
-};
-
-export type PresentedTask = {
-  taskId: string;
-  title: string;
-  status: "active";
-  trigger: TaskTrigger;
-  nextRunAt: string;
-  output: TaskOutput;
 };
 
 export type UserInputOption = { value: string; label: string };
@@ -46,7 +36,6 @@ export type AgentMessageBlock =
   | { type: "user_input_response"; interactionId: string; content: string }
   | { type: "activity"; toolCallId: string; status: "running" | "succeeded" | "failed"; presentation: ToolPresentation }
   | { type: "media"; items: PresentedMedia[] }
-  | { type: "task"; task: PresentedTask }
   | { type: "user_input"; request: PresentedUserInputRequest };
 
 export type AgentHistoryMessage = {
@@ -68,7 +57,6 @@ export type AgentStreamEvent =
   | { type: "tool_start"; toolCallId: string; presentation: ToolPresentation }
   | { type: "tool_end"; toolCallId: string; status: "succeeded" | "failed"; presentation: ToolPresentation }
   | { type: "media"; items: PresentedMedia[] }
-  | { type: "task"; task: PresentedTask }
   | { type: "user_input"; request: PresentedUserInputRequest }
   | { type: "stopped" }
   | { type: "done" }
@@ -111,26 +99,6 @@ export function extractPresentedMedia(value: unknown): PresentedMedia[] {
     if (durationMs) output.durationMs = durationMs;
     return [output];
   });
-}
-
-export function extractPresentedTask(value: unknown): PresentedTask | null {
-  const root = record(value);
-  if (!root || root.kind !== "task_created") return null;
-  const task = record(root.task);
-  const output = record(task?.output);
-  const trigger = record(task?.trigger);
-  if (!task || typeof task.taskId !== "string" || typeof task.title !== "string" || task.status !== "active"
-    || typeof task.nextRunAt !== "string" || !output || !trigger) return null;
-  if (output.format !== "markdown" && output.format !== "text" && output.format !== "html") return null;
-  if (trigger.type !== "immediate" && trigger.type !== "scheduled") return null;
-  return {
-    taskId: task.taskId,
-    title: task.title,
-    status: "active",
-    trigger: task.trigger as TaskTrigger,
-    nextRunAt: task.nextRunAt,
-    output: { format: output.format },
-  };
 }
 
 export function extractUserInputRequest(value: unknown): PresentedUserInputRequest | null {
@@ -258,10 +226,6 @@ export async function streamAgentMessage(
         if (payload.toolName === "present_media" && status === "succeeded") {
           const items = extractPresentedMedia(payload.result);
           if (items.length > 0) onEvent({ type: "media", items });
-        }
-        if (payload.toolName === "create_task" && status === "succeeded") {
-          const task = extractPresentedTask(payload.result);
-          if (task) onEvent({ type: "task", task });
         }
         if (payload.toolName === "collect_user_input" && status === "succeeded") {
           const request = extractUserInputRequest(payload.result);

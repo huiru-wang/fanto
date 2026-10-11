@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { after } from "node:test";
 import sharp from "sharp";
+import { Readable } from "node:stream";
 
 const dir = mkdtempSync(join(tmpdir(), "fanto-client-log-"));
 process.env.LOG_DIR = dir;
-const { OssStorage } = await import("./oss-client.js");
+const { AliyunStorage: OssStorage } = await import("./storage/aliyun-storage.js");
 const { CreativeImageClient, QwenImageUnderstanding } = await import("./image-client.js");
 const { QwenAudioTranscription } = await import("./audio-client.js");
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -18,14 +19,14 @@ test("OSS operations log success, bytes, failures and duration without keys or S
   const failure = Object.assign(new Error("private-response https://example.com/?token=private"), { code: "AccessDenied", status: 403 });
   (oss as any).client = {
     put: async () => ({ res: { status: 200 } }),
-    get: async () => ({ content: Buffer.from("private-body"), res: { status: 200 } }),
-    head: async () => ({ res: { status: 200 } }),
+    getStream: async () => ({ stream: Readable.from([Buffer.from("private-body")]), res: { status: 200 } }),
+    head: async () => ({ res: { status: 200, headers: { "content-length": "12", "content-type": "image/png", etag: "test" } } }),
     delete: async () => { throw failure; },
   };
   await oss.putObject("private-object", Buffer.from("private-body"), "image/png");
   assert.equal((await oss.getObject("private-object")).toString(), "private-body");
   await oss.head("private-object");
-  await assert.rejects(oss.remove("private-object"), error => error === failure);
+  await assert.rejects(oss.remove("private-object"), (error: any) => error.code === "AccessDenied" && error.status === 403);
   const logs = entries().filter(entry => entry.service === "oss" && entry.outcome);
   assert.deepEqual(logs.map(entry => entry.operation), ["put", "get", "head", "delete"]);
   assert.equal(logs[0].bytes, 12);

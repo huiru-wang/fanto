@@ -116,42 +116,6 @@ export interface MediaAssetsTable {
   updated_at: string;
 }
 
-export interface TasksTable {
-  task_id: string;
-  user_id: string;
-  title: string;
-  goal: unknown;
-  agent_id: string;
-  timeout_seconds: number;
-  trigger_type: "immediate" | "scheduled";
-  trigger: unknown;
-  output: unknown;
-  ext_data: unknown;
-  status: "active" | "paused" | "completed" | "cancelled";
-  next_run_at: Date | null;
-  source_session_id: string | null;
-  source_message_id: string | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface TaskRunsTable {
-  run_id: string;
-  task_id: string;
-  user_id: string;
-  status: "queued" | "running" | "completed" | "failed" | "cancelled";
-  scheduled_at: Date;
-  worker_session_id: string | null;
-  result_media_id: string | null;
-  result: unknown | null;
-  error: unknown | null;
-  ext_data: unknown;
-  started_at: Date | null;
-  finished_at: Date | null;
-  created_at: Date;
-  updated_at: Date;
-}
-
 export interface MemoriesTable {
   memory_id: string;
   user_id: string;
@@ -195,8 +159,6 @@ export interface DB {
   record_links: RecordLinksTable;
   media_assets: MediaAssetsTable;
   memories: MemoriesTable;
-  tasks: TasksTable;
-  task_runs: TaskRunsTable;
 }
 
 export type User = Selectable<UsersTable>;

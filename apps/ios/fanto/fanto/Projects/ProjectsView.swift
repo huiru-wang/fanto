@@ -7,22 +7,39 @@ struct ProjectsView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                switch store.projectLoadState {
-                case .idle, .loading:
-                    ProgressView("正在读取脉络")
-                case let .failed(message):
-                    VStack(spacing: 16) {
-                        ContentUnavailableView("暂时无法读取脉络", systemImage: "wifi.exclamationmark", description: Text(message))
-                        Button("重新加载") { Task { await store.loadProjects() } }
+            VStack(alignment: .leading, spacing: 0) {
+                Text("脉络")
+                    .font(.largeTitle.bold())
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.horizontal)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Group {
+                    switch store.projectLoadState {
+                    case .idle, .loading:
+                        ProgressView("正在读取脉络")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    case let .failed(message):
+                        VStack(spacing: 16) {
+                            ContentUnavailableView("暂时无法读取脉络", systemImage: "wifi.exclamationmark", description: Text(message))
+                            Button("重新加载") { Task { await store.loadProjects() } }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    case .loaded:
+                        content
                     }
-                case .loaded:
-                    content
                 }
             }
-            .navigationDestination(for: Project.self, destination: ProjectDetailView.init)
-            .navigationDestination(for: Proposal.self, destination: ProposalDetailView.init)
-            .navigationTitle("脉络")
+            .background(Color(uiColor: .systemGroupedBackground))
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: Project.self) { project in
+                ProjectDetailView(project: project)
+                    .toolbar(.visible, for: .navigationBar)
+            }
+            .navigationDestination(for: Proposal.self) { proposal in
+                ProposalDetailView(proposal: proposal)
+                    .toolbar(.visible, for: .navigationBar)
+            }
         }
         .onAppear { isVisible = true }
         .onDisappear { isVisible = false }
@@ -65,6 +82,7 @@ struct ProjectsView: View {
                 Section {
                     NavigationLink {
                         ArchivedProjectsView()
+                            .toolbar(.visible, for: .navigationBar)
                     } label: {
                         Label("已归档的作品", systemImage: "archivebox")
                             .foregroundStyle(.secondary)
@@ -93,23 +111,10 @@ struct ProjectsView: View {
             }
         case .loaded:
             Section("等待你的确认") {
-                ForEach(store.proposals) { proposal in
-                    NavigationLink(value: proposal) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(proposal.content.ideas.count == 1 ? (proposal.content.ideas.first?.title ?? proposal.title) : proposal.title).font(.headline)
-                            if let opening = proposal.content.opening, !opening.isEmpty {
-                                Text(opening).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
-                            }
-                            if proposal.content.opening == nil, proposal.content.ideas.count == 1, let idea = proposal.content.ideas.first {
-                                Text(idea.idea).font(.subheadline).foregroundStyle(.secondary).lineLimit(3)
-                            } else {
-                                Text("2 个创意方向").font(.subheadline).foregroundStyle(.secondary)
-                                Text(proposal.content.ideas.map(\.title).joined(separator: "  ·  ")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                            }
-                            Label(proposal.type == .create ? "发现一个新可能" : "继续这一脉络", systemImage: "sparkles").font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                }
+                ProposalDeckView(proposals: store.proposals)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
         }
     }

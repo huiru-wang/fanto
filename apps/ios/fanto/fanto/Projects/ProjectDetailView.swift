@@ -183,7 +183,6 @@ private struct ProjectSessionConversation: View {
     let status: ProjectStatus
     let onUpdated: () -> Void
     @State private var messages: [AgentHistoryMessage] = []
-    @State private var taskDetailCache = TaskDetailCache()
     @State private var draft = ""
     @State private var liveText = ""
     @State private var activity = ""
@@ -202,10 +201,10 @@ private struct ProjectSessionConversation: View {
                         Text("创作过程将在这里呈现").foregroundStyle(.secondary)
                     }
                     ForEach(messages) { message in
-                        ConversationMessageBubble(message: conversationMessage(message), retry: {}, taskDetailCache: taskDetailCache)
+                        ConversationMessageBubble(message: conversationMessage(message), retry: {})
                     }
                     if !liveText.isEmpty || !liveActivities.isEmpty || !activity.isEmpty {
-                        ConversationMessageBubble(message: liveMessage, retry: {}, taskDetailCache: taskDetailCache)
+                        ConversationMessageBubble(message: liveMessage, retry: {})
                     }
                     if let errorText { Text(errorText).font(.caption).foregroundStyle(.red) }
                 }
@@ -289,7 +288,7 @@ private struct ProjectSessionConversation: View {
 
     private func conversationMessage(_ item: AgentHistoryMessage) -> ConversationMessage {
         .init(id: item.id, role: item.role, text: item.role == .assistant ? hideInternalIds(item.text) : item.text, media: item.media, activities: item.activities,
-              tasks: item.tasks, userInputRequest: item.userInputRequest, userInputResponse: item.userInputResponse, state: .complete)
+              userInputRequest: item.userInputRequest, userInputResponse: item.userInputResponse, state: .complete)
     }
 
     private var liveMessage: ConversationMessage {

@@ -4,6 +4,7 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -18,11 +19,12 @@ export async function requestJson<T>(path: string, init: RequestInit = {}): Prom
     success?: boolean;
     result?: T;
     errorMsg?: string;
+    errorCode?: string;
     error?: string;
   } | null;
 
   if (!response.ok || payload?.success === false) {
-    throw new ApiError(payload?.errorMsg ?? payload?.error ?? `Request failed (${response.status})`, response.status);
+    throw new ApiError(payload?.errorMsg ?? payload?.error ?? `Request failed (${response.status})`, response.status, payload?.errorCode);
   }
   if (payload && "result" in payload) return payload.result as T;
   return payload as T;

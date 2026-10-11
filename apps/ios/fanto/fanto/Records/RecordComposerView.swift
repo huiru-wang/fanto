@@ -263,7 +263,9 @@ struct RecordComposerView: View {
                             data: images[index].data,
                             mimeType: "image/jpeg",
                             capture: MediaCapturePayload(width: images[index].width, height: images[index].height)
-                        )
+                        ),
+                        progress: images[index].uploadProgress,
+                        onProgress: { images[index].uploadProgress = $0 }
                     )
                 }
                 if let mediaID = images[index].mediaID { mediaIds.append(mediaID) }
@@ -278,7 +280,7 @@ struct RecordComposerView: View {
             didSave(eventAt)
             dismiss()
         } catch {
-            showError(error.localizedDescription)
+            showError("保存失败，请重试")
         }
     }
 

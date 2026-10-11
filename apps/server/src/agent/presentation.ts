@@ -1,6 +1,5 @@
 import type { Entry } from "@earendil-works/pi-agent-core";
 import { sanitizePresentMediaDetails, type PresentMediaDetails } from "./tools/media.js";
-import { sanitizeCreateTaskDetails, type CreateTaskPresentation } from "./tools/task-management.js";
 import { sanitizeUserInputRequestDetails, type UserInputRequestDetails } from "./tools/user-input.js";
 import type { FantoTool, ToolPresentationAnimation, ToolPresentationConfig } from "./tools/types.js";
 
@@ -17,7 +16,6 @@ export type AgentHistoryBlock =
   | { type: "user_input_response"; interactionId: string; content: string }
   | { type: "activity"; toolCallId: string; status: ToolStatus; presentation: ToolPresentation }
   | { type: "media"; items: PresentMediaDetails["items"] }
-  | { type: "task"; task: CreateTaskPresentation["task"] }
   | { type: "user_input"; request: UserInputRequestDetails & { resolved: boolean } };
 
 export type AgentHistoryMessagePresentation = {
@@ -115,12 +113,6 @@ export function projectHistory(entries: Entry[], tools: readonly FantoTool[]): A
     if (message.toolName === "present_media" && message.isError !== true) {
       const media = sanitizePresentMediaDetails(message.details);
       if (media?.items.length) assistantBlocks.push({ type: "media", items: media.items });
-      continue;
-    }
-
-    if (message.toolName === "create_task" && message.isError !== true) {
-      const task = sanitizeCreateTaskDetails(message.details);
-      if (task) assistantBlocks.push({ type: "task", task: task.task });
       continue;
     }
 

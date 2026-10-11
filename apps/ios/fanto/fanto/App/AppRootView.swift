@@ -9,11 +9,9 @@ enum AppTab: Hashable {
 struct AppRootView: View {
     @State private var selection: AppTab = .records
     @State private var conversationStore: ConversationStore
-    @State private var taskDetailCache: TaskDetailCache
 
-    init(conversationStore: ConversationStore, taskDetailCache: TaskDetailCache) {
+    init(conversationStore: ConversationStore) {
         _conversationStore = State(initialValue: conversationStore)
-        _taskDetailCache = State(initialValue: taskDetailCache)
     }
 
     var body: some View {
@@ -22,7 +20,7 @@ struct AppRootView: View {
                 RecordsView()
             }
             Tab("Fanto", systemImage: "message", value: .fanto) {
-                FantoConversationView(store: conversationStore, taskDetailCache: taskDetailCache)
+                FantoConversationView(store: conversationStore)
             }
             Tab("脉络", systemImage: "point.3.connected.trianglepath.dotted", value: .projects) {
                 ProjectsView()
@@ -36,6 +34,6 @@ struct AppRootView: View {
 }
 
 #Preview {
-    AppRootView(conversationStore: ConversationStore(), taskDetailCache: TaskDetailCache())
+    AppRootView(conversationStore: ConversationStore())
         .environment(FantoStore.preview)
 }

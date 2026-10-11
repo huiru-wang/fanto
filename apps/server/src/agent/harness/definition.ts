@@ -6,17 +6,8 @@ import { parseDocument } from "yaml";
 import { z } from "zod";
 import type { Models } from "@earendil-works/pi-ai";
 import { mainPrompt } from "../prompts/main.js";
-import { taskWorkerPrompt } from "../prompts/task-worker.js";
 
-const tool = z.enum(["read", "write", "edit", "bash", "record_read", "memory_manage", "web_search", "present_media", "collect_user_input", "create_task", "update_task", "get_task", "task_plan_manage", "deliver_task_result", "project_read", "proposal_create", "image_generate", "image_review", "project_manage", "skill_read"]);
-const taskConfig = z.discriminatedUnion("enabled", [
-  z.object({ enabled: z.literal(false) }).strict(),
-  z.object({
-    enabled: z.literal(true),
-    defaultTimeoutSeconds: z.number().int().positive(),
-    maxTimeoutSeconds: z.number().int().positive(),
-  }).strict(),
-]);
+const tool = z.enum(["read", "write", "edit", "bash", "record_read", "memory_manage", "present_media", "collect_user_input", "project_read", "proposal_create", "image_generate", "image_review", "project_manage", "skill_read"]);
 const compaction = z.object({
   enabled: z.boolean(),
   reserveTokens: z.number().int().nonnegative(),
@@ -25,10 +16,9 @@ const compaction = z.object({
 const partialDefinition = z.object({
   description: z.string().max(500).optional(),
   model_id: z.string().min(3).optional(),
-  systemPromptModule: z.enum(["main", "task-worker", "proposal-agent", "creator-agent"]),
+  systemPromptModule: z.enum(["main", "proposal-agent", "creator-agent"]),
   tools: z.array(tool).optional(),
   skills: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)).optional(),
-  task: taskConfig.optional(),
   compaction: compaction.partial().optional(),
 }).strict();
 const configuredAgent = partialDefinition.extend({
@@ -52,13 +42,12 @@ const definitionSchema = z.object({
   systemPrompt: z.string().min(1),
   tools: z.array(tool),
   skills: z.array(z.string()),
-  task: taskConfig.optional(),
   compaction,
 }).strict();
 
 export type AgentDefinition = z.infer<typeof definitionSchema> & { revision: string };
 
-const promptModules = { main: mainPrompt, "task-worker": taskWorkerPrompt, "proposal-agent": proposalAgentPrompt, "creator-agent": creatorAgentPrompt } as const;
+const promptModules = { main: mainPrompt, "proposal-agent": proposalAgentPrompt, "creator-agent": creatorAgentPrompt } as const;
 
 export function readAgentDefinitions(
   path: string,
@@ -104,18 +93,9 @@ export function readAgentDefinitions(
     };
     const definition = definitionSchema.safeParse(merged);
     if (!definition.success) throw new Error(`Invalid agents.yaml agent "${id}": ${definition.error.message}`);
-    if (definition.data.task?.enabled && definition.data.task.defaultTimeoutSeconds > definition.data.task.maxTimeoutSeconds) {
-      throw new Error(`Agent "${id}" task default timeout exceeds max timeout`);
-    }
-    if (id === "main" && definition.data.task?.enabled) {
-      throw new Error('Agent "main" cannot be task-enabled');
-    }
-    if (definition.data.tools.includes("deliver_task_result") && !definition.data.task?.enabled) {
-      throw new Error(`Agent "${id}" enables deliver_task_result but is not task-enabled`);
-    }
     if (definition.data.tools.some(t => ["project_read", "proposal_create", "image_generate", "image_review", "project_manage"].includes(t)) && !["proposal-agent", "creator-agent"].includes(id)) throw new Error("Creative tools require proposal-agent or creator-agent");
-    if (id === "proposal-agent" && (definition.data.tools.some(t => !["record_read", "project_read", "proposal_create", "skill_read"].includes(t)) || systemPromptModule !== "proposal-agent" || definition.data.task?.enabled)) throw new Error("Invalid proposal-agent permissions");
-    if (id === "creator-agent" && (definition.data.tools.some(t => !["record_read", "project_read", "image_generate", "image_review", "project_manage", "skill_read"].includes(t)) || systemPromptModule !== "creator-agent" || definition.data.task?.enabled)) throw new Error("Invalid creator-agent permissions");
+    if (id === "proposal-agent" && (definition.data.tools.some(t => !["read", "write", "edit", "bash", "record_read", "project_read", "proposal_create", "skill_read"].includes(t)) || systemPromptModule !== "proposal-agent")) throw new Error("Invalid proposal-agent permissions");
+    if (id === "creator-agent" && (definition.data.tools.some(t => !["read", "write", "edit", "bash", "record_read", "project_read", "image_generate", "image_review", "project_manage", "skill_read"].includes(t)) || systemPromptModule !== "creator-agent")) throw new Error("Invalid creator-agent permissions");
     if (new Set(definition.data.tools).size !== definition.data.tools.length) throw new Error(`Agent "${id}" has duplicate tools`);
     if (new Set(definition.data.skills).size !== definition.data.skills.length) throw new Error(`Agent "${id}" has duplicate skills`);
     for (const skill of definition.data.skills) {

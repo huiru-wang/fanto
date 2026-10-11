@@ -21,16 +21,15 @@
 - H5/iOS 均已接入 Project 展示、状态刷新、归档及同一 Creator Session 的继续创作。会话采用通用 History、Agent Stream 和 Tool Presentation；首次异步创作可以只读订阅 Session Events。SSE 是实时可视化而不是历史真相，断连后通过 History 恢复。
 - 当前不是通用视频制作器、自动长期跟进引擎或 3D 编辑器；创作能力受模型、授权素材、Markdown/静态 HTML 输出和现有工具边界约束。
 
-## Main Agent 与后台 Task
+## Main Agent
 
 - Fanto 主对话是一个持久 Session，支持文字 SSE、原生媒体展示、工具活动、必要时的澄清表单；按需使用 Record 检索和显式 Memory 管理。
-- Main Agent 可用 create_task/update_task/get_task 管理后台 Task。唯一 task-worker 能整理信息、查询公开网页、生成文本/Markdown/受控 HTML 文件并交付 OSS；TaskRun 保存 plan、summary、artifacts，客户端提供 Task 详情和产物预览。
-- TaskScheduler 定时扫描到期 Task，即时创建可主动唤醒；先创建 queued TaskRun，再由共享 AgentExecutionQueue 处理。没有消息持久化、自动重试或重启恢复保证；客户端不可把 queued/running 误解为必然最终完成。
-- Worker 的 read/write/edit/bash 仍在宿主进程工作区约束下运行，生产场景不能将其当成完整沙箱。
+- 当前只提供 Record、Proposal 和 Project 相关的发现与创作，不提供即时、延时或周期 Task，不提供提醒、通用文件交付及个人助理工作流。创作执行依赖 Proposal 接受后启动 Creator，已存在 Project 可继续对话；Main 尚不能直接创建 Project。
+- Proposal / Creator 使用进程内非持久化队列；没有消息持久化、自动重试或重启恢复保证。
 
 ## 客户端与运营范围
 
-- iOS：SwiftUI，Google/Apple 原生登录、品牌启动页预加载、Record、Fanto 主对话、Proposal/Project；正式的多会话管理和独立任务中心尚未提供。
+- iOS：SwiftUI，Google/Apple 原生登录、品牌启动页预加载、Record、Fanto 主对话、Proposal/Project；正式的多会话管理尚未提供。
 - H5：React/Vite，作为受控测试客户端使用构建时 refresh token 换取 JWT；没有公开的正式登录流程。提供主会话 Session ID、Project 状态筛选与绑定 ID 的调试展示，限当前用户。
 - Server：单 Hono 进程内嵌 Pi Agent、PostgreSQL + pgvector、OSS、内存事件队列；部署依赖 Nginx/PM2。所有受保护 API 使用 Fanto JWT 用户归属校验。
 - 路由和 UI 的已接入不代表当前线上服务已经部署相同版本；实际在线功能需另做生产环境验收。

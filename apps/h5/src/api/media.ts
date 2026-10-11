@@ -1,4 +1,5 @@
-import { requestJson } from "./http";
+import { uploadDraft, type UploadTicket, type UploadProgress } from "./media-upload";
+import { ApiError, requestJson } from "./http";
 
 export type MediaKind = "image" | "audio";
 export type MediaCapture = {
@@ -15,12 +16,7 @@ export type DraftMedia = {
   name: string;
   previewUrl: string;
   capture: MediaCapture;
-};
-
-type UploadTicket = {
-  mediaId: string;
-  uploadUrl: string;
-  expiresAt: string;
+  upload?: UploadProgress;
 };
 
 const MAX_MEDIA_BYTES = 50_000_000;
@@ -139,24 +135,24 @@ export function disposeDraftMedia(media: DraftMedia): void {
 
 export async function uploadMedia(media: DraftMedia): Promise<string> {
   if (media.kind === "image" && media.blob.size > MAX_IMAGE_BYTES) throw new Error("图片不能超过 10MB");
-  const ticket = await requestJson<UploadTicket>("/api/uploads", {
-    method: "POST",
-    body: JSON.stringify({ mimeType: media.mimeType, bytes: media.blob.size }),
+  return uploadDraft(media, {
+    create: () => requestJson<UploadTicket>("/api/uploads", {
+      method: "POST",
+      body: JSON.stringify({ mimeType: media.mimeType, bytes: media.blob.size }),
+    }),
+    put: ticket => fetch(ticket.uploadUrl, {
+      method: "PUT",
+      headers: { "Content-Type": media.mimeType },
+      body: media.blob,
+      signal: AbortSignal.timeout(60_000),
+    }),
+    complete: id => requestJson(`/api/uploads/${encodeURIComponent(id)}/complete`, {
+      method: "POST",
+      body: JSON.stringify({ capture: media.capture }),
+      signal: AbortSignal.timeout(90_000),
+    }),
+    isMissing: error => error instanceof ApiError && error.code === "UPLOAD_NOT_FOUND",
   });
-
-  const upload = await fetch(ticket.uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": media.mimeType },
-    body: media.blob,
-  });
-  if (!upload.ok) throw new Error(`附件上传失败（${upload.status}）`);
-
-  await requestJson(`/api/uploads/${encodeURIComponent(ticket.mediaId)}/complete`, {
-    method: "POST",
-    body: JSON.stringify({ capture: media.capture }),
-  });
-
-  return ticket.mediaId;
 }
 
 export type MediaVariant = "thumbnail" | "original";

@@ -5,7 +5,7 @@ const progress = new WeakMap<RunData, { startedAt: number; lastActivityAt: numbe
 export const runLogDetails = (data: RunData) => ({
   userId:data.userId, agentId:data.agentId, sessionId:data.sessionId, runId:data.runId,
   recordId:data.recordId, version:data.recordVersion, proposalId:data.proposalId,
-  projectId:data.projectId, traceId:data.traceId, taskId:data.task?.taskId, taskRunId:data.task?.taskRunId,
+  projectId:data.projectId, traceId:data.traceId,
 });
 
 export function logRunEvent(data: RunData, event: string, details: Record<string,unknown> = {}, level: "info" | "warn" | "error" = "info") {

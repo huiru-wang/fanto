@@ -9,9 +9,8 @@ apps/server/src/
 ├── bootstrap/         # 启动、配置、Hono 装配
 ├── routes/            # HTTP 校验、鉴权上下文、响应
 │   └── agent/         # Session History / Events / Stream
-├── domain/            # records / media / memory / projects / tasks 等领域
+├── domain/            # records / media / memory / projects 等领域
 │   ├── projects/      # Proposal、Project、CreativeService
-│   └── tasks/         # TaskService、TaskScheduler、ResultPublisher
 ├── agent/             # Pi Harness、Session、Tool、Prompt、Skills
 ├── event/             # Record / Embedding / Agent Execution 队列与 SessionEventBus
 ├── execution/         # AgentWorker、AgentExecutionListener、各业务 Handler
@@ -35,18 +34,11 @@ flowchart TD
   A --> L[AgentExecutionListener: concurrency limit]
   L --> PA[ProposalHandler]
   L --> CR[CreatorHandler]
-  L --> TH[TaskHandler]
-  S[TaskScheduler: due-task scan + immediate wake] --> T[queued TaskRun in PostgreSQL]
-  T --> A
 ```
 
 postprocess 按 `userId/recordId/version/runId` 认领与写回；单个图片或音频理解失败不会阻塞其他 block。Record 一旦写入 processed，Embedding 失败仅记录日志，不回滚 Record 或自动重试。Proposal 仅在创作能力启用时由 Listener 投递；无价值记录允许不产生提议。
 
-`AgentExecutionQueue` 的 Listener 持有内存 pending 列表和 active Set，`AGENT_EXECUTION_CONCURRENCY` 控制 Proposal / Creator / Task 的共享并发。无需持久化消息；不是可靠 MQ。队列消息、运行事件、进程中断时尚未完成的工作都没有自动恢复/补投保证。
-
-## Task 执行
-
-`TaskScheduler` 每 `TASK_SCHEDULER_INTERVAL_MS` 扫描到期 Task，创建 PostgreSQL `queued` TaskRun 并投递消息；即时 Task 创建时主动唤醒扫描。TaskHandler 认领 `queued→running`，创建/绑定独立 Pi Session，使用 `AgentWorker → runAgent` 执行 Goal。Task Worker 使用 `task_plan_manage` 保存计划，用 `deliver_task_result` 上传交付到 OSS，完成 TaskRun。未交付、执行失败或超时会失败收敛，不自动重试。Task / TaskRun 状态不等于进程内事件状态。
+`AgentExecutionQueue` 的 Listener 持有内存 pending 列表和 active Set，`AGENT_EXECUTION_CONCURRENCY` 控制 Proposal / Creator 的共享并发。无需持久化消息；不是可靠 MQ。队列消息、运行事件、进程中断时尚未完成的工作都没有自动恢复/补投保证。
 
 ## Project / Agent 执行
 

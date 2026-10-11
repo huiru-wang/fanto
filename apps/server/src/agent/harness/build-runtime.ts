@@ -2,7 +2,6 @@ import { AgentHarness, TODO_CONTEXT, withoutAbortSignal, type AgentLane, type Co
 import { NodeExecutionEnv } from "@earendil-works/pi-agent-core/node";
 import type { Models } from "@earendil-works/pi-ai";
 import type { AgentDefinition } from "./definition.js";
-import type { TaskAgentCatalogEntry } from "./registry.js";
 import { createContextProviders, createSystemPrompt, createTransformContext } from "../context/index.js";
 import type { ContextMessage } from "../context/run-context.js";
 import type { AgentBusinessServices } from "../business-services.js";
@@ -28,14 +27,13 @@ export type HarnessDependencies = {
   models: Models;
   fanto: AgentBusinessServices;
   skills: SkillLoader;
-  taskAgents: readonly TaskAgentCatalogEntry[];
 };
 
 export async function buildRuntime(session: Session, definition: AgentDefinition, workspace: string, dependencies: HarnessDependencies): Promise<HarnessRuntime> {
   const model = dependencies.models.getModel(definition.provider, definition.model);
   if (!model) throw new Error("Unknown model: " + definition.provider + "/" + definition.model);
   const loadedSkills = dependencies.skills.load(definition.skills);
-  const tools = createTools(definition.tools, workspace, dependencies.fanto, dependencies.taskAgents, dependencies.skills, definition.skills);
+  const tools = createTools(definition.tools, workspace, dependencies.fanto, dependencies.skills, definition.skills);
   const skillIndex = formatSkillIndex(loadedSkills);
   const systemPrompt = createSystemPrompt({
     template: definition.systemPrompt + (skillIndex ? "\n\n" + skillIndex : ""),

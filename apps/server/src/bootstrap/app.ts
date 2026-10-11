@@ -12,11 +12,9 @@ import { createProjectRoutes, createProposalRoutes } from "../routes/projects.js
 import { RecordService } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
 import type { ProjectService, ProposalService } from "../domain/projects/index.js";
-import type { TaskService } from "../domain/tasks/index.js";
 import type { AgentRuntime } from "../agent/agent-runtime.js";
 import { createSessionRoutes } from "../routes/agent/sessions.js";
 import { createAgentRoutes } from "../routes/agent/stream.js";
-import { createTaskRoutes } from "../routes/tasks.js";
 
 import type { AgentExecutionQueue } from "../event/agent-execution-queue.js";
 import type { SessionEventBus } from "../event/session-event-bus.js";
@@ -48,7 +46,6 @@ export type ServerServices = {
   media: MediaService;
   projects?: ProjectService;
   proposals?: ProposalService;
-  tasks?: TaskService;
   agent?: AgentRuntime;
   healthCheck?: () => Promise<void>;
 };
@@ -111,7 +108,6 @@ export function createApp(services: ServerServices) {
   if (projectService) app.route("/api", createProjectRoutes(projectService));
   if (services.proposals) app.route("/api", createProposalRoutes(services.proposals, services.agentQueue));
 
-  if (services.tasks) app.route("/api", createTaskRoutes(services.tasks, mediaService));
   if (services.agent) {
     app.use("/api/agent/*", bodyLimit({ maxSize: 64 * 1024 }));
     app.route("/api/agent", createSessionRoutes(services.agent.registry, services.agent.sessions, services.events));
@@ -128,7 +124,9 @@ export function createApp(services: ServerServices) {
     if (variant !== "thumbnail" && variant !== "original") {
       return c.json({ success: false, errorCode: "INVALID_INPUT", errorMsg: "Invalid media variant" }, 400);
     }
-    const result = await mediaService.readUrl(requireUserId(c.req.raw), c.req.param("id"), variant);
+    let result;
+    try { result = await mediaService.readUrl(requireUserId(c.req.raw), c.req.param("id"), variant); }
+    catch { return c.json({ success: false, errorCode: "MEDIA_UNAVAILABLE", errorMsg: "Media temporarily unavailable" }, 503); }
     return result
       ? c.json({ success: true, result, errorCode: null, errorMsg: null })
       : c.json({ success: false, errorCode: "NOT_FOUND", errorMsg: "Media not found" }, 404);

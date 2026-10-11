@@ -2,8 +2,7 @@ import { EventEmitter } from "node:events";
 import { logError, logInfo, logSummary } from "../infrastructure/logging/logger.js";
 export type AgentExecutionMessage =
   | {type:"proposal"; userId:string; recordId:string; version:number}
-  | {type:"creator"; userId:string; proposalId:string; projectId:string}
-  | {type:"task"; userId:string; taskId:string; taskRunId:string};
+  | {type:"creator"; userId:string; proposalId:string; projectId:string};
 export class AgentExecutionQueue {
   private readonly events = new EventEmitter();
   publish(task: AgentExecutionMessage) {

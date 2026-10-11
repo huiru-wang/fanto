@@ -1,3 +1,5 @@
+import sharp from "sharp";
+import { MemoryStorage } from "../domain/media/testing/memory-storage.js";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import nodeTest from "node:test";
@@ -17,7 +19,10 @@ test("Proposal / Project Domain and HTTP contract, isolation, transactions and c
   await runMigrations(db);
   const users = [randomUUID(), randomUUID()], [userId, otherUser] = users as [string, string];
   const now = new Date(), recordIds = Array.from({ length: 9 }, randomUUID), mediaId = randomUUID();
-  const media = MediaService.create(db, { readUrl: () => "https://private.example/image", putUrl: () => "https://upload.example", getObject: async () => Buffer.from("sample image"), putObject: async () => {}, remove: async () => {} } as never);
+  const storage = new MemoryStorage();
+  const png = await sharp({create:{width:32,height:24,channels:3,background:"white"}}).png().toBuffer();
+  await storage.putObject(`test/${mediaId}`,png,"image/png");
+  const media = MediaService.create(db, storage);
   const records = RecordService.create(db, new RecordPostprocessQueue()), projects = ProjectService.create(db, records, media, { embed: async () => [1, ...Array(767).fill(0)] }), proposals = ProposalService.create(db, records, media, { embed: async () => [1, ...Array(767).fill(0)] });
   const auth = { verifyAccess: async (token: string) => ({ userId: token === "other" ? otherUser : userId }), assertActiveUser: async () => ({ status: "active" }) };
   const app = createApp({ auth: auth as never, records, media, projects, proposals });

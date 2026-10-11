@@ -278,14 +278,6 @@ final class ConversationStore {
                 message.state = .processing
             }
             scrollAnchorID = id
-        case let .taskCreated(task):
-            updateMessage(id: id) { message in
-                if !message.tasks.contains(where: { $0.taskID == task.taskID }) {
-                    message.tasks.append(task)
-                    message.streamBlocks.append(.task(task.taskID))
-                }
-            }
-            scrollAnchorID = id
         case let .userInputRequested(request):
             updateMessage(id: id) { $0.userInputRequest = request }
             scrollAnchorID = id
@@ -341,7 +333,6 @@ final class ConversationStore {
     private func messageHasRenderableContent(_ message: ConversationMessage) -> Bool {
         !message.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || !message.activities.isEmpty
-            || !message.tasks.isEmpty
             || message.userInputRequest != nil
     }
 
@@ -358,7 +349,6 @@ final class ConversationStore {
                 text: $0.text,
                 media: $0.media,
                 activities: $0.activities,
-                tasks: $0.tasks,
                 userInputRequest: $0.userInputRequest,
                 userInputResponse: $0.userInputResponse,
                 state: $0.stopped ? .stopped : .complete

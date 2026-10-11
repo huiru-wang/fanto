@@ -36,7 +36,6 @@ function requestContext(context: Context) {
     sessionId: run.sessionId,
     sourceMessageId: run.sourceMessageId,
     timeZone: run.timeZone,
-    task: run.task,
   };
 }
 

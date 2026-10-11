@@ -1,15 +1,17 @@
 import sharp from "sharp";
 import { randomUUID } from "node:crypto";
-import { mediaMime, mediaObjectKey, normalizeMimeType, taskObjectKey } from "./mime.js";
+import { mediaMime, mediaObjectKey, normalizeMimeType } from "./mime.js";
 import { PostgresMediaRepository, type MediaAsset } from "./postgres-repository.js";
-import type { MediaVariant, OssStorage } from "../../infrastructure/clients/oss-client.js";
+import { generateThumbnail, inspectImage, InvalidImageError, storedThumbnail, thumbnailObjectKey, ThumbnailWork, type MediaVariant } from "./image-thumbnail.js";
+import { StorageError, type ObjectStorage } from "../../infrastructure/clients/storage/object-storage.js";
 import type { Transaction, Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
 import { logWarn } from "../../infrastructure/logging/logger.js";
 
 export class MediaService {
-  constructor(private readonly media: PostgresMediaRepository, private readonly oss: OssStorage) {}
-  static create(db: Kysely<DB>, oss: OssStorage) { return new MediaService(new PostgresMediaRepository(db), oss); }
+  private readonly thumbnailWork = new ThumbnailWork();
+  constructor(private readonly media: PostgresMediaRepository, private readonly oss: ObjectStorage) {}
+  static create(db: Kysely<DB>, oss: ObjectStorage) { return new MediaService(new PostgresMediaRepository(db), oss); }
   findOwnedByIds(userId: string, ids: string[], options: { transaction?: Transaction<DB> } = {}) { return this.media.findMediaByIds(ids, userId, options.transaction, !!options.transaction); }
   static enqueueRecordDeletion(userId: string, ids: string[], transaction: Transaction<DB>) {
     return PostgresMediaRepository.enqueueRecordDeletion(userId, ids, transaction);
@@ -25,21 +27,52 @@ export class MediaService {
           }),
         ]);
       } catch (error) {
-        logWarn("record-delete", "OSS cleanup failed", { objectKey: key, error: String(error) });
+        logWarn("record-delete", "Storage cleanup failed", { reason: "object_delete_failed" });
       } finally {
         if (timer) clearTimeout(timer);
       }
     }));
   }
+  private prepareImage(key: string, mimeType: string, maxBytes: number, sourceData?: Buffer) {
+    const deadline = Date.now() + 60_000;
+    return this.thumbnailWork.run(key, async () => {
+      const checkDeadline = () => { if (Date.now() >= deadline) throw new Error("Thumbnail processing timed out"); };
+      checkDeadline();
+      const source = await this.oss.head(key);
+      if (!source) throw new StorageError("NoSuchKey", 404);
+      if (source.bytes > maxBytes) throw new InvalidImageError();
+      const data = sourceData ?? await this.oss.getObject(key, { maxBytes });
+      if (data.length !== source.bytes) throw new InvalidImageError();
+      const original = await inspectImage(data, mimeType, maxBytes);
+      checkDeadline();
+      const objectKey = thumbnailObjectKey(key);
+      const existing = await this.oss.head(objectKey);
+      const reusable = existing && existing.bytes > 0 && normalizeMimeType(existing.contentType) === "image/webp"
+        && existing.metadata["source-etag"] === source.etag && existing.metadata["thumbnail-version"] === "1"
+        && Number(existing.metadata.width) > 0 && Number(existing.metadata.height) > 0;
+      let bytes: number, width: number, height: number;
+      if (reusable) { bytes = existing.bytes; width = Number(existing.metadata.width); height = Number(existing.metadata.height); }
+      else {
+        const result = await generateThumbnail(data, mimeType, maxBytes);
+        checkDeadline();
+        bytes = result.data.length; width = result.width; height = result.height;
+        await this.oss.putObject(objectKey, result.data, "image/webp", { metadata: { "source-etag": source.etag, "thumbnail-version": "1", width: String(width), height: String(height) } });
+      }
+      checkDeadline();
+      return { capture: original, thumbnail: { version: 1 as const, objectKey, mimeType: "image/webp" as const, bytes, width, height, sourceEtag: source.etag } };
+    });
+  }
   async createGeneratedImage(input: { userId: string; projectId: string; mediaId: string; data: Buffer; width: number; height: number }) {
     const decoded = await sharp(input.data, { limitInputPixels: 40_000_000 }).metadata();
     if (decoded.format !== "png" || decoded.width !== input.width || decoded.height !== input.height || input.data.length > 20 * 1024 * 1024) throw new Error("Invalid generated image");
     const key = `users/${input.userId}/project/${input.projectId}/${input.mediaId}.png`;
-    await this.oss.putObject(key, input.data, "image/png");
+    const createdKeys = [key, thumbnailObjectKey(key)];
     try {
-      const saved = await this.media.createReadyImage({ mediaId: input.mediaId, userId: input.userId, objectKey: key, mimeType: "image/png", bytes: input.data.length, extData: { source: "project", projectId: input.projectId, createdBy: "image_generate", requiresReview: true, capture: { width: input.width, height: input.height } } });
+      await this.oss.putObject(key, input.data, "image/png");
+      const prepared = await this.prepareImage(key, "image/png", 20 * 1024 * 1024, input.data);
+      const saved = await this.media.createReadyImage({ mediaId: input.mediaId, userId: input.userId, objectKey: key, mimeType: "image/png", bytes: input.data.length, extData: { source: "project", projectId: input.projectId, createdBy: "image_generate", requiresReview: true, capture: prepared.capture, variants: { thumbnail: prepared.thumbnail } } });
       return metadata(saved);
-    } catch (error) { await this.oss.remove(key).catch(() => {}); throw error; }
+    } catch (error) { await this.cleanupUncommittedProjectObjects(createdKeys); throw error; }
   }
 
   async copyFinalReferences(userId: string, projectId: string, ids: string[], transaction: Transaction<DB>, createdKeys: string[] = []): Promise<Record<string, string>> {
@@ -54,13 +87,15 @@ export class MediaService {
       const ext = descriptor?.extension ?? (source.mimeType === "text/html" ? ".html" : source.mimeType === "text/markdown" ? ".md" : "");
       if (!ext) throw new Error("MEDIA_NOT_READY");
       const newId = randomUUID(), key = `${prefix}${newId}${ext}`;
-      const data = await this.oss.getObject(source.objectKey);
-      await this.oss.putObject(key, data, source.mimeType);
+      const data = await this.oss.getObject(source.objectKey, source.mediaType === "image" ? { maxBytes: 20 * 1024 * 1024 } : undefined);
       createdKeys.push(key);
+      if (source.mediaType === "image") createdKeys.push(thumbnailObjectKey(key));
+      await this.oss.putObject(key, data, source.mimeType);
+      const prepared = source.mediaType === "image" ? await this.prepareImage(key, source.mimeType, 20 * 1024 * 1024, data) : undefined;
       await this.media.createReadyAsset({
         mediaId: newId, userId, objectKey: key, mediaType: source.mediaType,
         mimeType: source.mimeType, bytes: data.length,
-        extData: { source: "project", projectId, createdBy: "project_copy", originMediaId: source.mediaId, ...(source.extData.capture ? { capture: source.extData.capture } : {}) },
+        extData: { source: "project", projectId, createdBy: "project_copy", originMediaId: source.mediaId, ...(prepared ? { capture: prepared.capture, variants: { thumbnail: prepared.thumbnail } } : source.extData.capture ? { capture: source.extData.capture } : {}) },
       }, transaction);
       mapping[source.mediaId] = newId;
     }
@@ -78,7 +113,7 @@ export class MediaService {
     try {
       for (const id of ids) {
         const asset = assets.find(a => a.mediaId === id)!;
-        const data = await this.oss.getObject(asset.objectKey);
+        const data = await this.oss.getObject(asset.objectKey, { maxBytes: 20 * 1024 * 1024 });
         if (data.length > 20 * 1024 * 1024) throw new Error("SOURCE_MEDIA_UNAVAILABLE");
         const image = sharp(data, { limitInputPixels: 40_000_000, failOn: "warning" }), meta = await image.metadata();
         if (!["jpeg", "png", "webp"].includes(meta.format ?? "") || !meta.width || !meta.height || Math.max(meta.width, meta.height) / Math.min(meta.width, meta.height) > 8 || (meta.pages ?? 1) > 1) throw new Error("SOURCE_MEDIA_UNAVAILABLE");
@@ -88,7 +123,7 @@ export class MediaService {
         const key = `users/${userId}/project/${projectId}/temp/${randomUUID()}.jpg`;
         keys.push(key);
         await this.oss.putObject(key, adapted, "image/jpeg");
-        urls.push(this.oss.readUrl(key, "original", 900));
+        urls.push((await this.oss.signRead(key, 900)).url);
       }
       return await operation(urls);
     } finally { await Promise.all(keys.map(key => this.oss.remove(key).catch(() => {}))); }
@@ -97,91 +132,47 @@ export class MediaService {
     const descriptor = mediaMime(input.mimeType); if (!descriptor || (descriptor.mediaType === "image" && input.bytes > 10 * 1024 * 1024)) return null;
     const mediaId = crypto.randomUUID();
     const created = await this.media.create({ mediaId, userId, objectKey: mediaObjectKey(userId, mediaId, descriptor.extension), mediaType: descriptor.mediaType, mimeType: descriptor.mimeType, bytes: input.bytes });
-    return { mediaId: created.mediaId, uploadUrl: this.oss.putUrl(created.objectKey, created.mimeType), expiresAt: new Date(Date.now() + 15 * 60_000).toISOString() };
-  }
-  async createGeneratedFile(input: { userId: string; filename: string; mimeType: "text/plain" | "text/markdown" | "text/html"; data: Buffer; extData?: Record<string, unknown> }) {
-    const filename = safeFilename(input.filename);
-    const mediaId = crypto.randomUUID();
-    const objectKey = `users/${input.userId}/media/${mediaId}/${filename}`;
-    await this.oss.putObject(objectKey, input.data, input.mimeType);
-    try {
-      return await this.media.createReadyFile({
-        mediaId,
-        userId: input.userId,
-        objectKey,
-        mimeType: input.mimeType,
-        bytes: input.data.byteLength,
-        extData: { ...(input.extData ?? {}), filename },
-      });
-    } catch (error) {
-      await this.oss.remove(objectKey).catch(() => {});
-      throw error;
-    }
-  }
-  async createTaskGeneratedFile(input: {
-    userId: string;
-    workerSessionId: string;
-    filename: string;
-    mimeType: "text/plain" | "text/markdown" | "text/html";
-    data: Buffer;
-    completedAt: Date;
-    extData?: Record<string, unknown>;
-  }) {
-    const filename = safeFilename(input.filename);
-    const mediaId = crypto.randomUUID();
-    const objectKey = taskObjectKey(input.userId, input.workerSessionId, filename, input.completedAt);
-    await this.oss.putObject(objectKey, input.data, input.mimeType);
-    try {
-      return await this.media.createReadyFile({
-        mediaId,
-        userId: input.userId,
-        objectKey,
-        mimeType: input.mimeType,
-        bytes: input.data.byteLength,
-        extData: { ...(input.extData ?? {}), filename },
-      });
-    } catch (error) {
-      await this.oss.remove(objectKey).catch(() => {});
-      throw error;
-    }
+    const signed = await this.oss.signUpload(created.objectKey, created.mimeType, 900);
+    return { mediaId: created.mediaId, uploadUrl: signed.url, expiresAt: signed.expiresAt };
   }
   async completeUpload(userId: string, id: string, capture: Record<string, unknown>) {
-    const current = await this.media.findMedia(id, userId); if (!current) return { kind: "not_found" } as const;
-    try { const head: any = await this.oss.head(current.objectKey); const bytes = Number(head.res?.headers?.["content-length"] ?? head.res?.headers?.["Content-Length"]); const mimeType = head.res?.headers?.["content-type"] ?? head.res?.headers?.["Content-Type"];
-      if (bytes !== current.bytes || (current.mediaType === "image" && bytes > 10 * 1024 * 1024) || normalizeMimeType(mimeType) !== current.mimeType) return { kind: "mismatch" } as const;
-      const result = await this.media.complete(id, userId, capture); return result ? { kind: "ok", media: result } as const : { kind: "incomplete" } as const;
-    } catch { return { kind: "incomplete" } as const; }
+    const current = await this.media.findMedia(id, userId);
+    if (!current) return { kind: "not_found" } as const;
+    if (current.status === "ready") return { kind: "ok", media: current } as const;
+    try {
+      const head = await this.oss.head(current.objectKey);
+      if (!head) return { kind: "not_uploaded" } as const;
+      if (head.bytes !== current.bytes || (current.mediaType === "image" && head.bytes > 10 * 1024 * 1024) || normalizeMimeType(head.contentType) !== current.mimeType) return { kind: "mismatch" } as const;
+      const prepared = current.mediaType === "image" ? await this.prepareImage(current.objectKey, current.mimeType, 10 * 1024 * 1024) : undefined;
+      const result = await this.media.complete(id, userId, prepared ? { ...capture, ...prepared.capture } : capture, prepared?.thumbnail);
+      return result ? { kind: "ok", media: result } as const : { kind: "incomplete" } as const;
+    } catch (error) {
+      return error instanceof InvalidImageError || error instanceof StorageError && error.code === "ObjectTooLarge"
+        ? { kind: "invalid_image" } as const : { kind: "incomplete" } as const;
+    }
   }
   async readyMetadata(userId: string, id: string) { const asset = await this.media.findMedia(id, userId); return asset?.status === "ready" ? metadata(asset) : null; }
-  async readTaskArtifact(userId: string, id: string, maxBytes = 2 * 1024 * 1024) {
+  async readUrl(userId: string, id: string, variant: MediaVariant = "original") {
     const asset = await this.media.findMedia(id, userId);
-    const source = asset?.extData.source;
-    const taskId = asset?.extData.taskId;
-    const taskRunId = asset?.extData.taskRunId;
-    const filename = asset?.extData.filename;
-    const supportedMime = asset?.mimeType === "text/html" || asset?.mimeType === "text/markdown" || asset?.mimeType === "text/plain";
-    if (!asset || asset.status !== "ready" || asset.mediaType !== "file" || source !== "task" || !supportedMime
-      || typeof taskId !== "string" || typeof taskRunId !== "string" || typeof filename !== "string") {
-      return { kind: "not_found" as const };
+    if (asset?.status !== "ready") return null;
+    let key = asset.objectKey;
+    if (asset.mediaType === "image" && variant === "thumbnail") {
+      let thumbnail = storedThumbnail(asset.extData, key);
+      if (!thumbnail) {
+        const prepared = await this.prepareImage(key, asset.mimeType, 20 * 1024 * 1024);
+        const saved = await this.media.saveThumbnail(id, userId, prepared.thumbnail);
+        if (!saved) { await this.oss.remove(prepared.thumbnail.objectKey).catch(() => {}); return null; }
+        thumbnail = storedThumbnail(saved.extData, key);
+      }
+      if (!thumbnail) throw new Error("Thumbnail unavailable");
+      key = thumbnail.objectKey;
     }
-    if (asset.bytes > maxBytes) return { kind: "too_large" as const };
-    const data = await this.oss.getObject(asset.objectKey);
-    if (data.byteLength > maxBytes) return { kind: "too_large" as const };
-    return {
-      kind: "ok" as const,
-      artifact: {
-        mediaId: asset.mediaId,
-        taskId,
-        taskRunId,
-        filename,
-        mimeType: asset.mimeType as "text/html" | "text/markdown" | "text/plain",
-        bytes: asset.bytes,
-        content: data.toString("utf8"),
-      },
-    };
+    return this.oss.signRead(key, 300);
   }
-  async readUrl(userId: string, id: string, variant: MediaVariant = "original") { const asset = await this.media.findMedia(id, userId); if (asset?.status !== "ready") return null; const resolvedVariant = asset.mediaType === "image" ? variant : "original"; return { url: this.oss.readUrl(asset.objectKey, resolvedVariant), expiresAt: new Date(Date.now() + 300_000).toISOString() }; }
-  async redirectUrl(userId: string, id: string) { const asset = await this.media.findMedia(id, userId); return asset?.status === "ready" ? this.oss.readUrl(asset.objectKey) : null; }
+  async redirectUrl(userId: string, id: string) {
+    const asset = await this.media.findMedia(id, userId);
+    return asset?.status === "ready" ? (await this.oss.signRead(asset.objectKey, 300)).url : null;
+  }
 }
 
 export function metadata(asset: MediaAsset) {
@@ -199,10 +190,4 @@ export function metadata(asset: MediaAsset) {
     ...(positive(capture.height) ? { height: positive(capture.height) } : {}),
     ...(positive(capture.durationMs) ? { durationMs: positive(capture.durationMs) } : {}),
   };
-}
-
-function safeFilename(value: string): string {
-  const filename = value.trim().replace(/[^a-zA-Z0-9._-]+/g, "_");
-  if (!filename || filename === "." || filename === "..") throw new Error("Invalid generated filename");
-  return filename.slice(0, 200);
 }

@@ -8,7 +8,7 @@ import { subscribeHarnessEvents, type AgentStreamEvent } from "./events.js";
 import type { HarnessRuntime } from "./build-runtime.js";
 
 export type RunSession = { id: string; userId: string; agentId?: string; runtime: HarnessRuntime };
-export type RunMetadata = { proposalId?: string; projectId?: string; recordId?: string; recordVersion?: number; traceId?: string; timeZone?: string; task?: { taskId: string; taskRunId: string } };
+export type RunMetadata = { proposalId?: string; projectId?: string; recordId?: string; recordVersion?: number; traceId?: string; timeZone?: string; };
 
 type ActiveRun = {controller: AbortController; settled: Promise<void>; finish: () => void; error?: unknown};
 const activeRuns = new Map<string, ActiveRun>();
@@ -78,7 +78,7 @@ async function run(
   const context = withAbortSignal(signal, createRunContext({
     runId:randomUUID(),userId:session.userId,sessionId:session.id,agentId:session.agentId,query,slots:{},recentMessages:[],
     proposalId:metadata.proposalId,projectId:metadata.projectId,recordId:metadata.recordId,recordVersion:metadata.recordVersion,
-    traceId:metadata.traceId,timeZone:metadata.timeZone,task:metadata.task,
+    traceId:metadata.traceId,timeZone:metadata.timeZone,
   }));
   const data=createRunContext.read(context);
   const stopLogging=startRunLogging(data);
