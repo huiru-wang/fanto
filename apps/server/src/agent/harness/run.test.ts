@@ -87,3 +87,16 @@ test("stopping a live tool preserves cancellation results and the next turn succ
     assert.equal(effects,1);
   }finally {await harness.close(TODO_CONTEXT);await repo.close(TODO_CONTEXT);}
 });
+
+test("stop during history loading cannot start a prompt when the read later finishes",async()=>{
+  let finish!:()=>void,ready!:()=>void;let prompts=0;
+  const reached=new Promise<void>(r=>{ready=r;});
+  const runtime={harness:{events:{on:()=>()=>{}}},tools:[],abort:async()=>{},
+    readRecentMessages:()=>{ready();return new Promise<[]>(resolve=>{finish=()=>resolve([]);});},
+    prompt:async()=>{prompts++;return {ok:true,value:{status:"completed"}};}};
+  const session={id:crypto.randomUUID(),userId:"owner",runtime};
+  const run=runAgent(session as never,"first",new AbortController().signal,{},async()=>{});
+  const rejected=assert.rejects(run,{name:"AbortError"});await reached;
+  const stop=stopAgentRun(session.id);finish();assert.equal(await stop,true);await rejected;
+  assert.equal(prompts,0);
+});

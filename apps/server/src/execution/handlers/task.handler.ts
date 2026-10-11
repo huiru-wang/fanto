@@ -8,6 +8,12 @@ export class TaskHandler {
   async execute(userId:string,taskId:string,runId:string) {
     const claimed=await this.tasks.claimRun(userId,taskId,runId);
     if(!claimed)return;
+    let finalized=false;
+    const fail = async (error:unknown) => {
+      const current=await this.tasks.findRun(userId,taskId,runId);
+      if(current?.status==="running")await this.tasks.failRun(current,{code:"TASK_EXECUTION_FAILED",message:error instanceof Error?error.message:String(error)});
+      finalized=true;
+    };
     try {
       const task=await this.tasks.find(userId,taskId);
       if(!task)throw Error("TASK_NOT_FOUND");
@@ -21,16 +27,16 @@ export class TaskHandler {
         handedOff=true;
         await this.worker.run(session,renderTaskBrief(task),task.timeoutSeconds*1000,{
           traceId:taskTraceId(task),timeZone:taskTimeZone(task),task:{taskId,taskRunId:runId}
-        });
+        }, false, undefined, async () => {
+          const current=await this.tasks.findRun(userId,taskId,runId);
+          if(current?.status==="running")await this.tasks.failRun(current,{code:"TASK_RESULT_NOT_DELIVERED",message:"Task Agent finished without deliver_task_result"});
+          finalized=true;
+        }, true, fail);
       }finally{
         if(!handedOff)await this.agent.sessions.release(session.id).catch(()=>{});
       }
-      const current=await this.tasks.findRun(userId,taskId,runId);
-      if(current?.status==="completed")return;
-      if(current?.status==="running")await this.tasks.failRun(current,{code:"TASK_RESULT_NOT_DELIVERED",message:"Task Agent finished without deliver_task_result"});
     } catch(error) {
-      const current=await this.tasks.findRun(userId,taskId,runId);
-      if(current?.status==="running")await this.tasks.failRun(current,{code:"TASK_EXECUTION_FAILED",message:error instanceof Error?error.message:String(error)});
+      if(!finalized)await fail(error);
       throw error;
     }
   }

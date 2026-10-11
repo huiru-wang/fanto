@@ -1,4 +1,5 @@
-import { logSummary } from "../../infrastructure/logging/logger.js";
+import { waitForOutput } from "./run-output.js";
+import { logSummary, logWarn } from "../../infrastructure/logging/logger.js";
 import { logRunEvent, startRunLogging } from "./run-logging.js";
 import { randomUUID } from "node:crypto";
 import { withAbortSignal, type Context } from "@earendil-works/pi-agent-core";
@@ -16,7 +17,7 @@ const activeRuns = new Map<string, ActiveRun>();
 export async function stopAgentRun(sessionId: string): Promise<boolean> {
   const active = activeRuns.get(sessionId);
   if (!active) return false;
-  active.controller.abort();
+  active.controller.abort(new DOMException("user_stop", "AbortError"));
   await active.settled;
   if (active.error) throw active.error;
   return true;
@@ -39,8 +40,20 @@ export async function runAgent(
   signal.addEventListener("abort", onAbort, {once:true});
   if (signal.aborted) onAbort();
   try {
-    await onStarted?.();
-    return await run(session, message, controller.signal, metadata, emit, context => session.runtime.prompt(message, context));
+    const deliver = async (write: () => Promise<void>) => {
+      try {
+        const status = await waitForOutput(write, controller.signal);
+        if (status === "timeout") {
+          logWarn("agent-run", "output wait timed out", {sessionId:session.id,agentId:session.agentId,traceId:metadata.traceId});
+          controller.abort(new DOMException("output_wait_timeout", "AbortError"));
+        }
+      } catch (error) {
+        logWarn("agent-run", "output disconnected", {sessionId:session.id,agentId:session.agentId,traceId:metadata.traceId,error:logSummary(error)});
+        controller.abort(new DOMException("output_disconnected", "AbortError"));
+      }
+    };
+    return await run(session, message, controller.signal, metadata, event => deliver(() => emit(event)),
+      context => session.runtime.prompt(message, context), onStarted ? () => deliver(onStarted) : undefined);
   } catch (error) {
     if (controller.signal.aborted && !(error instanceof Error && error.name === "AbortError")) active.error=error;
     throw error;
@@ -58,6 +71,7 @@ async function run(
   metadata: RunMetadata,
   emit: (event: AgentStreamEvent) => Promise<void>,
   invoke: (context: Context) => ReturnType<HarnessRuntime["prompt"]>,
+  onStarted?: () => Promise<void>,
 ): Promise<string> {
   let output = "";
   const startedAt=Date.now();
@@ -76,9 +90,12 @@ async function run(
   signal.addEventListener("abort", abort, { once: true });
   try {
     signal.throwIfAborted();
+    await onStarted?.();
+    signal.throwIfAborted();
     logRunEvent(data,"history read started");
     data.recentMessages=await session.runtime.readRecentMessages();
     logRunEvent(data,"history read completed");
+    signal.throwIfAborted();
     const unsubscribe = subscribeHarnessEvents(session.runtime.harness, session.runtime.tools, data, query, emit, () => signal.aborted, text => { output += text; });
     try {
       const result = await invoke(context);

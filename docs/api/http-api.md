@@ -256,7 +256,7 @@ curl -N http://127.0.0.1:3000/api/agent/stream \
 
 请求响应 SSE 以 `start` 开始，期间可发送 `turn_start`、`message_start`、`message_end`、`tool_start`（`toolCallId`、`toolName`）、`tool_end`（再加 `status: succeeded | failed`）和零到多个 `delta`，最终为 `done`、`stopped` 或 `error`。工具事件以 `presentation.visible/displayContent/animation` 控制可见性与产品化文案，客户端只呈现声明为可见的活动状态，不展示原始工具参数、技术 ID、内部错误或 reasoning。当前有三个产品化白名单例外：成功的 `present_media` 返回稳定媒体 metadata；成功的 `create_task` 返回 `kind=task_created` 与 Task Card 所需摘要；成功的 `collect_user_input` 返回 `kind=user_input_requested`、`interactionId` 和结构化问题，H5 渲染为原生表单。`collect_user_input` 成功后当前 Agent Run 立即结束，用户提交答案后以同一 Session 的下一条 User Message 继续；回答消息带内部 interaction 标记供历史恢复识别，History API 将其投影为 `user_input_response`，使 H5 渲染为“用户澄清”卡片而不展示内部标记。其他 Tool Result 仍不对客户端公开。单次 Stream 请求最长 10 分钟（模型请求另有独立限制）；同一 Session 已在运行时返回 `409`。
 
-停止当前轮次使用 `POST /api/agent/sessions/:sessionId/stop`，客户端等待确认后才允许续聊；请求断开和超时也会取消本轮。取消保存已接受的用户输入、已输出文本及工具结果；History 的中断助手消息携带 `state: "stopped"`，未输出文本时也保留中断占位。停止确认不删除 Session，下一轮沿用同一 sessionId。
+停止当前轮次使用 `POST /api/agent/sessions/:sessionId/stop`，客户端等待确认后才允许续聊；请求断开和超时也会取消本轮。取消保存已接受的用户输入、已输出文本及工具结果；History 的中断助手消息携带 `state: "stopped"`，未输出文本时也保留中断占位。停止确认不删除 Session，下一轮沿用同一 sessionId。stop 响应最多等待 20 秒，未确认收尾时返回 `503` 与 `error`，不会提前宣称停止成功；客户端可重试。SSE 输出等待响应取消信号，单次写入阻塞超过 5 秒会中断请求驱动的本轮。
 
 历史接口按 `seq` 从新到旧返回。`cursor` 填上页最后一项的 `seq`；`limit` 默认 50，范围为 1–100。`compaction` 和内部 `fanto.*` 条目不对外返回，敏感字段会被脱敏：
 

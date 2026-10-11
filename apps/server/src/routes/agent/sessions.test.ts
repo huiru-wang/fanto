@@ -45,3 +45,24 @@ test("Session creation allows all registered Agent identities without internal f
   }
   assert.deepEqual(created,["main","proposal-agent","creator-agent","task-worker"]);
 });
+
+test("stop returns unconfirmed within its deadline while durable cleanup remains pending",async()=>{
+  let release!:()=>void,cleaned=false;
+  const pending=new Promise<void>(resolve=>{release=()=>{cleaned=true;resolve();};});
+  const sessions={assertOwnership:async()=>{},waitUntilIdle:()=>pending};
+  const app=createSessionRoutes({} as never,sessions as never,undefined,15);
+  const id=randomUUID();
+  const response=await runWithRequestPrincipal({userId:"owner",source:"user"},()=>app.request(`/sessions/${id}/stop`,{method:"POST"}));
+  assert.equal(response.status,503);assert.equal(cleaned,false);
+  release();await pending;
+  const confirmed=await runWithRequestPrincipal({userId:"owner",source:"user"},()=>app.request(`/sessions/${id}/stop`,{method:"POST"}));
+  assert.equal(confirmed.status,200);
+});
+
+test("stop reports a cleanup failure honestly and preserves ownership errors",async()=>{
+  for(const [error,status] of [[Error("database unavailable"),503],[new SessionOwnershipError(),403]] as const){
+    const app=createSessionRoutes({} as never,{assertOwnership:async()=>{throw error;}} as never);
+    const response=await runWithRequestPrincipal({userId:"owner",source:"user"},()=>app.request(`/sessions/${randomUUID()}/stop`,{method:"POST"}));
+    assert.equal(response.status,status);
+  }
+});

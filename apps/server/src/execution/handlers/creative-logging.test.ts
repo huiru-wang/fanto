@@ -110,7 +110,7 @@ test("Accept logs distinguish first acceptance, duplicates and rejection without
 
 test("image generation logs correlate upstream failure diagnostics with the creative Session", async () => {
   const { CreativeService } = await import("../../domain/projects/creative-service.js");
-  const { ImageClientError } = await import("../../infrastructure/clients/creative-image-client.js");
+  const { ImageClientError } = await import("../../infrastructure/clients/image-client.js");
   const error=new ImageClientError("IMAGE_RESULT_UNKNOWN",{stage:"http_response",reason:"http_error",durationMs:12,httpStatus:503,requestId:"upstream-request"});
   const service=new CreativeService({} as never,{} as never,
     {find:async()=>({projectId:"project",sessionId:"session",status:"running"})} as never,{} as never,

@@ -1,17 +1,18 @@
+import { waitForOutput } from "../../agent/harness/run-output.js";
 import { logInfo, logError, logSummary } from "../../infrastructure/logging/logger.js";
 import type { SessionEventBus } from "../../event/session-event-bus.js";
 import { streamSSE } from "hono/streaming";
 import { writeStreamEvent } from "./stream.js";
 import { Hono } from "hono";
 import type { AgentRegistry } from "../../agent/harness/registry.js";
-import { AgentSessionManager } from "../../agent/harness/session-manager.js";
+import { AgentSessionManager, SessionNotFoundError, SessionOwnershipError, SessionBusyError } from "../../agent/harness/session-manager.js";
 import { sessionError } from "./errors.js";
 import { createSessionSchema, cursorSchema, limitSchema, sessionParamsSchema, traceIdSchema } from "./schemas.js";
 import { requireUserId } from "../request-user.js";
 import { stopAgentRun } from "../../agent/harness/run.js";
 import { projectHistory } from "../../agent/presentation.js";
 
-export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSessionManager, events?: SessionEventBus): Hono {
+export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSessionManager, events?: SessionEventBus, stopTimeoutMs = 20_000): Hono {
   const app = new Hono();
   app.post("/sessions", async c => {
     const body = createSessionSchema.safeParse(await c.req.json().catch(() => null));
@@ -29,18 +30,29 @@ export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSess
     if (!params.success) return c.json({error:"sessionId is invalid"},400);
     const userId = requireUserId(c.req.raw);
     const startedAt = Date.now();
-    try {
+    let expired = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stop = async () => {
       await sessions.assertOwnership(params.data.sessionId,userId);
+      // Ownership may finish after the response deadline: never cancel a later turn.
+      if (expired) throw new Error("STOP_NOT_CONFIRMED");
       logInfo("agent-stop", "requested", {userId,sessionId:params.data.sessionId});
-      const stopped = await stopAgentRun(params.data.sessionId);
+      const idle = sessions.waitUntilIdle(params.data.sessionId);
+      const [stopped] = await Promise.all([stopAgentRun(params.data.sessionId),idle]);
       logInfo("agent-stop", "run settled", {userId,sessionId:params.data.sessionId,stopped,durationMs:Date.now()-startedAt});
-      await sessions.waitUntilIdle(params.data.sessionId);
       logInfo("agent-stop", "completed", {userId,sessionId:params.data.sessionId,stopped,durationMs:Date.now()-startedAt});
+      return stopped;
+    };
+    try {
+      const stopped = await Promise.race([stop(), new Promise<never>((_,reject) => {
+        timer=setTimeout(() => {expired=true;reject(new Error("STOP_NOT_CONFIRMED"));},stopTimeoutMs);
+      })]);
       return c.json({success:true,result:{sessionId:params.data.sessionId,stopped}});
     } catch(error) {
       logError("agent-stop", "failed", {userId,sessionId:params.data.sessionId,error:logSummary(error),durationMs:Date.now()-startedAt});
+      if (expired || !(error instanceof SessionNotFoundError || error instanceof SessionOwnershipError || error instanceof SessionBusyError)) return c.json({error:"停止尚未确认，请重试。"},503);
       return sessionError(c,error);
-    }
+    } finally {clearTimeout(timer);}
   });
 
   app.get("/sessions/:sessionId/events", async c => {
@@ -48,12 +60,21 @@ export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSess
     if(!events)return c.json({error:"Events unavailable"},503);
     try{await sessions.assertOwnership(id,userId);}catch(error){return sessionError(c,error);}
     return streamSSE(c,async stream=>{
+      const connection=new AbortController();
+      stream.onAbort(()=>connection.abort());
+      const deliver=async(write:()=>Promise<void>)=>{
+        const status=await waitForOutput(write,connection.signal);
+        if(status==="timeout")stream.abort();
+      };
       const unsubscribe=events.subscribe(id,event=>{
-        if(event.type==="start")void stream.writeSSE({event:"start",data:JSON.stringify({sessionId:id,agentId:event.agentId})}).catch(()=>{});
-        else if(event.type==="done"||event.type==="stopped"||event.type==="error")void stream.writeSSE({event:event.type,data:JSON.stringify(event.type==="error"?{error:event.message??"Agent run failed"}:{})}).catch(()=>{});
-        else void writeStreamEvent(stream,event).catch(()=>{});
+        const write=async()=>{
+          if(event.type==="start")await stream.writeSSE({event:"start",data:JSON.stringify({sessionId:id,agentId:event.agentId})});
+          else if(event.type==="done"||event.type==="stopped"||event.type==="error")await stream.writeSSE({event:event.type,data:JSON.stringify(event.type==="error"?{error:event.message??"Agent run failed"}:{})});
+          else await writeStreamEvent(stream,event);
+        };
+        void deliver(write).catch(()=>stream.abort());
       });
-      const heartbeat=setInterval(()=>void stream.write(": ping\n\n").catch(()=>{}),15000);
+      const heartbeat=setInterval(()=>void deliver(async()=>{await stream.write(": ping\n\n");}).catch(()=>stream.abort()),15000);
       try{await new Promise<void>(resolve=>stream.onAbort(resolve));}
       finally{clearInterval(heartbeat);unsubscribe();}
     });

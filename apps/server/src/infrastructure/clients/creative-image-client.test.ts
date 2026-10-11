@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import sharp from "sharp";
-import { CreativeImageClient } from "./creative-image-client.js";
+import { CreativeImageClient } from "./image-client.js";
 const options = { endpoint: "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation", apiKey: "test-only", model: "qwen-image-3.0-pro", timeoutMs: 1000 };
 const vendor = "https://dashscope-test.oss-accelerate.aliyuncs.com/result.png?Expires=123&Signature=private";
 test("native image API protocol, encrypted recovery URL and verified PNG download", async () => {
@@ -41,7 +41,7 @@ test("uncertain requests are not retried; disallowed URLs and non-images are rej
 });
 
 test("image failures preserve actionable diagnostics without signed URLs or credentials", async () => {
-  const { ImageClientError } = await import("./creative-image-client.js");
+  const { ImageClientError } = await import("./image-client.js");
   const input = {prompt:"private-prompt",referenceUrls:[vendor]};
   const diagnostics = async (client: CreativeImageClient, signal?: AbortSignal) => {
     try { await client.generate(input, signal); assert.fail("expected failure"); }

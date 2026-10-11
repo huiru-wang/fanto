@@ -112,6 +112,8 @@ export function ChatPage() {
   const [responding, setResponding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const stoppingRef = useRef(false);
+  const conversationRevision = useRef(0);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const isNearEnd = useCallback(() => {
@@ -128,6 +130,7 @@ export function ChatPage() {
   }, []);
 
   const createFreshSession = useCallback(async () => {
+    conversationRevision.current += 1;
     const id = await createAgentSession();
     localStorage.setItem(AGENT_SESSION_KEY, id);
     setSessionId(id);
@@ -202,6 +205,7 @@ export function ChatPage() {
     setResponding(true);
     scrollToEnd();
 
+    conversationRevision.current += 1;
     const controller = new AbortController();
     abortRef.current = controller;
     let textBlockOpen = false;
@@ -219,6 +223,7 @@ export function ChatPage() {
         sessionId,
         wireText,
         event => {
+          if (abortRef.current !== controller || stoppingRef.current) return;
           if (event.type === "processing") {
             updateAssistant(message => message.state === "processing" ? message : { ...message, state: "processing" });
           } else if (event.type === "message_start") {
@@ -286,6 +291,7 @@ export function ChatPage() {
         controller.signal,
       );
     } catch (cause) {
+      if (abortRef.current !== controller) return;
       if (controller.signal.aborted) {
         updateAssistant(message => ({ ...message, state: "stopped" }));
       } else {
@@ -321,15 +327,29 @@ export function ChatPage() {
 
   const stop = async () => {
     if (!sessionId || stopping) return;
+    stoppingRef.current=true;
     setStopping(true);
     const controller=abortRef.current;
+    const revision=conversationRevision.current;
+    const assistantId=messages.at(-1)?.id;
     try {
       await stopAgentSession(sessionId);
       controller?.abort();
+      if (abortRef.current === controller || abortRef.current === null) {
+        abortRef.current=null;
+        setResponding(false);
+        setMessages(current=>current.map(message=>message.id===assistantId ? {...message,state:"stopped"} : message));
+      }
+    } catch(cause) {
+      setError(`停止未确认，请重试。${cause instanceof Error ? cause.message : ""}`);
+      return;
+    } finally {stoppingRef.current=false;setStopping(false);}
+    // History is supplementary; sending resumes as soon as durable stop is confirmed.
+    try {
       const history=await fetchAgentHistory(sessionId);
-      setMessages(history.map(message=>({...message,state:message.state ?? "complete"})));
-    } catch(cause) {setError(cause instanceof Error ? cause.message : "停止未确认，请重试");}
-    finally {setStopping(false);}
+      if (conversationRevision.current===revision && !abortRef.current)
+        setMessages(history.map(message=>({...message,state:message.state ?? "complete"})));
+    } catch { /* Keep the visible partial reply; history can be retried on refresh. */ }
   };
 
   return (
@@ -402,12 +422,12 @@ export function ChatPage() {
             className={`chat-send ${responding ? "stop" : ""}`}
             disabled={stopping || (!responding && (!draft.trim() || !sessionId || loading))}
             onClick={responding ? () => void stop() : () => void send()}
-            aria-label={responding ? "停止生成" : "发送消息"}
+            aria-label={stopping ? "正在停止" : responding ? "停止生成" : "发送消息"}
           >
             {responding ? <Square size={15} fill="currentColor" /> : <ArrowUp size={19} />}
           </button>
         </div>
-        <span className="chat-disclaimer">测试环境 · Fanto 可能会出错，请以原始记录为准</span>
+        <span className="chat-disclaimer">{stopping ? "正在停止并保存本轮回复…" : "测试环境 · Fanto 可能会出错，请以原始记录为准"}</span>
       </div>
     </div>
   );

@@ -59,3 +59,21 @@ test("a Session being closed by its reserved owner cannot reopen until released"
   close();await closing;assert.equal(idle,false);
   release();await wait;assert.equal(idle,true);
 });
+
+test("releasing an old reservation twice cannot release the next turn",async()=>{
+  const manager=Object.create(AgentSessionManager.prototype) as any;
+  manager.running=new Set();manager.idleWaiters=new Map();
+  const session={id:randomUUID()};const oldRelease=manager.reserve(session);
+  oldRelease();const nextRelease=manager.reserve(session);oldRelease();
+  assert.throws(()=>manager.reserve(session),SessionBusyError);
+  nextRelease();assert.doesNotThrow(()=>manager.reserve(session)());
+});
+
+test("stop waiter sees durable finalization failure without retaining the reservation",async()=>{
+  const manager=Object.create(AgentSessionManager.prototype) as any;
+  manager.running=new Set();manager.idleWaiters=new Map();
+  const session={id:randomUUID()};const release=manager.reserve(session);
+  const waiter=assert.rejects(manager.waitUntilIdle(session.id),/persistence failed/);
+  release(Error("persistence failed"));await waiter;
+  assert.doesNotThrow(()=>manager.reserve(session)());
+});

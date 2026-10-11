@@ -40,11 +40,11 @@ Session 持久层通过 `agent/session/PgSessionRepo` 和 `PgStorage` 实现 Pi 
 ## 唯一对话 HTTP 协议
 
 - `POST /api/agent/stream`：`{sessionId,message,metadata?:{projectId?}}`，POST 响应 SSE；Agent 身份由 Session 解析，外部 metadata 仅允许 Project ID。断开时取消该请求驱动 Run；SSE 按阶段发送 `turn_start/message_start/message_end/delta/tool_start/tool_end`，结束为 `done/stopped/error`。
-- `POST /api/agent/sessions/:sessionId/stop`：校验当前用户所有权，中断当前运行并等待取消落库、Session 释放；无运行时幂等返回 `stopped: false`。停止、超时和请求断开共享取消逻辑，保留已接受的用户消息、已有输出和工具结果，History 投影用 `state: stopped` 标记中断回复；同一 Session 可以继续下一轮。取消收尾使用移除 abort signal 的原运行上下文；新轮次清理遗留 Operation，只取消、不重放工具。HTTP Stream 在 Agent 收尾后立即释放 Session，再写入结束 SSE；网络背压不能阻塞 stop 返回或下一轮会话。排查依次查看 `agent-stop requested/run settled`、`agent-stream session released` 与 `agent-stop completed`。此能力依赖单进程 Session 互斥。
+- `POST /api/agent/sessions/:sessionId/stop`：校验当前用户所有权，中断当前运行并等待取消落库、Session 释放；无运行时幂等返回 `stopped: false`。停止、超时和请求断开共享取消逻辑，保留已接受的用户消息、已有输出和工具结果，History 投影用 `state: stopped` 标记中断回复；同一 Session 可以继续下一轮。取消收尾使用移除 abort signal 的原运行上下文；新轮次清理遗留 Operation，只取消、不重放工具。HTTP Stream 在 Agent 收尾后立即释放 Session，再写入结束 SSE；网络背压不能阻塞 stop 返回或下一轮会话。排查依次查看 `agent-stop requested/run settled`、`agent-stream session released` 与 `agent-stop completed`。开始事件及所有文本/工具事件的输出等待可取消，单次网络写入最多等待 5 秒；输出阻塞超时会取消请求驱动的本轮，不影响只读 Events 订阅所观察的后台 Run。stop 的 20 秒响应预算包含所有权校验与收尾，超时或持久化收尾失败返回 `503`（停止尚未确认），后台继续完成取消；不得提前释放尚未结束的 Run，也不回放工具。此能力依赖单进程 Session 互斥。
 - `GET /api/agent/sessions/:sessionId/history?cursor=&limit=`：按 Session 所有权读取，返回产品化 `messages[].blocks`，包含文本、可见 Tool 活动、媒体、Task 卡及澄清表单信息；内部 Session 也可按用户归属读取。
 - `GET /api/agent/sessions/:sessionId/events`：只读订阅既有 Session 的执行事件。适用于后台 Creator 首次创作；不发起 Run，不缓存和回放消息。断开后查询 History 补齐事实。
 
-H5/iOS 在 Main 与 Project 对话复用相同消息语义和组件（Markdown、媒体、Tool 进度）。SSE Tool 只公开经过 `presentation` 策略投影的用户可见信息；不要渲染模型原始 Tool JSON、内部 mediaId、projectId、工作区路径或密钥。Creator 首次后台执行和后续用户 Stream 共享同一 Session，但生命周期触发方式不同。
+H5/iOS 在 Main 与 Project 对话复用相同消息语义和组件（Markdown、媒体、Tool 进度）。SSE Tool 只公开经过 `presentation` 策略投影的用户可见信息；不要渲染模型原始 Tool JSON、内部 mediaId、projectId、工作区路径或密钥。Creator 首次后台执行和后续用户 Stream 共享同一 Session，但生命周期触发方式不同。客户端 stop 请求上限 25 秒；确认后先恢复发送，再补载 History。历史补载失败保留本地回复，旧 SSE/历史请求不能覆盖新轮次；收到 `done/stopped/error` 即结束本轮读取，无需等待连接 EOF。
 
 ## Task 执行与交付
 

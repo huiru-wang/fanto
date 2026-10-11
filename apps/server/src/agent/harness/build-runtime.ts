@@ -58,6 +58,7 @@ export async function buildRuntime(session: Session, definition: AgentDefinition
       activeContext=context;
       try {
         await clearInterruptedOperation(lane, context);
+        context.abortSignal?.throwIfAborted();
         return await lane.prompt(query, undefined, context);
       } finally { activeContext=undefined; }
     },

@@ -1,5 +1,5 @@
 import { CreativeService } from "../domain/projects/creative-service.js";
-import { CreativeImageClient } from "../infrastructure/clients/creative-image-client.js";
+import { CreativeImageClient } from "../infrastructure/clients/image-client.js";
 import { serve } from "@hono/node-server";
 import { loadConfig, loadEnv } from "./config.js";
 import { checkDatabaseHealth, createDatabase, runMigrations } from "../infrastructure/database/database.js";

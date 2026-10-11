@@ -16,10 +16,12 @@ test("SQL logs execution duration and SQLSTATE without parameters, literals, res
  assert.ok(!raw.includes("private-"));
  const entries=raw.trim().split("\n").map(line=>JSON.parse(line));
  assert.equal(entries[0].cost,12.35);
+ assert.equal(entries[0].outcome,"succeeded");
  assert.ok(entries[0].sql.includes("$1"));
  assert.equal(entries[1].cost,23.46);
  assert.equal(entries[1].errorCode,"23505");
  assert.equal(entries[1].level,"error");
+ assert.equal(entries[1].outcome,"failed");
 });
 
 test("API access log includes a nonnegative millisecond cost on rejected requests",async()=>{

@@ -1,3 +1,4 @@
+import { waitForOutput } from "../../agent/harness/run-output.js";
 import { logInfo, logError, logSummary } from "../../infrastructure/logging/logger.js";
 import { randomUUID } from "node:crypto";
 import { Hono } from "hono";
@@ -13,7 +14,7 @@ import { requireUserId } from "../request-user.js";
 
 export const AGENT_STREAM_TIMEOUT_MS = 10 * 60 * 1000;
 
-export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessionManager): Hono {
+export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessionManager, timeoutMs = AGENT_STREAM_TIMEOUT_MS): Hono {
   const app = new Hono();
   app.post("/stream", async c => {
     const body = streamRequestSchema.safeParse(await c.req.json().catch(() => null));
@@ -39,10 +40,15 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
     c.header("X-Accel-Buffering", "no");
     return streamSSE(c, async stream => {
       const controller = new AbortController();
-      stream.onAbort(() => controller.abort());
-      const timeout = setTimeout(() => controller.abort(), AGENT_STREAM_TIMEOUT_MS);
+      const connection = new AbortController();
+      stream.onAbort(() => {connection.abort();controller.abort(new DOMException("client_disconnect", "AbortError"));});
+      const deliver = async (write: () => Promise<void>) => {
+        const status = await waitForOutput(write, connection.signal);
+        if (status === "timeout") {connection.abort();stream.abort();}
+      };
+      const timeout = setTimeout(() => controller.abort(new DOMException("run_timeout", "AbortError")), timeoutMs);
       const heartbeat = setInterval(() => {
-        void stream.write(": ping\n\n").catch(() => controller.abort());
+        void deliver(async () => {await stream.write(": ping\n\n");}).catch(() => controller.abort());
       }, 15_000);
 
       try {
@@ -68,15 +74,15 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
           logInfo("agent-stream", "session released", {userId,sessionId:session.id,agentId:session.agentId,traceId:runTraceId});
         }
         controller.signal.throwIfAborted();
-        await stream.writeSSE({ event: "done", data: "{}" });
+        await deliver(() => stream.writeSSE({ event: "done", data: "{}" }));
       } catch (error) {
         logError("agent-stream", "run failed", {userId, sessionId:session.id, agentId:session.agentId,
           traceId:runTraceId, projectId:body.data.metadata?.projectId, aborted:controller.signal.aborted || (error instanceof Error && error.name === "AbortError"), error:logSummary(error)});
         if (!stream.aborted) {
-          await stream.writeSSE({
+          await deliver(() => stream.writeSSE({
             event: error instanceof Error && error.name === "AbortError" ? "stopped" : "error",
-            data: JSON.stringify({ error: controller.signal.aborted ? "Request timed out" : "Agent run failed" }),
-          });
+            data: error instanceof Error && error.name === "AbortError" ? "{}" : JSON.stringify({error:"Agent run failed"}),
+          }));
         }
       } finally {
         clearTimeout(timeout);

@@ -98,7 +98,9 @@ struct AgentAPIClient {
     }
 
     func stopSession(sessionID: String) async throws {
-        let _: StopSessionResponse = try await request(path: "api/agent/sessions/\(sessionID)/stop", method: "POST", body: EmptyStopRequest())
+        var request = try await makeRequest(path: "api/agent/sessions/\(sessionID)/stop", method: "POST", body: EmptyStopRequest())
+        request.timeoutInterval = 25
+        let _: StopSessionResponse = try await decodeResponse(from: request)
     }
 
     func fetchHistory(sessionID: String, cursor: Int? = nil) async throws -> AgentHistoryPage {
@@ -173,9 +175,11 @@ struct AgentAPIClient {
         var eventName: String?
         var dataLines: [String] = []
         var lineBytes: [UInt8] = []
+        var terminal = false
 
         func consume(line: String) {
             if line.isEmpty {
+                if ["done", "stopped", "error"].contains(eventName ?? "") { terminal = true }
                 deliver(eventName: eventName, data: dataLines.joined(separator: "\n"), onEvent: onEvent)
                 eventName = nil
                 dataLines.removeAll(keepingCapacity: true)
@@ -193,6 +197,7 @@ struct AgentAPIClient {
                 if line.last == "\r" { line.removeLast() }
                 consume(line: line)
                 lineBytes.removeAll(keepingCapacity: true)
+                if terminal { break }
             } else {
                 lineBytes.append(byte)
             }

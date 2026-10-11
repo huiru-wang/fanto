@@ -38,3 +38,17 @@ test("a timed-out worker releases its Session and the same Session accepts a cha
   assert.equal(response.status,200);assert.match(await response.text(),/event: done/);
   assert.deepEqual(history,["开始创作","继续创作"]);assert.equal(busy,false);
 });
+
+for(const failure of [false,true]) {
+  test(`worker ${failure?"failure":"success"} finalizes business state and releases before terminal notification`,async()=>{
+    const order:string[]=[];const id=randomUUID();
+    const session={id,userId:"user",runtime:{harness:{events:{on:()=>()=>{}}},tools:[],readRecentMessages:async()=>[],
+      prompt:async()=>{if(failure)throw Error("provider unavailable");return {ok:true,value:{status:"completed"}};}}};
+    const sessions={reserve:()=>()=>{order.push("idle");},release:async()=>{order.push("close");}};
+    const events=new SessionEventBus();events.subscribe(id,event=>{if(["done","error","stopped"].includes(event.type))order.push(event.type);});
+    const worker=new AgentWorker(sessions as never,events);
+    const run=worker.run(session as never,"test",1000,{},true,undefined,async()=>{order.push("complete");},true,async()=>{order.push("fail");});
+    if(failure)await assert.rejects(run,/provider unavailable/);else await run;
+    assert.deepEqual(order,[failure?"fail":"complete","close","idle",failure?"error":"done"]);
+  });
+}

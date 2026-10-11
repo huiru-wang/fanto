@@ -53,7 +53,7 @@ export function logSql(event: LogEvent) {
     .replace(/--[^\n]*/g, "")
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/'(?:''|[^'])*'/g, "'?'");
-  write("sql.log",JSON.stringify({at:nowIso(),level:event.level,sql,
+  write("sql.log",JSON.stringify({at:nowIso(),level:event.level,outcome:event.level === "error" ? "failed" : "succeeded",sql,
     cost:Math.round(event.queryDurationMillis*100)/100,
     ...(error?{errorCode:typeof error.code === "string" && /^[A-Z0-9]{5}$/.test(error.code)?error.code:undefined,
       errorName:typeof error.name === "string" && /^[A-Za-z][A-Za-z0-9_]{0,60}$/.test(error.name)?error.name:undefined}:{})}));

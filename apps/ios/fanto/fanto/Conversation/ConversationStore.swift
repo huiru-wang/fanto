@@ -30,6 +30,7 @@ final class ConversationStore {
     private var pendingPresentedMedia: [PresentedMedia] = []
     private var runTask: Task<Void, Never>?
     private var stopTask: Task<Void, Never>?
+    private var stopRequestID: UUID?
     private var isStopping = false
     private var localMessageSequence = 0
 
@@ -157,19 +158,24 @@ final class ConversationStore {
     func stop() {
         guard !isStopping, let id = activeAssistantMessageID, let sessionID else { return }
         isStopping = true
+        let requestID = UUID()
+        stopRequestID = requestID
         let runningTask = runTask
         stopTask = Task { [weak self, client] in
             guard let self else { return }
             defer {
-                if self.sessionID == sessionID { self.isStopping = false; self.stopTask = nil }
+                if self.stopRequestID == requestID { self.isStopping = false; self.stopTask = nil; self.stopRequestID = nil }
             }
             do {
                 try await client.stopSession(sessionID: sessionID)
                 guard self.sessionID == sessionID else { return }
                 runningTask?.cancel()
                 if self.activeAssistantMessageID == id { self.stopActiveMessage() }
+                self.isStopping = false
+                self.stopTask = nil
+                let messageIDs = self.messages.map(\.id)
                 guard let page = try? await client.fetchHistory(sessionID: sessionID) else { return }
-                guard self.sessionID == sessionID else { return }
+                guard self.sessionID == sessionID, self.activeAssistantMessageID == nil, self.messages.map(\.id) == messageIDs else { return }
                 self.messages = self.project(page.messages)
                 self.hasMoreHistory = page.hasMore
                 self.historyNextCursor = page.nextCursor

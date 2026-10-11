@@ -38,7 +38,7 @@ export class AgentSessionManager {
   private readonly repository: PgSessionRepo;
   private readonly sessions = new Map<string, ManagedSession>();
   private readonly running = new Set<string>();
-  private readonly idleWaiters = new Map<string, Set<() => void>>();
+  private readonly idleWaiters = new Map<string, Set<(error?: unknown) => void>>();
 
   constructor(
     private readonly models: Models,
@@ -99,21 +99,24 @@ export class AgentSessionManager {
     }
   }
 
-  reserve(session: ManagedSession): () => void {
+  reserve(session: ManagedSession): (error?: unknown) => void {
     if (this.running.has(session.id)) throw new SessionBusyError("Session is already running");
     this.running.add(session.id);
-    return () => {
+    let released = false;
+    return (error) => {
+      if (released) return;
+      released = true;
       this.running.delete(session.id);
-      for (const resolve of this.idleWaiters.get(session.id) ?? []) resolve();
+      for (const resolve of this.idleWaiters.get(session.id) ?? []) resolve(error);
       this.idleWaiters.delete(session.id);
     };
   }
 
   async waitUntilIdle(id: string): Promise<void> {
     if (!this.running.has(id)) return;
-    await new Promise<void>(resolve => {
-      const waiters = this.idleWaiters.get(id) ?? new Set<() => void>();
-      waiters.add(resolve);
+    await new Promise<void>((resolve,reject) => {
+      const waiters = this.idleWaiters.get(id) ?? new Set<(error?: unknown) => void>();
+      waiters.add(error => error === undefined ? resolve() : reject(error));
       this.idleWaiters.set(id, waiters);
     });
   }

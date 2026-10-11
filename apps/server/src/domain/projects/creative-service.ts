@@ -6,7 +6,7 @@ import type { RecordService } from "../records/index.js";
 import type { MediaService } from "../media/index.js";
 import type { ProjectService, ProposalService, CreateProposalInput } from "./index.js";
 import type { ImageUnderstanding } from "../../infrastructure/clients/image-client.js";
-import { ImageClientError, type ImageGenerationClient } from "../../infrastructure/clients/creative-image-client.js";
+import { ImageClientError, type ImageGenerationClient } from "../../infrastructure/clients/image-client.js";
 import { inspectProjectContent } from "./content.js";
 import { CreativeError, projectManageSchema, type CreativeContext, type ImageInput, type ProjectManageInput } from "./creative-model.js";
 
@@ -156,6 +156,7 @@ export class CreativeService {
         const result = await this.image.generate({ prompt: input.prompt, referenceUrls: urls, aspectRatio: input.aspectRatio }, context.signal);
         stage = "download";
         const downloaded = await this.image.download(result.recovery, context.signal);
+        context.signal?.throwIfAborted();
         stage = "save_media";
         const saved = await this.media.createGeneratedImage({
           userId: context.userId, mediaId: randomUUID(), projectId: project.projectId, ...downloaded,

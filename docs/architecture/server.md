@@ -57,3 +57,19 @@ Proposal accept 在事务中确定所选 Idea，创建或更新 Project 为 `que
 启动先执行 Kysely migrations、健康预热再监听端口。最新空库基线是 `create_current_schema_20261011.ts`。已完整应用旧迁移的数据库仅归并 Kysely 元数据并保留业务表；不要删除 `kysely_migration` 以强制重建。具体归并条件见本地开发文档。生产连接、健康与部署见 [本地开发](../engineering/local-development.md)。
 
 目前不提供队列消息持久化、自动失败重试、重启执行恢复或跨实例调度协调；任何规模评估应考虑这些真实限制。
+
+## 外部调用日志
+
+`LOG_DIR/service.log` 的 `external-call` 记录 OSS（put/get/head/delete）、图片（describe/review/generate/download）和音频转写（transcribe）的调用开始、成功或失败。每次调用用 `callId` 关联开始与结束，结束包含 `outcome` 和 `durationMs`（毫秒）；可用时记录模型、HTTP 状态与安全错误码。成功表示调用返回并通过 Client 结果校验，不记录响应正文。OSS 签名 URL 是本地生成，不产生外部调用日志。
+
+OSS 上传/下载记录 `bytes`；图片 download 记录 `downloadBytes`（供应商返回文件）、`bytes`（转码后 PNG）及 `width/height`，其耗时包含下载、解码和 PNG 转码。图片理解、审核、生成及结果下载统一位于 `infrastructure/clients/image-client.ts`。日志不包含对象键、签名 URL、凭据、Prompt、图片描述或转写文本。业务链路关联仍见 [创作执行日志](creative-runtime.md#日志排查)。
+
+PostgreSQL 复用 Kysely 查询日志，写入 `LOG_DIR/sql.log`：`outcome` 为 succeeded/failed，`cost` 是 SQL 执行耗时（毫秒），失败可含 SQLSTATE/errorName；不记录参数、查询结果或数据库错误正文。该耗时不是连接池排队或事务整体耗时。
+
+```bash
+rg '\[external-call\]' logs/service.log
+# 实时观察 OSS、图片和音频调用
+tail -f logs/service.log | rg --line-buffered '\[external-call\]'
+# PostgreSQL 查询日志
+tail -f logs/sql.log
+```

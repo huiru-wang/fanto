@@ -195,7 +195,7 @@ export async function createAgentSession(): Promise<string> {
 }
 
 export async function stopAgentSession(sessionId: string): Promise<void> {
-  await requestJson(`/api/agent/sessions/${encodeURIComponent(sessionId)}/stop`, {method:"POST",headers:agentHeaders()});
+  await requestJson(`/api/agent/sessions/${encodeURIComponent(sessionId)}/stop`, {method:"POST",headers:agentHeaders(),signal:AbortSignal.timeout(25_000)});
 }
 
 export async function fetchAgentHistory(sessionId: string): Promise<AgentHistoryMessage[]> {
@@ -297,13 +297,14 @@ export async function streamAgentMessage(
     buffer += decoder.decode(value, { stream: !done });
     const blocks = buffer.split(/\r?\n\r?\n/);
     buffer = blocks.pop() ?? "";
-    blocks.forEach(deliver);
+    for (const block of blocks) {if (terminal) break;deliver(block);}
+    if (terminal) break;
     if (done) {
       if (buffer.trim()) deliver(buffer);
       break;
     }
   }
-  } finally { reader.releaseLock(); }
+  } finally { void reader.cancel().catch(() => {});reader.releaseLock(); }
   if (!terminal) throw new Error("回复连接已中断，请检查历史后重试。");
 }
 
