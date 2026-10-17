@@ -11,7 +11,7 @@ enum AgentAPIError: LocalizedError {
             "服务返回的数据无法识别。"
         case let .httpStatus(status):
             switch status {
-            case 409: "这份作品正在创作或状态已经变化，请刷新后再继续。"
+            case 409: "会话仍在处理中，请稍后继续。"
             case 401, 403: "登录状态已失效或没有访问权限。"
             case 404: "会话暂时不可用，请重新打开作品。"
             default: "服务暂时不可用（\(status)）。"
@@ -66,9 +66,13 @@ struct AgentHistoryPage {
     let messages: [AgentHistoryMessage]
     let hasMore: Bool
     let nextCursor: Int?
+    var running: Bool = false
+    var stopping: Bool = false
+    var restored: Bool = false
 }
 
 enum AgentStreamEvent {
+    case finalizing
     case processing(String)
     case messageStart
     case messageEnd
@@ -95,10 +99,12 @@ struct AgentAPIClient {
         return response.sessionID
     }
 
-    func stopSession(sessionID: String) async throws {
+    @discardableResult
+    func stopSession(sessionID: String) async throws -> Bool {
         var request = try await makeRequest(path: "api/agent/sessions/\(sessionID)/stop", method: "POST", body: EmptyStopRequest())
         request.timeoutInterval = 25
-        let _: StopSessionResponse = try await decodeResponse(from: request)
+        let result: StopSessionResponse = try await decodeResponse(from: request)
+        return result.stopping ?? false
     }
 
     func fetchHistory(sessionID: String, cursor: Int? = nil) async throws -> AgentHistoryPage {
@@ -113,7 +119,10 @@ struct AgentAPIClient {
         return .init(
             messages: projectHistory(response.messages),
             hasMore: response.hasMore,
-            nextCursor: response.nextCursor
+            nextCursor: response.nextCursor,
+            running: response.running ?? false,
+            stopping: response.stopping ?? false,
+            restored: response.restored ?? false
         )
     }
 
@@ -199,6 +208,8 @@ struct AgentAPIClient {
 
     private func deliver(eventName: String?, data: String, onEvent: (AgentStreamEvent) -> Void) {
         switch eventName {
+        case "finalizing":
+            onEvent(.finalizing)
         case "turn_start":
             onEvent(.processing("Fanto 正在思考…"))
         case "message_start":
@@ -337,9 +348,12 @@ private struct CreateSessionResponse: Decodable {
 }
 
 private struct EmptyStopRequest: Encodable {}
-private struct StopSessionResponse: Decodable { let sessionId: String; let stopped: Bool }
+private struct StopSessionResponse: Decodable { let sessionId: String; let stopped: Bool; let stopping: Bool? }
 
 private struct HistoryResponse: Decodable {
+    let stopping: Bool?
+    let restored: Bool?
+    let running: Bool?
     let messages: [HistoryMessage]
     let hasMore: Bool
     let nextCursor: Int?

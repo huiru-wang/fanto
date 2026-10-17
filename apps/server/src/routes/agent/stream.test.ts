@@ -9,16 +9,20 @@ import { createRunContext } from "../../agent/context/run-context.js";
 const sessionId = randomUUID();
 const projectId = randomUUID();
 
-function route() {
+function route(persisted: Promise<void> = Promise.resolve()) {
+  const handlers = new Map<string, (event: any) => Promise<void>>();
+  let released = false;
   let observed: ReturnType<typeof createRunContext.read> | undefined;
   const session = {
     id: sessionId, userId: "owner", agentId: "creator-agent",
     runtime: {
       readRecentMessages: async () => [],
-      harness: { events: { on: () => () => {} } },
+      harness: { events: { on: (name: string, handler: (event: any) => Promise<void>) => { handlers.set(name, handler); return () => handlers.delete(name); } } },
       tools: [], abort: async () => {},
       prompt: async (_: string, context: Parameters<typeof createRunContext.read>[0]) => {
         observed = createRunContext.read(context);
+        await handlers.get("message_end")?.({ message: { role: "assistant", stopReason: "stop" } });
+        await persisted;
         return { ok: true, value: { status: "completed" } };
       },
     },
@@ -30,10 +34,10 @@ function route() {
       return "creator-agent";
     },
     acquire: async (definition: { id: string }) => { assert.equal(definition.id, "creator-agent"); return session; },
-    reserve: () => () => {},
+    reserve: () => () => { released = true; },
   };
   const registry = { get: (id: string) => id === "creator-agent" ? { id, revision: "v1" } : undefined };
-  return { app: createAgentRoutes(registry as never, sessions as never), observed: () => observed };
+  return { app: createAgentRoutes(registry as never, sessions as never), observed: () => observed, released: () => released };
 }
 
 const request = (app: ReturnType<typeof createAgentRoutes>, userId: string, body: unknown) => runWithRequestPrincipal(
@@ -71,4 +75,32 @@ test("Stream enforces Session ownership and not-found before acquire", async () 
 
 test("Stream has a ten-minute round timeout independent of model request timeout", () => {
   assert.equal(AGENT_STREAM_TIMEOUT_MS,600_000);
+});
+
+
+test("finalizing is progress only; done follows durable completion and reservation release", async () => {
+  let finish!: () => void;
+  const persisted = new Promise<void>(resolve => { finish = resolve; });
+  const fixture = route(persisted);
+  const response = await request(fixture.app, "owner", { sessionId, message: "hi" });
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  try {
+    while (!text.includes("event: finalizing")) {
+      const chunk = await reader.read();
+      assert.equal(chunk.done, false);
+      text += decoder.decode(chunk.value);
+    }
+    assert.equal(fixture.released(), false);
+    assert.equal(text.includes("event: done"), false);
+    finish();
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      text += decoder.decode(chunk.value);
+    }
+    assert.equal(fixture.released(), true);
+    assert.match(text, /event: done/);
+  } finally { finish(); await reader.cancel(); }
 });

@@ -71,7 +71,7 @@ Apple 登录使用系统 `AuthenticationServices`，Xcode target 通过 `fanto/f
 
 Fanto 位于根导航中间，只使用一个默认长期 Agent Session，不提供会话列表、切换或“开始新话题”。iOS 以当前认证用户的 `user_id` 和 `main` Agent 为键将 Session ID 保存到 Keychain；认证后的品牌启动页会预加载 Fanto Session 与最近 10 条历史，根导航中的加载任务仅作为兜底，切入 Fanto 时若仍未完成才显示加载态。首次显示对话时会定位至最新消息；向上滚动至历史顶部时，客户端基于服务端 `cursor / nextCursor` 自动读取更早页，并保持原先顶部消息的阅读位置。仅在本地没有 ID，或服务端明确返回 Session 不存在 / 无权访问时创建新的 Session。
 
-流式回复按 SSE message_start/message_end 划分文本块，并与 Tool Presentation 按事件顺序渲染；只有 done 标记回复完成，连接关闭本身不表示成功。客户端按 SSE 原始字节流保留事件分隔，避免丢失连续的 `delta`；`turn_start`、`message_start` 与可见 Tool Presentation 会被投影为进行中的进度条目，工具结束后更新为成功或失败状态。成功的 `present_media` Tool Result 会暂存至本轮 `done`，再合并进助手消息；历史恢复同样通过服务端 `messages` 投影重建文本、活动、媒体与用户澄清卡片。`collect_user_input` 会在导航区域下方以逐题原生提示呈现，支持单选、多选、文本和“其他”输入；`required: false` 的问题允许跳过。提交结果携带服务端要求的内部 interaction 标记继续同一 Session，并以“已提交表单”的用户卡片显示。旧会话正文中的 `fanto-media://<mediaId>` 图片和链接也会兼容投影为同类媒体。图片和语音分组呈现：图片使用横向缩略图，轻点后全屏分页查看；语音可在会话中播放。客户端只保存稳定的媒体 metadata，展示时才通过媒体读取接口取得短期签名地址，并在资源加载失败后刷新一次。界面覆盖加载、等待、流式生成、停止和失败重试；发送消息无论正常结束、失败或被意外取消，都会将占位消息收敛到明确终态，避免停留在等待状态。空回复也会明确失败并提供重试。同一 Session 未完成回复时不能并发发送。停止通过 Session stop 接口等待服务端保存及释放后再允许下一轮，请求上限 25 秒；确认后立即恢复发送，再补载历史。历史失败保留本地回复，旧历史与停止回调不能覆盖新轮次。收到 `done/stopped/error` 即结束本轮流读取；`stopped` SSE 与 History 的 `state: stopped` 均恢复为已停止消息，尚未输出文本时也保留。助手消息复用 Project 页面共用的原生 Markdown 视图渲染标题、段落与内联 Markdown。
+流式回复按 SSE message_start/message_end 划分文本块，并与 Tool Presentation 按事件顺序渲染；只有 done 标记回复完成，连接关闭本身不表示成功。客户端按 SSE 原始字节流保留事件分隔，避免丢失连续的 `delta`；`turn_start`、`message_start` 与可见 Tool Presentation 会被投影为进行中的进度条目，工具结束后更新为成功或失败状态。成功的 `present_media` Tool Result 会暂存至本轮 `done`，再合并进助手消息；历史恢复同样通过服务端 `messages` 投影重建文本、活动、媒体与用户澄清卡片。`collect_user_input` 会在导航区域下方以逐题原生提示呈现，支持单选、多选、文本和“其他”输入；`required: false` 的问题允许跳过。提交结果携带服务端要求的内部 interaction 标记继续同一 Session，并以“已提交表单”的用户卡片显示。旧会话正文中的 `fanto-media://<mediaId>` 图片和链接也会兼容投影为同类媒体。图片和语音分组呈现：图片横向预览请求 `variant=thumbnail`，轻点后全屏分页查看请求 `variant=original`；语音可在会话中播放。客户端只保存稳定的媒体 metadata，展示时才通过媒体读取接口取得短期签名地址，并在资源加载失败后刷新一次。界面覆盖加载、等待、流式生成、停止和失败重试；发送消息无论正常结束、失败或被意外取消，都会将占位消息收敛到明确终态，避免停留在等待状态。空回复也会明确失败并提供重试。同一 Session 未完成回复时不能并发发送。停止通过 Session stop 接口，请求上限 25 秒；202 时已开始工具继续执行，显示“正在结束当前操作”，保持原 SSE 并允许编辑草稿，终态或 History 确认空闲后恢复发送，不等待数据库保存。历史失败保留本地回复，旧历史与停止回调不能覆盖新轮次。收到 `done/stopped/error` 即结束本轮流读取；`stopped` SSE 与 History 的 `state: stopped` 均恢复为已停止消息，尚未输出文本时也保留。助手消息复用 Project 页面共用的原生 Markdown 视图渲染标题、段落与内联 Markdown。
 
 ## 脉络 UI
 
@@ -106,3 +106,9 @@ SwiftUI Preview 可以使用 `FantoStore.preview` 样例数据。Preview 数据�
 脉络页可见期间按现有逻辑每五秒刷新待确认建议；每约十五秒仅对列表中 queued/running 的 Project 补读状态。详情 queued/running 时每约五秒刷新，完成/失败即停止状态轮询；没有“等待 Session 创建后主动 start”或“自动重新执行”流程。
 
 Record 保存失败统一提示“保存失败，请重试”，保留草稿及附件上传阶段，仅用户再次点击后继续上传 / complete / 创建。列表小图与原图继续通过同一个 mediaId 的不同 variant 读取；链路见 [Media](../domain/media.md)。
+
+## 主对话连接恢复
+
+主对话 Store 由根视图持有，普通 Tab 切换不取消回复。连接异常、重新进入前台或载入仍在运行的会话时，通过 History 的 `running/stopping` 核对服务端状态；恢复期间保留内容并禁止发送，空闲后刷新历史。不会自动重发用户消息。
+
+SSE `finalizing` 仅为兼容进度，不显示数据库保存锁。回复在内存收尾后以 done/stopped/error 结束；历史异步保存，进程重启可能缺失最近消息，普通刷新优先恢复服务端内存。

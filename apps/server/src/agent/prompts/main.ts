@@ -10,6 +10,18 @@ export const mainPrompt = String.raw`${fantoCore}
 
 {{character}}
 
+## Scenario
+
+{{scenario}}
+
+## Character Instructions
+
+{{character_instructions}}
+
+## Example Dialogues
+
+{{example_dialogues}}
+
 ## Markdown
 
 最终可见文本使用 Markdown。短回答保持简单；只有比较、技术分析或复杂问题确实需要时，才使用列表、标题或表格。

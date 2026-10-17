@@ -114,8 +114,8 @@ struct RecordWriteAPIClient {
         )
     }
 
-    func createRecord(text: String, mediaIds: [String], location: RecordLocation?, eventAt: Date) async throws {
-        let _: CreatedRecordPayload = try await authenticatedRequest(
+    func createRecord(text: String, mediaIds: [String], location: RecordLocation?, eventAt: Date) async throws -> Record {
+        let created: CreatedRecordPayload = try await authenticatedRequest(
             url: baseURL.appending(path: "api/records"),
             method: "POST",
             body: CreateRecordRequestPayload(
@@ -126,6 +126,9 @@ struct RecordWriteAPIClient {
                 eventAt: Self.iso8601Formatter.string(from: eventAt)
             )
         )
+        let photos = mediaIds.map { RecordPhoto(id: $0) }
+        return Record(id: created.id, text: text, eventAt: eventAt, location: location,
+                      media: photos.isEmpty ? nil : RecordMedia(photos: photos, audio: nil), version: created.version)
     }
 
     private func authenticatedRequest<Response: Decodable, Body: Encodable>(
@@ -198,6 +201,7 @@ private struct CreateRecordRequestPayload: Encodable {
 
 private struct CreatedRecordPayload: Decodable {
     let id: String
+    let version: Int
 }
 
 struct MediaUploadProgress {

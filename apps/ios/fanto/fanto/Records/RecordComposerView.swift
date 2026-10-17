@@ -255,33 +255,45 @@ struct RecordComposerView: View {
         defer { isSaving = false }
         do {
             var mediaIds: [String] = []
-            for index in images.indices {
-                // Keep completed uploads for a failed create retry within this draft.
-                if images[index].mediaID == nil {
-                    images[index].mediaID = try await RecordWriteAPIClient.shared.upload(
-                        DraftMediaUpload(
-                            data: images[index].data,
-                            mimeType: "image/jpeg",
-                            capture: MediaCapturePayload(width: images[index].width, height: images[index].height)
-                        ),
-                        progress: images[index].uploadProgress,
-                        onProgress: { images[index].uploadProgress = $0 }
-                    )
+            // Upload two at a time, keeping original order and resumable state.
+            for index in stride(from: 0, to: images.count, by: 2) {
+                if index + 1 < images.count {
+                    async let first = uploadImage(at: index)
+                    async let second = uploadImage(at: index + 1)
+                    let (firstID, secondID) = try await (first, second)
+                    mediaIds.append(contentsOf: [firstID, secondID])
+                } else {
+                    mediaIds.append(try await uploadImage(at: index))
                 }
-                if let mediaID = images[index].mediaID { mediaIds.append(mediaID) }
             }
-            try await RecordWriteAPIClient.shared.createRecord(
+            let created = try await RecordWriteAPIClient.shared.createRecord(
                 text: text.trimmingCharacters(in: .whitespacesAndNewlines),
                 mediaIds: mediaIds,
                 location: location,
                 eventAt: eventAt
             )
-            await store.loadRecords()
+            store.insertCreatedRecord(created)
             didSave(eventAt)
             dismiss()
         } catch {
             showError("保存失败，请重试")
         }
+    }
+
+    private func uploadImage(at index: Int) async throws -> String {
+        if let mediaID = images[index].mediaID { return mediaID }
+        let image = images[index]
+        let mediaID = try await RecordWriteAPIClient.shared.upload(
+            DraftMediaUpload(
+                data: image.data,
+                mimeType: "image/jpeg",
+                capture: MediaCapturePayload(width: image.width, height: image.height)
+            ),
+            progress: image.uploadProgress,
+            onProgress: { images[index].uploadProgress = $0 }
+        )
+        images[index].mediaID = mediaID
+        return mediaID
     }
 
     private func showError(_ message: String) {

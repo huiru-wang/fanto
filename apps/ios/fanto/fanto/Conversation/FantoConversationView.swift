@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct FantoConversationView: View {
+    @Environment(\.scenePhase) private var scenePhase
     @Bindable var store: ConversationStore
     @State private var hasLeftHistoryTop = false
 
@@ -20,6 +21,9 @@ struct FantoConversationView: View {
                 }
             }
             .task { await store.load() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { store.recoverConversation() }
+            }
         }
     }
 
@@ -63,7 +67,16 @@ struct FantoConversationView: View {
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                composer
+                VStack(spacing: 0) {
+                    if store.isRecovering || store.isEndingOperation {
+                        Text(store.isEndingOperation ? "正在结束当前操作，你可以先输入下一条消息。" : "正在恢复对话…")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let notice = store.recoveryNotice {
+                        Text(notice).font(.caption).foregroundStyle(.secondary)
+                    }
+                    composer
+                }
             }
             .onChange(of: store.scrollAnchorID) { _, anchor in
                 guard let anchor else { return }
@@ -154,14 +167,14 @@ struct FantoConversationView: View {
                     store.send()
                 }
             } label: {
-                Image(systemName: store.isResponding ? "stop.fill" : "arrow.up")
+                Image(systemName: store.isRecovering ? "arrow.trianglehead.2.clockwise.rotate.90" : store.isResponding ? "stop.fill" : "arrow.up")
                     .font(.headline)
                     .frame(width: 44, height: 44)
                     .foregroundStyle(.white)
                     .background(store.isResponding || !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? FantoTheme.accent : Color.secondary, in: Circle())
             }
-            .disabled(!store.isResponding && (pendingUserInputRequest != nil || store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
-            .accessibilityLabel(store.isResponding ? "停止生成" : "发送消息")
+            .disabled(store.isEndingOperation || store.isRecovering || (!store.isResponding && (pendingUserInputRequest != nil || store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)))
+            .accessibilityLabel(store.isEndingOperation ? "正在结束当前操作" : store.isRecovering ? "正在恢复对话" : store.isResponding ? "停止生成" : "发送消息")
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
@@ -197,7 +210,8 @@ struct ConversationMessageBubble: View {
                 }
                 stateText
             }
-            .padding(14)
+            .padding(.horizontal, message.role == .user ? 14 : 0)
+            .padding(.vertical, 14)
             .background(background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
 
@@ -277,7 +291,7 @@ struct ConversationMessageBubble: View {
     }
 
     private var background: Color {
-        message.role == .user ? FantoTheme.accent : Color(uiColor: .secondarySystemBackground)
+        message.role == .user ? FantoTheme.accent : .clear
     }
 }
 

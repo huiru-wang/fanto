@@ -48,11 +48,13 @@ export class PgStorage implements Storage {
   private async applyCommit(writes: Write[]): Promise<CommitResult> {
     return this.db.transaction().execute(async trx => {
       // Commit sequence + statistics are serialized per Session, not globally.
-      const locked = await sql<{ next_seq: string | number }>`
-        SELECT next_seq FROM agent_session.sessions WHERE id = ${this.sessionId} FOR UPDATE
+      const locked = await sql<{ next_seq: string | number; message_count: string | number; usage_payload: SessionStats["usage"] }>`
+        SELECT next_seq, message_count, usage_payload FROM agent_session.sessions WHERE id = ${this.sessionId} FOR UPDATE
       `.execute(trx);
       if (!locked.rows[0]) throw new Error(`Unknown PG session: ${this.sessionId}`);
       const firstSeq = safeNumber(locked.rows[0].next_seq, "sessions.next_seq");
+      let messageCount = safeNumber(locked.rows[0].message_count, "message_count");
+      let usagePayload = locked.rows[0].usage_payload;
       const prepared = prepareStorageCommit(writes, firstSeq, this.now());
 
       const ids = prepared.writes.filter((w): w is Extract<CommittedWrite, { kind: "entry" | "usage" }> =>
@@ -88,8 +90,7 @@ export class PgStorage implements Storage {
             await this.insertEntry(trx, write);
             await indexEntry(trx, this.sessionId, write);
             if (write.type === "message") {
-              await sql`UPDATE agent_session.sessions SET message_count = message_count + 1
-                WHERE id = ${this.sessionId}`.execute(trx);
+              messageCount += 1;
             }
             break;
           case "usage":
@@ -100,10 +101,7 @@ export class PgStorage implements Storage {
                 ${json(write.usage)}::jsonb, ${write.details === undefined ? null : json(write.details)}::jsonb)
             `.execute(trx);
             {
-              const stats = await this.getStatsFrom(trx);
-              const usage = addUsage(stats.usage as ReturnType<typeof import("./pg-queries.js").zeroUsage>, write.usage as ReturnType<typeof import("./pg-queries.js").zeroUsage>);
-              await sql`UPDATE agent_session.sessions SET usage_payload = ${json(usage)}::jsonb
-                WHERE id = ${this.sessionId}`.execute(trx);
+              usagePayload = addUsage(usagePayload as ReturnType<typeof import("./pg-queries.js").zeroUsage>, write.usage as ReturnType<typeof import("./pg-queries.js").zeroUsage>);
             }
             break;
           case "value":
@@ -130,9 +128,10 @@ export class PgStorage implements Storage {
             break;
         }
       }
-      await sql`UPDATE agent_session.sessions SET next_seq = ${firstSeq + prepared.writes.length}
+      await sql`UPDATE agent_session.sessions SET next_seq = ${firstSeq + prepared.writes.length},
+        message_count = ${messageCount}, usage_payload = ${json(usagePayload)}::jsonb
         WHERE id = ${this.sessionId}`.execute(trx);
-      return { ...prepared.result, stats: await this.getStatsFrom(trx) };
+      return { ...prepared.result, stats: { messageCount, usage: usagePayload } };
     });
   }
 

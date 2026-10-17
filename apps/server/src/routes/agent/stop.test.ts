@@ -17,7 +17,7 @@ test("stop releases Session even when the SSE client stops reading terminal even
     prompt:async()=>{admitted();await new Promise<void>(resolve=>{complete=resolve;});return {ok:true,value:{status:"completed"}};},
     abort:async()=>{complete();},
   }};
-  Object.assign(manager, {running:new Set(), idleWaiters:new Map(),
+  Object.assign(manager, {checkpoint:async()=>{},running:new Set(), idleWaiters:new Map(),
     resolveAgentId:async()=>"main", acquire:async()=>session, assertOwnership:async()=>{},
   });
   const registry = {get:()=>({id:"main"})};
@@ -70,7 +70,9 @@ test("stop checks ownership before cancellation and waits for Session release", 
   assert.equal((await request("foreign")).status,403);assert.equal(aborted,false);
   assert.equal((await request("owner","invalid")).status,400);
   const response=await request("owner");
-  assert.equal(response.status,200);assert.equal((manager as any).running.size,0);
+  assert.ok([200,202].includes(response.status));
+  await settled;
+  assert.equal((manager as any).running.size,0);
   assert.equal(((await response.json()) as {result:{stopped:boolean}}).result.stopped,true);
   await settled;
   assert.equal(((await (await request("owner")).json()) as {result:{stopped:boolean}}).result.stopped,false);

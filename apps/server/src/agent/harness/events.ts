@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { logSummary } from "../../infrastructure/logging/logger.js";
 import { logRunEvent, touchRun, trackTool } from "./run-logging.js";
 import type { AgentHarness, ExecutionToolContext } from "@earendil-works/pi-agent-core";
@@ -8,6 +9,7 @@ import { resolveToolPresentation, type ToolPresentation } from "../presentation.
 import type { FantoTool } from "../tools/types.js";
 
 export type AgentStreamEvent =
+  | { type: "finalizing" }
   | { type: "turn_start" }
   | { type: "message_start" }
   | { type: "message_end" }
@@ -30,12 +32,20 @@ export function subscribeHarnessEvents(
   const unsubscribes = [
     harness.events.on("turn_start", async event => { streamStarted=false; logRunEvent(data,"turn started",{harnessRunId:event.runId,turnId:event.turnId}); if (!isAborted()) await emit({ type: "turn_start" }); }),
     harness.events.on("message_start", async ({ message }) => {
-      if (!isAborted() && message.role === "assistant") await emit({ type: "message_start" });
+      if (!isAborted() && message.role === "assistant") {
+        data.liveAssistant = { type: "message", id: randomUUID(), parentId: data.sourceMessageId ?? null, seq: Number.MAX_SAFE_INTEGER, timestamp: Date.now(), message };
+        await emit({ type: "message_start" });
+      }
     }),
     harness.events.on("message_end", async ({ message }) => {
-      if (!isAborted() && message.role === "assistant") await emit({ type: "message_end" });
+      if (message.role === "assistant") data.liveAssistant = undefined;
+      if (!isAborted() && message.role === "assistant") {
+        await emit({ type: "message_end" });
+        if (message.stopReason === "stop") await emit({ type: "finalizing" });
+      }
     }),
     harness.events.on("tool_start", async event => {
+      if (data.stop) data.stop.tools++;
       if (isAborted()) return;
       trackTool(data,event.toolCallId,event.toolName,true);
       logRunEvent(data,"tool started",{toolCallId:event.toolCallId,toolName:event.toolName,turnId:event.turnId});
@@ -48,6 +58,7 @@ export function subscribeHarnessEvents(
     }),
     harness.events.on("tool_update", async () => {touchRun(data);}),
     harness.events.on("tool_end", async event => {
+      if (data.stop) data.stop.tools = Math.max(0, data.stop.tools - 1);
       const durationMs=trackTool(data,event.toolCallId,event.toolName,false);
       const code=(event.result.details as {errorCode?:unknown;code?:unknown}|undefined)?.errorCode ?? (event.result.details as {code?:unknown}|undefined)?.code;
       logRunEvent(data,"tool completed",{toolCallId:event.toolCallId,toolName:event.toolName,turnId:event.turnId,
@@ -71,13 +82,14 @@ export function subscribeHarnessEvents(
         ...(result ? { result } : {}),
       });
     }),
-    harness.events.on("message_update", async ({ event }) => {
+    harness.events.on("message_update", async ({ event, message }) => {
       touchRun(data);
+      if (data.liveAssistant?.type === "message" && !data.stop?.requested) data.liveAssistant = { ...data.liveAssistant, message: structuredClone(message) };
       if(!streamStarted && event.type.endsWith("_delta")) {
         streamStarted=true;
         logRunEvent(data,"model stream started",{streamEvent:event.type});
       }
-      if (event.type !== "text_delta" || isAborted()) return;
+      if (event.type !== "text_delta" || isAborted() || data.stop?.requested) return;
       appendOutput(event.delta);
       await emit({ type: "delta", text: event.delta });
     }),

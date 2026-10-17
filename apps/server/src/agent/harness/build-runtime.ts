@@ -8,6 +8,7 @@ import type { AgentBusinessServices } from "../business-services.js";
 import type { SkillLoader } from "../skills/loader.js";
 import { createTools } from "../tools/index.js";
 import type { FantoTool } from "../tools/types.js";
+import { installStopHooks } from "./stop-state.js";
 import { installHarnessHooks } from "./hooks.js";
 import { messageText } from "./events.js";
 import { createRunContext } from "../context/run-context.js";
@@ -44,6 +45,7 @@ export async function buildRuntime(session: Session, definition: AgentDefinition
     toolContext: { env: new NodeExecutionEnv({ cwd: workspace, shellEnv: {} }) }, resources: { skills: loadedSkills },
     compaction: definition.compaction, streamOptions: { timeoutMs: 120_000, maxRetries: 0 },
   }, TODO_CONTEXT);
+  installStopHooks(harness);
   installHarnessHooks(harness, { workspace, systemPrompt, transformContext: createTransformContext() });
   const lane = await harness.lane("main", { createAt: null }, TODO_CONTEXT);
   await lane.setModel({ provider: definition.provider, modelId: definition.model }, TODO_CONTEXT);

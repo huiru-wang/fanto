@@ -163,7 +163,7 @@ export class CreativeService {
         });
         logInfo("image-generation", "completed", {...details, mediaId: saved.mediaId, durationMs: Date.now()-startedAt});
         return { mediaId: saved.mediaId, mimeType: saved.mimeType, width: downloaded.width, height: downloaded.height };
-      });
+      }, "thumbnail");
     } catch (error) {
       logError("image-generation", "failed", {...details, stage, durationMs: Date.now()-startedAt,
         error: logSummary(error), ...(error instanceof ImageClientError ? {errorCode: error.code, diagnostics: error.diagnostics} : {})});

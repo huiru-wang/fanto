@@ -7,6 +7,7 @@ import {
   uploadMedia,
   type DraftMedia,
 } from "../api/media";
+import { uploadInPairs } from "../api/media-upload";
 import { createRecord, type RecordItem } from "../api/records";
 import { startAudioRecording, type AudioRecordingSession } from "../lib/audio-recorder";
 
@@ -130,17 +131,13 @@ export function RecordComposer({ onCreated }: { onCreated: (record: RecordItem) 
     setSaving(true);
     setError(null);
     try {
-      const mediaIds: string[] = [];
-      for (let index = 0; index < media.length; index += 1) {
-        const item = media[index]!;
-        let mediaId = uploadedIdsRef.current.get(item.id);
-        if (!mediaId) {
-          setUploadProgress(`正在上传 ${index + 1}/${media.length}`);
-          mediaId = await uploadMedia(item);
-          uploadedIdsRef.current.set(item.id, mediaId);
-        }
-        mediaIds.push(mediaId);
-      }
+      const mediaIds = await uploadInPairs(media, async item => {
+        const cached = uploadedIdsRef.current.get(item.id);
+        if (cached) return cached;
+        const id = await uploadMedia(item);
+        uploadedIdsRef.current.set(item.id, id);
+        return id;
+      }, (first, last, total) => setUploadProgress(`正在上传 ${first}–${last}/${total}`));
 
       setUploadProgress("正在保存");
       const record = await createRecord({

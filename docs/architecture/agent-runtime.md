@@ -20,7 +20,7 @@ Tool 和 Context Provider 通过 `agent/business-services.ts` 调用领域 Servi
 
 `harness/run.ts` 统一创建 Run Context，包含 userId、sessionId、runId、query、最近消息和必要的 creative/project 元数据。`harness/build-runtime.ts` 在一个 Run 内解析 Prompt 引用的 Provider 插槽，按需获取 Context；不是每个模型 turn 都重复查询。
 
-- Main：角色表达、偏好/记忆 guidance、近期 Record、当前日期等；近期 Record 采用代码配置的最近两条，相关历史由模型主动调用 `record_read(query)`。
+- Main：通过 CharacterProvider 从 `user_character` 读取当前用户唯一的角色配置，以 `character`、`scenario`、`character_instructions`、`example_dialogues` 插值注入现有 Prompt。每个 Run 读取一次，保存后同一 Session 下一轮生效；角色配置不参与代码 Prompt 的 revision，不需要重启或重建会话。偏好/记忆 guidance、近期 Record、当前日期继续由原 Provider 提供；近期 Record 采用代码配置的最近两条，相关历史由模型主动调用 `record_read(query)`。
 - Creator：可信 `creation_context` 绑定 Project，按需用 `project_read` 获取最新 Goal、正文、version、关联资料。
 - Proposal：可信触发 Record 信息，按需读取 Creative Skill、真实 Record 与相关 Project。
 - `transform_context` 只修改模型请求视图，不更改 Session 持久 transcript。
@@ -29,21 +29,25 @@ Tool 和 Context Provider 通过 `agent/business-services.ts` 调用领域 Servi
 
 ## Session
 
-通过 `POST /api/agent/sessions` 创建任意已配置 Agent 的 Session；PostgreSQL `agent_session.entries` 中的 `fanto.session_owner` custom entry 绑定用户、Agent 与 revision。会话工作区 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。同 Session 的 `reserve` 防止并发执行；历史按用户归属读取。后台 Proposal / Creator Session 仍由服务端创建，公共 Session 可以创建对应 Agent 的无业务授权 Session。
+通过 `POST /api/agent/sessions` 创建已配置 Agent 的 Session；稳定的 `fanto.session_owner` entry 绑定用户、Agent 与 revision，工作区为 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。AgentSessionManager 持有公开 MemorySessionRepo，所有 SDK commit、frame drain、History 与下一轮上下文都在内存完成。`reserve` 保持单 Session 串行，仅支持单进程；不提供跨实例协调。
 
-Session 持久层通过 `agent/session/PgSessionRepo` 和 `PgStorage` 实现 Pi Core `SessionRepo/Storage` 接口，复用应用 `DATABASE_URL` 和 Kysely 连接池。七张表位于标准 PostgreSQL 的 `agent_session` Schema；无外键、无扩展和 Supabase 专有 API。对外 Session/Agent Runtime 协议不变。当前 `reserve` 仅实现单进程互斥，跨 Server 实例的同一会话并发执行须等待 Redis Session Lock；持久化共享本身不等于分布式执行安全。旧 SQLite 会话不会迁移。
+每轮完成或停止收尾后，在内存提取稳定 transcript/main tip，通过单条 UPSERT 异步保存到 `agent_session.snapshots`；不保存 Operation 或 pending frames。每会话最多一份在途和一份最新待写快照，后台最多两个数据库写入并发、失败最多尝试两次、单份快照上限 1 MiB。历史保存慢或失败不延迟 `done`、Session 释放或下一轮；进程退出/资源压力可能丢失最近未保存消息。最多保留 128 个已加载 Session，优先淘汰已保存的空闲会话，无可淘汰空间时拒绝新会话加载，不淘汰正在执行的会话。停止后刷新页面从同进程内存恢复部分回复；冷恢复从最后成功快照重建稳定历史，不自动恢复模型或工具执行。
+
+既有七表 PG Session 作为旧会话只读兼容来源；无新快照时冷读稳定 entries/main tip 并恢复内存，下轮结束后保存新快照。旧的 pending 操作不恢复，缺少结果的 tool call 被关闭，不重放工具。业务 Record/Project 等写入继续使用领域服务原有事务。
 
 空闲 Session 可以应用更新后的 Agent definition revision，但 `agentId`、`userId` 一经绑定不可改变。Stream 从当前用户的 Session 解析 Agent ID；Creator 仅在 Project↔Session 绑定和归档写保护校验通过后获得 Project 工具权限。Proposal 缺可信 Record 上下文时，必需 Provider 在模型调用前拒绝执行。
 
 ## 唯一对话 HTTP 协议
 
-- `POST /api/agent/stream`：`{sessionId,message,metadata?:{projectId?}}`，POST 响应 SSE；Agent 身份由 Session 解析，外部 metadata 仅允许 Project ID。断开时取消该请求驱动 Run；SSE 按阶段发送 `turn_start/message_start/message_end/delta/tool_start/tool_end`，结束为 `done/stopped/error`。
-- `POST /api/agent/sessions/:sessionId/stop`：校验当前用户所有权，中断当前运行并等待取消落库、Session 释放；无运行时幂等返回 `stopped: false`。停止、超时和请求断开共享取消逻辑，保留已接受的用户消息、已有输出和工具结果，History 投影用 `state: stopped` 标记中断回复；同一 Session 可以继续下一轮。取消收尾使用移除 abort signal 的原运行上下文；新轮次清理遗留 Operation，只取消、不重放工具。HTTP Stream 在 Agent 收尾后立即释放 Session，再写入结束 SSE；网络背压不能阻塞 stop 返回或下一轮会话。排查依次查看 `agent-stop requested/run settled`、`agent-stream session released` 与 `agent-stop completed`。开始事件及所有文本/工具事件的输出等待可取消，单次网络写入最多等待 5 秒；输出阻塞超时会取消请求驱动的本轮，不影响只读 Events 订阅所观察的后台 Run。stop 的 20 秒响应预算包含所有权校验与收尾，超时或持久化收尾失败返回 `503`（停止尚未确认），后台继续完成取消；不得提前释放尚未结束的 Run，也不回放工具。此能力依赖单进程 Session 互斥。
+- `POST /api/agent/stream`：`{sessionId,message,metadata?:{projectId?}}`，响应 SSE。客户端断线仅分离输出，不取消运行；可从 History 的内存快照恢复当前文本。超时仍保留独立的取消控制。正常终态在内存收尾和释放会话后发送，不等待 PostgreSQL。
+- `POST /api/agent/sessions/:sessionId/stop`：先校验归属、标记停止。停止文字输出和未启动的模型/工具；已开始工具不接收用户停止的取消信号，按原超时自然完成并保留结果，不再请求模型总结。已结束返回 `200 {sessionId,stopped,stopping:false}`；仍在收尾返回 `202 {sessionId,stopped:true,stopping:true}`，客户端保持发送锁及原 SSE，工具结果收尾后收到 `stopped` 恢复发送。stop 本身不等待工具或数据库；所有权等请求处理超时仍可返回 503。保留部分文字与 `fanto.run_stopped` 内存标记，下一轮可继续，不重放 POST/工具。
 - `GET /api/agent/sessions/:sessionId/history?cursor=&limit=`：按 Session 所有权读取，返回产品化 `messages[].blocks`，包含文本、可见 Tool 活动、媒体及澄清表单信息；内部 Session 也可按用户归属读取。
 - `GET /api/agent/sessions/:sessionId/events`：只读订阅既有 Session 的执行事件。适用于后台 Creator 首次创作；不发起 Run，不缓存和回放消息。断开后查询 History 补齐事实。
 
-H5/iOS 在 Main 与 Project 对话复用相同消息语义和组件（Markdown、媒体、Tool 进度）。SSE Tool 只公开经过 `presentation` 策略投影的用户可见信息；不要渲染模型原始 Tool JSON、内部 mediaId、projectId、工作区路径或密钥。Creator 首次后台执行和后续用户 Stream 共享同一 Session，但生命周期触发方式不同。客户端 stop 请求上限 25 秒；确认后先恢复发送，再补载 History。历史补载失败保留本地回复，旧 SSE/历史请求不能覆盖新轮次；收到 `done/stopped/error` 即结束本轮读取，无需等待连接 EOF。
+H5/iOS 在 Main 与 Project 对话复用相同消息语义和组件（Markdown、媒体、Tool 进度）。SSE Tool 只公开经过 `presentation` 策略投影的用户可见信息；不要渲染模型原始 Tool JSON、内部 mediaId、projectId、工作区路径或密钥。Creator 首次后台执行和后续用户 Stream 共享同一 Session，但生命周期触发方式不同。客户端 stop 请求上限 25 秒；202 只是请求已接受，终态或 History 确认空闲后才恢复发送。历史补载失败保留本地回复，旧 SSE/历史请求不能覆盖新轮次；收到 `done/stopped/error` 即结束本轮读取，无需等待连接 EOF。
 
 ## 安全边界
 
 统一 JWT 鉴权，并在会话和领域操作分别校验用户；模型不能声明 userId、任意 projectId 。Agent 的 `bash` 执行仍使用宿主环境工作区约束，不能将其等同于容器或微虚拟机隔离。
+
+History 返回 `running/stopping/restored`；活跃回复由内存中的已接受片段补齐，旧历史请求不得覆盖新轮次。`finalizing` 保留为兼容进度，不显示数据库保存锁；会话完成仍以 `done/stopped/error` 为准。排障区分 `model response ready after memory drain`、`agent-stream session released` 和异步 `session-snapshot saved/save failed`，日志不含消息内容或凭据。

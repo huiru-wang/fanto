@@ -8,7 +8,9 @@ import { SessionEventBus } from "../../event/session-event-bus.js";
 
 test("generic Session History reads Creator sessions by ownership without Project lookup",async()=>{
   const id=randomUUID();
+  let running = true;
   const sessions={
+    isRunning: () => running,
     history:async (requested:string,_cursor:number|undefined,_limit:number,userId:string)=>{
       if(requested!==id||userId!=="owner")throw new SessionOwnershipError();
       return {agentId:"creator-agent",entries:[],hasMore:false,nextCursor:null};
@@ -27,6 +29,9 @@ test("generic Session History reads Creator sessions by ownership without Projec
   const data=await allowed.json() as any;
   assert.equal(data.result.agentId,"creator-agent");
   assert.deepEqual(data.result.messages,[]);
+  assert.equal(data.result.running,true);
+  running = false;
+  assert.equal(((await (await request("owner", `/sessions/${id}/history`)).json()) as any).result.running, false);
   const forbidden=await request("different",`/sessions/${id}/history`);
   assert.equal(forbidden.status,403);
   const forbiddenEvents=await request("different",`/sessions/${id}/events`);
@@ -46,17 +51,13 @@ test("Session creation allows all registered Agent identities without internal f
   assert.deepEqual(created,["main","proposal-agent","creator-agent"]);
 });
 
-test("stop returns unconfirmed within its deadline while durable cleanup remains pending",async()=>{
-  let release!:()=>void,cleaned=false;
-  const pending=new Promise<void>(resolve=>{release=()=>{cleaned=true;resolve();};});
-  const sessions={assertOwnership:async()=>{},waitUntilIdle:()=>pending};
-  const app=createSessionRoutes({} as never,sessions as never,undefined,15);
+test("stop without an active run is idempotent and does not wait on persistence",async()=>{
+  const sessions={assertOwnership:async()=>{},isRunning:()=>false};
+  const app=createSessionRoutes({} as never,sessions as never);
   const id=randomUUID();
   const response=await runWithRequestPrincipal({userId:"owner",source:"user"},()=>app.request(`/sessions/${id}/stop`,{method:"POST"}));
-  assert.equal(response.status,503);assert.equal(cleaned,false);
-  release();await pending;
-  const confirmed=await runWithRequestPrincipal({userId:"owner",source:"user"},()=>app.request(`/sessions/${id}/stop`,{method:"POST"}));
-  assert.equal(confirmed.status,200);
+  assert.equal(response.status,200);
+  assert.deepEqual((await response.json() as any).result,{sessionId:id,stopped:false,stopping:false});
 });
 
 test("stop reports a cleanup failure honestly and preserves ownership errors",async()=>{

@@ -34,6 +34,13 @@
 
 已认证用户接口：`GET /api/users/me` 返回当前用户和有效登录身份；`POST /api/users/me/identities/intents` 创建绑定身份所需 challenge，`POST /api/users/me/identities` 完成绑定；`POST /api/users/me/reauth/intents` 创建解除身份前的验证 challenge；`DELETE /api/users/me/identities/:identityId` 携带 reauth proof 后解除非最后一个身份。iOS 当前不展示账号管理界面，因此不调用这些接口。
 
+## 角色设定
+
+- `GET /api/character`：读取当前用户的 `{ character, scenario, instructions, exampleDialogues }`，未保存时返回默认角色与其余空字段。
+- `PUT /api/character`：必须提交上述四个字符串字段，每项最多 16000 字符，整体覆盖；拒绝额外字段。空角色使用默认交流风格，其余空字段清空对应内容。
+
+`user_character` 以 `user_id` 为主键，每用户最多一条，随用户删除级联清理；身份只来自 JWT。没有角色 ID、列表、删除接口、配置版本或历史。只用于主对话，每轮读取最新配置；保存不改变正在运行的一轮，从下一轮生效。
+
 ## 记录
 
 | 方法 | 路径 | 说明 |
@@ -105,6 +112,8 @@ Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒�
 
 ## 上传与媒体
 
+上传及读取契约与存储服务商无关；服务端可按站点配置选择阿里云 OSS 或 Cloudflare R2，客户端使用返回的原始签名 URL。存储配置见 [配置](../engineering/configuration.md#对象存储选择)。
+
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | `/api/uploads` | 根据 MIME 创建上传凭据，返回直传 URL |
@@ -157,7 +166,7 @@ Project 与 Session 分别管理：`projects.status` 表示本轮创作是否在
 
 ## Agent Runtime
 
-Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 使用 PostgreSQL 的独立 `agent_session` Schema，与业务共用数据库连接。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间和最近 2 条紧凑 Recent Records，再填充 System Prompt；Recent Records 通过 `listRecords(limit=2)` 读取，可命中 Record 首页缓存，不执行 Query Rewrite 或向量搜索，记录时间按请求时区展示。Record Tool、`present_media` 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
+Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 在线运行使用内存，稳定历史异步尽力保存到 PostgreSQL `agent_session.snapshots`；存储边界见 [Agent Runtime](../architecture/agent-runtime.md#session)。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间和最近 2 条紧凑 Recent Records，再填充 System Prompt；Recent Records 通过 `listRecords(limit=2)` 读取，可命中 Record 首页缓存，不执行 Query Rewrite 或向量搜索，记录时间按请求时区展示。Record Tool、`present_media` 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
 
 ```text
 Authorization: Bearer <ACCESS_TOKEN>
@@ -168,7 +177,7 @@ X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC
 | 方法 | 路径 | 请求 | 成功响应 |
 | --- | --- | --- | --- |
 | POST | `/api/agent/sessions` | `{ agentId? }` | `201`，返回 `sessionId` 与 `agentId` |
-| POST | `/api/agent/sessions/:sessionId/stop` | 无请求体 | `200`，等待取消落库及 Session 释放，返回 `{ sessionId, stopped }`；无运行时 `stopped: false`，非本人会话 `403` |
+| POST | `/api/agent/sessions/:sessionId/stop` | 无请求体 | `200/202`，返回 `{ sessionId, stopped, stopping }`；202 仅表示停止已接受、仍在结束当前操作，终态后可续聊；无运行时 stopped/stopping 均为 false，非本人会话 403 |
 | POST | `/api/agent/stream` | `{ sessionId, message, metadata?: { projectId?: uuid } }` | `200`，SSE 事件流 |
 | GET | `/api/agent/sessions/:sessionId/history?cursor=&limit=` | 无请求体 | `200`，倒序历史页，包含 `messages` 投影 |
 | GET | `/api/agent/sessions/:sessionId/events` | 无请求体 | `200`，只读 SSE 订阅，不发起执行或重放 |
@@ -198,7 +207,7 @@ curl -N http://127.0.0.1:3000/api/agent/stream \
 
 请求响应 SSE 以 `start` 开始，期间可发送 `turn_start`、`message_start`、`message_end`、`tool_start`（`toolCallId`、`toolName`）、`tool_end`（再加 `status: succeeded | failed`）和零到多个 `delta`，最终为 `done`、`stopped` 或 `error`。工具事件以 `presentation.visible/displayContent/animation` 控制可见性与产品化文案，客户端只呈现声明为可见的活动状态，不展示原始工具参数、技术 ID、内部错误或 reasoning。当前有两个产品化白名单例外：成功的 `present_media` 返回稳定媒体 metadata；成功的 `collect_user_input` 返回 `kind=user_input_requested`、`interactionId` 和结构化问题，H5 渲染为原生表单。`collect_user_input` 成功后当前 Agent Run 立即结束，用户提交答案后以同一 Session 的下一条 User Message 继续；回答消息带内部 interaction 标记供历史恢复识别，History API 将其投影为 `user_input_response`，使 H5 渲染为“用户澄清”卡片而不展示内部标记。其他 Tool Result 仍不对客户端公开。单次 Stream 请求最长 10 分钟（模型请求另有独立限制）；同一 Session 已在运行时返回 `409`。
 
-停止当前轮次使用 `POST /api/agent/sessions/:sessionId/stop`，客户端等待确认后才允许续聊；请求断开和超时也会取消本轮。取消保存已接受的用户输入、已输出文本及工具结果；History 的中断助手消息携带 `state: "stopped"`，未输出文本时也保留中断占位。停止确认不删除 Session，下一轮沿用同一 sessionId。stop 响应最多等待 20 秒，未确认收尾时返回 `503` 与 `error`，不会提前宣称停止成功；客户端可重试。SSE 输出等待响应取消信号，单次写入阻塞超过 5 秒会中断请求驱动的本轮。
+停止当前轮次使用 `POST /api/agent/sessions/:sessionId/stop`。停止文字输出、后续模型和未启动工具，已开始工具自然完成；200 表示已收尾，202/stopping 表示仍在结束，客户端继续等待终态或 History 确认空闲，不能立即发送下一轮。部分回复与停止状态保留在内存，异步保存历史失败不影响完成；重启后最近消息可能缺失。断线不取消本轮，可从 History 恢复；服务超时保留独立取消。SSE 网络写入最多等待 5 秒，超时只分离输出，不阻塞之后的运行。
 
 历史接口按 `seq` 从新到旧返回。`cursor` 填上页最后一项的 `seq`；`limit` 默认 50，范围为 1–100。`compaction` 和内部 `fanto.*` 条目不对外返回，敏感字段会被脱敏：
 
@@ -216,3 +225,7 @@ curl -N http://127.0.0.1:3000/api/agent/stream \
 ```
 
 `apps/server/agent.yaml` 与其引用的 TypeScript Prompt 模块仅在 Server 启动时加载，不做运行时热更新。变更 YAML 或 Prompt 后需要重启 Server；已有 Session 在下一次 stream 执行时会自动升级，无需额外状态查询或配置更新接口。
+
+### 会话 History 的运行状态
+
+History 的 result 增加 `running/stopping/restored` 布尔值：running 包含内存运行及在途工具收尾，stopping 表示用户已请求停止，restored 表示当前会话从保存历史冷恢复（最近消息可能缺失）。状态是瞬时快照，不是发送预留。在线历史优先读取内存及活跃部分回复，不等待数据库保存；所有字段均在归属校验成功后返回。`finalizing` 只是兼容进度，不代表数据库保存锁。

@@ -116,7 +116,7 @@ private struct ConversationImageThumbnail: View {
     private func loadReadURL() async {
         guard !Task.isCancelled else { return }
         do {
-            imageURL = try await FantoAPIClient.shared.fetchMediaReadURL(id: item.mediaID)
+            imageURL = try await FantoAPIClient.shared.fetchMediaReadURL(id: item.mediaID, variant: .thumbnail)
         } catch {
             failed = true
         }

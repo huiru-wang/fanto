@@ -12,10 +12,13 @@
     "test:pi-proactive": "tsx --test src/experiments/pi-proactive/*.test.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1149.0",
+    "@aws-sdk/s3-request-presigner": "^3.1149.0",
     "@earendil-works/pi-agent-core": "^0.85.1",
     "@earendil-works/pi-ai": "^0.85.1",
     "@fanto/shared": "workspace:*",
     "@hono/node-server": "^2.1.1",
+    "@smithy/node-http-handler": "^4.12.1",
     "ali-oss": "^6.23.0",
     "hono": "^4.13.5",
     "jose": "^6.2.12",

@@ -260,6 +260,11 @@ final class FantoStore {
         saveRecordSnapshotInBackground()
     }
 
+    func insertCreatedRecord(_ record: Record) {
+        records = orderedUniqueRecords([record] + records)
+        saveRecordSnapshotInBackground()
+    }
+
     func restoreRecordSnapshot(for userID: String) async {
         guard snapshotUserID != userID else { return }
         snapshotUserID = userID

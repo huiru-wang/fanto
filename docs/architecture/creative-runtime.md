@@ -35,7 +35,7 @@ Main Chat 和 Project Chat 统一调用：
 
 `image_generate` 生成图直接放在 `users/{userId}/project/{projectId}/` 下。只有 Record 或其它外部 Media 真正写入 Project 正式正文/封面时，`project_manage` 才在保存时复制对象、分配新的 mediaId 并替换引用；仅作为参考的源媒体不复制。Record 删除时按自身独占资产正常清理，已保存作品的副本不受影响。OSS 清理在 DB 提交后尽力执行，失败记日志，不存在持久队列重试。
 
-进程内消息、SSE 发布事件不持久化；服务重启可能导致 queued/running 状态遗留。Creator 超时只打断本轮运行，保留 Session、历史与已生成媒体；运行取消时等待 Pi Lane 的持久化取消完成；下次续聊前清理遗留 Operation（不重放生图等工具）。运行退出并释放 Session 后将 Project 标记为 failed，再通知客户端，可使用同一 Session 继续聊天，后续保存非空作品可恢复 completed。Creator 生图没有持久化补单机制，失败后由用户在会话中决定是否继续，不承诺自动恢复或付费幂等。
+进程内消息、SSE 发布事件不持久化；服务重启可能导致 queued/running 状态遗留。Creator 超时只打断本轮运行，保留 Session、历史与已生成媒体；SDK Session 在内存收尾，历史异步尽力保存；用户停止允许已开始工具自然完成，服务超时仍使用独立取消。冷恢复只重建稳定历史，不重放生图等工具。运行退出并释放 Session 后将 Project 标记为 failed，再通知客户端，可使用同一 Session 继续聊天，后续保存非空作品可恢复 completed。Creator 生图没有持久化补单机制，失败后由用户在会话中决定是否继续，不承诺自动恢复或付费幂等。
 
 ## 日志排查
 

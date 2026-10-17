@@ -52,7 +52,7 @@ Proposal accept 在事务中确定所选 Idea，创建或更新 Project 为 `que
 
 ## 外部调用日志
 
-`LOG_DIR/service.log` 的 `external-call` 记录 OSS（put/get/head/delete）、图片（describe/review/generate/download）和音频转写（transcribe）的调用开始、成功或失败。每次调用用 `callId` 关联开始与结束，结束包含 `outcome` 和 `durationMs`（毫秒）；可用时记录模型、HTTP 状态与安全错误码。成功表示调用返回并通过 Client 结果校验，不记录响应正文。OSS 签名 URL 是本地生成，不产生外部调用日志。
+`LOG_DIR/service.log` 的 `external-call` 记录 OSS（put/get/head/delete）、图片（describe/review/generate/download）和音频转写（transcribe）的调用开始、成功或失败。每次调用用 `callId` 关联开始与结束，结束包含 `outcome` 和 `durationMs`（毫秒）；可用时记录模型、HTTP 状态与安全错误码。成功表示调用返回并通过 Client 结果校验，不记录响应正文。OSS 签名 URL 是本地生成，不产生外部调用日志。R2 同样使用 `service=oss`，另有 `provider=cloudflare-r2` 字段。
 
 OSS 上传/下载记录 `bytes`；图片 download 记录 `downloadBytes`（供应商返回文件）、`bytes`（转码后 PNG）及 `width/height`，其耗时包含下载、解码和 PNG 转码。图片理解、审核、生成及结果下载统一位于 `infrastructure/clients/image-client.ts`。日志不包含对象键、签名 URL、凭据、Prompt、图片描述或转写文本。业务链路关联仍见 [创作执行日志](creative-runtime.md#日志排查)。
 

@@ -41,14 +41,14 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
     return streamSSE(c, async stream => {
       const controller = new AbortController();
       const connection = new AbortController();
-      stream.onAbort(() => {connection.abort();controller.abort(new DOMException("client_disconnect", "AbortError"));});
+      stream.onAbort(() => connection.abort());
       const deliver = async (write: () => Promise<void>) => {
         const status = await waitForOutput(write, connection.signal);
         if (status === "timeout") {connection.abort();stream.abort();}
       };
       const timeout = setTimeout(() => controller.abort(new DOMException("run_timeout", "AbortError")), timeoutMs);
       const heartbeat = setInterval(() => {
-        void deliver(async () => {await stream.write(": ping\n\n");}).catch(() => controller.abort());
+        void deliver(async () => {await stream.write(": ping\n\n");}).catch(() => connection.abort());
       }, 15_000);
 
       try {
@@ -58,14 +58,15 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
             body.data.message,
             controller.signal,
             { traceId: runTraceId, timeZone, ...body.data.metadata },
-            event => writeStreamEvent(stream, event),
+            event => deliver(() => writeStreamEvent(stream, event)),
             () => stream.writeSSE({
               event: "start",
               data: JSON.stringify({sessionId:session.id,agentId:session.agentId,traceId:runTraceId}),
             }),
           );
         } finally {
-          // Durable Agent cleanup is complete. Network backpressure must not
+          await sessions.checkpoint?.(session.id);
+          // In-memory Agent cleanup is complete. Network backpressure must not
           // keep the Session reserved or block the separate stop request.
           release?.();
           release = undefined;
@@ -99,6 +100,9 @@ export async function writeStreamEvent(
   event: AgentStreamEvent,
 ): Promise<void> {
   switch (event.type) {
+    case "finalizing":
+      await stream.writeSSE({ event: "finalizing", data: "{}" });
+      return;
     case "turn_start":
       await stream.writeSSE({ event: "turn_start", data: "{}" });
       return;

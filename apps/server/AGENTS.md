@@ -18,11 +18,12 @@
 
 - HTTP Route 不直接访问 Repository；领域操作走 Service。Agent Tool / Context Provider 只能通过 `agent/business-services.ts` 调用获准领域服务，不调用内部 HTTP。
 - 所有数据读取、写入和查询必须 user-scoped，身份只能来自已校验 JWT / Session。Creator 的可信 projectId 必须由服务端按 userId + sessionId 查找绑定 Project，再做 Project 状态与归属校验。公共 Stream 仅允许合规 Creator Session，不开放未授权的 Proposal 执行。
-- 停止统一使用 `POST /api/agent/sessions/:id/stop`；取消必须等待 Pi Operation 收尾落库，保留用户消息、已有输出和工具结果，再释放 Session；开始及过程 SSE 等待必须可取消且有 5 秒输出预算；HTTP Session 释放必须先于结束 SSE 写入，不能等待网络消费。stop 最多等待 20 秒，持久化/业务收尾未确认返回 503，不能假报成功。历史中断回复为 `state: stopped`，下一轮可续聊；遗留 Operation 只取消、不重放非幂等工具。唯一多轮会话对外协议是 `POST /api/agent/stream`、`GET /api/agent/sessions/:id/history` 和只读 `GET /api/agent/sessions/:id/events`；不要重建 Project 专属消息 POST、History、Stream。Session PostgreSQL（agent_session schema）是过程事实，Project goal/content 是业务成果。Creator 超时只中断本轮；释放 Session 并更新 Project 状态后才发送结束通知，同一 Session 可续聊。
+- 停止使用通用 Session stop：先标记停止，已开始工具自然完成，不把用户停止信号传入工具内部；禁止后续模型请求与新工具。200 表示已收尾，202/stopping 表示仍在结束当前操作，终态才可续发。SDK Session 与 frame drain 在内存运行；稳定历史异步尽力保存，正常结束/停止不等数据库。断线仅分离 SSE，History 优先恢复内存。Record/Project 正式写入继续保持事务。唯一对话契约、快照/冷恢复/容量边界见 [Agent Runtime](../../docs/architecture/agent-runtime.md)。
 - Project 状态只有 queued/running/completed/failed/archived；queued 与 Session 创建无关。Proposal content 为 reason + ideas + selectedIdeaId，每个 Idea 有 title/idea/tags/goal；不要使用旧单 Idea/Plan Schema。Record 与 Project 关联要维持事务与锁顺序。
 - Proposal 是否产生以工具保存的业务事实为准，不解析自然语言输出；当前单个 Record 可以支撑新提议。Proposal 在保存前必须说清成果、素材变化和新增价值；关键创作方向由 Proposal 提出，工具与制作步骤留给 Creator。Record postprocess 成功后分别投递 EmbeddingQueue 和 Proposal；失败的 Embedding 不回滚 processed。共享 AgentExecutionQueue 用内存 pending 和并发限制执行 Proposal/Creator；没有 MQ 持久化、自动重试、重启恢复。Fanto 不提供即时/定时/周期 Task、提醒或通用任务委派。
-- `image_generate` 多张参考图输入、单图输出，生成物直接属于 Project OSS 路径。只有媒体进入正式 Project content/cover 后，才复制其它来源的 ready 媒体，换用新的 mediaId；Record 删除事务内清理独占媒体元数据，提交后尽力清理 OSS，失败不自动重试。
+- `image_generate` 使用本人 ready 图片的 thumbnail 签名地址作为参考输入；`image_review` 保留原图输入。多张参考图输入、单图输出，生成物直接属于 Project OSS 路径。只有媒体进入正式 Project content/cover 后，才复制其它来源的 ready 媒体，换用新的 mediaId；Record 删除事务内清理独占媒体元数据，提交后尽力清理 OSS，失败不自动重试。
 - `create_current_schema_20261011.ts` 是当前完整空库基线，包含异步状态、Agent Session PostgreSQL 与 wx_openid 删除。旧库在完整执行归并前迁移后合并元数据，随后通过 `drop_tasks_20261011.ts` 正式前向迁移删除原 Task/TaskRun 表及其数据；不手动清空 Kysely 表，保持其它业务数据和用户隔离。
+- 主对话角色仅使用 `user_character` 单表，以 user_id 为主键；配置整体覆盖、无版本/列表/删除 API。CharacterProvider 每个 Run 通过 business-services 读取并插值注入，下一轮生效，不新增 Composer、RuntimeContextProvider 或 Memory 表。
 - Current docs 描述已实现语义；`plan/` 只作为方案历史，不作为现状依据。密钥、URL Token 和内部 Tool 参数不得写入面向用户的回复、日志或文档。
 
 Proposal / Creator 创建或复用 Session 后立即记录业务 ID 绑定；Agent Run 日志携带 sessionId/runId，记录阶段与工具耗时，不记录原始参数、模型内容或流式 delta。外部调用日志统一记录安全元数据与调用结果/耗时，不记录媒体内容或 SDK 原始响应；图片理解、生成与下载统一在 `infrastructure/clients/image-client.ts`。字段与范围见 [Server：外部调用日志](../../docs/architecture/server.md#外部调用日志)。链路排障日志见 [创作执行：日志排查](../../docs/architecture/creative-runtime.md#日志排查)。
@@ -36,4 +37,4 @@ pnpm --filter @fanto/server test
 
 涉及 PostgreSQL 需隔离 `TEST_DATABASE_URL`；涉及 OSS/模型时区分 Mock 测试和真实收费 smoke。更多测试矩阵见 [测试](../../docs/engineering/testing.md)。
 
-- 媒体业务依赖 `ObjectStorage`，存储 Client 只操作指定 key，不接收图片 variant。服务端生成并存储 WebP 小图后才将图片标记 ready；一个 mediaId 保留原图与小图。上传与重试语义见 [Media](../../docs/domain/media.md)。
+- 媒体业务依赖 `ObjectStorage`，启动按 `OBJECT_STORAGE_PROVIDER` 装配阿里云 OSS / Cloudflare R2，存储 Client 只操作指定 key，不接收图片 variant。服务端生成并存储 WebP 小图后才将图片标记 ready；一个 mediaId 保留原图与小图。上传与重试语义见 [Media](../../docs/domain/media.md)。

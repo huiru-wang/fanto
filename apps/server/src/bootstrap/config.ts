@@ -6,7 +6,9 @@ import { readFileSync } from "node:fs";
 import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export interface AppConfig {
+import { loadObjectStorageConfig, type ObjectStorageConfig } from "./object-storage-config.js";
+
+export type AppConfig = {
   databaseUrl: string;
   port: number;
   host: string;
@@ -22,13 +24,11 @@ export interface AppConfig {
     googleAllowedClientIds: string[];
     appleAllowedClientIds: string[];
   };
-  objectStorageProvider: "aliyun-oss";
-  oss: { region: string; endpoint?: string; bucket: string; accessKeyId: string; accessKeySecret: string };
   dashscope: { apiKey: string; baseUrl: string; embeddingModel: string; embeddingDimension: number; visionModel: string; asrModel: string };
   agent: { workspaceRoot: string; definitionPath: string; deepseekApiKey: string };
   agentExecutionConcurrency: number;
   creative: { enabled: boolean; proposalTimeoutMs: number; creatorTimeoutMs: number; image: { endpoint: string; apiKey: string; model: string; timeoutMs: number } };
-}
+} & ObjectStorageConfig;
 
 export function loadEnv(path = ".env") {
   try {
@@ -51,17 +51,11 @@ export function loadConfig(): AppConfig {
   if (!databaseUrl) throw new Error("DATABASE_URL is required");
   const embeddingDimension = parseInt(process.env.DASHSCOPE_EMBEDDING_DIMENSION ?? "768", 10);
   if (embeddingDimension !== 768) throw new Error("DASHSCOPE_EMBEDDING_DIMENSION must be 768");
-  const endpoint = process.env.OSS_ENDPOINT?.trim();
   const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
   const projectPath = (value: string | undefined, fallback: string) => value
     ? (isAbsolute(value) ? value : resolve(projectRoot, value))
     : resolve(projectRoot, fallback);
-  const ossEndpoint = endpoint ? (endpoint.startsWith("http://") || endpoint.startsWith("https://") ? endpoint : `https://${endpoint}`) : undefined;
-  if (ossEndpoint?.includes("-internal.")) throw new Error("OSS_ENDPOINT must be publicly reachable");
-
-  const objectStorageProvider = process.env.OBJECT_STORAGE_PROVIDER?.trim() || "aliyun-oss";
-  if (objectStorageProvider !== "aliyun-oss") throw new Error("Unsupported OBJECT_STORAGE_PROVIDER");
-  for (const key of ["OSS_BUCKET", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET"]) required(key);
+  const storage = loadObjectStorageConfig();
 
   const activeKid = required("AUTH_JWT_ACTIVE_KID");
   const privateKeyPem = normalizePem(required("AUTH_JWT_PRIVATE_KEY"));
@@ -94,14 +88,7 @@ export function loadConfig(): AppConfig {
       googleAllowedClientIds,
       appleAllowedClientIds,
     },
-    objectStorageProvider,
-    oss: {
-      region: process.env.OSS_REGION ?? "oss-rg-china-mainland",
-      endpoint: ossEndpoint,
-      bucket: process.env.OSS_BUCKET ?? "",
-      accessKeyId: process.env.OSS_ACCESS_KEY_ID ?? "",
-      accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET ?? "",
-    },
+    ...storage,
     dashscope: {
       apiKey: process.env.DASHSCOPE_API_KEY ?? "",
       baseUrl: process.env.DASHSCOPE_BASE_URL ?? "https://ws-2gkw6cbbhgg7bqz5.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",

@@ -1,4 +1,6 @@
 import { createContextKey, TODO_CONTEXT, type Context, withContextValue } from "@earendil-works/pi-agent-core";
+import type { StopState } from "../harness/stop-state.js";
+import type { Entry } from "@earendil-works/pi-agent-core";
 import { createSlotStore, type SlotStore } from "./internal/slot-store.js";
 
 export type ContextMessage = { role: "user" | "assistant"; text: string };
@@ -18,6 +20,8 @@ type RunContextInput = {
   timeZone?: string;
   recentMessages: readonly ContextMessage[];
   sourceMessageId?: string;
+  stop?: StopState;
+  liveAssistant?: Entry;
 };
 
 export type RunData = Omit<RunContextInput, "slots"> & {

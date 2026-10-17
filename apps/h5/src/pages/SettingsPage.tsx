@@ -13,8 +13,8 @@ import {
   UserRound,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { CharacterSettings } from "../components/CharacterSettings";
 
-type FantoPersonality = "quiet" | "lively";
 type Appearance = "system" | "light" | "dark";
 type LoginProvider = "phone" | "google" | "apple" | "email";
 type Accent = "default" | "orange" | "blue" | "green" | "purple";
@@ -37,7 +37,6 @@ const accents: Array<{ id: Accent; label: string; swatch: string }> = [
 export function SettingsPage() {
   const [displayName, setDisplayName] = useState("Robin");
   const [birthday, setBirthday] = useState("未设置");
-  const [personality, setPersonality] = useState<FantoPersonality>("quiet");
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(true);
   const [quietStart, setQuietStart] = useState("23:00");
@@ -47,7 +46,7 @@ export function SettingsPage() {
   const [accent, setAccent] = useState<Accent>("default");
   const [profileOpen, setProfileOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
-  const [personalityOpen, setPersonalityOpen] = useState(false);
+  const [characterOpen, setCharacterOpen] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [generalOpen, setGeneralOpen] = useState<"language" | "appearance" | "accent" | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -59,7 +58,6 @@ export function SettingsPage() {
     email: "robin@example.com",
   });
 
-  const personalityLabel = personality === "quiet" ? "安静" : "活泼";
   const appearanceLabel = appearance === "system" ? "跟随系统" : appearance === "light" ? "浅色" : "深色";
   const accentLabel = useMemo(() => accents.find(item => item.id === accent)?.label ?? "默认", [accent]);
 
@@ -79,7 +77,7 @@ export function SettingsPage() {
         <header className="settings-header">
           <p className="eyebrow">Settings</p>
           <h1>设置</h1>
-          <p>管理你的个人资料、Fanto 性格和应用偏好。</p>
+          <p>管理你的个人资料、Fanto 角色和应用偏好。</p>
         </header>
 
         <button className="settings-profile-card" onClick={() => setProfileOpen(true)}>
@@ -97,7 +95,7 @@ export function SettingsPage() {
         </SettingsSection>
 
         <SettingsSection title="Fanto">
-          <SettingsRow icon={<Sparkles size={18} />} title="性格" value={personalityLabel} onClick={() => setPersonalityOpen(true)} />
+          <SettingsRow icon={<Sparkles size={18} />} title="角色设定" value="编辑" onClick={() => setCharacterOpen(true)} />
         </SettingsSection>
 
         <SettingsSection title="通知">
@@ -132,7 +130,7 @@ export function SettingsPage() {
           <span>退出登录</span>
         </button>
 
-        <p className="settings-demo-note">当前页面为产品交互原型，所有修改仅保留在当前页面状态。</p>
+        <p className="settings-demo-note">角色设定保存后会同步到账号；其他设置仍为交互原型，仅保留在当前页面。</p>
       </div>
 
       <SettingsModal title="个人资料" open={profileOpen} onClose={() => setProfileOpen(false)}>
@@ -166,21 +164,7 @@ export function SettingsPage() {
         </div>
       </SettingsModal>
 
-      <SettingsModal title="Fanto 性格" open={personalityOpen} onClose={() => setPersonalityOpen(false)}>
-        <p className="modal-description">这会影响 Fanto 和你交流时的表达方式，不改变它对事实和记录的理解。</p>
-        <ChoiceCard
-          selected={personality === "quiet"}
-          title="安静"
-          description="平静、克制，回答更简洁自然。"
-          onClick={() => setPersonality("quiet")}
-        />
-        <ChoiceCard
-          selected={personality === "lively"}
-          title="活泼"
-          description="更有表达欲，语气更轻松，也会适当开玩笑。"
-          onClick={() => setPersonality("lively")}
-        />
-      </SettingsModal>
+      {characterOpen && <CharacterSettings onClose={() => setCharacterOpen(false)} />}
 
       <SettingsModal title="通知" open={notificationOpen} onClose={() => setNotificationOpen(false)}>
         <ToggleRow title="允许通知" checked={notificationsEnabled} onChange={setNotificationsEnabled} />

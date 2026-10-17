@@ -18,7 +18,7 @@ xcodebuild -project apps/ios/fanto/fanto.xcodeproj -scheme fanto -sdk iphonesimu
 
 ## 按领域验证
 
-- **数据库**：空库基线 `create_current_schema_20261011.ts`、已有数据库完整迁移历史合并与不完整历史拒绝、`drop_tasks_20261011.ts` 删除废弃 Task 表，保留其它业务数据；不要手动删除 `kysely_migration`。
+- **数据库**：空库基线 `create_current_schema_20261011.ts`、已有数据库完整迁移历史合并与不完整历史拒绝、`drop_tasks_20261011.ts` 删除废弃 Task 表，`z_agent_session_snapshots_20261017.ts` 增加异步快照表，保留其它业务数据；不要手动删除 `kysely_migration`。
 - **Record / Media**：按用户、版本、位置字段、五媒体限制、后置 Vision/ASR、独立 EmbeddingQueue、语义检索；真实 OSS PUT/HEAD/URL、删除后的尽力清理以及 Project 最终副本归属；`image-thumbnail.test.ts` 验证 EXIF/WebP/并发上限，`media-service.test.ts` 验证小图失败与 DB 失败后的手动恢复、variant 和用户隔离。H5 `tests/media-upload.test.ts` 验证每个失败阶段不会自动继续请求。
 - **Proposal / Project**：Proposal 1–2 个 Idea、accept 幂等、create/extend 状态、Record 关联、version 乐观并发、媒体复制、旧内容保留和失败状态收敛；测试文件位于 `domain/projects/`、`routes/project-http.test.ts`。
 - **PG Session SDK conformance**：设置只指向独立测试库的 `TEST_DATABASE_URL`（库名需包含 test），运行 `pnpm --filter @fanto/server exec tsx --test src/agent/session/pg-session.test.ts`，验证 Pi Core Storage / SessionRepo 一致性、Fork、失败回滚与 PG 无外键。测试会清空并删除测试数据库中的 `agent_session` schema，不可使用生产数据库。
@@ -28,3 +28,19 @@ xcodebuild -project apps/ios/fanto/fanto.xcodeproj -scheme fanto -sdk iphonesimu
 - **客户端**：H5 typecheck/build；iOS Xcode 模拟器构建与实际页面交互。测试创建记录/位置、Proposal 接受、Project 继续对话（含订阅失败仍可发）、Tool 活动/媒体渲染、异步状态刷新和归档。
 
 需要真实 DeepSeek/Qwen/OSS 时使用受控的最小 smoke test，明确费用和环境，不能把 Mock 的成功当成真实生成。当前没有默认启用的付费 Creator E2E CI 测试。
+
+## R2 存储验证
+
+默认仓库测试覆盖 R2 配置 / 启动工厂、真实 SDK 预签名和 Content-Type 绑定、metadata 归一化、流式下载大小上限与超时、错误分类和日志脱敏。本地 S3 HTTP fixture 使用真实 AWS SDK 的请求序列化 / 响应解析验证现有 MediaService 的直传、缩略图失败恢复、不同 variant、用户隔离、作品副本和删除；该测试不等同于真实 Cloudflare 验收。
+
+`r2-storage.smoke.test.ts` 默认跳过。配置服务端 `.env` 中该站点的四个 `R2_*` 项后，单独执行：
+
+```bash
+R2_SMOKE_TEST=1 pnpm --filter @fanto/server exec tsx --test src/infrastructure/clients/storage/r2-storage.smoke.test.ts
+```
+
+该测试通过生产启动工厂创建 R2 Client，使用随机 `smoke/r2/<UUID>/` 前缀，验证真实签名 PUT、HEAD、受限 GET、签名读取、小图 metadata 和删除。仅读写这一随机前缀，finally 删除并 HEAD 确认清理；需要该 Bucket 的对象读写权限。它不修改数据库、默认 provider、正式媒体或 Bucket 配置。浏览器 Origin 的 CORS 及手机网络需在对应站点另行验收。
+
+## 会话内存与异步快照
+
+`agent/session/live-session.test.ts` 使用真实 SDK 和 HTTP 路由验证阻塞/失败的快照写入不延迟 done、下一轮或在线历史，停止部分回复刷新/冷恢复、工具自然完成、参数生成时停止和断线继续。`session-snapshots.integration.test.ts` 使用隔离 TEST_DATABASE_URL 自动创建/删除独立数据库，验证 PG 单语句保存、revision/owner 防旧覆盖与旧 Session 冷恢复；需要 CREATEDB。默认未设置测试库时该测试跳过。旧 PgStorage conformance 仅验证兼容适配，不代表当前在线路径仍使用逐帧数据库事务。

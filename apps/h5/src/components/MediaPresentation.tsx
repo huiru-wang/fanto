@@ -14,6 +14,7 @@ import type { PresentedMedia } from "../api/agent";
 import {
   getCachedMediaUrl,
   resolveMediaUrl,
+  type MediaVariant,
 } from "../api/media";
 import { ImageLightbox } from "./media/ImageLightbox";
 
@@ -22,34 +23,34 @@ type MediaUrlState = {
   failed: boolean;
 };
 
-function useMediaUrl(mediaId: string) {
+function useMediaUrl(mediaId: string, variant: MediaVariant = "original") {
   const [state, setState] = useState<MediaUrlState>(() => ({
-    url: getCachedMediaUrl(mediaId),
+    url: getCachedMediaUrl(mediaId, variant),
     failed: false,
   }));
 
   const load = useCallback(async (force = false) => {
-    const cached = force ? null : getCachedMediaUrl(mediaId);
+    const cached = force ? null : getCachedMediaUrl(mediaId, variant);
     if (cached) {
       setState({ url: cached, failed: false });
       return cached;
     }
     setState(current => current.url && !force ? current : { url: null, failed: false });
     try {
-      const url = await resolveMediaUrl(mediaId, "original", force);
+      const url = await resolveMediaUrl(mediaId, variant, force);
       setState({ url, failed: false });
       return url;
     } catch {
       setState({ url: null, failed: true });
       return null;
     }
-  }, [mediaId]);
+  }, [mediaId, variant]);
 
   useEffect(() => {
-    const cached = getCachedMediaUrl(mediaId);
+    const cached = getCachedMediaUrl(mediaId, variant);
     setState({ url: cached, failed: false });
     if (!cached) void load();
-  }, [load, mediaId]);
+  }, [load, mediaId, variant]);
 
   return { ...state, reload: () => load(true) };
 }
@@ -71,7 +72,7 @@ function ImageTile({
   index: number;
   onOpen: (index: number) => void;
 }) {
-  const { url, failed, reload } = useMediaUrl(item.mediaId);
+  const { url, failed, reload } = useMediaUrl(item.mediaId, "thumbnail");
   const retried = useRef(false);
 
   return (
@@ -143,7 +144,6 @@ function ImageRail({ items }: { items: PresentedMedia[] }) {
 
   return (
     <section className="media-section">
-      <span className="media-section-label">图片</span>
       <div className="media-rail image-rail">
         {items.map((item, index) => (
           <ImageTile key={item.mediaId} item={item} index={index} onOpen={setViewerIndex} />

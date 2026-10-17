@@ -149,6 +149,15 @@ export interface CreationImageStepsTable {
   error_code: string | null; created_at: Date; updated_at: Date;
 }
 
+export interface UserCharacterTable {
+  user_id: string;
+  character: string;
+  scenario: string;
+  instructions: string;
+  example_dialogues: string;
+  updated_at: Date;
+}
+
 export interface DB {
   users: UsersTable;
   user_login_identities: UserLoginIdentitiesTable;
@@ -159,6 +168,7 @@ export interface DB {
   record_links: RecordLinksTable;
   media_assets: MediaAssetsTable;
   memories: MemoriesTable;
+  user_character: UserCharacterTable;
 }
 
 export type User = Selectable<UsersTable>;

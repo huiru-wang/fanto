@@ -7,7 +7,7 @@ flowchart LR
   IOS[iOS / SwiftUI] --> API[Hono Business Server]
   H5[H5 / React + Vite] --> API
   API --> PG[(PostgreSQL + pgvector)]
-  API --> OSS[Aliyun OSS]
+  API --> STORE[ObjectStorage: Aliyun OSS / Cloudflare R2]
   API --> AI[DeepSeek / DashScope]
   API --> AGENT[Embedded Pi Agent Runtime]
   AGENT --> PG
@@ -22,8 +22,8 @@ flowchart LR
 
 - PostgreSQL：用户、身份、Records、Media 元数据、Memory、Proposal、Project、Record 关联。
 - pgvector：`records.embedding`（可重建的派生字段）、`memories.embedding`、`projects.embedding`。
-- OSS：Record 上传媒体、生成的 Project 媒体；客户端读取短期签名 URL。
-- PostgreSQL 的 `agent_session` Schema：Pi Session transcript / session owner；工作区位于 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。
+- 对象存储：Record 上传媒体、生成的 Project 媒体；Server 按 `OBJECT_STORAGE_PROVIDER` 使用 Aliyun OSS 或 Cloudflare R2，客户端读取短期签名 URL。
+- Agent Session 在线使用内存；稳定 transcript/owner 异步保存到 PostgreSQL `agent_session.snapshots`，旧七表只读兼容。历史尽力保存，不阻塞回复，重启可丢失最近消息；工作区位于 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。
 - Session transcript 记录 Agent 过程；Project 只存最新 `goal/content/status`，不从 UI 消息反推业务事实。
 
 ## 异步与会话

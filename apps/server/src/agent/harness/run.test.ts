@@ -8,6 +8,7 @@ import { Type } from "typebox";
 import { createRunContext } from "../context/run-context.js";
 import { runAgent, stopAgentRun } from "./run.js";
 import { projectHistory } from "../presentation.js";
+import { installStopHooks } from "./stop-state.js";
 import { cancelLaneOperation } from "./build-runtime.js";
 import type { HarnessRuntime } from "./build-runtime.js";
 
@@ -56,20 +57,23 @@ for (const [agentId, stopBeforeText] of [["main", false], ["creator-agent", fals
 }
 
 
-test("stopping a live tool preserves cancellation results and the next turn succeeds", async () => {
+test("stopping lets a live tool finish once without aborting its signal and the next turn succeeds", async () => {
   const repo=new MemorySessionRepo();const session=await repo.create({},TODO_CONTEXT);
   const faux=fauxProvider();const models=createModels();models.setProvider(faux.provider);
   faux.setResponses([fauxAssistantMessage(fauxToolCall("slow_tool",{})),fauxAssistantMessage("next answer")]);
   let started!:()=>void;const ready=new Promise<void>(resolve=>{started=resolve;});
+  let finishTool!: () => void;
+  let toolWasAborted = false;
   let effects=0;
   const tool={name:"slow_tool",label:"slow",description:"test",parameters:Type.Object({}),replay:"never" as const,
     execute:async(_id:unknown,_args:unknown,_update:unknown,_toolContext:unknown,_invocation:unknown,context:any)=>{
       effects++;started();
-      await new Promise<void>(resolve=>context.abortSignal.addEventListener("abort",resolve,{once:true}));
-      context.abortSignal.throwIfAborted();
+      await new Promise<void>(resolve=>{ finishTool = resolve; });
+      toolWasAborted = context.abortSignal.aborted;
       return {content:[{type:"text" as const,text:"finished"}],details:{}};
     }};
   const {harness}=await AgentHarness.create({session,models,model:faux.getModel(),tools:[tool],systemPrompt:"test"},TODO_CONTEXT);
+  installStopHooks(harness);
   const lane=await harness.lane("main",{createAt:null},TODO_CONTEXT);
   let context: Parameters<HarnessRuntime["prompt"]>[1];
   harness.hooks.on("before_run_end",(_event,ctx)=>{assert.equal(createRunContext.read(ctx).userId,"owner");return undefined;});
@@ -79,12 +83,16 @@ test("stopping a live tool preserves cancellation results and the next turn succ
   try {
     const turn=runAgent(managed,"tool turn",new AbortController().signal,{},async()=>{});
     const rejected=assert.rejects(turn,{name:"AbortError"});await ready;
-    await stopAgentRun(managed.id);await rejected;
+    const stopping = stopAgentRun(managed.id);
+    await new Promise(resolve => setImmediate(resolve));
+    finishTool();
+    await stopping;await rejected;
     const entries=await lane.findEntries({order:"newestFirst"},TODO_CONTEXT);
-    assert.ok(entries.some(entry=>entry.type==="message"&&entry.message.role==="toolResult"&&entry.message.isError));
+    assert.ok(entries.some(entry=>entry.type==="message"&&entry.message.role==="toolResult"&&!entry.message.isError));
     assert.equal(projectHistory(entries,[]).at(-1)?.state,"stopped");
     assert.equal(await runAgent(managed,"next",new AbortController().signal,{},async()=>{}),"next answer");
     assert.equal(effects,1);
+    assert.equal(toolWasAborted, false);
   }finally {await harness.close(TODO_CONTEXT);await repo.close(TODO_CONTEXT);}
 });
 

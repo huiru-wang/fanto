@@ -89,3 +89,23 @@ test("Authorized Creator Context includes Goal, existing Project and linked Reco
   assert.deepEqual(result.records.data.map(record=>record.id),[recordId]);
   assert.deepEqual(calls,[{userId:"owner",projectId,limit:12}]);
 });
+
+test("image_generate sends thumbnail reference URLs to the model", async () => {
+  const referenceUrls = ["https://storage.test/a.thumbnail-v1.webp"];
+  const service = new CreativeService({} as never, {} as never,
+    {find: async () => ({projectId: "project", sessionId: "session", status: "running"})} as never, {} as never,
+    {
+      withGenerationReferences: async (user: string, ids: string[], project: string, operation: (urls: string[]) => Promise<unknown>, variant: string) => {
+        assert.equal(user, "owner"); assert.deepEqual(ids, ["a"]); assert.equal(project, "project"); assert.equal(variant, "thumbnail");
+        return operation(referenceUrls);
+      },
+      createGeneratedImage: async () => ({mediaId: "generated", mimeType: "image/png"}),
+    } as never,
+    {
+      generate: async (input: {referenceUrls: string[]}) => { assert.deepEqual(input.referenceUrls, referenceUrls); return {recovery: {}}; },
+      download: async () => ({data: Buffer.from("png"), width: 1024, height: 1024}),
+    } as never, async () => ({}));
+  const result = await service.generateImage({userId: "owner", sessionId: "session", projectId: "project"},
+    {prompt: "绘制新风格", referenceMediaIds: ["a"], aspectRatio: "square"});
+  assert.equal(result.mediaId, "generated");
+});

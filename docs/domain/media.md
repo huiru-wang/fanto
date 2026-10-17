@@ -1,6 +1,6 @@
 # Media
 
-Media 负责 Record 使用的图片与音频资产。二进制内容存储在阿里云 OSS，业务元数据保存在 `media_assets`。
+Media 负责 Record 使用的图片与音频资产。二进制内容存储在站点配置的阿里云 OSS 或 Cloudflare R2，业务元数据保存在 `media_assets`。
 
 ## 支持格式
 
@@ -76,7 +76,7 @@ Audio block 在 Record postprocess 中调用 ASR。成功后，transcription 与
 
 ## Project 媒体与创作图片
 
-`image_generate` 以多张用户可访问的 ready 参考图片调用模型，服务端可短暂生成适配 JPEG 和签名链接，调用完成删除临时对象。模型每次只返回单张图片，完成下载/解码后保存到 `users/{userId}/project/{projectId}/{mediaId}.{ext}`，原图和小图均存储成功后注册新的 ready Media，并只给 Agent 返回 mediaId/mimeType/width/height。不使用 Run、预算、图片槽位或独立进度表。
+`image_generate` 以多张用户可访问的 ready 参考图片调用模型，按输入顺序传入已保存 thumbnail 的 15 分钟签名地址，不下载或重新转码原图；缺少小图时复用媒体补生成逻辑，失败中止请求，不回退原图。`image_review` 继续使用原图生成临时适配 JPEG，调用完成后删除临时对象。模型每次只返回单张图片，完成下载/解码后保存到 `users/{userId}/project/{projectId}/{mediaId}.{ext}`，原图和小图均存储成功后注册新的 ready Media，并只给 Agent 返回 mediaId/mimeType/width/height。不使用 Run、预算、图片槽位或独立进度表。
 
 `project_manage` 在最终保存 Project content/coverMediaId 时校验每个媒体归属：原 objectKey 已在当前 Project 前缀下则直接使用，否则复制 OSS 对象、创建新的 mediaId、独立原图与小图和媒体资产，将最终内容中的引用换成新的 ID。同请求重复媒体引用复制一次。仅用于参考、不进入正式作品的 Record 图片无需副本。
 
@@ -88,4 +88,4 @@ Audio block 在 Record postprocess 中调用 ASR。成功后，transcription 与
 
 ## 存储适配
 
-业务依赖 `ObjectStorage` 的异步签名、标准 HEAD、限量读取、写入 metadata 和删除接口；启动工厂当前装配 `AliyunStorage`。原图/小图选择、生成和用户权限均在媒体业务层。接入 R2 需要实现同一 Client、增加配置和工厂分支，并配置对应资源、域名和 CORS；业务与 HTTP 契约不变。
+业务依赖 `ObjectStorage` 的异步签名、标准 HEAD、限量读取、写入 metadata 和删除接口；启动工厂按 `OBJECT_STORAGE_PROVIDER` 装配 `AliyunStorage` 或 `R2Storage`。原图/小图选择、生成和用户权限均在媒体业务层，两种 Client 不接收 variant、不隐式创建或删除小图；业务与 HTTP 契约相同。R2 使用 AWS S3 SDK v3、Region auto 和 S3 API 预签名，ETag 作为不透明字符串保留，源 ETag / 版本等 metadata 在两种实现中归一化。站点资源与 CORS 配置见 [配置](../engineering/configuration.md#对象存储选择)。

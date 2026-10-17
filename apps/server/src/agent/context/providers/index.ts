@@ -13,7 +13,7 @@ export function createContextProviders(dependencies: {
   return [
     new ProposalContextProvider(dependencies.fanto),
     new CreatorContextProvider(dependencies.fanto),
-    new CharacterProvider(),
+    new CharacterProvider(dependencies.fanto),
     new CurrentTimeProvider(),
     new MemoryProvider(dependencies.fanto),
     createRecordContextProvider({ mode: "recent", client: dependencies.fanto }),

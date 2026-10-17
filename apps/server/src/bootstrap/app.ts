@@ -1,4 +1,6 @@
 import type { CreativeService } from "../domain/projects/creative-service.js";
+import { CharacterService } from "../domain/character.js";
+import { createCharacterRoutes } from "../routes/character.js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { nowIso } from "../infrastructure/time.js";
@@ -28,7 +30,7 @@ const redact = (value: unknown): unknown => {
     /authorization|password|secret|token|key|nonce|display.?hint|email/i.test(key) ? [key, "[REDACTED]"] : [key, redact(item)],
   ));
 };
-export const logSafeBody = (path: string, value: unknown) => /^\/api\/media\/[^/]+\/url$/.test(path)
+export const logSafeBody = (path: string, value: unknown) => path === "/api/character" ? "[REDACTED]" : /^\/api\/media\/[^/]+\/url$/.test(path)
     ? "[REDACTED]"
   : redact(value);
 const jsonBody = async (response: Response, path: string) => {
@@ -47,6 +49,7 @@ export type ServerServices = {
   projects?: ProjectService;
   proposals?: ProposalService;
   agent?: AgentRuntime;
+  character?: CharacterService;
   healthCheck?: () => Promise<void>;
 };
 
@@ -57,7 +60,7 @@ export function createApp(services: ServerServices) {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });
     return c.json({ success: false, errorCode: "INTERNAL_ERROR", errorMsg: "Internal server error" }, 500);
   });
-  app.use("*", cors({ origin: "*", allowHeaders: ["Authorization", "Content-Type", "X-Client-Fingerprint", "X-Trace-Id", "X-Time-Zone"], allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] }));
+  app.use("*", cors({ origin: "*", allowHeaders: ["Authorization", "Content-Type", "X-Client-Fingerprint", "X-Trace-Id", "X-Time-Zone"], allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"] }));
   app.use("/api/projects/*", bodyLimit({ maxSize: 13 * 1024 * 1024, onError: c => c.json({ success: false, result: null, errorCode: "CONTENT_TOO_LARGE", errorMsg: "Content too large" }, 413) }));
   app.use("/api/*", async (c, next) => {
     const startedAt = performance.now();
@@ -105,6 +108,7 @@ export function createApp(services: ServerServices) {
   if (auth) app.route("/api", createAuthRoutes(auth));
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));
+  if (services.character) app.route("/api/character", createCharacterRoutes(services.character));
   if (projectService) app.route("/api", createProjectRoutes(projectService));
   if (services.proposals) app.route("/api", createProposalRoutes(services.proposals, services.agentQueue));
 

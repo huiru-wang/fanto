@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mediaMime, mediaObjectKey, normalizeMimeType } from "./mime.js";
 import { PostgresMediaRepository, type MediaAsset } from "./postgres-repository.js";
 import { generateThumbnail, inspectImage, InvalidImageError, storedThumbnail, thumbnailObjectKey, ThumbnailWork, type MediaVariant } from "./image-thumbnail.js";
-import { StorageError, type ObjectStorage } from "../../infrastructure/clients/storage/object-storage.js";
+import { StorageError, type ObjectMetadata, type ObjectStorage } from "../../infrastructure/clients/storage/object-storage.js";
 import type { Transaction, Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
 import { logWarn } from "../../infrastructure/logging/logger.js";
@@ -33,12 +33,13 @@ export class MediaService {
       }
     }));
   }
-  private prepareImage(key: string, mimeType: string, maxBytes: number, sourceData?: Buffer) {
+  private prepareImage(key: string, mimeType: string, maxBytes: number, sourceData?: Buffer, sourceHead?: ObjectMetadata) {
     const deadline = Date.now() + 60_000;
     return this.thumbnailWork.run(key, async () => {
       const checkDeadline = () => { if (Date.now() >= deadline) throw new Error("Thumbnail processing timed out"); };
       checkDeadline();
-      const source = await this.oss.head(key);
+      // Upload completion already checked this object: avoid a second remote HEAD.
+      const source = sourceHead ?? await this.oss.head(key);
       if (!source) throw new StorageError("NoSuchKey", 404);
       if (source.bytes > maxBytes) throw new InvalidImageError();
       const data = sourceData ?? await this.oss.getObject(key, { maxBytes });
@@ -106,13 +107,19 @@ export class MediaService {
     await Promise.allSettled(keys.map(key => this.oss.remove(key)));
   }
 
-  async withGenerationReferences<T>(userId: string, ids: string[], projectId: string, operation: (urls: string[]) => Promise<T>) {
+  async withGenerationReferences<T>(userId: string, ids: string[], projectId: string, operation: (urls: string[]) => Promise<T>, variant: MediaVariant = "original") {
     const assets = await this.media.findMediaByIds(ids, userId);
     if (assets.length !== ids.length || assets.some(a => a.status !== "ready" || a.mediaType !== "image" || a.bytes > 20 * 1024 * 1024)) throw new Error("SOURCE_MEDIA_UNAVAILABLE");
     const keys: string[] = [], urls: string[] = [];
     try {
       for (const id of ids) {
         const asset = assets.find(a => a.mediaId === id)!;
+        if (variant === "thumbnail") {
+          const thumbnail = await this.resolveThumbnail(asset);
+          if (!thumbnail || Math.max(thumbnail.width, thumbnail.height) / Math.min(thumbnail.width, thumbnail.height) > 8) throw new Error("SOURCE_MEDIA_UNAVAILABLE");
+          urls.push((await this.oss.signRead(thumbnail.objectKey, 900)).url);
+          continue;
+        }
         const data = await this.oss.getObject(asset.objectKey, { maxBytes: 20 * 1024 * 1024 });
         if (data.length > 20 * 1024 * 1024) throw new Error("SOURCE_MEDIA_UNAVAILABLE");
         const image = sharp(data, { limitInputPixels: 40_000_000, failOn: "warning" }), meta = await image.metadata();
@@ -143,7 +150,7 @@ export class MediaService {
       const head = await this.oss.head(current.objectKey);
       if (!head) return { kind: "not_uploaded" } as const;
       if (head.bytes !== current.bytes || (current.mediaType === "image" && head.bytes > 10 * 1024 * 1024) || normalizeMimeType(head.contentType) !== current.mimeType) return { kind: "mismatch" } as const;
-      const prepared = current.mediaType === "image" ? await this.prepareImage(current.objectKey, current.mimeType, 10 * 1024 * 1024) : undefined;
+      const prepared = current.mediaType === "image" ? await this.prepareImage(current.objectKey, current.mimeType, 10 * 1024 * 1024, undefined, head) : undefined;
       const result = await this.media.complete(id, userId, prepared ? { ...capture, ...prepared.capture } : capture, prepared?.thumbnail);
       return result ? { kind: "ok", media: result } as const : { kind: "incomplete" } as const;
     } catch (error) {
@@ -152,19 +159,23 @@ export class MediaService {
     }
   }
   async readyMetadata(userId: string, id: string) { const asset = await this.media.findMedia(id, userId); return asset?.status === "ready" ? metadata(asset) : null; }
+  private async resolveThumbnail(asset: MediaAsset) {
+    const thumbnail = storedThumbnail(asset.extData, asset.objectKey);
+    if (thumbnail) return thumbnail;
+    const prepared = await this.prepareImage(asset.objectKey, asset.mimeType, 20 * 1024 * 1024);
+    const saved = await this.media.saveThumbnail(asset.mediaId, asset.userId, prepared.thumbnail);
+    if (!saved) { await this.oss.remove(prepared.thumbnail.objectKey).catch(() => {}); return null; }
+    const savedThumbnail = storedThumbnail(saved.extData, asset.objectKey);
+    if (!savedThumbnail) throw new Error("Thumbnail unavailable");
+    return savedThumbnail;
+  }
   async readUrl(userId: string, id: string, variant: MediaVariant = "original") {
     const asset = await this.media.findMedia(id, userId);
     if (asset?.status !== "ready") return null;
     let key = asset.objectKey;
     if (asset.mediaType === "image" && variant === "thumbnail") {
-      let thumbnail = storedThumbnail(asset.extData, key);
-      if (!thumbnail) {
-        const prepared = await this.prepareImage(key, asset.mimeType, 20 * 1024 * 1024);
-        const saved = await this.media.saveThumbnail(id, userId, prepared.thumbnail);
-        if (!saved) { await this.oss.remove(prepared.thumbnail.objectKey).catch(() => {}); return null; }
-        thumbnail = storedThumbnail(saved.extData, key);
-      }
-      if (!thumbnail) throw new Error("Thumbnail unavailable");
+      const thumbnail = await this.resolveThumbnail(asset);
+      if (!thumbnail) return null;
       key = thumbnail.objectKey;
     }
     return this.oss.signRead(key, 300);

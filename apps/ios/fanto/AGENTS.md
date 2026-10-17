@@ -26,9 +26,12 @@
 - 脉络页的待确认 Proposal 使用堆叠卡片，按服务端顺序上下滑动浏览，保留按钮与 VoiceOver 等价操作；切换不执行接受 / 拒绝，刷新时保持当前 Proposal 身份。
 - 脉络页跟进新建议；后台提议分析全程静默，信息不足时不提议。Project 详情读取通用 Session History，后台过程订阅只读 Events，继续创作走统一 Agent Stream，并与主对话共享 Tool Presentation/消息 UI；已有作品右下角允许进入同一 Project Session 继续对话，项目内容以 Server 当前版本为准。
 - 音频 Record 当前主要展示播放动作与时长，不在客户端自行生成 AI 摘要。
-- 停止对话调用通用 Session stop 接口，等待服务端取消与记录保存后才恢复发送；stop 请求最多等待 25 秒；确认后恢复发送，再补载历史，补载失败保留本地内容，旧请求不能覆盖新轮次。历史的 `state: stopped` 恢复为已停止消息，空输出也需保留停止状态。
+- 停止调用通用 Session stop：202 表示请求已接受、工具仍在结束，保持原 SSE，显示“正在结束当前操作”，可编辑草稿但不可发送；终态或 History 确认空闲后恢复发送，不等数据库历史保存。已开始工具不被用户停止中断。旧请求不得覆盖新轮次；History 的 stopped 部分回复须恢复，断线核对 running/stopping，不自动重发。
+- 对话图片预览读取 thumbnail，点击全屏查看读取 original；音频读取原始媒体。
 - Fanto 对话按 SSE message_start/message_end 划分文本块，与工具活动按事件顺序展示，仅 done 表示回复完成；须按 Server 的 SSE `presentation` 渲染可见进度；`collect_user_input` 的结构化结果渲染为导航区域下方的逐题表单。`required: false` 的表单项允许跳过；不展示内部工具参数、结果或 interaction 标记。对话初次出现时定位到最新消息，向上滚动到历史顶部时使用 Server `nextCursor` 读取更早页，并保持阅读位置。不提供 Task 页面、Task 卡片或 Task 文件预览。
 
 修改网络契约前先核对 `../../../docs/api/http-api.md`。
 
 - Record 附件草稿保留上传凭据和阶段；失败不自动重试，统一提示“保存失败，请重试”，用户再次保存后才继续。图片 ready 包含服务端小图完成，客户端通过 variant 选择读取。
+
+- 主对话断线、前台恢复和载入运行中会话时核对 History `running`；恢复期间保留内容、锁住发送，空闲后补载历史，不自动重放 POST。Tab 切换保持根视图持有的 ConversationStore 和运行任务。

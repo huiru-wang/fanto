@@ -11,7 +11,7 @@ Fanto 是建立在个人长期记录上的 AI 产品：**记住 → 发现 → �
 - `apps/h5`：React/Vite 受控测试客户端，Record、多轮对话、Proposal / Project 及作品预览。
 - `packages/shared`：跨端类型和 Record 相关共享定义。
 
-Main Chat 与 Project Chat **共用一套 Agent 多轮协议**：`POST /api/agent/stream`、`GET /api/agent/sessions/:id/history` 和只读 `GET /api/agent/sessions/:id/events`。首次 Creator 创作通过非持久化后台执行队列启动，继续创作使用绑定的 Creator Session；没有 Project 专属聊天 API。
+Agent 会话在单进程内存运行，稳定历史异步尽力保存；数据库保存不阻塞回复，重启可能丢失最近消息。Main Chat 与 Project Chat **共用一套 Agent 多轮协议**：`POST /api/agent/stream`、`GET /api/agent/sessions/:id/history` 和只读 `GET /api/agent/sessions/:id/events`。首次 Creator 创作通过非持久化后台执行队列启动，继续创作使用绑定的 Creator Session；没有 Project 专属聊天 API。
 
 ## 本地运行
 
@@ -32,7 +32,7 @@ pnpm deploy          # 已配置环境中的应用更新
 pnpm deploy:nginx    # 初次完整发布或 Nginx 配置更新
 ```
 
-创作自动提议/执行由 `CREATIVE_ENABLED=true` 控制；需要有效模型与 OSS 凭据。后台内存队列不提供消息持久化或重启恢复，不能视为可靠任务队列。
+创作自动提议/执行由 `CREATIVE_ENABLED=true` 控制；需要有效模型与所选存储的凭据（阿里云 OSS / Cloudflare R2），配置见 [服务端配置](docs/engineering/configuration.md#对象存储选择)。后台内存队列不提供消息持久化或重启恢复，不能视为可靠任务队列。
 
 ## 文档
 

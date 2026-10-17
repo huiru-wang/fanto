@@ -18,6 +18,7 @@ import { createSessionRoutes } from "./sessions.js";
 import { runWithRequestPrincipal } from "../request-user.js";
 import { AgentSessionManager } from "../../agent/harness/session-manager.js";
 import { cancelLaneOperation } from "../../agent/harness/build-runtime.js";
+import { installStopHooks } from "../../agent/harness/stop-state.js";
 import { runAgent, stopAgentRun } from "../../agent/harness/run.js";
 
 const testUrl=process.env.TEST_DATABASE_URL;
@@ -46,6 +47,7 @@ async function fixture(timeoutMs?:number, stopTimeoutMs?:number, withTool=false)
   let effects=0;
   const tools=withTool ? [{name:"effect",label:"effect",description:"test",parameters:Type.Object({}),replay:"never" as const,execute:async()=>{effects++;return {content:[{type:"text" as const,text:"saved"}],details:{}};}}] : [];
   const {harness}=await AgentHarness.create({session:stored,models,model:faux.getModel(),systemPrompt:"test",tools},TODO_CONTEXT);
+  installStopHooks(harness);
   const lane=await harness.lane("main",{createAt:null},TODO_CONTEXT);
   let context:Context=TODO_CONTEXT;
   const session={id:stored.metadata.id,userId:"owner",agentId:"main",runtime:{
@@ -54,7 +56,7 @@ async function fixture(timeoutMs?:number, stopTimeoutMs?:number, withTool=false)
     abort:()=>cancelLaneOperation(lane,context),appendCustomEntry:(type:string,data:any)=>lane.appendCustomEntry(type,data,TODO_CONTEXT),
   }};
   const manager=Object.create(AgentSessionManager.prototype) as AgentSessionManager;
-  Object.assign(manager,{running:new Set(),idleWaiters:new Map(),assertOwnership:async()=>{},resolveAgentId:async()=>"main",acquire:async()=>session,
+  Object.assign(manager,{checkpoint:async()=>{},restored:()=>false,running:new Set(),idleWaiters:new Map(),assertOwnership:async()=>{},resolveAgentId:async()=>"main",acquire:async()=>session,
     history:async()=>({agentId:"main",entries:await lane.findEntries({order:"newestFirst"},TODO_CONTEXT),hasMore:false,nextCursor:null}),toolsForHistory:()=>[],
   });
   const registry={get:()=>({id:"main"})};
@@ -142,14 +144,14 @@ test("real HTTP socket: stop returns, partial history survives and next turn com
   }finally{await reader?.cancel();(server as Server).closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));await f.close();}
 });
 
-test("transport output deadline cancels a stalled turn without a stop request",async()=>{
+test("transport detaches a stalled reader while the turn completes in memory",async()=>{
   const f=await fixture();const response=await f.chat("first");const reader=response.body!.getReader();
   try {
     const first=await reader.read();assert.equal(first.done,false);
     await deadline(f.manager.waitUntilIdle(f.session.id),6500);
     assert.equal((await f.lane.inspectExecution(TODO_CONTEXT)).current,null);
     const history=await runWithRequestPrincipal(f.principal,()=>f.stops.request(`/sessions/${f.session.id}/history`));
-    assert.equal((await history.json() as any).result.messages.at(-1).state,"stopped");
+    assert.equal((await history.json() as any).result.messages.at(-1).state,undefined);
     const next=await f.chat("next");assert.match(await deadline(next.text()),/event: done/);
   }finally{await reader.cancel();await f.close();}
 });
@@ -165,7 +167,7 @@ for(const phase of ["turn_start","message_start","delta","message_end","tool_sta
     const run=runAgent(f.session as never,"first",new AbortController().signal,{},async event=>{if(event.type===phase){reached();await held;}});
     const cancelled=assert.rejects(run,{name:"AbortError"}).finally(release);
     try {
-      await deadline(ready);assert.equal(await deadline(stopAgentRun(f.session.id)),true);await cancelled;
+      await deadline(ready);const stopping=stopAgentRun(f.session.id);unblock();assert.equal(await deadline(stopping),true);await cancelled;
       assert.equal((await f.lane.inspectExecution(TODO_CONTEXT)).current,null);
       const history=await runWithRequestPrincipal(f.principal,()=>f.stops.request(`/sessions/${f.session.id}/history`));
       assert.equal((await history.json() as any).result.messages.at(-1).state,"stopped");

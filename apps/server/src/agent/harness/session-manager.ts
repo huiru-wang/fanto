@@ -4,7 +4,10 @@ import { TODO_CONTEXT, type AgentHarness, type Entry, type ExecutionToolContext,
 import type { Models } from "@earendil-works/pi-ai";
 import { type Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
-import { PgSessionRepo } from "../session/pg-session-repo.js";
+import { logWarn } from "../../infrastructure/logging/logger.js";
+import type { SnapshotStore } from "../session/session-snapshots.js";
+import { liveAssistantEntry } from "./run.js";
+import { LiveSessionRepo } from "../session/live-session-repo.js";
 import type { AgentDefinition } from "./definition.js";
 import { buildRuntime, type HarnessRuntime } from "./build-runtime.js";
 import { createTools } from "../tools/index.js";
@@ -34,7 +37,7 @@ export type ManagedSession = {
 };
 
 export class AgentSessionManager {
-  private readonly repository: PgSessionRepo;
+  private readonly repository: LiveSessionRepo;
   private readonly sessions = new Map<string, ManagedSession>();
   private readonly running = new Set<string>();
   private readonly idleWaiters = new Map<string, Set<(error?: unknown) => void>>();
@@ -45,21 +48,25 @@ export class AgentSessionManager {
     private readonly skills: SkillLoader,
     private readonly db: Kysely<DB>,
     private readonly workspaceRoot: string,
+    snapshotStore?: SnapshotStore,
   ) {
     mkdirSync(workspaceRoot, { recursive: true });
-    this.repository = new PgSessionRepo(db);
+    this.repository = new LiveSessionRepo(db, snapshotStore);
   }
 
   async create(definition: AgentDefinition, userId: string): Promise<ManagedSession> {
+    await this.makeRoom();
     const id = randomUUID();
     const session = await this.repository.create({ id }, TODO_CONTEXT);
     try {
       const managed = await this.createManaged(session, id, userId, definition);
       await this.writeBinding(managed, definition);
       this.sessions.set(id, managed);
+      await this.checkpoint(id);
       return managed;
     } catch (cause) {
       await session.close(TODO_CONTEXT);
+      this.repository.closedHandle(id);
       throw cause;
     }
   }
@@ -75,11 +82,12 @@ export class AgentSessionManager {
       if (this.running.has(id)) throw new SessionBusyError("Session is already running");
       return this.replaceCachedHarness(cached, definition);
     }
+    await this.makeRoom();
     return this.openAndConfigure(definition, id, userId);
   }
 
   async resolveAgentId(id: string, userId: string): Promise<string> {
-    const { owner, close } = await this.openOwner(id);
+    const { owner, close } = await this.openOwner(id, userId);
     try {
       if (owner.userId !== userId) throw new SessionOwnershipError("Session belongs to another user");
       return owner.agentId;
@@ -89,7 +97,7 @@ export class AgentSessionManager {
   }
 
   async assertOwnership(id: string, userId: string): Promise<void> {
-    const { close, owner } = await this.openOwner(id);
+    const { close, owner } = await this.openOwner(id, userId);
     try {
       if (owner.userId !== userId) throw new SessionOwnershipError("Session belongs to another user");
     } finally {
@@ -109,6 +117,8 @@ export class AgentSessionManager {
       this.idleWaiters.delete(session.id);
     };
   }
+
+  isRunning(id: string): boolean { return this.running.has(id); }
 
   async waitUntilIdle(id: string): Promise<void> {
     if (!this.running.has(id)) return;
@@ -141,6 +151,8 @@ export class AgentSessionManager {
         for (const entry of batch) if (isVisibleHistoryEntry(entry)) visible.push(entry);
         exhausted = batch.length < 100;
       }
+      const live = cursor === undefined ? liveAssistantEntry(id) : undefined;
+      if (live) visible.unshift(live);
       const data = visible.slice(0, limit);
       return {
         agentId,
@@ -173,9 +185,21 @@ export class AgentSessionManager {
     if (this.running.has(id) && !reservedOwner) throw new SessionBusyError("Session is still running");
     const current = this.sessions.get(id);
     if (!current) return;
+    await this.checkpoint(id);
     this.sessions.delete(id);
     await current.runtime.close();
+    this.repository.closedHandle(id);
   }
+
+  async checkpoint(id: string): Promise<void> {
+    const current = this.sessions.get(id);
+    if (current) {
+      try { await this.repository.checkpoint(id, current.userId, current.agentId); }
+      catch { logWarn("session-snapshot", "capture failed", {sessionId: id}); }
+    }
+  }
+
+  restored(id: string): boolean { return this.repository.restored(id); }
 
   async close(): Promise<void> {
     await Promise.all([...this.sessions.values()].map(item => item.runtime.close()));
@@ -183,16 +207,31 @@ export class AgentSessionManager {
     await this.repository.close(TODO_CONTEXT);
   }
 
+  private async makeRoom(): Promise<void> {
+    if (this.sessions.size < 128) return;
+    for (const [id, current] of this.sessions) {
+      if (!this.running.has(id) && this.repository.isSaved(id)) {
+        this.sessions.delete(id);
+        await current.runtime.close();
+        this.repository.closedHandle(id);
+        await this.repository.evict(id);
+        return;
+      }
+    }
+    throw new SessionBusyError("Session memory capacity reached");
+  }
+
   private async replaceCachedHarness(current: ManagedSession, definition: AgentDefinition): Promise<ManagedSession> {
     this.sessions.delete(current.id);
     await current.runtime.close();
+    this.repository.closedHandle(current.id);
     return this.openAndConfigure(definition, current.id, current.userId);
   }
 
   private async openAndConfigure(definition: AgentDefinition, id: string, userId?: string): Promise<ManagedSession> {
-    const metadata = await this.repository.getById(id);
+    const metadata = await this.repository.getById(id, userId);
     if (!metadata) throw new SessionNotFoundError("Session not found");
-    const session = await this.repository.open(metadata, TODO_CONTEXT);
+    const session = await this.repository.open(metadata, TODO_CONTEXT, true);
     try {
       const owner = await this.readOwner(session);
       if (!owner) throw new SessionNotFoundError("Session is not an agent session");
@@ -206,6 +245,7 @@ export class AgentSessionManager {
       return managed;
     } catch (cause) {
       await session.close(TODO_CONTEXT);
+      this.repository.closedHandle(id);
       throw cause;
     }
   }
@@ -255,7 +295,7 @@ export class AgentSessionManager {
       this.assertOwner(cached, userId);
       return { agentId: cached.agentId, session: cached.session, close: async () => {} };
     }
-    const { session, owner, close } = await this.openOwner(id);
+    const { session, owner, close } = await this.openOwner(id, userId);
     if (owner.userId !== userId) {
       await close();
       throw new SessionOwnershipError("Session belongs to another user");
@@ -265,6 +305,7 @@ export class AgentSessionManager {
 
   private async openOwner(
     id: string,
+    userId: string,
   ): Promise<{ session: Session; owner: SessionOwner; close: () => Promise<void> }> {
     if (!validSessionId.test(id)) throw new SessionNotFoundError("Invalid session id");
     const cached = this.sessions.get(id);
@@ -275,7 +316,7 @@ export class AgentSessionManager {
         close: async () => {},
       };
     }
-    const metadata = await this.repository.getById(id);
+    const metadata = await this.repository.getById(id, userId);
     if (!metadata) throw new SessionNotFoundError("Session not found");
     const session = await this.repository.open(metadata, TODO_CONTEXT);
     const owner = await this.readOwner(session);
@@ -283,7 +324,7 @@ export class AgentSessionManager {
       await session.close(TODO_CONTEXT);
       throw new SessionNotFoundError("Session is not an agent session");
     }
-    return { session, owner, close: () => session.close(TODO_CONTEXT) };
+    return { session, owner, close: () => this.repository.closeReadHandle(id) };
   }
 
   private async readOwner(session: Session): Promise<SessionOwner | undefined> {

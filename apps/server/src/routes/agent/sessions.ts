@@ -9,7 +9,7 @@ import { AgentSessionManager, SessionNotFoundError, SessionOwnershipError, Sessi
 import { sessionError } from "./errors.js";
 import { createSessionSchema, cursorSchema, limitSchema, sessionParamsSchema, traceIdSchema } from "./schemas.js";
 import { requireUserId } from "../request-user.js";
-import { stopAgentRun } from "../../agent/harness/run.js";
+import { requestAgentStop, isAgentStopping } from "../../agent/harness/run.js";
 import { projectHistory } from "../../agent/presentation.js";
 
 export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSessionManager, events?: SessionEventBus, stopTimeoutMs = 20_000): Hono {
@@ -37,17 +37,18 @@ export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSess
       // Ownership may finish after the response deadline: never cancel a later turn.
       if (expired) throw new Error("STOP_NOT_CONFIRMED");
       logInfo("agent-stop", "requested", {userId,sessionId:params.data.sessionId});
-      const idle = sessions.waitUntilIdle(params.data.sessionId);
-      const [stopped] = await Promise.all([stopAgentRun(params.data.sessionId),idle]);
-      logInfo("agent-stop", "run settled", {userId,sessionId:params.data.sessionId,stopped,durationMs:Date.now()-startedAt});
-      logInfo("agent-stop", "completed", {userId,sessionId:params.data.sessionId,stopped,durationMs:Date.now()-startedAt});
-      return stopped;
+      const result = requestAgentStop(params.data.sessionId);
+      if (result.stopping && !result.waitingForTools) {
+        // Allow cheap in-memory cancellation to finish; never wait for a running tool.
+        await Promise.race([sessions.waitUntilIdle(params.data.sessionId), new Promise<void>(resolve => setTimeout(resolve, 30))]);
+      }
+      return { stopped: result.accepted, stopping: sessions.isRunning(params.data.sessionId) };
     };
     try {
-      const stopped = await Promise.race([stop(), new Promise<never>((_,reject) => {
+      const result = await Promise.race([stop(), new Promise<never>((_,reject) => {
         timer=setTimeout(() => {expired=true;reject(new Error("STOP_NOT_CONFIRMED"));},stopTimeoutMs);
       })]);
-      return c.json({success:true,result:{sessionId:params.data.sessionId,stopped}});
+      return c.json({success:true,result:{sessionId:params.data.sessionId,...result}}, result.stopping ? 202 : 200);
     } catch(error) {
       logError("agent-stop", "failed", {userId,sessionId:params.data.sessionId,error:logSummary(error),durationMs:Date.now()-startedAt});
       if (expired || !(error instanceof SessionNotFoundError || error instanceof SessionOwnershipError || error instanceof SessionBusyError)) return c.json({error:"停止尚未确认，请重试。"},503);
@@ -86,6 +87,7 @@ export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSess
     const userId = requireUserId(c.req.raw);
     if (!params.success || !cursor.success || !limit.success) return c.json({ error: "sessionId, cursor, or limit is invalid" }, 400);
     try {
+      const running = sessions.isRunning(params.data.sessionId);
       const result = await sessions.history(params.data.sessionId, cursor.data, limit.data, userId);
       const definition = registry.get(result.agentId);
       if (!definition) return c.json({ error: "Agent not found" }, 404);
@@ -97,6 +99,9 @@ export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSess
           agentId: result.agentId,
           data: result.entries.filter(entry => !(entry.type === "custom" && entry.customType === "fanto.run_stopped")).map(redact),
           messages: projectHistory(result.entries, tools),
+          running,
+          stopping: isAgentStopping(params.data.sessionId),
+          restored: sessions.restored?.(params.data.sessionId) ?? false,
           hasMore: result.hasMore,
           nextCursor: result.nextCursor,
         },

@@ -43,7 +43,7 @@ export function installHarnessHooks(
   harness.hooks.on("after_response", async (event,context) => {
     const data=createRunContext.read(context);
     const startedAt=requests.get(data);
-    logRunEvent(data,"model response completed",{httpStatus:event.status,stopReason:event.message.stopReason,error:event.message.errorMessage?logSummary(event.message.errorMessage):undefined,durationMs:startedAt===undefined?undefined:Date.now()-startedAt});
+    logRunEvent(data,"model response ready after memory drain",{httpStatus:event.status,stopReason:event.message.stopReason,error:event.message.errorMessage?logSummary(event.message.errorMessage):undefined,durationMs:startedAt===undefined?undefined:Date.now()-startedAt});
     requests.delete(data);
     return undefined;
   });

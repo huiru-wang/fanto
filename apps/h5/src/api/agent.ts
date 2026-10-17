@@ -46,10 +46,14 @@ export type AgentHistoryMessage = {
 };
 
 type HistoryResult = {
+  running: boolean;
+  stopping?: boolean;
+  restored?: boolean;
   messages: AgentHistoryMessage[];
 };
 
 export type AgentStreamEvent =
+  | { type: "finalizing" }
   | { type: "processing" }
   | { type: "message_start" }
   | { type: "message_end" }
@@ -162,13 +166,16 @@ export async function createAgentSession(): Promise<string> {
   return result.sessionId;
 }
 
-export async function stopAgentSession(sessionId: string): Promise<void> {
-  await requestJson(`/api/agent/sessions/${encodeURIComponent(sessionId)}/stop`, {method:"POST",headers:agentHeaders(),signal:AbortSignal.timeout(25_000)});
+export async function stopAgentSession(sessionId: string): Promise<{ stopping: boolean }> {
+  return requestJson(`/api/agent/sessions/${encodeURIComponent(sessionId)}/stop`, {method:"POST",headers:agentHeaders(),signal:AbortSignal.timeout(25_000)});
+}
+
+export async function fetchAgentSnapshot(sessionId: string): Promise<HistoryResult> {
+  return requestJson<HistoryResult>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/history?limit=100`, { headers: agentHeaders() });
 }
 
 export async function fetchAgentHistory(sessionId: string): Promise<AgentHistoryMessage[]> {
-  const result = await requestJson<HistoryResult>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/history?limit=100`, { headers: agentHeaders() });
-  return result.messages;
+  return (await fetchAgentSnapshot(sessionId)).messages;
 }
 
 export async function streamAgentMessage(
@@ -205,6 +212,9 @@ export async function streamAgentMessage(
     }
     const rawData = data.join("\n");
     switch (eventName) {
+      case "finalizing":
+        onEvent({ type: "finalizing" });
+        break;
       case "turn_start":
         onEvent({ type: "processing" });
         break;

@@ -6,6 +6,7 @@ import {
   fetchAgentHistory,
   streamAgentMessage,
   stopAgentSession,
+  fetchAgentSnapshot,
   type AgentHistoryMessage,
   type AgentMessageBlock,
   type PresentedUserInputRequest,
@@ -101,17 +102,19 @@ function MessageBlock({
   );
 }
 
-export function ChatPage() {
+export function ChatPage({ active = true }: { active?: boolean }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [stopping, setStopping] = useState(false);
   const [responding, setResponding] = useState(false);
+  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const stoppingRef = useRef(false);
   const conversationRevision = useRef(0);
+  const [recovering, setRecovering] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const isNearEnd = useCallback(() => {
@@ -145,7 +148,10 @@ export function ChatPage() {
         await createFreshSession();
       } else {
         try {
-          const history = await fetchAgentHistory(stored);
+          const snapshot = await fetchAgentSnapshot(stored);
+          const history = snapshot.messages;
+          if (snapshot.restored) setRecoveryNotice("已恢复保存的历史，部分最近消息可能未保存。");
+          setRecovering(snapshot.running);
           setSessionId(stored);
           setMessages(history.map(message => ({ ...message, state: message.state ?? "complete" })));
         } catch (cause) {
@@ -166,10 +172,51 @@ export function ChatPage() {
   }, [createFreshSession, scrollToEnd]);
 
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (active) scrollToEnd(); }, [active, scrollToEnd]);
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  useEffect(() => {
+    if (!recovering || !sessionId) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      try {
+        const snapshot = await fetchAgentSnapshot(sessionId);
+        if (cancelled) return;
+        // This effect only runs after the original stream is detached; use the live server snapshot.
+        if (snapshot.running) {
+          setMessages(snapshot.messages.map(message => ({ ...message, state: message.state ?? "processing" })));
+          setStopping(snapshot.stopping === true);
+        }
+        if (!snapshot.running) {
+          setMessages(snapshot.messages.map(message => ({ ...message, state: message.state ?? "complete" })));
+          setRecovering(false);
+          setStopping(false);
+          stoppingRef.current = false;
+          setError(null);
+          return;
+        }
+      } catch { if (!cancelled) setError("正在恢复对话，请检查网络连接。"); }
+      if (!cancelled) timer = setTimeout(() => void refresh(), 1500);
+    };
+    void refresh();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [recovering, sessionId]);
+
+  useEffect(() => {
+    const reconcile = () => {
+      if (document.visibilityState === "visible" && !abortRef.current && !loading && sessionId) setRecovering(true);
+    };
+    window.addEventListener("focus", reconcile);
+    document.addEventListener("visibilitychange", reconcile);
+    return () => {
+      window.removeEventListener("focus", reconcile);
+      document.removeEventListener("visibilitychange", reconcile);
+    };
+  }, [loading, sessionId]);
+
   const newConversation = async () => {
-    if (stopping) return;
+    if (stopping || recovering) return;
     if (responding) abortRef.current?.abort();
     setResponding(false);
     setLoading(true);
@@ -184,7 +231,7 @@ export function ChatPage() {
   };
 
   const sendMessage = async (wireText: string, visibleText: string, clarificationInteractionId?: string) => {
-    if (!wireText.trim() || !sessionId || responding || stopping) return;
+    if (!wireText.trim() || !sessionId || responding || stopping || recovering) return;
     const userMessage: ChatMessage = {
       id: localId(),
       role: "user",
@@ -200,6 +247,7 @@ export function ChatPage() {
 
     setError(null);
     setMessages(current => [...current, userMessage, assistantMessage]);
+    setRecoveryNotice(null);
     setResponding(true);
     scrollToEnd();
 
@@ -221,8 +269,11 @@ export function ChatPage() {
         sessionId,
         wireText,
         event => {
-          if (abortRef.current !== controller || stoppingRef.current) return;
-          if (event.type === "processing") {
+          if (abortRef.current !== controller) return;
+          if (stoppingRef.current && !["tool_end", "stopped", "done", "error"].includes(event.type)) return;
+          if (event.type === "finalizing") {
+            // Informational only; history persistence never locks the composer.
+          } else if (event.type === "processing") {
             updateAssistant(message => message.state === "processing" ? message : { ...message, state: "processing" });
           } else if (event.type === "message_start") {
             textBlockOpen = false;
@@ -290,14 +341,18 @@ export function ChatPage() {
       if (controller.signal.aborted) {
         updateAssistant(message => ({ ...message, state: "stopped" }));
       } else {
+        setRecovering(true);
         updateAssistant(message => ({ ...message, state: "failed" }));
-        setError(cause instanceof Error ? cause.message : "这次回复没有完成");
+        setError(cause instanceof ApiError && cause.status === 409 ? "会话仍在处理中，正在恢复对话。" : "连接已中断，正在核对回复状态。");
+        if (cause instanceof ApiError && cause.status === 409) setDraft(current => current || visibleText);
       }
     } finally {
       if (abortRef.current === controller) {
         abortRef.current = null;
         setResponding(false);
-      }
+        stoppingRef.current = false;
+        setStopping(false);
+          }
       if (isNearEnd()) scrollToEnd();
     }
   };
@@ -321,14 +376,17 @@ export function ChatPage() {
   };
 
   const stop = async () => {
-    if (!sessionId || stopping) return;
+    if (!sessionId || stopping || recovering) return;
     stoppingRef.current=true;
     setStopping(true);
     const controller=abortRef.current;
     const revision=conversationRevision.current;
     const assistantId=messages.at(-1)?.id;
+    let waitingForTool = false;
     try {
-      await stopAgentSession(sessionId);
+      const result = await stopAgentSession(sessionId);
+      if (abortRef.current !== controller) return;
+      if (result.stopping) { waitingForTool = true; return; }
       controller?.abort();
       if (abortRef.current === controller || abortRef.current === null) {
         abortRef.current=null;
@@ -338,8 +396,8 @@ export function ChatPage() {
     } catch(cause) {
       setError(`停止未确认，请重试。${cause instanceof Error ? cause.message : ""}`);
       return;
-    } finally {stoppingRef.current=false;setStopping(false);}
-    // History is supplementary; sending resumes as soon as durable stop is confirmed.
+    } finally { if (!waitingForTool) { stoppingRef.current=false;setStopping(false); } }
+    // History is supplementary; sending resumes when the in-memory turn has finished.
     try {
       const history=await fetchAgentHistory(sessionId);
       if (conversationRevision.current===revision && !abortRef.current)
@@ -354,7 +412,7 @@ export function ChatPage() {
           <span className="chat-avatar"><Sparkles size={17} /></span>
           <div><strong>Fanto</strong><span>基于你的记录继续聊</span></div>
         </div>
-        <button className="secondary-button compact" onClick={() => void newConversation()} disabled={loading || stopping}>
+        <button className="secondary-button compact" onClick={() => void newConversation()} disabled={loading || stopping || recovering}>
           <Plus size={16} /><span>新对话</span>
         </button>
       </header>
@@ -405,7 +463,7 @@ export function ChatPage() {
             onChange={event => setDraft(event.target.value)}
             rows={1}
             placeholder="和 Fanto 聊聊"
-            disabled={loading || stopping || !sessionId}
+            disabled={loading || !sessionId}
             onKeyDown={event => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
@@ -415,14 +473,14 @@ export function ChatPage() {
           />
           <button
             className={`chat-send ${responding ? "stop" : ""}`}
-            disabled={stopping || (!responding && (!draft.trim() || !sessionId || loading))}
+            disabled={recovering || stopping || (!responding && (!draft.trim() || !sessionId || loading))}
             onClick={responding ? () => void stop() : () => void send()}
             aria-label={stopping ? "正在停止" : responding ? "停止生成" : "发送消息"}
           >
             {responding ? <Square size={15} fill="currentColor" /> : <ArrowUp size={19} />}
           </button>
         </div>
-        <span className="chat-disclaimer">{stopping ? "正在停止并保存本轮回复…" : "测试环境 · Fanto 可能会出错，请以原始记录为准"}</span>
+        <span className="chat-disclaimer">{stopping ? "正在结束当前操作，你可以先输入下一条消息…" : recovering ? "正在恢复对话，完成后可继续发送…" : recoveryNotice ?? "测试环境 · Fanto 可能会出错，请以原始记录为准"}</span>
       </div>
     </div>
   );
