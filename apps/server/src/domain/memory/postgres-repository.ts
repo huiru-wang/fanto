@@ -1,6 +1,6 @@
 import { sql, type Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
-import type { Memory, MemoryKind, MemorySearchResult } from "./model.js";
+import { memoryKinds, type Memory, type MemoryKind, type MemorySearchResult } from "./model.js";
 import type { MemoryRepository } from "./repository.js";
 
 const vectorLiteral = (embedding: number[]) => JSON.stringify(embedding);
@@ -28,7 +28,7 @@ export class PostgresMemoryRepository implements MemoryRepository {
   constructor(private readonly db: Kysely<DB>) {}
 
   async countByUser(userId: string, kind?: MemoryKind): Promise<number> {
-    let query = this.db.selectFrom("memories").select(({ fn }) => fn.count<number>("memory_id").as("count")).where("user_id", "=", userId);
+    let query = this.db.selectFrom("memories").select(({ fn }) => fn.count<number>("memory_id").as("count")).where("user_id", "=", userId).where("kind", "in", [...memoryKinds]);
     if (kind) query = query.where("kind", "=", kind);
     return Number((await query.executeTakeFirstOrThrow()).count);
   }
@@ -49,7 +49,7 @@ export class PostgresMemoryRepository implements MemoryRepository {
   }
 
   async list(userId: string, input: { kind?: MemoryKind; limit: number }): Promise<Memory[]> {
-    let query = this.db.selectFrom("memories").selectAll().where("user_id", "=", userId);
+    let query = this.db.selectFrom("memories").selectAll().where("user_id", "=", userId).where("kind", "in", [...memoryKinds]);
     if (input.kind) query = query.where("kind", "=", input.kind);
     const rows = await query.orderBy("updated_at", "desc").orderBy("memory_id", "desc").limit(input.limit).execute();
     return rows.map(toMemory);
@@ -75,7 +75,7 @@ export class PostgresMemoryRepository implements MemoryRepository {
       memory_id: string; user_id: string; kind: MemoryKind; content: string; created_at: Date; updated_at: Date; distance: number;
     }>`SELECT memory_id, user_id, kind, content, created_at, updated_at,
         (embedding <-> ${vectorLiteral(input.embedding)}::vector)::float8 AS distance
-      FROM memories WHERE user_id = ${input.userId}
+      FROM memories WHERE user_id = ${input.userId} AND kind IN (${sql.join(memoryKinds)})
       ORDER BY embedding <-> ${vectorLiteral(input.embedding)}::vector
       LIMIT ${input.limit}`.execute(this.db);
     return rows.rows.map(row => ({ ...toMemory(row), distance: Number(row.distance) }));

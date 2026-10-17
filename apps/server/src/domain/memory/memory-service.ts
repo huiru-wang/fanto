@@ -6,7 +6,7 @@ import { PostgresMemoryRepository } from "./postgres-repository.js";
 import type { MemoryRepository } from "./repository.js";
 
 const MAX_MEMORIES_PER_USER = 50;
-const MAX_GUIDANCE_PER_USER = 20;
+const MAX_PREFERENCES_PER_USER = 20;
 const MAX_CONTENT_LENGTH = 1_000;
 
 function normalizeContent(content: string): string {
@@ -41,7 +41,7 @@ export class MemoryService {
     assertKind(input.kind);
     const content = normalizeContent(input.content);
     if (await this.repository.countByUser(userId) >= MAX_MEMORIES_PER_USER) throw new Error(`A user can store at most ${MAX_MEMORIES_PER_USER} memories`);
-    if (input.kind === "guidance" && await this.repository.countByUser(userId, "guidance") >= MAX_GUIDANCE_PER_USER) throw new Error(`A user can store at most ${MAX_GUIDANCE_PER_USER} guidance memories`);
+    if (input.kind === "interaction_preferences" && await this.repository.countByUser(userId, "interaction_preferences") >= MAX_PREFERENCES_PER_USER) throw new Error(`A user can store at most ${MAX_PREFERENCES_PER_USER} interaction preference memories`);
     return this.repository.create({ memoryId: crypto.randomUUID(), userId, kind: input.kind, content, embedding: await this.embeddings.embed(content) });
   }
 
@@ -49,7 +49,7 @@ export class MemoryService {
     assertKind(input.kind);
     const existing = await this.repository.find(userId, memoryId);
     if (!existing) return undefined;
-    if (input.kind === "guidance" && existing.kind !== "guidance" && await this.repository.countByUser(userId, "guidance") >= MAX_GUIDANCE_PER_USER) throw new Error(`A user can store at most ${MAX_GUIDANCE_PER_USER} guidance memories`);
+    if (input.kind === "interaction_preferences" && existing.kind !== "interaction_preferences" && await this.repository.countByUser(userId, "interaction_preferences") >= MAX_PREFERENCES_PER_USER) throw new Error(`A user can store at most ${MAX_PREFERENCES_PER_USER} interaction preference memories`);
     const content = normalizeContent(input.content);
     return this.repository.update({ userId, memoryId, kind: input.kind, content, embedding: await this.embeddings.embed(content) });
   }

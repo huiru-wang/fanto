@@ -6,7 +6,7 @@
 
 - Record 支持文本、图片、音频、发生时间和结构化地点（地点名称、行政区、经纬度）。服务端保存原始 block，异步补充图片描述与音频转写；每条 Record 一个可派生的 pgvector 索引。内容更新/删除按 version 校验。
 - H5 可创建文字/图片/音频记录、录音、浏览时间线和搜索记录。iOS 支持日历/连续时间线、文字与最多五张图片创建、定位建议/地点搜索/地图选点、Record 删除、图片全屏与音频播放；iOS 创建页尚无录音入口。
-- Memory 是用户明确要求保存的独立 profile/goal/guidance；Main Agent 通过 memory_manage 创建、检索、修改与删除，guidance 可用于长期表达偏好。目前不提供从全部 Record/聊天自动无条件提取长期 Memory 的能力。
+- Memory 分个人背景、重要关系、近期关注、相处偏好；Main Agent 可判断保存明确且持续有用的用户自述，补充、纠错与递进更新原条目。个人背景与相处偏好默认注入，其余按话题检索。没有逐消息后台提取或整理；规则见 [Memory](../domain/memory.md)。
 
 ## 发现：Proposal
 
@@ -24,7 +24,7 @@
 ## Main Agent
 
 - H5 设置页可编辑并保存当前用户唯一的角色 Prompt 配置，主对话下一轮实时读取，无需新建 Session。
-- Fanto 主对话是一个持久 Session，支持文字 SSE、原生媒体展示、工具活动、必要时的澄清表单；按需使用 Record 检索和显式 Memory 管理。
+- Fanto 主对话是一个持久 Session，支持文字 SSE、原生媒体展示、工具活动、必要时的澄清表单；按需使用 Record 检索和 Memory 管理。
 - 当前只提供 Record、Proposal 和 Project 相关的发现与创作，不提供即时、延时或周期 Task，不提供提醒、通用文件交付及个人助理工作流。创作执行依赖 Proposal 接受后启动 Creator，已存在 Project 可继续对话；Main 尚不能直接创建 Project。
 - Proposal / Creator 使用进程内非持久化队列；没有消息持久化、自动重试或重启恢复保证。
 

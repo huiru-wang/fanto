@@ -1,4 +1,4 @@
-export const memoryKinds = ["profile", "goal", "guidance"] as const;
+export const memoryKinds = ["personal_background", "important_relationships", "current_focus", "interaction_preferences"] as const;
 
 export type MemoryKind = typeof memoryKinds[number];
 

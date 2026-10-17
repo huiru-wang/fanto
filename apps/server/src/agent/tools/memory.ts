@@ -5,17 +5,18 @@ import { createRunContext } from "../context/index.js";
 import type { FantoTool } from "./types.js";
 
 const memoryKind = Type.Union([
-  Type.Literal("profile"),
-  Type.Literal("goal"),
-  Type.Literal("guidance"),
+  Type.Literal("personal_background"),
+  Type.Literal("important_relationships"),
+  Type.Literal("current_focus"),
+  Type.Literal("interaction_preferences"),
 ]);
 
 const schema = Type.Object({
   action: Type.Union([Type.Literal("list"), Type.Literal("search"), Type.Literal("create"), Type.Literal("update"), Type.Literal("delete")]),
   memoryId: Type.Optional(Type.String({ minLength: 1, description: "要修改或删除的记忆 ID。" })),
   kind: Type.Optional(memoryKind),
-  content: Type.Optional(Type.String({ minLength: 1, maxLength: 1000, description: "要保存的简洁、可独立理解的记忆正文。" })),
-  query: Type.Optional(Type.String({ minLength: 1, maxLength: 1000, description: "用自然语言描述需要回想的用户背景、长期目标或历史偏好。" })),
+  content: Type.Optional(Type.String({ minLength: 1, maxLength: 1000, description: "一个可独立理解的简洁事实或主题；update 须包含更新后的完整正文，保留兼容信息及必要日期。" })),
+  query: Type.Optional(Type.String({ minLength: 1, maxLength: 1000, description: "按当前对话的对象和话题描述要回想的信息，例如小宝与用户的关系、求职面试进展。" })),
   limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, description: "search 最多返回多少条，默认 5。" })),
 }, { additionalProperties: false });
 
@@ -59,7 +60,7 @@ export function createMemoryManageTool(client: MemoryClient): FantoTool<typeof s
     name: "memory_manage",
     label: "管理长期记忆",
     presentation: { visible: false },
-    description: "管理 Fanto 的长期记忆。kind: guidance 是用户希望助手长期遵循的沟通或协作方式，会自动出现在每轮上下文；profile 是稳定背景、身份或长期习惯；goal 是仍有意义的长期目标、承诺或进行中事项。只有用户明确要求记住、修改或忘记时才 create/update/delete。当前问题确实需要背景、目标或习惯且上下文中没有时，用 search；用户要求查看已存记忆时用 list。每种 action 只传其需要的字段：list 可选 kind；search 需要 query，可选 limit；create 需要 kind 和 content；update 需要 memoryId、kind 和 content；delete 需要 memoryId。",
+    description: "管理对话长期记忆。personal_background（个人背景）和 interaction_preferences（相处偏好）默认提供；important_relationships（重要关系）、current_focus（近期关注）按话题 search。已有上下文足够时不重复检索。明确、持续有用的用户自述应本轮保存，不必等用户说记住；写入边界遵循核心记忆规则。创建前确认无重复；关系/关注未在上下文中时先 search，修改前用已知 memoryId 或 search 定位原条目；补充、纠错、递进、完成用 update 完整替换同一条，重复不操作，歧义不覆盖。list 用于查看记忆，可选 kind；search 必填 query，可选 limit；create 必填 kind/content；update 必填 memoryId/kind/content；delete 仅用户明确要求忘记时使用，必填 memoryId。只传对应 action 所需字段，成功后才能声称已保存；本轮变更以工具成功返回内容为准，不再引用旧值。",
     parameters: schema,
     executionMode: "sequential",
     replay: "never",

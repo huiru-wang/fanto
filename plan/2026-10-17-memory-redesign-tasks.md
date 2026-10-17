@@ -1,10 +1,10 @@
-# Memory 重设计任务（更新版，待授权实现）
+# Memory 重设计任务（代码已实现，模型验收有未通过项）
 
-方案：[详细设计](./2026-10-17-memory-redesign.md)。仅更新方案，未修改运行代码。
+方案：[详细设计](./2026-10-17-memory-redesign.md)。Current State 以 docs/domain/memory.md 和代码为准。
 
-1. [ ] 固定四类语义与对话评测样例：新增、读取、重复、补充、纠错、递进、完成及不应保存的输入。
-2. [ ] 更新 kind 和迁移：保留原 ID/正文，检查旧 profile 中的关系并正确归类；同步数据库约束、领域类型、工具 schema，不新增版本/任务/状态结构。
-3. [ ] 修改 MemoryProvider：每轮默认注入 personal_background + interaction_preferences，预算、整条选择和 omitted/unavailable 标识；其他两类按需检索。
-4. [ ] 更新 fantoCore、mainPrompt、memory_manage 描述：Agent 决定读写，改前定位原条目，不强制每轮调工具，删除旧政策冲突。
-5. [ ] 验证迁移、用户隔离、工具失败、上下文刷新和实际模型行为；测量默认注入及同步 embedding 对响应速度的影响。
-6. [ ] 实现后更新 Memory、Agent Runtime、相关模块 AGENTS 与测试文档，只描述最终能力。不实现后台整理、自动遗忘、过期或首次交互。
+1. [x] 四类语义与 Agent 的读取、新增、补充、纠错、递进、完成规则。
+2. [x] 新 kind 和数据库约束扩展；旧数据不转换、不删除，新链路只操作新类型。
+3. [x] 默认注入个人背景与相处偏好，按字节预算整条选择，声明省略与读取失败。
+4. [x] 更新 fantoCore、mainPrompt、memory_manage；Agent 决定按话题检索和读写，移除旧冲突规则。
+5. [ ] 行为验收尚未全部通过：类型检查和仓库回归通过；隔离 PostgreSQL 的 Memory 集成与迁移基线通过（2 项）。真实 deepseek-v4-flash 独立 12 场景中 11 项通过，普通自我介绍自动写入失败；请求 payload 已确认包含新政策。关系/关注/偏好新增、纠错、递进、完成、重复不写、临时状态不写、小说不写、主动检索与背景免检索通过。不能把 Prompt 注入成功报告为模型稳定遵循。
+6. [x] 更新 Memory、Agent Runtime、产品范围、Server AGENTS 与测试文档；没有后台整理、自动遗忘、过期或首次交互。

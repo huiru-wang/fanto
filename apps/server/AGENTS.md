@@ -24,6 +24,7 @@
 - `image_generate` 使用本人 ready 图片的 thumbnail 签名地址作为参考输入；`image_review` 保留原图输入。多张参考图输入、单图输出，生成物直接属于 Project OSS 路径。只有媒体进入正式 Project content/cover 后，才复制其它来源的 ready 媒体，换用新的 mediaId；Record 删除事务内清理独占媒体元数据，提交后尽力清理 OSS，失败不自动重试。
 - `create_current_schema_20261011.ts` 是当前完整空库基线，包含异步状态、Agent Session PostgreSQL 与 wx_openid 删除。旧库在完整执行归并前迁移后合并元数据，随后通过 `drop_tasks_20261011.ts` 正式前向迁移删除原 Task/TaskRun 表及其数据；不手动清空 Kysely 表，保持其它业务数据和用户隔离。
 - 主对话角色仅使用 `user_character` 单表，以 user_id 为主键；配置整体覆盖、无版本/列表/删除 API。CharacterProvider 每个 Run 通过 business-services 读取并插值注入，下一轮生效，不新增 Composer、RuntimeContextProvider 或 Memory 表。
+- Memory 使用个人背景、重要关系、近期关注、相处偏好四类；个人背景/相处偏好默认注入，其他按话题由 Main 检索。读写语义由 fantoCore 指导，沿用 memory_manage；不增加逐消息后台整理、记忆版本或语义校验层。存储与历史类型边界见 [Memory](../../docs/domain/memory.md)。
 - Current docs 描述已实现语义；`plan/` 只作为方案历史，不作为现状依据。密钥、URL Token 和内部 Tool 参数不得写入面向用户的回复、日志或文档。
 
 Proposal / Creator 创建或复用 Session 后立即记录业务 ID 绑定；Agent Run 日志携带 sessionId/runId，记录阶段与工具耗时，不记录原始参数、模型内容或流式 delta。外部调用日志统一记录安全元数据与调用结果/耗时，不记录媒体内容或 SDK 原始响应；图片理解、生成与下载统一在 `infrastructure/clients/image-client.ts`。字段与范围见 [Server：外部调用日志](../../docs/architecture/server.md#外部调用日志)。链路排障日志见 [创作执行：日志排查](../../docs/architecture/creative-runtime.md#日志排查)。

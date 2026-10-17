@@ -20,12 +20,12 @@ Tool 和 Context Provider 通过 `agent/business-services.ts` 调用领域 Servi
 
 `harness/run.ts` 统一创建 Run Context，包含 userId、sessionId、runId、query、最近消息和必要的 creative/project 元数据。`harness/build-runtime.ts` 在一个 Run 内解析 Prompt 引用的 Provider 插槽，按需获取 Context；不是每个模型 turn 都重复查询。
 
-- Main：通过 CharacterProvider 从 `user_character` 读取当前用户唯一的角色配置，以 `character`、`scenario`、`character_instructions`、`example_dialogues` 插值注入现有 Prompt。每个 Run 读取一次，保存后同一 Session 下一轮生效；角色配置不参与代码 Prompt 的 revision，不需要重启或重建会话。偏好/记忆 guidance、近期 Record、当前日期继续由原 Provider 提供；近期 Record 采用代码配置的最近两条，相关历史由模型主动调用 `record_read(query)`。
+- Main：通过 CharacterProvider 从 `user_character` 读取当前用户唯一的角色配置，以 `character`、`scenario`、`character_instructions`、`example_dialogues` 插值注入现有 Prompt。每个 Run 读取一次，保存后同一 Session 下一轮生效；角色配置不参与代码 Prompt 的 revision，不需要重启或重建会话。个人背景与相处偏好由 MemoryProvider 按预算注入，关系与近期关注按话题检索（见 [Memory](../domain/memory.md)）；近期 Record、当前日期继续由对应 Provider 提供；近期 Record 采用代码配置的最近两条，相关历史由模型主动调用 `record_read(query)`。
 - Creator：可信 `creation_context` 绑定 Project，按需用 `project_read` 获取最新 Goal、正文、version、关联资料。
 - Proposal：可信触发 Record 信息，按需读取 Creative Skill、真实 Record 与相关 Project。
 - `transform_context` 只修改模型请求视图，不更改 Session 持久 transcript。
 
-当前长期 Memory 是显式管理的 Memory Domain，Profile/Goal 按需检索，Guidance 自动注入；不将 Record embedding 误称为 Memory。
+长期 Memory 的分类、Agent 读写政策、默认上下文与检索边界统一见 [Memory](../domain/memory.md)；不将 Record embedding 误称为 Memory。
 
 ## Session
 

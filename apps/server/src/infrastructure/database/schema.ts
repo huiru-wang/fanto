@@ -119,7 +119,7 @@ export interface MediaAssetsTable {
 export interface MemoriesTable {
   memory_id: string;
   user_id: string;
-  kind: "profile" | "goal" | "guidance";
+  kind: "personal_background" | "important_relationships" | "current_focus" | "interaction_preferences";
   content: string;
   embedding: unknown;
   created_at: Date;
