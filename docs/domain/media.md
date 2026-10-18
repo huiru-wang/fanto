@@ -46,7 +46,9 @@ ready Media 才能关联到 Record。关联后 `ext_data.recordId` 记录归属�
 
 ## Fanto 头像
 
-上传申请通过 `purpose: "fanto_avatar"` 或 `"user_avatar"` 区分（默认仍为 record），仅接受图片且最多 512 KiB。complete 校验实际类型、长度、解码结果、静态单帧和 128–512 像素的方形尺寸，然后标记 ready；不生成 WebP 小图。客户端只上传裁切结果，单个对象保存在 `users/<userId>/fanto/avatar/<mediaId>.<extension>`，H5/iOS 上传 JPEG。original/thumbnail 读取同一个对象，不补生成 variant。
+上传申请通过 `purpose: "fanto_avatar"` 、`"user_avatar"` 或 `"user_cover"` 区分（默认仍为 record），仅接受图片，头像最多512 KiB，背景图最多2 MiB。complete 校验实际类型、长度、解码结果和静态单帧；头像要求128–512像素的方形，背景图要求4:3且宽640–1600像素，然后标记 ready；不生成 WebP 小图。客户端只上传裁切结果，单个对象保存在 `users/<userId>/fanto/avatar/<mediaId>.<extension>`，H5/iOS 上传 JPEG。original/thumbnail 读取同一个对象，不补生成 variant。
+
+背景图路径为 `users/<userId>/profile/cover/<mediaId>.<extension>`，绑定到 user_profiles.cover_media_id；头像与背景图不能互换绑定。
 
 用户头像使用独立的 `users/<userId>/profile/avatar/<mediaId>.<extension>` 路径，绑定到 user_profiles；两类头像不可互换绑定。详见 [Users](users.md)。
 

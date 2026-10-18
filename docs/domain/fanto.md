@@ -8,7 +8,7 @@
 
 未创建行时读取默认资料，version=0；角色为空时主对话使用代码默认风格。保存按 expectedVersion 校验，只提交变化字段，roleConfig 按子字段合并。更新锁定用户和设置行，首次创建也遵守同一版本边界；有效变更递增版本，无变化保持版本。昵称/简介仅为资料，简介不注入 Prompt。CharacterProvider 每轮读取一次昵称和角色，读取失败中止 Run，不静默退回默认角色；新设置下一轮生效。
 
-客户端文字草稿与已保存版本分离。头像立即保存只提交 avatarMediaId；成功后合并远端状态但保留未保存文字，同字段远端变更要求明确选择。409 后刷新版本并提示确认，不自动覆盖远端。网络响应不确定时读取确认，未确认前保留草稿和上传阶段。HTTP 字段限制见 [HTTP API](../api/http-api.md#fanto-设置)。
+客户端文字草稿与已保存版本分离。iOS 设置首页不提供统一保存，昵称和四个角色字段进入各自二级页单独确认；角色只提交 roleConfig 中当前子键。头像裁切后立即保存只提交 avatarMediaId；成功响应写回共享资料缓存，同字段远端变更要求明确选择。409 后刷新版本并提示确认，不自动覆盖远端。网络响应不确定时读取确认，未确认前保留草稿和上传阶段。HTTP 字段限制见 [HTTP API](../api/http-api.md#fanto-设置)。
 
 ## 头像处理
 
@@ -18,7 +18,7 @@
 
 ## 清理与迁移
 
-替换头像、恢复默认或上传后未绑定留下的资产，通过运维命令清理。默认 dry-run，只列举超过 24 小时且无设置引用的 fanto_avatar / user_avatar 资产，每批最多 100 项；加 --apply 才删除。逐项锁定媒体并再次核对引用后认领，认领后禁止新绑定，删除单个 OSS 对象后再删除元数据。失败保留认领，可在十分钟后再次执行；无后台定时任务。当前头像始终受 user_fanto_settings 与 user_profiles 的引用检查保护。
+替换头像、恢复默认或上传后未绑定留下的资产，通过运维命令清理。默认 dry-run，只列举超过 24 小时且无设置引用的 fanto_avatar / user_avatar / user_cover 资产，每批最多 100 项；加 --apply 才删除。逐项锁定媒体并再次核对引用后认领，认领后禁止新绑定，删除单个 OSS 对象后再删除元数据。失败保留认领，可在十分钟后再次执行；无后台定时任务。当前头像始终受 user_fanto_settings 与 user_profiles 的引用检查保护。
 
 ```bash
 pnpm --filter @fanto/server exec tsx src/bootstrap/cleanup-fanto-avatars.ts

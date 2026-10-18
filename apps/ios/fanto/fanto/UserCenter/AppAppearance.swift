@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import UIKit
 
 @MainActor @Observable
 final class AppAppearance {
@@ -9,18 +10,19 @@ final class AppAppearance {
     private init() {
         mode = Mode(rawValue: UserDefaults.standard.string(forKey: "appearance.mode") ?? "") ?? .system
         accent = Accent(rawValue: UserDefaults.standard.string(forKey: "appearance.accent") ?? "") ?? .blue
+        UserDefaults.standard.set(accent.rawValue, forKey: "appearance.accent")
     }
     enum Mode: String, CaseIterable, Identifiable {
         case system, light, dark
         var id: Self { self }
-        var title: String { switch self { case .system: "系统（默认）"; case .light: "浅色"; case .dark: "深色" } }
+        var title: String { switch self { case .system: "跟随系统"; case .light: "浅色"; case .dark: "深色" } }
         var summary: String { self == .system ? "跟随系统" : title }
         var scheme: ColorScheme? { switch self { case .system: nil; case .light: .light; case .dark: .dark } }
     }
     enum Accent: String, CaseIterable, Identifiable {
-        case blue, cyan, green, lime, yellow, orange, pink, magenta, purple, black
+        case blue, cyan, green, lime, yellow, orange, pink, magenta, purple
         var id: Self { self }
-        var title: String { switch self { case .blue: "蓝色"; case .cyan: "青色"; case .green: "绿色"; case .lime: "青柠绿"; case .yellow: "黄色"; case .orange: "橙色"; case .pink: "粉色"; case .magenta: "洋红色"; case .purple: "紫色"; case .black: "黑色" } }
+        var title: String { switch self { case .blue: "蓝色"; case .cyan: "青色"; case .green: "绿色"; case .lime: "青柠绿"; case .yellow: "黄色"; case .orange: "橙色"; case .pink: "粉色"; case .magenta: "洋红色"; case .purple: "紫色" } }
         var color: Color {
             Color(uiColor: UIColor { traits in
                 let dark = traits.userInterfaceStyle == .dark
@@ -34,10 +36,20 @@ final class AppAppearance {
                 case .pink: return dark ? .systemPink : UIColor(red: 0.79, green: 0.19, blue: 0.42, alpha: 1)
                 case .magenta: return dark ? UIColor(red: 0.88, green: 0.35, blue: 0.87, alpha: 1) : UIColor(red: 0.65, green: 0.16, blue: 0.66, alpha: 1)
                 case .purple: return .systemPurple
-                case .black: return .label
                 }
             })
         }
         var swatch: Color { switch self { case .cyan: .cyan; case .green: .mint; case .lime: Color(red: 0.65, green: 0.82, blue: 0.05); case .yellow: .yellow; case .orange: .orange; case .pink: .pink; case .magenta: Color(red: 0.83, green: 0.23, blue: 0.80); default: color } }
+        // Menu actions template SF Symbols; render a small original-color swatch instead.
+        var menuSwatch: UIImage {
+            let color = UIColor(swatch)
+            return UIGraphicsImageRenderer(size: CGSize(width: 16, height: 16)).image { context in
+                color.setFill()
+                context.cgContext.fillEllipse(in: CGRect(x: 1, y: 1, width: 14, height: 14))
+                UIColor.separator.setStroke()
+                context.cgContext.strokeEllipse(in: CGRect(x: 1, y: 1, width: 14, height: 14))
+            }.withRenderingMode(.alwaysOriginal)
+        }
+
     }
 }

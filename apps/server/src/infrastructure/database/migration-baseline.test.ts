@@ -41,7 +41,7 @@ integration("baseline initializes fresh databases and consolidates only complete
     await runMigrations(db);
     await runMigrations(db);
     const names = async () => (await sql<{ name: string }>`SELECT name FROM kysely_migration ORDER BY name`.execute(db)).rows.map(row => row.name);
-    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011", "user_character_20261017", "z_agent_session_snapshots_20261017", "zz_memory_kinds_20261017", "zzz_user_fanto_settings_20261018", "zzzz_user_profiles_20261018"]);
+    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011", "user_character_20261017", "z_agent_session_snapshots_20261017", "zz_memory_kinds_20261017", "zzz_user_fanto_settings_20261018", "zzzz_user_profiles_20261018", "zzzzz_user_profile_cover_20261018"]);
 
     const tables = (await sql<{ table_name: string }>`
       SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()
@@ -71,7 +71,7 @@ integration("baseline initializes fresh databases and consolidates only complete
       await sql`INSERT INTO kysely_migration (name, timestamp) VALUES (${migration}, ${new Date(Date.now() - (previousMigrations.length + oldMigrations.length - index) * 1000).toISOString()})`.execute(db);
     }
     await runMigrations(db);
-    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011", "user_character_20261017", "z_agent_session_snapshots_20261017", "zz_memory_kinds_20261017", "zzz_user_fanto_settings_20261018", "zzzz_user_profiles_20261018"]);
+    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011", "user_character_20261017", "z_agent_session_snapshots_20261017", "zz_memory_kinds_20261017", "zzz_user_fanto_settings_20261018", "zzzz_user_profiles_20261018", "zzzzz_user_profile_cover_20261018"]);
     assert.equal((await db.selectFrom("users").select("user_id").executeTakeFirstOrThrow()).user_id, userId);
     await runMigrations(db); // Idempotent after consolidation.
 
@@ -84,7 +84,7 @@ integration("baseline initializes fresh databases and consolidates only complete
       await sql`INSERT INTO kysely_migration (name, timestamp) VALUES (${migration}, ${new Date(Date.now() - (previousMigrations.length + oldMigrations.length - index) * 1000).toISOString()})`.execute(db);
     }
     await runMigrations(db);
-    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011", "user_character_20261017", "z_agent_session_snapshots_20261017", "zz_memory_kinds_20261017", "zzz_user_fanto_settings_20261018", "zzzz_user_profiles_20261018"]);
+    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011", "user_character_20261017", "z_agent_session_snapshots_20261017", "zz_memory_kinds_20261017", "zzz_user_fanto_settings_20261018", "zzzz_user_profiles_20261018", "zzzzz_user_profile_cover_20261018"]);
     assert.equal((await db.selectFrom("users").select("user_id").executeTakeFirstOrThrow()).user_id, userId);
 
     const sessionTables = (await sql<{ table_name: string }>`

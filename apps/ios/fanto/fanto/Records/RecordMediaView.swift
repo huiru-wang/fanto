@@ -92,43 +92,17 @@ private struct RecordImageThumbnail: View {
     let count: Int
     let onSelect: () -> Void
 
-    @State private var imageURL: URL?
-    @State private var didRetryAfterLoadFailure = false
-
     var body: some View {
         Button(action: onSelect) {
-            Group {
-                if let imageURL {
-                    AsyncImage(url: imageURL) { phase in
-                        switch phase {
-                        case .empty:
-                            placeholder
-                        case let .success(image):
-                            image
-                                .resizable()
-                                .scaledToFill()
-                        case .failure:
-                            placeholder
-                                .onAppear(perform: retryAfterLoadFailure)
-                        @unknown default:
-                            placeholder
-                        }
-                    }
-                } else {
-                    placeholder
-                }
+            CachedMediaImage(mediaID: photo.id, variant: .thumbnail) { phase in
+                if let image = phase.image { image.resizable().scaledToFill() }
+                else { placeholder }
             }
         }
         .buttonStyle(.plain)
         .frame(width: 66, height: 52)
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay {
-            RoundedRectangle(cornerRadius: 10)
-                .stroke(.background, lineWidth: 2)
-        }
-        .task(id: photo.id) {
-            await loadReadURL()
-        }
+        .overlay { RoundedRectangle(cornerRadius: 10).stroke(.background, lineWidth: 2) }
         .accessibilityLabel("查看第 \(position) 张图片，共 \(count) 张")
     }
 
@@ -141,19 +115,6 @@ private struct RecordImageThumbnail: View {
             }
     }
 
-    private func retryAfterLoadFailure() {
-        guard !didRetryAfterLoadFailure else { return }
-        didRetryAfterLoadFailure = true
-        Task {
-            imageURL = nil
-            await loadReadURL()
-        }
-    }
-
-    private func loadReadURL() async {
-        guard !Task.isCancelled else { return }
-        imageURL = try? await FantoAPIClient.shared.fetchMediaReadURL(id: photo.id, variant: .thumbnail)
-    }
 }
 
 private struct RecordPhotoViewer: View {
@@ -213,61 +174,21 @@ private struct RecordPhotoViewer: View {
 private struct RecordPhotoPage: View {
     let photo: RecordPhoto
 
-    @State private var imageURL: URL?
-    @State private var didRetryAfterLoadFailure = false
-
+    @State private var retry = 0
     var body: some View {
-        Group {
-            if let imageURL {
-                AsyncImage(url: imageURL) { phase in
-                    switch phase {
-                    case .empty:
-                        ProgressView()
-                            .tint(.white)
-                    case let .success(image):
-                        image
-                            .resizable()
-                            .scaledToFit()
-                            .accessibilityLabel("图片")
-                    case .failure:
-                        ContentUnavailableView {
-                            Label("无法显示图片", systemImage: "photo")
-                        } actions: {
-                            Button("重新加载", action: reload)
-                                .buttonStyle(.borderedProminent)
-                        }
-                        .foregroundStyle(.white)
-                        .onAppear(perform: retryAfterLoadFailure)
-                    @unknown default:
-                        EmptyView()
-                    }
-                }
-            } else {
-                ProgressView()
-                    .tint(.white)
+        CachedMediaImage(mediaID: photo.id) { phase in
+            switch phase {
+            case let .success(image): image.resizable().scaledToFit().accessibilityLabel("图片")
+            case .failure:
+                ContentUnavailableView {
+                    Label("无法显示图片", systemImage: "photo")
+                } actions: {
+                    Button("重新加载") { retry += 1 }.buttonStyle(.borderedProminent)
+                }.foregroundStyle(.white)
+            default: ProgressView().tint(.white)
             }
         }
+        .id(retry)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .task(id: photo.id) {
-            await loadReadURL()
-        }
-    }
-
-    private func reload() {
-        imageURL = nil
-        Task {
-            await loadReadURL()
-        }
-    }
-
-    private func retryAfterLoadFailure() {
-        guard !didRetryAfterLoadFailure else { return }
-        didRetryAfterLoadFailure = true
-        reload()
-    }
-
-    private func loadReadURL() async {
-        guard !Task.isCancelled else { return }
-        imageURL = try? await FantoAPIClient.shared.fetchMediaReadURL(id: photo.id, variant: .original)
     }
 }

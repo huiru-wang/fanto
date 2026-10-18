@@ -6,7 +6,7 @@ struct RecordsView: View {
     @State private var recordToDelete: Record?
     @State private var showsDeletionConfirmation = false
     @State private var selectedDate = Calendar.current.startOfDay(for: .now)
-    @State private var viewMode: RecordViewMode = .calendar
+    @AppStorage("records.viewMode") private var viewMode: RecordViewMode = .calendar
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let calendar = Calendar.current
@@ -57,6 +57,7 @@ struct RecordsView: View {
                 Text(store.recordActionError ?? "请稍后重试。")
             }
         }
+        .tint(.primary)
     }
 
     private var calendarView: some View {
@@ -175,7 +176,7 @@ struct RecordsView: View {
     }
 }
 
-private enum RecordViewMode: Equatable {
+private enum RecordViewMode: String {
     case calendar
     case timeline
 }

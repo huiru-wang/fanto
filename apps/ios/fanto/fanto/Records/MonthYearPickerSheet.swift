@@ -42,14 +42,15 @@ struct MonthYearPickerSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消", action: dismiss.callAsFunction)
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成", systemImage: "checkmark") {
                         select(year, month)
                         dismiss()
-                    }
+                    }.labelStyle(.iconOnly)
                 }
             }
         }
+        .tint(.primary)
     }
 
     private var years: ClosedRange<Int> {

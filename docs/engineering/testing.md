@@ -52,4 +52,10 @@ R2_SMOKE_TEST=1 pnpm --filter @fanto/server exec tsx --test src/infrastructure/c
 
 ## 用户中心
 
-`domain/users/profile.test.ts` 验证昵称 / 签名单行约束、路由身份边界、并发版本与用户 / Fanto 头像用途隔离、资料级联删除和清理引用保护。数据库部分创建隔离子数据库，需 TEST_DATABASE_URL 与创建数据库权限。`domain/media/avatar.test.ts` 对两类头像执行相同的单对象与实际尺寸校验。iOS 原生菜单、Dynamic Type、照片裁切与账号退出的最终交互由真机验收；构建与静态检查不能代替交互验收。
+`domain/users/profile.test.ts` 验证昵称 / 签名单行约束、路由身份边界、并发版本与用户 / Fanto 头像用途隔离、背景图4:3尺寸约束、资料级联删除和清理引用保护。数据库部分创建隔离子数据库，需 TEST_DATABASE_URL 与创建数据库权限。`domain/media/avatar.test.ts` 对两类头像执行相同的单对象与实际尺寸校验。iOS 原生菜单、Dynamic Type、照片裁切与账号退出的最终交互由真机验收；构建与静态检查不能代替交互验收。
+
+## iOS 资料缓存
+
+`sh apps/ios/tests/run-cache-tests.sh` 在本机编译并执行生产缓存组件，覆盖跨页面复用、并发读取合并、保存与旧查询竞争、断网保留、启动快照先显示后同步、账号作用域隔离、退出清理与图片磁盘预算。iOS 模拟器构建校验图片解码和 SwiftUI 接入；真机验证头像 / 背景图不闪、相册上传、弱网及切换账号的实际体验。没有定时刷新或资料 TTL。
+
+`routes/settings-fields.test.ts` 验证用户资料逐字段 PATCH、四项角色配置各自提交单个 JSON 子键，以及经过认证的 user_cover 上传路由和大小限制。iOS 缓存回归同时验证单字段序列化（遗漏不等于 null）、独立保存写回、同字段冲突保护及丢失保存响应后的读取确认。背景图 Unsupported media 代表上传申请参数被拒绝，仅凭此错误不能判定线上版本；需核对上传参数与线上支持的 purpose。仓库已支持 user_cover，头像用例同时通过认证后的真实上传 / complete 路由验证 4:3 JPEG 与实际尺寸（对象存储使用 fixture，不代表线上 OSS 验收）。部署仍需包含 coverMediaId 对应迁移，不能通过改用 Record 用途绕过。

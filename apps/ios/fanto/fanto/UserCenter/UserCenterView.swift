@@ -1,83 +1,116 @@
 import SwiftUI
+import Observation
+
+@MainActor @Observable
+private final class UserCenterScrollState {
+    var offset: CGFloat = 0
+    var photoVisible = true
+    func update(_ offset: CGFloat) {
+        self.offset = max(0, offset)
+        photoVisible = offset < 180
+    }
+}
 
 struct UserCenterView: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Bindable var profile: UserProfileStore
     @State private var appearance = AppAppearance.shared
+    @State private var scroll = UserCenterScrollState()
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    header
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                }
-                Section("偏好") {
-                    Menu {
-                        Picker("外观", selection: $appearance.mode) {
-                            ForEach(AppAppearance.Mode.allCases) { Text($0.title).tag($0) }
-                        }
-                    } label: {
-                        preferenceRow("外观", icon: "circle.lefthalf.filled", value: appearance.mode.summary)
-                    }
-                    .accessibilityValue(appearance.mode.summary)
-                    Menu {
-                        Picker("强调色", selection: $appearance.accent) {
-                            ForEach(AppAppearance.Accent.allCases) { accent in
-                                Label { Text(accent.title) } icon: {
-                                    Image(systemName: "circle.fill").symbolRenderingMode(.palette).foregroundStyle(accent.swatch)
-                                }.tag(accent)
-                            }
-                        }
-                    } label: {
-                        HStack {
-                            Label("强调色", systemImage: "paintbrush")
-                            Spacer()
-                            Circle().fill(appearance.accent.swatch).frame(width: 14, height: 14).accessibilityHidden(true)
-                            Text(appearance.accent.title).foregroundStyle(.secondary)
-                            Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundStyle(.tertiary)
-                        }
-                        .foregroundStyle(.primary)
-                    }
-                    .accessibilityValue(appearance.accent.title)
-                }
-                Section("账号与数据") {
-                    NavigationLink { UserAccountView() } label: { Label("账号与登录", systemImage: "person.crop.circle") }
-                    NavigationLink { UserPrivacyView() } label: { Label("数据与隐私", systemImage: "lock.shield") }
-                    NavigationLink { UserAboutView() } label: { Label("帮助与关于", systemImage: "info.circle") }
-                }
-                if let error = profile.error {
+            ZStack {
+                Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
+                UserCenterBackdrop(mediaID: profile.profile?.coverMediaId, scroll: scroll)
+                List {
                     Section {
-                        Text(error).foregroundStyle(.secondary)
-                        Button("重新读取资料") { Task { await profile.load() } }
+                        header.listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
+                    }
+                    Section {
+                        HStack {
+                            settingsLabel("外观", icon: "circle.lefthalf.filled")
+                            Spacer()
+                            Menu {
+                                Picker("外观", selection: $appearance.mode) {
+                                    ForEach(AppAppearance.Mode.allCases) { Text($0.title).tag($0) }
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Text(appearance.mode.summary)
+                                    Image(systemName: "chevron.up.chevron.down").font(.caption)
+                                }
+                                .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .tint(FantoTheme.accent)
+                            .accessibilityLabel("外观")
+                            .accessibilityValue(appearance.mode.summary)
+                        }
+                        HStack {
+                            settingsLabel("强调色", icon: "paintbrush")
+                            Spacer()
+                            Menu {
+                                Picker("强调色", selection: $appearance.accent) {
+                                    ForEach(AppAppearance.Accent.allCases) { accent in
+                                        Label { Text(accent.title) } icon: {
+                                            Image(uiImage: accent.menuSwatch).renderingMode(.original)
+                                        }.tag(accent)
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(uiImage: appearance.accent.menuSwatch).renderingMode(.original)
+                                    Text(appearance.accent.title)
+                                    Image(systemName: "chevron.up.chevron.down").font(.caption)
+                                }
+                                .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .tint(FantoTheme.accent)
+                            .accessibilityLabel("强调色")
+                            .accessibilityValue(appearance.accent.title)
+                        }
+                    }
+                    Section {
+                        NavigationLink { UserAccountView() } label: { settingsLabel("账号与登录", icon: "person.crop.circle") }
+                        NavigationLink { UserPrivacyView() } label: { settingsLabel("数据与隐私", icon: "lock.shield") }
+                        NavigationLink { UserHelpFeedbackView() } label: { settingsLabel("帮助与反馈", icon: "questionmark.circle") }
+                        NavigationLink { UserAboutView() } label: { settingsLabel("关于", icon: "info.circle") }
+                    }
+                    if let error = profile.error {
+                        Section {
+                            Text(error).foregroundStyle(.secondary)
+                            Button("重新读取资料") { Task { await profile.load(force: true) } }
+                        }
                     }
                 }
+                .listStyle(.insetGrouped)
+                .scrollContentBackground(.hidden)
+                .contentMargins(.top, 0, for: .scrollContent)
+                .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, value in scroll.update(value) }
+                .refreshable { await profile.load(force: true) }
             }
-            .navigationTitle("我的")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .listStyle(.insetGrouped)
-            .refreshable { await profile.load() }
-            .task { if profile.profile == nil { await profile.load() } }
+            .toolbarBackground(scroll.photoVisible && !reduceTransparency ? .hidden : .automatic, for: .navigationBar)
+            .toolbarColorScheme(scroll.photoVisible && !reduceTransparency ? .dark : nil, for: .navigationBar)
+            .task { await profile.load() }
+        }
+        .tint(.primary)
+    }
+    private func settingsLabel(_ title: String, icon: String) -> some View {
+        Label { Text(title) } icon: {
+            Image(systemName: icon).foregroundStyle(.primary)
         }
     }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Image("UserCenterCover").resizable().scaledToFill()
-                .frame(height: 156).clipped()
-                .overlay(alignment: .bottom) {
-                    LinearGradient(colors: [.clear, Color(uiColor: .systemGroupedBackground)], startPoint: .top, endPoint: .bottom).frame(height: 72)
-                }
-                .accessibilityHidden(true)
             if let value = profile.profile {
-                NavigationLink {
-                    UserProfileEditView(profile: profile, value: value)
-                } label: {
+                NavigationLink { UserProfileEditView(profile: profile) } label: {
                     HStack(spacing: 16) {
                         UserAvatar(mediaID: value.avatarMediaId, size: 76)
                         VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text(value.nickname).font(.title2.bold()).foregroundStyle(.primary)
-                                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
-                            }
+                            Text(value.nickname).font(.title2.bold()).foregroundStyle(.primary)
                             Text(value.signature.isEmpty ? "添加一句话签名" : value.signature)
                                 .font(.subheadline).foregroundStyle(.secondary)
                         }
@@ -87,22 +120,31 @@ struct UserCenterView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(value.nickname)，修改个人信息")
-                .padding(.horizontal, 16)
                 let days = max(1, (Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: value.joinedAt), to: Calendar.current.startOfDay(for: .now)).day ?? 0) + 1)
                 Label("与 Fanto 相伴的第 \(days) 天", systemImage: "sparkles")
-                    .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 16)
-            } else if profile.isLoading {
-                ProgressView("正在读取资料").frame(maxWidth: .infinity)
-            }
+                    .font(.footnote).foregroundStyle(.secondary)
+            } else if profile.isLoading { ProgressView("正在读取资料").frame(maxWidth: .infinity) }
         }
-        .padding(.bottom, 12)
+        .padding(.horizontal, 16).padding(.top, 172).padding(.bottom, 12)
     }
-    private func preferenceRow(_ title: String, icon: String, value: String) -> some View {
-        HStack {
-            Label(title, systemImage: icon)
-            Spacer()
-            Text(value).foregroundStyle(.secondary)
-            Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundStyle(.tertiary)
-        }.foregroundStyle(.primary)
+}
+
+private struct UserCenterBackdrop: View {
+    let mediaID: String?
+    let scroll: UserCenterScrollState
+    var body: some View {
+        GeometryReader { geometry in
+            UserCover(mediaID: mediaID)
+                .frame(width: geometry.size.width, height: 380)
+                .clipped()
+                .overlay(alignment: .top) {
+                    LinearGradient(colors: [.black.opacity(0.35), .clear], startPoint: .top, endPoint: .bottom).frame(height: 110)
+                }
+                .overlay(alignment: .bottom) {
+                    LinearGradient(colors: [.clear, Color(uiColor: .systemGroupedBackground)], startPoint: .top, endPoint: .bottom).frame(height: 170)
+                }
+                .offset(y: -scroll.offset)
+        }
+        .ignoresSafeArea(edges: .top).allowsHitTesting(false).accessibilityHidden(true)
     }
 }

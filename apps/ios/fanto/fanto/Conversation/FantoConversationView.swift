@@ -9,6 +9,7 @@ struct FantoConversationView: View {
     private var currentProfile: FantoSettingsStore { profile ?? fallbackProfile }
     @Bindable var store: ConversationStore
     @State private var hasLeftHistoryTop = false
+    @State private var didPositionInitialHistory = false
 
     var body: some View {
         NavigationStack {
@@ -48,6 +49,7 @@ struct FantoConversationView: View {
                 if phase == .active { store.recoverConversation() }
             }
         }
+        .tint(.primary)
     }
 
     private var conversation: some View {
@@ -113,9 +115,11 @@ struct FantoConversationView: View {
                 }
                 store.consumeHistoryRestoreAnchor(anchor)
             }
-            .task(id: store.scrollAnchorID) {
-                guard let anchor = store.scrollAnchorID else { return }
+            .task {
+                guard !didPositionInitialHistory, let anchor = store.scrollAnchorID else { return }
                 await Task.yield()
+                guard !Task.isCancelled else { return }
+                didPositionInitialHistory = true
                 scrollToBottom(anchor, with: proxy, animated: false)
             }
         }
@@ -177,6 +181,7 @@ struct FantoConversationView: View {
             TextField(text: $store.draft, axis: .vertical) {
                 Text("和 Fanto 聊聊").foregroundStyle(.secondary)
             }
+                .tint(FantoTheme.accent)
                 .lineLimit(1 ... 5)
                 .padding(.leading, 18)
                 .padding(.vertical, 12)

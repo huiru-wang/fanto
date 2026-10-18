@@ -52,14 +52,25 @@ test("profile writes isolate accounts, reject role avatars, enforce versions and
     }
     const id = await avatar(owner, "user_avatar");
     current = await service.update(owner, {expectedVersion: current.version, changes: {avatarMediaId: id, signature: "一句话"}});
+    const cover = await avatar(owner, "user_cover");
+    await assert.rejects(service.update(owner, {expectedVersion: current.version, changes: {coverMediaId: id}}), {code: "INVALID_COVER"});
+    await assert.rejects(service.update(owner, {expectedVersion: current.version, changes: {coverMediaId: await avatar(users[1]!, "user_cover")}}), {code: "INVALID_COVER"});
+    await assert.rejects(service.update(owner, {expectedVersion: current.version, changes: {avatarMediaId: cover}}), {code: "INVALID_AVATAR"});
+    current = await service.update(owner, {expectedVersion: current.version, changes: {coverMediaId: cover}});
+    assert.equal(current.coverMediaId, cover);
     await assert.rejects(fanto.updateSettings(owner, {expectedVersion: 0, changes: {avatarMediaId: id}}), {code: "INVALID_AVATAR"});
     await assert.rejects(service.update(owner, {expectedVersion: current.version - 1, changes: {nickname: "stale"}}), {code: "VERSION_CONFLICT"});
     await media.cleanupAvatars(db, true);
     assert.ok(await db.selectFrom("media_assets").select("media_id").where("media_id", "=", id).executeTakeFirst());
+    assert.ok(await db.selectFrom("media_assets").select("media_id").where("media_id", "=", cover).executeTakeFirst());
     current = await service.update(owner, {expectedVersion: current.version, changes: {avatarMediaId: null}});
     await assert.rejects(service.update(owner, {expectedVersion: current.version, changes: {avatarMediaId: id}}), {code: "INVALID_AVATAR"});
     await media.cleanupAvatars(db, true);
     assert.equal(await db.selectFrom("media_assets").select("media_id").where("media_id", "=", id).executeTakeFirst(), undefined);
+    current = await service.update(owner, {expectedVersion: current.version, changes: {coverMediaId: null}});
+    await assert.rejects(service.update(owner, {expectedVersion: current.version, changes: {coverMediaId: cover}}), {code: "INVALID_COVER"});
+    await media.cleanupAvatars(db, true);
+    assert.equal(await db.selectFrom("media_assets").select("media_id").where("media_id", "=", cover).executeTakeFirst(), undefined);
     const active = await avatar(owner, "user_avatar");
     await service.update(owner, {expectedVersion: current.version, changes: {avatarMediaId: active}});
     await db.deleteFrom("users").where("user_id", "=", owner).execute();

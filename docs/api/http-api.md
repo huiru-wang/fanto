@@ -36,8 +36,10 @@
 
 ## 用户个人资料
 
-- `GET /api/users/me/profile`：返回 `{ nickname, signature, avatarMediaId, version, joinedAt }`，joinedAt 为账号创建时间。未保存时昵称“你”、空签名 / 空头像、version=0。
-- `PATCH /api/users/me/profile`：`{ expectedVersion, changes: { nickname?, signature?, avatarMediaId? } }`，至少一个变更字段；昵称去除首尾空白后1–30个 Unicode 字符，签名最多40个，均为单行且不含控制 / 格式字符。null 头像恢复默认。版本不符为 `409 VERSION_CONFLICT`，无权或非法用途头像为 `422 INVALID_AVATAR`，输入错误为400。
+PATCH 支持单项更新；changes 省略的字段保持不变，显式 null 仅用于清除媒体引用。iOS 头像 / 背景图上传后立即单项绑定，昵称 / 签名在独立编辑页保存。
+
+- `GET /api/users/me/profile`：返回 `{ nickname, signature, avatarMediaId, coverMediaId, version, joinedAt }`，joinedAt 为账号创建时间。未保存时昵称“你”、空签名 / 空头像、version=0。
+- `PATCH /api/users/me/profile`：`{ expectedVersion, changes: { nickname?, signature?, avatarMediaId?, coverMediaId? } }`，至少一个变更字段；昵称去除首尾空白后1–30个 Unicode 字符，签名最多40个，均为单行且不含控制 / 格式字符。null 头像 / 背景图恢复默认。背景图只接受本人 ready 的 user_cover，错误用途返回 `422 INVALID_COVER`。版本不符为 `409 VERSION_CONFLICT`，无权或非法用途头像为 `422 INVALID_AVATAR`，输入错误为400。
 - 返回提交后的完整资料。与 Fanto Settings 分开，不改变角色 Prompt。user_avatar 仅可绑定本人 ready、未退役 / 未认领清理的小图，不接受 record / fanto_avatar。媒体用途、数据生命周期见 [Users](../domain/users.md)。
 
 ## Fanto 设置
@@ -130,7 +132,7 @@ Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒�
 | GET | `/api/media/:mediaId/url?variant=original|thumbnail` | 返回已就绪媒体的短期 OSS 签名读取地址与过期时间 |
 | GET | `/api/media/:mediaId/meta` | 返回已就绪媒体的稳定类型与 capture metadata |
 
-创建上传体：`{ mimeType, bytes, purpose? }`，purpose 默认为 `record`，另支持 `fanto_avatar` 和 `user_avatar`。头像仅接受图片，最大 512 KiB，complete 校验静态方形且边长 128–512；只保存单个对象，original/thumbnail 都读取该对象，`/meta` 不向 Agent 暴露头像。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
+创建上传体：`{ mimeType, bytes, purpose? }`，purpose 默认为 `record`，另支持 `fanto_avatar`、`user_avatar`、`user_cover`。头像仅接受图片，最大 512 KiB；背景图最大2 MiB，complete要求4:3、宽640–1600像素；头像 complete 校验静态方形且边长 128–512；只保存单个对象，original/thumbnail 都读取该对象，`/meta` 不向 Agent 暴露头像或用户背景图。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
 
 `GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Access JWT。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到原始媒体的短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，`variant` 默认为 `original`，图片可请求 `thumbnail`（服务端保存的宽不超过 600、q80、WebP 小图），音频无论 variant 都返回 original；非法 variant 返回 `400 INVALID_INPUT`。读取签名有效期为五分钟，客户端不应持久化，thumbnail / original 应分键缓存，并在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 对客户端上传的图片 / 音频返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`。Task Worker 生成的结果文件由 Server 内部直接上传，不经过 `/api/uploads`，其 `mediaType=file`，meta 额外返回 `bytes / filename`。所有 meta 都不包含 signed URL。
 

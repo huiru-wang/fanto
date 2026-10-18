@@ -67,6 +67,7 @@ final class AuthenticationStore {
 
     func signOut() async throws {
         try await AuthSession.shared.signOut()
+        await AccountCache.shared.clear()
         state = .signedOut
         error = nil
     }
@@ -76,6 +77,7 @@ final class AuthenticationStore {
     }
 
     func invalidateSession() {
+        AccountCache.shared.invalidate()
         state = .signedOut
         error = nil
     }

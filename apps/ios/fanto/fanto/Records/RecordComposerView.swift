@@ -87,7 +87,7 @@ struct RecordComposerView: View {
                     .accessibilityValue(eventAt.formatted(date: .complete, time: .shortened))
                     .accessibilityHint("选择记录发生的日期和时间")
                 }
-                ToolbarItem(placement: .confirmationAction) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         isEditingText = false
                         Task { await save() }
@@ -95,7 +95,7 @@ struct RecordComposerView: View {
                         if isSaving {
                             ProgressView().accessibilityLabel("正在保存记录")
                         } else {
-                            Text("保存").fontWeight(.semibold)
+                            Image(systemName: "checkmark")
                         }
                     }
                     .disabled(!canSave || isBusy)
@@ -138,10 +138,12 @@ struct RecordComposerView: View {
             }
             .onDisappear { locationCoordinator.stop() }
         }
+        .tint(.primary)
     }
 
     private var textEditor: some View {
         TextField("记录此刻的想法…", text: $text, axis: .vertical)
+            .tint(FantoTheme.accent)
             .font(.body)
             .lineSpacing(6)
             .lineLimit(3...)

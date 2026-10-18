@@ -10,8 +10,8 @@ struct MediaUploadAPIClient {
     }()
 
     func upload(_ media: DraftMediaUpload, purpose: String = "record", progress: MediaUploadProgress?, onProgress: (MediaUploadProgress) -> Void) async throws -> String {
-        if media.mimeType.hasPrefix("image/") && media.data.count > (["fanto_avatar", "user_avatar"].contains(purpose) ? 512 * 1024 : 10 * 1024 * 1024) {
-            throw RecordWriteAPIError.server(["fanto_avatar", "user_avatar"].contains(purpose) ? "头像不能超过 512KB" : "图片不能超过 10MB")
+        if media.mimeType.hasPrefix("image/") && media.data.count > (purpose == "user_cover" ? 2 * 1024 * 1024 : ["fanto_avatar", "user_avatar"].contains(purpose) ? 512 * 1024 : 10 * 1024 * 1024) {
+            throw RecordWriteAPIError.server(purpose == "user_cover" ? "背景图不能超过 2MB" : ["fanto_avatar", "user_avatar"].contains(purpose) ? "头像不能超过 512KB" : "图片不能超过 10MB")
         }
         var progress = progress
         if let current = progress, current.stage == .ready { return current.ticket.mediaId }
@@ -29,10 +29,15 @@ struct MediaUploadAPIClient {
         }
         let expired = progress.map { $0.stage == .ticket && (Self.iso8601Formatter.date(from: $0.ticket.expiresAt) ?? .distantPast) <= Date.now } ?? true
         if expired {
-            let ticket: UploadTicketPayload = try await authenticatedRequest(
-                url: baseURL.appending(path: "api/uploads"), method: "POST",
-                body: UploadRequestPayload(mimeType: media.mimeType, bytes: media.data.count, purpose: purpose)
-            )
+            let ticket: UploadTicketPayload
+            do {
+                ticket = try await authenticatedRequest(
+                    url: baseURL.appending(path: "api/uploads"), method: "POST",
+                    body: UploadRequestPayload(mimeType: media.mimeType, bytes: media.data.count, purpose: purpose)
+                )
+            } catch RecordWriteAPIError.api(let message, let code) where purpose == "user_cover" && code == "INVALID_INPUT" && message == "Unsupported media" {
+                throw RecordWriteAPIError.api("背景图上传申请被服务端拒绝：上传参数未被接受。", code)
+            }
             let created = MediaUploadProgress(ticket: ticket, stage: .ticket)
             progress = created
             onProgress(created)

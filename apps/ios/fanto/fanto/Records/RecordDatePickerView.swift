@@ -17,10 +17,10 @@ struct RecordDatePickerView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     DatePicker("记录日期", selection: $selectedDate, displayedComponents: .date)
-                        .datePickerStyle(.graphical)
+                        .datePickerStyle(.graphical).tint(FantoTheme.accent)
 
                     DatePicker("记录时间", selection: $selectedTime, displayedComponents: .hourAndMinute)
-                        .datePickerStyle(.compact)
+                        .datePickerStyle(.compact).tint(FantoTheme.accent)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 10)
                         .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 16))
@@ -34,8 +34,8 @@ struct RecordDatePickerView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成", systemImage: "checkmark") {
                         var components = Calendar.current.dateComponents([.year, .month, .day], from: selectedDate)
                         let time = Calendar.current.dateComponents([.hour, .minute], from: selectedTime)
                         components.hour = time.hour
@@ -43,10 +43,11 @@ struct RecordDatePickerView: View {
                         components.second = 0
                         onSave(Calendar.current.date(from: components) ?? selectedDate)
                         dismiss()
-                    }
+                    }.labelStyle(.iconOnly)
                 }
             }
         }
+        .tint(.primary)
         .environment(\.locale, Locale(identifier: "zh_CN"))
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)

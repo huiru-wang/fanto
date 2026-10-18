@@ -5,27 +5,27 @@ struct AuthenticationGateView: View {
     @State private var auth = AuthenticationStore.shared
     @State private var conversationStore = ConversationStore()
     @State private var preparedUserID: String?
+    @State private var userProfile: UserProfileStore?
+    @State private var fantoProfile: FantoSettingsStore?
 
     var body: some View {
         Group {
-            switch auth.state {
-            case .restoring:
-                restoringView
-            case .signedOut:
+            if case .signedOut = auth.state {
                 AuthenticationEntryView(auth: auth)
-            case let .signedIn(user):
-                if preparedUserID == user.userId {
-                    AppRootView(conversationStore: conversationStore)
-                        .id(user.userId)
-                } else {
-                    StartupExperienceView()
-                        .task(id: user.userId) {
-                            await prepareApp(for: user)
-                        }
-                }
+            } else if case let .signedIn(user) = auth.state,
+                      preparedUserID == user.userId, let userProfile, let fantoProfile {
+                AppRootView(conversationStore: conversationStore, userProfile: userProfile, fantoProfile: fantoProfile)
+                    .id(user.userId)
+            } else {
+                // Keep the same view identity through authentication and local restoration.
+                StartupExperienceView()
             }
         }
         .task { await auth.restore() }
+        .task(id: signedInUserID) {
+            guard case let .signedIn(user) = auth.state, preparedUserID != user.userId else { return }
+            await prepareApp(for: user)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .fantoAuthSessionInvalidated)) { _ in
             fantoStore.resetUserData()
             auth.invalidateSession()
@@ -35,23 +35,39 @@ struct AuthenticationGateView: View {
                 fantoStore.resetUserData()
                 conversationStore.reset()
                 preparedUserID = nil
+                userProfile = nil
+                fantoProfile = nil
             }
         }
     }
 
-    private var restoringView: some View {
-        StartupExperienceView()
+    private var signedInUserID: String? {
+        guard case let .signedIn(user) = auth.state else { return nil }
+        return user.userId
     }
 
     private func prepareApp(for user: AuthUser) async {
+        await AccountCache.shared.activate(for: user.userId)
+        guard !Task.isCancelled, case let .signedIn(current) = auth.state, current.userId == user.userId else { return }
+        let cacheScope = AccountCache.shared.scope
+        let userProfile = UserProfileStore(), fantoProfile = FantoSettingsStore()
+        await userProfile.restore()
+        await fantoProfile.restore()
+        // Warm only existing local files. Startup never waits for avatar downloads.
+        if let id = userProfile.profile?.avatarMediaId { await MediaImageCache.shared.restore(id: id, variant: .thumbnail) }
+        if let id = userProfile.profile?.coverMediaId { await MediaImageCache.shared.restore(id: id, variant: .original) }
+        if let id = fantoProfile.settings?.avatarMediaId { await MediaImageCache.shared.restore(id: id, variant: .thumbnail) }
+        guard isPreparing(user.userId, scope: cacheScope) else { return }
         await fantoStore.restoreRecordSnapshot(for: user.userId)
-        async let records: Void = fantoStore.loadRecords()
-        async let conversation: Void = conversationStore.load()
-        _ = await (records, conversation)
-
-        guard case let .signedIn(currentUser) = auth.state, currentUser.userId == user.userId else {
-            return
-        }
+        guard isPreparing(user.userId, scope: cacheScope) else { return }
+        self.userProfile = userProfile
+        self.fantoProfile = fantoProfile
         preparedUserID = user.userId
+    }
+
+    private func isPreparing(_ userID: String, scope: AccountCacheScope?) -> Bool {
+        guard !Task.isCancelled, AccountCache.shared.scope == scope,
+              case let .signedIn(user) = auth.state else { return false }
+        return user.userId == userID
     }
 }

@@ -156,7 +156,7 @@ export interface UserFantoSettingsTable {
 }
 
 export interface UserProfilesTable {
-  user_id: string; nickname: string; signature: string; avatar_media_id: string | null; version: number; updated_at: Date;
+  user_id: string; nickname: string; signature: string; avatar_media_id: string | null; cover_media_id: string | null; version: number; updated_at: Date;
 }
 
 export interface DB {

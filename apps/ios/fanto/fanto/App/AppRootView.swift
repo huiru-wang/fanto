@@ -7,13 +7,16 @@ enum AppTab: Hashable {
 }
 
 struct AppRootView: View {
-    @State private var userProfile = UserProfileStore()
-    @State private var fantoProfile = FantoSettingsStore()
-    @State private var selection: AppTab = .fanto
+    @Environment(FantoStore.self) private var fantoStore
+    @State private var userProfile: UserProfileStore
+    @State private var fantoProfile: FantoSettingsStore
+    @State private var selection: AppTab = .records
     @State private var conversationStore: ConversationStore
 
-    init(conversationStore: ConversationStore) {
+    init(conversationStore: ConversationStore, userProfile: UserProfileStore? = nil, fantoProfile: FantoSettingsStore? = nil) {
         _conversationStore = State(initialValue: conversationStore)
+        _userProfile = State(initialValue: userProfile ?? UserProfileStore())
+        _fantoProfile = State(initialValue: fantoProfile ?? FantoSettingsStore())
     }
 
     var body: some View {
@@ -30,8 +33,11 @@ struct AppRootView: View {
         }
         .environment(\.userProfile, userProfile)
         .environment(\.fantoProfile, fantoProfile)
+        .environment(\.defaultMinListRowHeight, 44)
+        .task { await fantoStore.loadRecords() }
         .task { await fantoProfile.load() }
         .task { await userProfile.load() }
+        .task { await userProfile.loadAccount() }
         .tint(FantoTheme.accent)
         .task {
             await conversationStore.load()

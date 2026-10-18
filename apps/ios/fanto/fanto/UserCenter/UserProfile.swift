@@ -1,51 +1,38 @@
 import SwiftUI
 import Observation
 
-nonisolated struct UserProfile: Codable, Equatable, Sendable {
-    var nickname: String
-    var signature: String
-    var avatarMediaId: String?
-    var version: Int
-    var joinedAt: Date
-}
-nonisolated struct UserProfileChanges: Encodable {
-    let nickname: String
-    let signature: String
-    let avatarMediaId: String?
-    enum CodingKeys: String, CodingKey { case nickname, signature, avatarMediaId }
-    func encode(to encoder: Encoder) throws {
-        var c = encoder.container(keyedBy: CodingKeys.self)
-        try c.encode(nickname, forKey: .nickname)
-        try c.encode(signature, forKey: .signature)
-        if let avatarMediaId { try c.encode(avatarMediaId, forKey: .avatarMediaId) }
-        else { try c.encodeNil(forKey: .avatarMediaId) }
-    }
-}
-nonisolated struct AccountInfo: Decodable {
-    let userId: String
-    let identities: [Identity]
-    struct Identity: Decodable, Identifiable {
-        var id: String { identityId }
-        let identityId: String
-        let provider: String
-        let displayHint: String?
-        var title: String { switch provider { case "apple": "Apple"; case "google": "Google"; case "phone": "手机号"; default: provider } }
-    }
-}
 @MainActor @Observable
 final class UserProfileStore {
-    var editDraft: (base: UserProfile, value: UserProfile)?
-    private(set) var profile: UserProfile?
-    private(set) var isLoading = false
-    private(set) var error: String?
-    func accept(_ value: UserProfile) { if profile == nil || value.version >= profile!.version { profile = value }; error = nil }
-    func load() async {
-        guard !isLoading else { return }
-        isLoading = true
-        defer { isLoading = false }
-        do { let value = try await FantoAPIClient.shared.fetchUserProfile(); try Task.checkCancellation(); accept(value) }
-        catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+    private let resource: CachedResource<UserProfile>
+    private let accountResource: CachedResource<AccountInfo>
+    var profile: UserProfile? { resource.value }
+    var isSaving: Bool { resource.isUpdating }
+    func save(_ field: UserProfileField, value: String?, original: String?) async throws {
+        try await resource.update(original: original, desired: value, field: { field.value(in: $0) }) { current in
+            try await FantoAPIClient.shared.updateUserProfile(version: current.version, changes: .init(field: field, value: value))
+        }
     }
+    var isLoading: Bool { resource.isLoading }
+    var error: String? { resource.error }
+    var account: AccountInfo? { accountResource.value }
+    var isLoadingAccount: Bool { accountResource.isLoading }
+    var accountError: String? { accountResource.error }
+    init() {
+        let scope = AccountCache.shared.scope
+        resource = CachedResource(key: "user-profile", scope: scope, version: { $0.version },
+            isCurrent: { scope != nil && AccountCache.shared.scope == scope },
+            fetch: { try await FantoAPIClient.shared.fetchUserProfile() })
+        accountResource = CachedResource(key: "account-info", scope: scope, version: { _ in 0 },
+            isCurrent: { scope != nil && AccountCache.shared.scope == scope },
+            fetch: { try await FantoAPIClient.shared.fetchAccountInfo() })
+    }
+    func accept(_ value: UserProfile) { resource.accept(value) }
+    func restore() async {
+        await resource.restore()
+        await accountResource.restore()
+    }
+    func load(force: Bool = false) async { await resource.load(force: force) }
+    func loadAccount(force: Bool = false) async { await accountResource.load(force: force) }
 }
 private struct UserProfileKey: EnvironmentKey { static let defaultValue: UserProfileStore? = nil }
 extension EnvironmentValues {

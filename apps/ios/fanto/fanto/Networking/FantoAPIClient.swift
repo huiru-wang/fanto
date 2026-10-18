@@ -24,7 +24,7 @@ struct RecordPage {
     let nextCursor: String?
 }
 
-enum MediaReadVariant: String {
+nonisolated enum MediaReadVariant: String, Sendable {
     case thumbnail
     case original
 }
@@ -145,12 +145,16 @@ struct FantoAPIClient {
     }
 
     func fetchMediaReadURL(id: String, variant: MediaReadVariant = .original) async throws -> URL {
+        try await MediaImageCache.shared.readURL(id: id, variant: variant)
+    }
+
+    func fetchMediaReadLocation(id: String, variant: MediaReadVariant) async throws -> MediaReadLocation {
         var components = URLComponents(url: baseURL.appending(path: "api/media/\(id)/url"), resolvingAgainstBaseURL: false)
         components?.queryItems = [URLQueryItem(name: "variant", value: variant.rawValue)]
         guard let url = components?.url else { throw FantoAPIError.invalidBaseURL }
         let response: MediaReadURLPayload = try await request(url: url)
         guard let readURL = URL(string: response.url) else { throw FantoAPIError.invalidResponse }
-        return readURL
+        return MediaReadLocation(url: readURL, expiresAt: response.expiresAt)
     }
 
     private func request<Response: Decodable>(path: String, method: String = "GET", body: Data? = nil) async throws -> Response {
@@ -158,7 +162,7 @@ struct FantoAPIClient {
     }
 
     private func request<Response: Decodable>(url: URL, method: String = "GET", body: Data? = nil) async throws -> Response {
-        var request = URLRequest(url: url)
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
         request.httpMethod = method
         if let body {
             request.httpBody = body
@@ -324,7 +328,8 @@ private extension Record {
     }
 }
 
-private struct MediaReadURLPayload: Decodable { let url: String }
+nonisolated struct MediaReadLocation: Sendable { let url: URL; let expiresAt: Date }
+private struct MediaReadURLPayload: Decodable { let url: String; let expiresAt: Date }
 
 private extension ISO8601DateFormatter {
     static let fantoFractional: ISO8601DateFormatter = {

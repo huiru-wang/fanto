@@ -1,9 +1,6 @@
 import SwiftUI
 
 struct StartupExperienceView: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hasAppeared = false
-
     var body: some View {
         ZStack {
             LoginBackground()
@@ -21,17 +18,6 @@ struct StartupExperienceView: View {
                     .multilineTextAlignment(.center)
             }
             .padding(.horizontal, 32)
-            .opacity(hasAppeared || reduceMotion ? 1 : 0)
-            .scaleEffect(hasAppeared || reduceMotion ? 1 : 0.96)
-        }
-        .task {
-            guard !reduceMotion else {
-                hasAppeared = true
-                return
-            }
-            withAnimation(.easeOut(duration: 0.34)) {
-                hasAppeared = true
-            }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Fanto，Pieces become something。正在准备内容")

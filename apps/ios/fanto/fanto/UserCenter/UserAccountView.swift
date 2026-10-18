@@ -1,9 +1,10 @@
 import SwiftUI
 
 struct UserAccountView: View {
-    @State private var account: AccountInfo?
+    @Environment(\.userProfile) private var profile
+    private var account: AccountInfo? { profile?.account }
     @State private var error: String?
-    @State private var isLoading = false
+    private var isLoading: Bool { profile?.isLoadingAccount ?? false }
     @State private var confirmingSignOut = false
     @State private var isSigningOut = false
     var body: some View {
@@ -15,18 +16,21 @@ struct UserAccountView: View {
                     }
                 }
             } else if isLoading { ProgressView("正在读取账号") }
-            if let error {
+            if let error = error ?? profile?.accountError {
                 Section {
                     Text(error).foregroundStyle(.secondary)
-                    Button("重新读取") { Task { await load() } }.disabled(isLoading)
+                    Button("重新读取") { Task { await load(force: true) } }.disabled(isLoading)
                 }
             }
             Section {
                 Button("退出登录", role: .destructive) { confirmingSignOut = true }.disabled(isSigningOut)
             } footer: { Text("退出会清除本机登录凭据和当前账号的本地记录缓存，不删除服务端资料。") }
+            Section {
+                PendingSettingsLink(title: "注销账号", symbol: "person.crop.circle.badge.xmark", destructive: true)
+            }
         }
         .navigationTitle("账号与登录").navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("退出当前账号？", isPresented: $confirmingSignOut, titleVisibility: .visible) {
+        .alert("退出当前账号？", isPresented: $confirmingSignOut) {
             Button("退出登录", role: .destructive) {
                 Task {
                     isSigningOut = true
@@ -36,42 +40,90 @@ struct UserAccountView: View {
                 }
             }
             Button("取消", role: .cancel) { }
+        } message: {
+            Text("退出会清除本机登录凭据和当前账号缓存，服务端资料会保留。")
         }
         .task { await load() }
     }
-    private func load() async {
-        guard !isLoading else { return }
-        isLoading = true
-        defer { isLoading = false }
-        do { let value = try await FantoAPIClient.shared.fetchAccountInfo(); try Task.checkCancellation(); account = value; error = nil }
-        catch { if !Task.isCancelled { self.error = error.localizedDescription } }
+    private func load(force: Bool = false) async {
+        await profile?.loadAccount(force: force)
     }
 }
 
 struct UserPrivacyView: View {
     var body: some View {
         List {
-            Section("个人资料") { Text("头像、昵称与签名保存在当前账号下，用于展示你的个人信息，与 Fanto 的角色设定分开管理。") }
-            Section("头像") { Text("头像仅上传你确认裁切后的图片，不上传原图。") }
-            Section("记录与对话") { Text("记录和对话按账号隔离。你可以在记录页长按删除记录；删除记录不等于删除此前形成的记忆或对话。") }
-            Section("本机偏好") { Text("外观与强调色仅保存在这台设备，切换账号后继续使用当前设备的选择。") }
+            Section {
+                PendingSettingsLink(title: "存储与缓存", symbol: "internaldrive")
+                PendingSettingsLink(title: "导出我的数据", symbol: "square.and.arrow.up")
+            }
+            Section {
+                PendingSettingsLink(title: "AI 数据处理与授权", symbol: "lock.shield")
+            }
         }
         .navigationTitle("数据与隐私").navigationBarTitleDisplayMode(.inline)
     }
 }
-struct UserAboutView: View {
-    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—" }
+
+struct UserHelpFeedbackView: View {
     var body: some View {
         List {
             Section {
-                LabeledContent("Fanto", value: version)
-                Text("角色有延续，相处有记忆。")
+                NavigationLink("使用帮助") { UserHelpView() }
             }
-            Section("开始相处") {
-                Text("在 Fanto 页开始对话，点击左上角 Fanto 头像设定角色、场景与交流规则。")
-                Text("在“我的”点击昵称修改个人资料，在“偏好”直接选择外观与强调色。")
+            Section {
+                PendingSettingsLink(title: "问题反馈", symbol: "bubble.left.and.bubble.right")
+                PendingSettingsLink(title: "联系支持", symbol: "envelope")
             }
         }
-        .navigationTitle("帮助与关于").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("帮助与反馈").navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct UserAboutView: View {
+    var body: some View {
+        List {
+            Section {
+                NavigationLink("关于 Fanto") { FantoAboutDetailView() }
+            }
+            Section {
+                PendingSettingsLink(title: "使用条款", symbol: "doc.text", status: "待发布")
+                PendingSettingsLink(title: "隐私政策", symbol: "hand.raised", status: "待发布")
+                PendingSettingsLink(title: "开源许可", symbol: "list.bullet.rectangle", status: "待完善")
+            }
+        }
+        .navigationTitle("关于").navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct UserHelpView: View {
+    var body: some View {
+        List {
+            Section("Fanto") {
+                Text("在对话页点击左上角头像，修改昵称与角色设定。每项内容在自己的编辑页保存。")
+            }
+            Section("我的") {
+                Text("点击昵称进入个人信息，修改头像、背景图、昵称与签名。")
+                Text("在偏好中选择外观和强调色，选择后立即生效。")
+            }
+        }
+        .navigationTitle("使用帮助").navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+private struct FantoAboutDetailView: View {
+    private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—" }
+    private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—" }
+    var body: some View {
+        List {
+            Section {
+                Text("Fanto").font(.title2.bold())
+            }
+            Section {
+                LabeledContent("版本号", value: version)
+                LabeledContent("构建号", value: build)
+            }
+        }
+        .navigationTitle("关于 Fanto").navigationBarTitleDisplayMode(.inline)
     }
 }

@@ -165,8 +165,8 @@ struct RecordLocationEditorView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("取消") { dismiss() }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成", action: save)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成", systemImage: "checkmark", action: save).labelStyle(.iconOnly)
                         .disabled(selectedLocation == nil || isResolvingMapPoint)
                 }
             }
@@ -196,6 +196,7 @@ struct RecordLocationEditorView: View {
                 locationCoordinator.stop()
             }
         }
+        .tint(.primary)
     }
 
     private func search() async {

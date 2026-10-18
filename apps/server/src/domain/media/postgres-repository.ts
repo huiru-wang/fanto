@@ -23,7 +23,7 @@ export class PostgresMediaRepository {
     return [...new Set(keys)];
   }
 
-  async create(input: { mediaId: string; userId: string; objectKey: string; mediaType: "image" | "audio"; mimeType: string; bytes: number; purpose?: "record" | "fanto_avatar" | "user_avatar" }) {
+  async create(input: { mediaId: string; userId: string; objectKey: string; mediaType: "image" | "audio"; mimeType: string; bytes: number; purpose?: "record" | "fanto_avatar" | "user_avatar" | "user_cover" }) {
     const now = nowIso();
     const row = { media_id: input.mediaId, user_id: input.userId, object_key: input.objectKey, media_type: input.mediaType, mime_type: input.mimeType, bytes: input.bytes, status: "uploading", ext_data: JSON.stringify({ recordId: null, capture: {}, ...(input.purpose ? {purpose:input.purpose} : {}) }), created_at: now, updated_at: now };
     await this.db.insertInto("media_assets").values(row).execute();
