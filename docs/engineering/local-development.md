@@ -80,3 +80,9 @@ pnpm typecheck
 pnpm test
 pnpm db:migrate
 ```
+
+## Fanto 设置迁移的维护部署
+
+将旧 user_character 迁为 user_fanto_settings 时，先停止连接该数据库的旧 Server，再直接运行 `pnpm db:migrate`，成功后启动新版 Server。不要求额外环境变量或历史数据备份确认。
+
+部署脚本可使用 `bash deploy/manual/deploy.sh --maintenance`（需要更新 Nginx 时追加 `--nginx`），在构建后先停止旧进程，再迁移并启动新版本。该模式不负责入口摘流或等待活跃会话排空。不能让旧代码连接迁移后的表结构。数据结构见 [Fanto](../domain/fanto.md)。

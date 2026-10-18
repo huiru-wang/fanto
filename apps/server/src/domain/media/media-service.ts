@@ -4,7 +4,7 @@ import { mediaMime, mediaObjectKey, normalizeMimeType } from "./mime.js";
 import { PostgresMediaRepository, type MediaAsset } from "./postgres-repository.js";
 import { generateThumbnail, inspectImage, InvalidImageError, storedThumbnail, thumbnailObjectKey, ThumbnailWork, type MediaVariant } from "./image-thumbnail.js";
 import { StorageError, type ObjectMetadata, type ObjectStorage } from "../../infrastructure/clients/storage/object-storage.js";
-import type { Transaction, Kysely } from "kysely";
+import { sql, type Transaction, type Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
 import { logWarn } from "../../infrastructure/logging/logger.js";
 
@@ -79,7 +79,7 @@ export class MediaService {
   async copyFinalReferences(userId: string, projectId: string, ids: string[], transaction: Transaction<DB>, createdKeys: string[] = []): Promise<Record<string, string>> {
     const keys = [...new Set(ids)];
     const rows = await this.media.findMediaByIds(keys, userId, transaction, true);
-    if (rows.length !== keys.length || rows.some(a => a.status !== "ready")) throw new Error("MEDIA_NOT_READY");
+    if (rows.length !== keys.length || rows.some(a => a.status !== "ready" || a.extData.purpose === "fanto_avatar")) throw new Error("MEDIA_NOT_READY");
     const prefix = `users/${userId}/project/${projectId}/`;
     const mapping: Record<string, string> = {};
     for (const source of rows) {
@@ -109,7 +109,7 @@ export class MediaService {
 
   async withGenerationReferences<T>(userId: string, ids: string[], projectId: string, operation: (urls: string[]) => Promise<T>, variant: MediaVariant = "original") {
     const assets = await this.media.findMediaByIds(ids, userId);
-    if (assets.length !== ids.length || assets.some(a => a.status !== "ready" || a.mediaType !== "image" || a.bytes > 20 * 1024 * 1024)) throw new Error("SOURCE_MEDIA_UNAVAILABLE");
+    if (assets.length !== ids.length || assets.some(a => a.status !== "ready" || a.extData.purpose === "fanto_avatar" || a.mediaType !== "image" || a.bytes > 20 * 1024 * 1024)) throw new Error("SOURCE_MEDIA_UNAVAILABLE");
     const keys: string[] = [], urls: string[] = [];
     try {
       for (const id of ids) {
@@ -135,21 +135,32 @@ export class MediaService {
       return await operation(urls);
     } finally { await Promise.all(keys.map(key => this.oss.remove(key).catch(() => {}))); }
   }
-  async createUpload(userId: string, input: { mimeType: string; bytes: number }) {
+  async createUpload(userId: string, input: { mimeType: string; bytes: number; purpose?: "record" | "fanto_avatar" }) {
     const descriptor = mediaMime(input.mimeType); if (!descriptor || (descriptor.mediaType === "image" && input.bytes > 10 * 1024 * 1024)) return null;
+    if (input.purpose === "fanto_avatar" && (descriptor.mediaType !== "image" || input.bytes > 512 * 1024)) return null;
     const mediaId = crypto.randomUUID();
-    const created = await this.media.create({ mediaId, userId, objectKey: mediaObjectKey(userId, mediaId, descriptor.extension), mediaType: descriptor.mediaType, mimeType: descriptor.mimeType, bytes: input.bytes });
+    const objectKey=input.purpose === "fanto_avatar" ? `users/${userId}/fanto/avatar/${mediaId}${descriptor.extension}` : mediaObjectKey(userId,mediaId,descriptor.extension);
+    const created = await this.media.create({ mediaId, userId, objectKey, mediaType: descriptor.mediaType, mimeType: descriptor.mimeType, bytes: input.bytes, purpose:input.purpose });
     const signed = await this.oss.signUpload(created.objectKey, created.mimeType, 900);
     return { mediaId: created.mediaId, uploadUrl: signed.url, expiresAt: signed.expiresAt };
   }
   async completeUpload(userId: string, id: string, capture: Record<string, unknown>) {
     const current = await this.media.findMedia(id, userId);
-    if (!current) return { kind: "not_found" } as const;
+    if (!current || current.extData.retiredAt || current.extData.cleanupClaimedAt) return { kind: "not_found" } as const;
     if (current.status === "ready") return { kind: "ok", media: current } as const;
     try {
       const head = await this.oss.head(current.objectKey);
       if (!head) return { kind: "not_uploaded" } as const;
       if (head.bytes !== current.bytes || (current.mediaType === "image" && head.bytes > 10 * 1024 * 1024) || normalizeMimeType(head.contentType) !== current.mimeType) return { kind: "mismatch" } as const;
+      if (current.extData.purpose === "fanto_avatar") {
+        if (head.bytes > 512*1024 || current.mediaType !== "image") return {kind:"invalid_avatar"} as const;
+        const data=await this.oss.getObject(current.objectKey,{maxBytes:512*1024});
+        const dimensions=await inspectImage(data,current.mimeType,512*1024);
+        const info=await sharp(data,{limitInputPixels:40_000_000}).metadata();
+        if (dimensions.width !== dimensions.height || dimensions.width < 128 || dimensions.width > 512 || (info.pages ?? 1)>1) return {kind:"invalid_avatar"} as const;
+        const result=await this.media.complete(id,userId,dimensions);
+        return result ? {kind:"ok",media:result} as const : {kind:"incomplete"} as const;
+      }
       const prepared = current.mediaType === "image" ? await this.prepareImage(current.objectKey, current.mimeType, 10 * 1024 * 1024, undefined, head) : undefined;
       const result = await this.media.complete(id, userId, prepared ? { ...capture, ...prepared.capture } : capture, prepared?.thumbnail);
       return result ? { kind: "ok", media: result } as const : { kind: "incomplete" } as const;
@@ -158,7 +169,43 @@ export class MediaService {
         ? { kind: "invalid_image" } as const : { kind: "incomplete" } as const;
     }
   }
-  async readyMetadata(userId: string, id: string) { const asset = await this.media.findMedia(id, userId); return asset?.status === "ready" ? metadata(asset) : null; }
+  async cleanupAvatars(db: Kysely<DB>, apply = false) {
+    const cutoff=new Date(Date.now()-24*60*60*1000).toISOString();
+    const candidates=await db.selectFrom("media_assets").select(["media_id","user_id"]).where(sql<boolean>`ext_data::jsonb->>'purpose' = 'fanto_avatar'`)
+      .where("created_at","<",cutoff)
+      .where(sql<boolean>`NOT EXISTS (SELECT 1 FROM user_fanto_settings WHERE avatar_media_id=media_assets.media_id)`).orderBy("media_id").limit(100).execute();
+    let eligible=0,removed=0,failed=0;
+    for (const candidate of candidates) {
+      const claimed=await db.transaction().execute(async trx=>{
+        const row=await trx.selectFrom("media_assets").selectAll().where("user_id","=",candidate.user_id).where("media_id","=",candidate.media_id).forUpdate().executeTakeFirst();
+        if(!row) return null;
+        if(await trx.selectFrom("user_fanto_settings").select("user_id").where("avatar_media_id","=",row.media_id).executeTakeFirst()) return null;
+        const data=JSON.parse(row.ext_data ?? "{}");
+        if(data.cleanupClaimedAt && Date.now()-Date.parse(data.cleanupClaimedAt)<600_000) return null;
+        if(apply) await trx.updateTable("media_assets").set({ext_data:JSON.stringify({...data,cleanupClaimedAt:new Date().toISOString()})}).where("user_id","=",row.user_id).where("media_id","=",row.media_id).execute();
+        return row;
+      });
+      if(!claimed) continue;
+      eligible++;
+      if(!apply) continue;
+      try {
+        await this.oss.remove(claimed.object_key);
+        await db.transaction().execute(async trx=>{
+          const row=await trx.selectFrom("media_assets").select("media_id").where("user_id","=",claimed.user_id).where("media_id","=",claimed.media_id).forUpdate().executeTakeFirst();
+          if(row && !await trx.selectFrom("user_fanto_settings").select("user_id").where("avatar_media_id","=",row.media_id).executeTakeFirst())
+            await trx.deleteFrom("media_assets").where("user_id","=",claimed.user_id).where("media_id","=",row.media_id).execute();
+        });
+        removed++;
+      } catch { failed++; }
+    }
+    return {eligible,removed,failed,dryRun:!apply};
+  }
+  async validateAvatar(userId: string, id: string, transaction: Transaction<DB>) {
+    const rows=await this.media.findMediaByIds([id],userId,transaction,true);
+    const asset=rows[0];
+    return !!asset && asset.status === "ready" && asset.mediaType === "image" && asset.extData.purpose === "fanto_avatar" && !asset.extData.retiredAt && !asset.extData.cleanupClaimedAt;
+  }
+  async readyMetadata(userId: string, id: string) { const asset = await this.media.findMedia(id, userId); return asset?.status === "ready" && asset.extData.purpose !== "fanto_avatar" ? metadata(asset) : null; }
   private async resolveThumbnail(asset: MediaAsset) {
     const thumbnail = storedThumbnail(asset.extData, asset.objectKey);
     if (thumbnail) return thumbnail;
@@ -171,9 +218,9 @@ export class MediaService {
   }
   async readUrl(userId: string, id: string, variant: MediaVariant = "original") {
     const asset = await this.media.findMedia(id, userId);
-    if (asset?.status !== "ready") return null;
+    if (asset?.status !== "ready" || asset.extData.cleanupClaimedAt) return null;
     let key = asset.objectKey;
-    if (asset.mediaType === "image" && variant === "thumbnail") {
+    if (asset.mediaType === "image" && asset.extData.purpose !== "fanto_avatar" && variant === "thumbnail") {
       const thumbnail = await this.resolveThumbnail(asset);
       if (!thumbnail) return null;
       key = thumbnail.objectKey;
@@ -182,7 +229,7 @@ export class MediaService {
   }
   async redirectUrl(userId: string, id: string) {
     const asset = await this.media.findMedia(id, userId);
-    return asset?.status === "ready" ? (await this.oss.signRead(asset.objectKey, 300)).url : null;
+    return asset?.status === "ready" && !asset.extData.cleanupClaimedAt ? (await this.oss.signRead(asset.objectKey, 300)).url : null;
   }
 }
 

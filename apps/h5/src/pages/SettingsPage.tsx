@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import {
   Bell,
   ChevronRight,
@@ -13,7 +14,6 @@ import {
   UserRound,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { CharacterSettings } from "../components/CharacterSettings";
 
 type Appearance = "system" | "light" | "dark";
 type LoginProvider = "phone" | "google" | "apple" | "email";
@@ -46,7 +46,7 @@ export function SettingsPage() {
   const [accent, setAccent] = useState<Accent>("default");
   const [profileOpen, setProfileOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
-  const [characterOpen, setCharacterOpen] = useState(false);
+  const navigate = useNavigate();
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [generalOpen, setGeneralOpen] = useState<"language" | "appearance" | "accent" | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -95,7 +95,7 @@ export function SettingsPage() {
         </SettingsSection>
 
         <SettingsSection title="Fanto">
-          <SettingsRow icon={<Sparkles size={18} />} title="角色设定" value="编辑" onClick={() => setCharacterOpen(true)} />
+          <SettingsRow icon={<Sparkles size={18} />} title="Fanto 设置" value="编辑" onClick={() => navigate("/fanto/settings")} />
         </SettingsSection>
 
         <SettingsSection title="通知">
@@ -164,7 +164,6 @@ export function SettingsPage() {
         </div>
       </SettingsModal>
 
-      {characterOpen && <CharacterSettings onClose={() => setCharacterOpen(false)} />}
 
       <SettingsModal title="通知" open={notificationOpen} onClose={() => setNotificationOpen(false)}>
         <ToggleRow title="允许通知" checked={notificationsEnabled} onChange={setNotificationsEnabled} />

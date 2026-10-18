@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { BrowserRouter } from "react-router-dom";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { App } from "./app/App";
 import { initializeTestSession } from "./auth/test-session";
 import "./styles/global.css";
@@ -9,9 +9,7 @@ const root = createRoot(document.getElementById("root")!);
 void initializeTestSession()
   .then(() => {
     root.render(
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>,
+      <RouterProvider router={createBrowserRouter([{path:"*",element:<App />}])}/>,
     );
   })
   .catch(cause => {

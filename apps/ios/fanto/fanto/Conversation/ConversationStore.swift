@@ -28,7 +28,6 @@ final class ConversationStore {
     private var activePrompt: String?
     private var textBlockOpen = false
     private var pendingPresentedMedia: [PresentedMedia] = []
-    private(set) var recoveryNotice: String?
     private(set) var isEndingOperation = false
     private(set) var isRecovering = false
     private var recoveryTask: Task<Void, Never>?
@@ -62,7 +61,6 @@ final class ConversationStore {
                     hasMoreHistory = page.hasMore
                     historyNextCursor = page.nextCursor
                     sessionID = storedID
-                    if page.restored { recoveryNotice = "已恢复保存的历史，部分最近消息可能未保存。" }
                     if page.running { recoverConversation() }
                 } catch let error as AgentAPIError where error.invalidatesSession {
                     try persistence.clear(userID: client.userID, agentID: client.agentID)
@@ -87,7 +85,6 @@ final class ConversationStore {
         recoveryTask?.cancel()
         recoveryTask = nil
         isRecovering = false
-        recoveryNotice = nil
         isEndingOperation = false
         stopTask?.cancel()
         stopTask = nil
@@ -133,7 +130,6 @@ final class ConversationStore {
 
     private func beginRun(message: String) {
         guard isReady, runTask == nil, !isStopping, !isRecovering, let sessionID else { return }
-        recoveryNotice = nil
         let assistant = ConversationMessage.assistantPlaceholder(id: nextLocalMessageID())
         messages.append(assistant)
         activeAssistantMessageID = assistant.id

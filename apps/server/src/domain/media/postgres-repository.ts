@@ -23,9 +23,9 @@ export class PostgresMediaRepository {
     return [...new Set(keys)];
   }
 
-  async create(input: { mediaId: string; userId: string; objectKey: string; mediaType: "image" | "audio"; mimeType: string; bytes: number }) {
+  async create(input: { mediaId: string; userId: string; objectKey: string; mediaType: "image" | "audio"; mimeType: string; bytes: number; purpose?: "record" | "fanto_avatar" }) {
     const now = nowIso();
-    const row = { media_id: input.mediaId, user_id: input.userId, object_key: input.objectKey, media_type: input.mediaType, mime_type: input.mimeType, bytes: input.bytes, status: "uploading", ext_data: JSON.stringify({ recordId: null, capture: {} }), created_at: now, updated_at: now };
+    const row = { media_id: input.mediaId, user_id: input.userId, object_key: input.objectKey, media_type: input.mediaType, mime_type: input.mimeType, bytes: input.bytes, status: "uploading", ext_data: JSON.stringify({ recordId: null, capture: {}, ...(input.purpose ? {purpose:input.purpose} : {}) }), created_at: now, updated_at: now };
     await this.db.insertInto("media_assets").values(row).execute();
     return asset(row);
   }
@@ -43,6 +43,7 @@ export class PostgresMediaRepository {
     return this.db.transaction().execute(async trx => {
       const row = await trx.selectFrom("media_assets").selectAll().where("media_id", "=", id).where("user_id", "=", userId).forUpdate().executeTakeFirst();
       if (!row) return null;
+      if (json(row.ext_data).cleanupClaimedAt || json(row.ext_data).retiredAt) return null;
       if (row.status === "ready") return asset(row);
       if (row.status !== "uploading") return null;
       const updated = await trx.updateTable("media_assets").set({ status: "ready", ext_data: JSON.stringify({ ...json(row.ext_data), capture, ...(thumbnail ? { variants: { ...(json(row.ext_data).variants as object ?? {}), thumbnail } } : {}) }), updated_at: nowIso() }).where("media_id", "=", id).where("user_id", "=", userId).where("status", "=", "uploading").returningAll().executeTakeFirst();

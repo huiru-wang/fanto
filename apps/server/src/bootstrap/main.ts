@@ -27,7 +27,7 @@ import { AuthService } from "../domain/auth/index.js";
 import { RecordRetrievalService, RecordService, type Record } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
 import { ProjectService, ProposalService } from "../domain/projects/index.js";
-import { CharacterService } from "../domain/character.js";
+import { FantoService } from "../domain/fanto/index.js";
 import { MemoryService } from "../domain/memory/index.js";
 import { createAgentRuntime } from "../agent/agent-runtime.js";
 import { TtlCache } from "../infrastructure/cache/ttl-cache.js";
@@ -68,14 +68,14 @@ const embeddings = new EmbeddingsClient(
 );
 const retrieval = RecordRetrievalService.create(db, embeddings);
 const memories = MemoryService.create(db, embeddings);
-const character = new CharacterService(db);
+const fanto = FantoService.create(db, media);
 const queue = new RecordPostprocessQueue();
 const records = RecordService.create(db, queue, retrieval, recordListCache, undefined, media);
 const projects = ProjectService.create(db, records, media, embeddings);
 const proposals = ProposalService.create(db, records, media, embeddings);
 const creative = config.creative.enabled ? new CreativeService(db, records, projects, proposals, media, new CreativeImageClient(config.creative.image), userId => auth.assertActiveUser(userId),
   new QwenImageUnderstanding(config.dashscope.apiKey, config.dashscope.baseUrl, config.dashscope.visionModel)) : undefined;
-const agent = createAgentRuntime({ db, records, media, memories, character, creative, ...config.agent });
+const agent = createAgentRuntime({ db, records, media, memories, fanto, creative, ...config.agent });
 const embeddingQueue=new RecordEmbeddingQueue();
 const agentQueue=new AgentExecutionQueue();
 const events=new SessionEventBus();
@@ -105,7 +105,7 @@ const services: ServerServices = {
   proposals,
   creative,
   agent,
-  character,
+  fanto,
   healthCheck,
 };
 

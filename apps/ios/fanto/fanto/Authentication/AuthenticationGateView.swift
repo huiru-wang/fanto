@@ -16,6 +16,7 @@ struct AuthenticationGateView: View {
             case let .signedIn(user):
                 if preparedUserID == user.userId {
                     AppRootView(conversationStore: conversationStore)
+                        .id(user.userId)
                 } else {
                     StartupExperienceView()
                         .task(id: user.userId) {

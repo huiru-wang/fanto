@@ -1,4 +1,4 @@
-import { DEFAULT_CHARACTER, type CharacterPrompt } from "../domain/character.js";
+import { type CharacterPrompt } from "../domain/fanto/index.js";
 import type { CreativeService } from "../domain/projects/creative-service.js";
 import type { CreativeContext, ImageInput, ProjectManageInput } from "../domain/projects/creative-model.js";
 import type { CreateProposalInput } from "../domain/projects/index.js";
@@ -35,7 +35,7 @@ export type AgentBusinessServices = {
   listRecords(context: AgentRequestContext, input: { limit: number; cursor?: string }): Promise<AgentRecordList>;
   searchRecords(context: AgentRequestContext, input: { query: string; limit: number }): Promise<AgentRecordSearch>;
   getMediaMetadata(context: AgentRequestContext, mediaId: string): Promise<AgentMediaMetadata>;
-  getCharacter(context: AgentRequestContext): Promise<CharacterPrompt>;
+  getFantoConversationSettings(context: AgentRequestContext): Promise<CharacterPrompt & {nickname: string}>;
   listMemories(context: AgentRequestContext, input?: { kind?: MemoryKind }): Promise<AgentMemory[]>;
   searchMemories(context: AgentRequestContext, input: { query: string; limit: number }): Promise<AgentMemorySearch[]>;
   createMemory(context: AgentRequestContext, input: { kind: MemoryKind; content: string }): Promise<AgentMemory>;
@@ -55,11 +55,11 @@ export function createAgentBusinessServices(services: {
   creative?: CreativeService;
   media: MediaService;
   memories: MemoryService;
-  character?: { get(userId: string): Promise<CharacterPrompt> };
+  fanto?: { getConversationSettings(userId: string): Promise<CharacterPrompt & {nickname: string}> };
 }): AgentBusinessServices {
   const creative = () => { if (!services.creative) throw new Error("CREATIVE_AGENT_DISABLED"); return services.creative; };
   return {
-    getCharacter: context => services.character ? withRunAbort(context, () => services.character!.get(context.userId)) : Promise.resolve({ ...DEFAULT_CHARACTER }),
+    getFantoConversationSettings: context => { if (!services.fanto) throw new Error("FantoService is not configured"); return withRunAbort(context, () => services.fanto!.getConversationSettings(context.userId)); },
     creativeContext: context => creative().context(context),
     readProject: (context, input) => creative().readProject(context, input),
     createProposal: (context, input) => creative().createProposal(context, input),

@@ -13,7 +13,7 @@ import { buildRuntime } from "../harness/build-runtime.js";
 import { runAgent } from "../harness/run.js";
 import { SkillLoader } from "../skills/loader.js";
 import type { AgentBusinessServices, AgentMemory } from "../business-services.js";
-import { DEFAULT_CHARACTER } from "../../domain/character.js";
+import { DEFAULT_CHARACTER } from "../../domain/fanto/index.js";
 
 type Kind = AgentMemory["kind"];
 type Seed = { kind: Kind; content: string };
@@ -65,7 +65,7 @@ smoke("real main model memory policy (independent scenarios)", { timeout: 600_00
     for (const [i, seed] of (scenario.seeds ?? []).entries()) rows.set(`seed-${i}`, { ...seed, memoryId: `seed-${i}`, createdAt: "2026-10-17T00:00:00Z", updatedAt: "2026-10-17T00:00:00Z" });
     const actions: string[] = [];
     const fanto = {
-      getCharacter: async () => ({ ...DEFAULT_CHARACTER }),
+      getFantoConversationSettings: async () => ({ ...DEFAULT_CHARACTER, nickname: "Fanto" }),
       listRecords: async () => ({ data: [], nextCursor: null, hasMore: false }),
       listMemories: async (_ctx: unknown, input?: { kind?: Kind }) => [...rows.values()].filter(row => !input?.kind || row.kind === input.kind),
       searchMemories: async () => { actions.push("search"); return [...rows.values()].map(row => ({ ...row, distance: 0.1 })); },

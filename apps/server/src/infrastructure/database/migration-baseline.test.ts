@@ -41,12 +41,12 @@ integration("baseline initializes fresh databases and consolidates only complete
     await runMigrations(db);
     await runMigrations(db);
     const names = async () => (await sql<{ name: string }>`SELECT name FROM kysely_migration ORDER BY name`.execute(db)).rows.map(row => row.name);
-    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011", "user_character_20261017", "z_agent_session_snapshots_20261017", "zz_memory_kinds_20261017"]);
+    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011", "user_character_20261017", "z_agent_session_snapshots_20261017", "zz_memory_kinds_20261017", "zzz_user_fanto_settings_20261018"]);
 
     const tables = (await sql<{ table_name: string }>`
       SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()
     `.execute(db)).rows.map(row => row.table_name);
-    for (const required of ["users", "user_character", "records", "media_assets", "memories", "projects", "proposals", "record_links"]) {
+    for (const required of ["users", "user_fanto_settings", "records", "media_assets", "memories", "projects", "proposals", "record_links"]) {
       assert.ok(tables.includes(required), `Missing ${required}`);
     }
     for (const obsolete of ["tasks", "task_runs", "proposal_runs", "creation_runs", "creation_image_steps", "legacy_projects", "media_object_deletions"]) {
@@ -62,7 +62,7 @@ integration("baseline initializes fresh databases and consolidates only complete
     const userId = randomUUID();
     const now = new Date();
     await db.insertInto("users").values({ user_id: userId, status: "active", created_at: now, updated_at: now, disabled_at: null }).execute();
-    await sql`DROP TABLE user_character`.execute(db);
+    await sql`DROP TABLE user_fanto_settings`.execute(db);
     await sql`DROP TABLE agent_session.snapshots`.execute(db);
     // Reproduce the old Kysely metadata without recreating or dropping user data.
     await sql`DELETE FROM kysely_migration`.execute(db);
@@ -70,11 +70,11 @@ integration("baseline initializes fresh databases and consolidates only complete
       await sql`INSERT INTO kysely_migration (name, timestamp) VALUES (${migration}, ${new Date(Date.now() - (previousMigrations.length + oldMigrations.length - index) * 1000).toISOString()})`.execute(db);
     }
     await runMigrations(db);
-    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011", "user_character_20261017", "z_agent_session_snapshots_20261017", "zz_memory_kinds_20261017"]);
+    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011", "user_character_20261017", "z_agent_session_snapshots_20261017", "zz_memory_kinds_20261017", "zzz_user_fanto_settings_20261018"]);
     assert.equal((await db.selectFrom("users").select("user_id").executeTakeFirstOrThrow()).user_id, userId);
     await runMigrations(db); // Idempotent after consolidation.
 
-    await sql`DROP TABLE user_character`.execute(db);
+    await sql`DROP TABLE user_fanto_settings`.execute(db);
     await sql`DROP TABLE agent_session.snapshots`.execute(db);
     // Fully executed pre-2026-10-08 history is also supported.
     await sql`DELETE FROM kysely_migration`.execute(db);
@@ -82,7 +82,7 @@ integration("baseline initializes fresh databases and consolidates only complete
       await sql`INSERT INTO kysely_migration (name, timestamp) VALUES (${migration}, ${new Date(Date.now() - (previousMigrations.length + oldMigrations.length - index) * 1000).toISOString()})`.execute(db);
     }
     await runMigrations(db);
-    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011", "user_character_20261017", "z_agent_session_snapshots_20261017", "zz_memory_kinds_20261017"]);
+    assert.deepEqual(await names(), ["create_current_schema_20261011", "drop_tasks_20261011", "user_character_20261017", "z_agent_session_snapshots_20261017", "zz_memory_kinds_20261017", "zzz_user_fanto_settings_20261018"]);
     assert.equal((await db.selectFrom("users").select("user_id").executeTakeFirstOrThrow()).user_id, userId);
 
     const sessionTables = (await sql<{ table_name: string }>`

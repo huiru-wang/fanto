@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { FantoProvider } from "../fanto/FantoContext";
+import { FantoSettingsPage } from "../fanto/FantoSettingsPage";
 import { AppShell } from "../components/AppShell";
 import { ChatPage } from "../pages/ChatPage";
 import { RecordsPage } from "../pages/RecordsPage";
@@ -11,15 +13,16 @@ export function App() {
   const [chatVisited, setChatVisited] = useState(location.pathname === "/chat");
   useEffect(() => { if (location.pathname === "/chat") setChatVisited(true); }, [location.pathname]);
   return (
-    <AppShell>
+    <FantoProvider><AppShell>
       <div hidden={location.pathname !== "/chat"}>{(chatVisited || location.pathname === "/chat") && <ChatPage active={location.pathname === "/chat"} />}</div>
       <Routes>
         <Route path="/records" element={<RecordsPage />} />
         <Route path="/chat" element={null} />
         <Route path="/projects" element={<ProjectsPage />} />
+        <Route path="/fanto/settings" element={<FantoSettingsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/records" replace />} />
       </Routes>
-    </AppShell>
+    </AppShell></FantoProvider>
   );
 }

@@ -7,6 +7,7 @@ enum AppTab: Hashable {
 }
 
 struct AppRootView: View {
+    @State private var fantoProfile = FantoSettingsStore()
     @State private var selection: AppTab = .records
     @State private var conversationStore: ConversationStore
 
@@ -26,6 +27,8 @@ struct AppRootView: View {
                 ProjectsView()
             }
         }
+        .environment(\.fantoProfile, fantoProfile)
+        .task { await fantoProfile.load() }
         .tint(FantoTheme.accent)
         .task {
             await conversationStore.load()

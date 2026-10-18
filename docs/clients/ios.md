@@ -8,7 +8,7 @@ iOS 采用原生 SwiftUI Project 列表与详情：Proposal 接受只返回 `pro
 
 `Project.status` 使用 `queued/running/completed/failed/archived`：queued 表示等待执行，**与 Session 是否存在/绑定无关**。详情优先显示当前有效作品，queued/running 时继续保留上次内容；completed/failed 且有 Session 时可以继续创作，queued/running/archived 不允许发送新消息；只有 completed/failed 能归档。
 
-会话统一按 `sessionId` 读取 `GET /api/agent/sessions/:sessionId/history` 和订阅 `GET /api/agent/sessions/:sessionId/events`（JWT + `URLSession.bytes(for:)`）；继续创作通过统一 `POST /api/agent/stream` 传入当前 sessionId 和 `metadata.projectId`，不发送 agentId，直接消费流式响应。断线后补读 History、不自动重发消息；只读订阅失败不阻止 completed/failed Project 主动发送。Project Session 复用 Main Chat 原生消息气泡、Markdown、媒体和 Tool Presentation，按 toolCallId 更新执行状态，不把工具内部 ID 当成自然语言展示。列表有活动 Project 时短间隔刷新；详情 queued/running 时每约 5 秒刷新，并在 App 进入后台时暂停。
+会话统一按 `sessionId` 读取 `GET /api/agent/sessions/:sessionId/history` 和订阅 `GET /api/agent/sessions/:sessionId/events`（JWT + `URLSession.bytes(for:)`）；继续创作通过统一 `POST /api/agent/stream` 传入当前 sessionId 和 `metadata.projectId`，不发送 agentId，直接消费流式响应。断线后补读 History、不自动重发消息；只读订阅失败不阻止 completed/failed Project 主动发送。Project Session 复用 Main Chat 无气泡消息行、Markdown、媒体和 Tool Presentation，按 toolCallId 更新执行状态，不把工具内部 ID 当成自然语言展示。列表有活动 Project 时短间隔刷新；详情 queued/running 时每约 5 秒刷新，并在 App 进入后台时暂停。
 
 图片在本地生成上传 JPEG 后校验 10 MiB；服务端申请与完成直传同样校验。最终作品媒体由 Project Service 按 objectKey 归属生成独立副本。
 
@@ -39,6 +39,7 @@ iOS 采用原生 SwiftUI Project 列表与详情：Proposal 接受只返回 `pro
 | Fanto 默认长期会话 | `POST /api/agent/sessions` | Client 已接 |
 | Fanto 最近历史 | `GET /api/agent/sessions/:id/history?limit=10` | 已接 iOS 客户端流程 |
 | Fanto 文本流式回复 | `POST /api/agent/stream` | 已接 iOS 客户端流程 |
+| Fanto 设置 | `GET/PATCH /api/fanto/settings`、purpose=fanto_avatar 的 Media 上传 | 已接基本资料、头像裁切和四项角色配置，版本冲突显式处理 |
 
 Record 首批读取 30 条，客户端据此生成日历标记和两种视图；服务端返回 `nextCursor`，连续时间线在滚动到底部时基于 cursor 自动读取并追加更早记录。追加页会按 Record ID 去重并按事件时间倒序排列；追加失败保留已显示记录并在底部提供重试。当前账号最近 200 条已读取 Record 会以受 iOS 文件保护的数据快照保存在 Application Support；认证后的启动过程先恢复该快照，再以服务端首屏结果覆盖。新增与每次成功分页后都会更新快照；认证失效或账号切换时清除该账号快照。记录携带服务端 version；旧快照缺少版本时先读取最新 Record 再删除。删除成功或服务端已不存在时移除本地数据并保存快照，已删除 ID 不允许被进行中的分页请求重新加入；版本冲突刷新列表并要求重新确认。
 
@@ -51,7 +52,7 @@ App 启动后先进入认证 Gate：
 - access token 临近过期时，使用 Keychain 中的 refresh token 调用 `POST /api/auth/tokens/refresh`，成功后原子替换整对 token；
 - refresh token 过期、无效或用户被禁用时清理本地认证状态并回到登录页；
 - access / refresh token 均保存在 Keychain，业务 token 不写入 `UserDefaults`；
-- 当前没有“我的”、设置或退出登录入口；认证失效时会清除本地认证状态并回到登录页。
+- 当前没有“我的”或退出登录入口；Fanto 对话页提供角色设置入口；认证失效时会清除本地认证状态并回到登录页。
 
 认证 Gate 直接展示包含 Fanto IP 与 “Pieces become something.” 的登录页，提供 Google 与 Apple 的原生继续按钮。完整链路为：iOS 请求 `/api/auth/intents`（`purpose=authenticate, provider=google|apple`）获得一次性 challenge nonce，再将 nonce 传给对应的原生身份 SDK，并通过 `/api/auth/authentications` 的通用 `proof` 字段把 ID token 发送给 Fanto Server；Server 验证签名、audience、expiry 与 nonce 后，按 `(provider, sub)` 登录已有用户或原子创建新用户，随后签发 Fanto access / refresh JWT。认证成功后进入“记录”Tab；客户端不展示也不判断注册状态。
 
@@ -68,6 +69,12 @@ Apple 登录使用系统 `AuthenticationServices`，Xcode target 通过 `fanto/f
 认证成功后才创建业务根视图；认证失效时会先清空当前 `FantoStore` 的 Records / Projects 运行态数据，再回到登录页。Agent Session 的 Keychain key 继续包含真实 `user_id + agent_id`，因此不同账号不会复用同一个长期会话。
 
 ## Fanto 对话
+
+顶部左侧的 Fanto 头像与昵称是唯一设置入口，右侧不显示设置图标。导航使用系统 Liquid Glass；底部输入框为独立的 Liquid Glass 浮层，与 Tab 导航分离。消息两侧分别显示当前 Fanto 头像与用户系统人物头像，正文不使用消息气泡；Project Session 复用相同消息行并保留品牌头像。减少透明度时输入框切换为不透明语义背景，减少动态效果时取消自动滚动动画。
+
+设置首页包含头像、昵称、简介及角色与性格、互动场景、交流规则、示例对话入口，不展示「定义属于你的交流方式」。文字编辑保留草稿，首页保存按版本提交变更字段；读取失败可重试，未保存离开需确认。角色配置使用有高度上限的多行编辑器，回车插入换行，长文本在框内滚动，键盘工具栏可收起键盘。
+
+点击设置头像使用 PhotosPicker 选择新图片，裁切页以圆形遮罩预览，支持拖动、缩放、重置与取消。保存只上传最多 512×512 的裁切 JPEG，并立即更新头像；不保存原图，不下载或重新编辑已有头像。头像单独保存后仍保留未保存文字；并发冲突要求用户确认。数据、限制与生命周期以 [Fanto](../domain/fanto.md) 为准。
 
 Fanto 位于根导航中间，只使用一个默认长期 Agent Session，不提供会话列表、切换或“开始新话题”。iOS 以当前认证用户的 `user_id` 和 `main` Agent 为键将 Session ID 保存到 Keychain；认证后的品牌启动页会预加载 Fanto Session 与最近 10 条历史，根导航中的加载任务仅作为兜底，切入 Fanto 时若仍未完成才显示加载态。首次显示对话时会定位至最新消息；向上滚动至历史顶部时，客户端基于服务端 `cursor / nextCursor` 自动读取更早页，并保持原先顶部消息的阅读位置。仅在本地没有 ID，或服务端明确返回 Session 不存在 / 无权访问时创建新的 Session。
 

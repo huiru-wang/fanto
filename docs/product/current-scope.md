@@ -23,7 +23,7 @@
 
 ## Main Agent
 
-- H5 设置页可编辑并保存当前用户唯一的角色 Prompt 配置，主对话下一轮实时读取，无需新建 Session。
+- H5 与 iOS 从主对话左上头像进入 Fanto 设置，支持昵称、简介、头像及四项角色配置。头像选择新图片后拖动/缩放裁切，仅上传小图；文字按版本保存，主对话下一轮读取昵称与角色配置。详见 [Fanto](../domain/fanto.md)。
 - Fanto 主对话是一个持久 Session，支持文字 SSE、原生媒体展示、工具活动、必要时的澄清表单；按需使用 Record 检索和 Memory 管理。
 - 当前只提供 Record、Proposal 和 Project 相关的发现与创作，不提供即时、延时或周期 Task，不提供提醒、通用文件交付及个人助理工作流。创作执行依赖 Proposal 接受后启动 Creator，已存在 Project 可继续对话；Main 尚不能直接创建 Project。
 - Proposal / Creator 使用进程内非持久化队列；没有消息持久化、自动重试或重启恢复保证。

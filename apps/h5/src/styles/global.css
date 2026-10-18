@@ -2957,3 +2957,22 @@ input:focus-visible {
   .projects-page .project-section-head { flex-wrap: wrap; }
   .project-tabs { max-width: 100%; }
 }
+
+/* Fanto identity and the independent, single-image avatar editor. */
+.fanto-profile-avatar{display:inline-flex;flex-shrink:0;align-items:center;justify-content:center;border-radius:50%;overflow:hidden;background:var(--surface,#f4f2ee);color:var(--text,#242424)}
+.fanto-profile-avatar img{width:100%;height:100%;object-fit:cover}
+.fanto-chat-title{border:0;background:none;text-align:left;color:inherit;cursor:pointer;min-width:0}
+.fanto-chat-title strong,.fanto-chat-title span{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fanto-settings-page{max-width:720px;margin:auto;padding:24px 24px 120px}
+.fanto-settings-page header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:24px}
+.fanto-settings-page h1{font-size:24px}.fanto-settings-identity{display:flex;flex-direction:column;align-items:center;gap:12px;margin:32px 0}
+.avatar-picker{padding:0;border:0;border-radius:50%;background:none;cursor:pointer}.fanto-settings-identity small,.fanto-settings-note{color:#777}
+.fanto-settings-page .settings-field{margin:20px 0}.fanto-settings-page textarea{resize:vertical;max-height:480px;overflow:auto}
+.avatar-crop-dialog{position:fixed;inset:0;z-index:1000;background:#080808;color:white;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:calc(env(safe-area-inset-top) + 16px) 20px calc(env(safe-area-inset-bottom) + 20px);overflow:auto}
+.avatar-crop-dialog h2,.avatar-crop-dialog p{margin:0}.avatar-crop-dialog p{max-width:520px;text-align:center}
+.avatar-crop-viewport{width:min(80vw,50dvh,420px);aspect-ratio:1;position:relative;overflow:hidden;touch-action:none;flex-shrink:0}
+.avatar-crop-viewport canvas{width:100%;height:100%;display:block}.avatar-crop-mask{position:absolute;inset:0;border-radius:50%;border:1px solid white;box-shadow:0 0 0 100vmax #0009;pointer-events:none}
+.avatar-zoom{display:flex;align-items:center;gap:16px;width:min(80vw,420px)}.avatar-zoom input{flex:1;min-height:44px}
+.avatar-crop-dialog button{min-height:44px;padding:8px 20px;border:1px solid #777;border-radius:24px;color:white;background:#333;cursor:pointer}
+.avatar-crop-dialog footer{display:flex;justify-content:space-between;width:min(85vw,520px);gap:20px}.avatar-crop-dialog button:disabled{opacity:.5;cursor:default}
+@media(prefers-reduced-motion:reduce){.avatar-crop-dialog *{transition:none!important}}

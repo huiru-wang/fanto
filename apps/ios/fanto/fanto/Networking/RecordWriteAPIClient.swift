@@ -51,67 +51,7 @@ struct RecordWriteAPIClient {
     private let baseURL = URL(string: "https://fanto.robinverse.me")!
 
     func upload(_ media: DraftMediaUpload, progress: MediaUploadProgress?, onProgress: (MediaUploadProgress) -> Void) async throws -> String {
-        if media.mimeType.hasPrefix("image/") && media.data.count > 10 * 1024 * 1024 {
-            throw RecordWriteAPIError.server("图片不能超过 10MB")
-        }
-        var progress = progress
-        if let current = progress, current.stage == .ready { return current.ticket.mediaId }
-        if var current = progress, current.stage == .uploading {
-            do {
-                try await complete(media, ticket: current.ticket)
-                current.stage = .ready
-                onProgress(current)
-                return current.ticket.mediaId
-            } catch RecordWriteAPIError.api(_, let code) where code == "UPLOAD_NOT_FOUND" {
-                current.stage = .ticket
-                progress = current
-                onProgress(current)
-            }
-        }
-        let expired = progress.map { $0.stage == .ticket && (Self.iso8601Formatter.date(from: $0.ticket.expiresAt) ?? .distantPast) <= Date.now } ?? true
-        if expired {
-            let ticket: UploadTicketPayload = try await authenticatedRequest(
-                url: baseURL.appending(path: "api/uploads"), method: "POST",
-                body: UploadRequestPayload(mimeType: media.mimeType, bytes: media.data.count)
-            )
-            let created = MediaUploadProgress(ticket: ticket, stage: .ticket)
-            progress = created
-            onProgress(created)
-        }
-        guard var current = progress else { throw RecordWriteAPIError.invalidResponse }
-        let ticket = current.ticket
-        if current.stage == .ticket {
-            guard let uploadURL = URL(string: ticket.uploadUrl) else {
-                throw RecordWriteAPIError.invalidUploadURL
-            }
-
-            current.stage = .uploading
-            onProgress(current)
-            var uploadRequest = URLRequest(url: uploadURL)
-            uploadRequest.timeoutInterval = 60
-            uploadRequest.httpMethod = "PUT"
-            uploadRequest.httpBody = media.data
-            uploadRequest.setValue(media.mimeType, forHTTPHeaderField: "Content-Type")
-            let (_, uploadResponse) = try await URLSession.shared.data(for: uploadRequest)
-            guard let uploadHTTP = uploadResponse as? HTTPURLResponse,
-                  (200 ... 299).contains(uploadHTTP.statusCode) else {
-                throw RecordWriteAPIError.uploadFailed((uploadResponse as? HTTPURLResponse)?.statusCode ?? -1)
-            }
-
-            current.stage = .uploaded
-            onProgress(current)
-        }
-        try await complete(media, ticket: ticket)
-        current.stage = .ready
-        onProgress(current)
-        return ticket.mediaId
-    }
-
-    private func complete(_ media: DraftMediaUpload, ticket: UploadTicketPayload) async throws {
-        let _: UploadCompletePayload = try await authenticatedRequest(
-            url: baseURL.appending(path: "api/uploads/\(ticket.mediaId)/complete"),
-            method: "POST", body: UploadCompleteRequestPayload(capture: media.capture), timeout: 90
-        )
+        try await MediaUploadAPIClient.shared.upload(media, progress: progress, onProgress: onProgress)
     }
 
     func createRecord(text: String, mediaIds: [String], location: RecordLocation?, eventAt: Date) async throws -> Record {
@@ -166,25 +106,6 @@ private struct WriteAPIEnvelope<Result: Decodable>: Decodable {
     let result: Result?
     let errorMsg: String?
     let errorCode: String?
-}
-
-private struct UploadRequestPayload: Encodable {
-    let mimeType: String
-    let bytes: Int
-}
-
-struct UploadTicketPayload: Decodable {
-    let mediaId: String
-    let uploadUrl: String
-    let expiresAt: String
-}
-
-private struct UploadCompleteRequestPayload: Encodable {
-    let capture: MediaCapturePayload
-}
-
-private struct UploadCompletePayload: Decodable {
-    let mediaId: String
 }
 
 private struct CreateRecordRequestPayload: Encodable {

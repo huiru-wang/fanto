@@ -1,5 +1,6 @@
 import type { CreativeService } from "../domain/projects/creative-service.js";
-import { CharacterService } from "../domain/character.js";
+import { FantoService } from "../domain/fanto/index.js";
+import { createFantoRoutes } from "../routes/fanto.js";
 import { createCharacterRoutes } from "../routes/character.js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -30,7 +31,7 @@ const redact = (value: unknown): unknown => {
     /authorization|password|secret|token|key|nonce|display.?hint|email/i.test(key) ? [key, "[REDACTED]"] : [key, redact(item)],
   ));
 };
-export const logSafeBody = (path: string, value: unknown) => path === "/api/character" ? "[REDACTED]" : /^\/api\/media\/[^/]+\/url$/.test(path)
+export const logSafeBody = (path: string, value: unknown) => /^\/api\/(character|fanto)(\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/media\/[^/]+\/url$/.test(path)
     ? "[REDACTED]"
   : redact(value);
 const jsonBody = async (response: Response, path: string) => {
@@ -49,7 +50,7 @@ export type ServerServices = {
   projects?: ProjectService;
   proposals?: ProposalService;
   agent?: AgentRuntime;
-  character?: CharacterService;
+  fanto?: FantoService;
   healthCheck?: () => Promise<void>;
 };
 
@@ -108,7 +109,7 @@ export function createApp(services: ServerServices) {
   if (auth) app.route("/api", createAuthRoutes(auth));
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));
-  if (services.character) app.route("/api/character", createCharacterRoutes(services.character));
+  if (services.fanto) { app.route("/api/fanto", createFantoRoutes(services.fanto)); app.route("/api/character", createCharacterRoutes(services.fanto)); }
   if (projectService) app.route("/api", createProjectRoutes(projectService));
   if (services.proposals) app.route("/api", createProposalRoutes(services.proposals, services.agentQueue));
 

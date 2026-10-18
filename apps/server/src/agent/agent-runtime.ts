@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { RecordService } from "../domain/records/index.js";
 import type { MediaService } from "../domain/media/index.js";
-import type { CharacterService } from "../domain/character.js";
+import type { FantoService } from "../domain/fanto/index.js";
 import type { MemoryService } from "../domain/memory/index.js";
 import { createAgentBusinessServices } from "./business-services.js";
 import { AgentRegistry } from "./harness/registry.js";
@@ -19,7 +19,7 @@ export function createAgentRuntime(input: {
   creative?: CreativeService;
   media: MediaService;
   memories: MemoryService;
-  character?: CharacterService;
+  fanto: FantoService;
   db: Kysely<DB>;
   workspaceRoot: string;
   definitionPath: string;

@@ -53,6 +53,15 @@ struct FantoAPIClient {
 
     private let baseURL = URL(string: "https://fanto.robinverse.me")!
 
+    func fetchFantoSettings() async throws -> FantoSettings {
+        try await request(path: "api/fanto/settings")
+    }
+
+    func updateFantoSettings(version: Int, changes: FantoSettingsChanges) async throws -> FantoSettings {
+        struct Payload: Encodable { let expectedVersion: Int; let changes: FantoSettingsChanges }
+        return try await request(path: "api/fanto/settings", method: "PATCH", body: JSONEncoder().encode(Payload(expectedVersion: version, changes: changes)))
+    }
+
     func fetchProjects(status: ProjectStatus? = nil, cursor: String? = nil, limit: Int = 100) async throws -> ProjectPage {
         var components = URLComponents(url: baseURL.appending(path: "api/projects"), resolvingAgainstBaseURL: false)
         var items = [URLQueryItem(name: "limit", value: String(limit))]

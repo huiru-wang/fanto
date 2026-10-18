@@ -2,16 +2,16 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { createApp, logSafeBody } from "../bootstrap/app.js";
-import { CharacterService, DEFAULT_CHARACTER, type CharacterPrompt } from "../domain/character.js";
+import { FantoService, DEFAULT_CHARACTER, type CharacterPrompt } from "../domain/fanto/index.js";
 import { createDatabase, runMigrations } from "../infrastructure/database/database.js";
 import { CharacterProvider } from "../agent/context/providers/character.js";
 import { createSystemPrompt } from "../agent/context/system-prompt.js";
 import { createRunContext } from "../agent/context/run-context.js";
 import { mainPrompt } from "../agent/prompts/main.js";
 
-function appFor(character: Pick<CharacterService, "get" | "set">) {
+function appFor(character: Pick<FantoService, "getLegacyCharacter" | "replaceLegacyCharacter">) {
   return createApp({
-    character: character as CharacterService, records: {} as never, media: {} as never,
+    fanto: character as FantoService, records: {} as never, media: {} as never,
     auth: { verifyAccess: async (userId: string) => ({ userId }), assertActiveUser: async () => {} } as never,
   });
 }
@@ -24,7 +24,7 @@ const config: CharacterPrompt = { character: "朋友", scenario: "散步", instr
 
 test("character HTTP authenticates, validates full replacement and rejects identity overrides", async () => {
   const values = new Map<string, CharacterPrompt>();
-  const app = appFor({ get: async id => values.get(id) ?? { ...DEFAULT_CHARACTER }, set: async (id, value) => { values.set(id, value); return value; } });
+  const app = appFor({ getLegacyCharacter: async id => values.get(id) ?? { ...DEFAULT_CHARACTER }, replaceLegacyCharacter: async (id, value) => { values.set(id, value); return value; } });
   assert.equal((await app.request("/api/character")).status, 401);
   const headers = { Authorization: "Bearer alice", "Content-Type": "application/json" };
   for (const body of ["{", "null", "{}", JSON.stringify({ ...config, userId: "bob" }), JSON.stringify({ ...config, character: "x".repeat(16001) }), JSON.stringify({ ...config, instructions: 1 })]) {
@@ -45,7 +45,7 @@ test("character PostgreSQL singleton, HTTP roundtrip and same-session prompt ref
     await runMigrations(db);
     const now = new Date();
     await db.insertInto("users").values(users.map(user_id => ({ user_id, status: "active" as const, created_at: now, updated_at: now, disabled_at: null }))).execute();
-    const service = new CharacterService(db);
+    const service = FantoService.create(db, {} as never);
     const app = appFor(service);
     const headers = { Authorization: `Bearer ${users[0]}`, "Content-Type": "application/json" };
     const put = async (value: CharacterPrompt) => {
@@ -53,9 +53,9 @@ test("character PostgreSQL singleton, HTTP roundtrip and same-session prompt ref
       assert.equal(response.status, 200);
       assert.deepEqual(await result(response), value);
     };
-    assert.deepEqual(await service.get(users[0]!), DEFAULT_CHARACTER);
+    assert.deepEqual(await service.getLegacyCharacter(users[0]!), DEFAULT_CHARACTER);
     await put(config);
-    const prompt = createSystemPrompt({ template: mainPrompt, providers: [new CharacterProvider({ getCharacter: ctx => service.get(ctx.userId) })] });
+    const prompt = createSystemPrompt({ template: mainPrompt, providers: [new CharacterProvider({ getFantoConversationSettings: ctx => service.getConversationSettings(ctx.userId) })] });
     const run = (runId: string) => createRunContext({ runId, userId: users[0]!, sessionId: "same-session", query: "你好", slots: {}, recentMessages: [] });
     const firstRun = run("first");
     const first = await prompt.resolve({} as never, firstRun);
@@ -66,14 +66,32 @@ test("character PostgreSQL singleton, HTTP roundtrip and same-session prompt ref
     assert.equal(await prompt.resolve({} as never, firstRun), first);
     assert.ok((await prompt.resolve({} as never, run("second"))).includes("## Character\n\n导师"));
     assert.deepEqual(await result(await app.request("/api/character", { headers })), updated);
-    assert.deepEqual(await service.get(users[1]!), DEFAULT_CHARACTER);
-    assert.equal((await db.selectFrom("user_character").selectAll().where("user_id", "=", users[0]!).execute()).length, 1);
+    assert.deepEqual(await service.getLegacyCharacter(users[1]!), DEFAULT_CHARACTER);
+    assert.equal((await db.selectFrom("user_fanto_settings").selectAll().where("user_id", "=", users[0]!).execute()).length, 1);
     await put({ character: "", scenario: "", instructions: "", exampleDialogues: "" });
     assert.ok((await prompt.resolve({} as never, run("third"))).includes(DEFAULT_CHARACTER.character));
     await db.deleteFrom("users").where("user_id", "=", users[0]!).execute();
-    assert.equal((await db.selectFrom("user_character").selectAll().where("user_id", "=", users[0]!).execute()).length, 0);
+    assert.equal((await db.selectFrom("user_fanto_settings").selectAll().where("user_id", "=", users[0]!).execute()).length, 0);
   } finally {
     await db.deleteFrom("users").where("user_id", "in", users).execute();
     await db.destroy();
   }
+});
+
+
+test("character provider snapshots identity once per run and propagates unavailable settings", async () => {
+  let calls = 0;
+  const provider = new CharacterProvider({ getFantoConversationSettings: async () => {
+    calls++;
+    return { nickname: "月见灯", ...config };
+  } });
+  const prompt = createSystemPrompt({ template: mainPrompt, providers: [provider] });
+  const run = createRunContext({ runId: "snapshot", userId: "owner", sessionId: "same", query: "你好", slots: {}, recentMessages: [] });
+  const first = await prompt.resolve({} as never, run);
+  assert.ok(first.includes('"nickname":"月见灯"'));
+  assert.equal(await prompt.resolve({} as never, run), first);
+  assert.equal(calls, 1);
+  const broken = createSystemPrompt({ template: mainPrompt, providers: [new CharacterProvider({ getFantoConversationSettings: async () => { throw new Error("settings unavailable"); } })] });
+  const next = createRunContext({ runId: "failure", userId: "owner", sessionId: "same", query: "你好", slots: {}, recentMessages: [] });
+  await assert.rejects(broken.resolve({} as never, next), /settings unavailable/);
 });

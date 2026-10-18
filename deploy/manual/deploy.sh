@@ -8,13 +8,14 @@ DEFAULT_AGENT_CONFIG="$SERVER_DIR/agent.yaml"
 NGINX_SOURCE="$ROOT/deploy/manual/nginx/fanto-ssl.conf"
 NGINX_TARGET="${FANTO_NGINX_CONFIG:-/etc/nginx/nginx.conf}"
 INSTALL_NGINX="${FANTO_DEPLOY_NGINX:-0}"
+MAINTENANCE=0
 SERVER_PORT="${FANTO_SERVER_PORT:-3000}"
 HEALTH_RETRIES="${FANTO_HEALTH_RETRIES:-60}"
 HEALTH_INTERVAL_SECONDS="${FANTO_HEALTH_INTERVAL_SECONDS:-5}"
 
 usage() {
   cat <<'EOF'
-Usage: deploy/manual/deploy.sh [--nginx]
+Usage: deploy/manual/deploy.sh [--nginx] [--maintenance]
 
 Deploy Fanto production release:
   1. validate production config
@@ -27,25 +28,19 @@ Deploy Fanto production release:
   8. verify health checks
 
 Options:
+  --maintenance  stop the old Server before schema migrations
   --nginx   replace /etc/nginx/nginx.conf with Fanto SSL config
 EOF
 }
 
-case "${1:-}" in
-  "")
-    ;;
-  --nginx)
-    INSTALL_NGINX=1
-    ;;
-  -h|--help)
-    usage
-    exit 0
-    ;;
-  *)
-    usage >&2
-    exit 1
-    ;;
-esac
+for argument in "$@"; do
+  case "$argument" in
+    --nginx) INSTALL_NGINX=1 ;;
+    --maintenance) MAINTENANCE=1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage >&2; exit 1 ;;
+  esac
+done
 
 fail() {
   echo "[ERROR] $*" >&2
@@ -101,6 +96,11 @@ pnpm install --frozen-lockfile
 
 echo "[2/7] Building H5"
 pnpm build:h5
+
+if [[ "$MAINTENANCE" == "1" ]]; then
+  echo "[MAINTENANCE] Stop accepting traffic and finish active work before invoking this release mode."
+  "$ROOT/deploy/manual/stop.sh" server
+fi
 
 echo "[3/7] Running database migrations"
 (

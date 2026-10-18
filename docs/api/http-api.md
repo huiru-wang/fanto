@@ -34,12 +34,14 @@
 
 已认证用户接口：`GET /api/users/me` 返回当前用户和有效登录身份；`POST /api/users/me/identities/intents` 创建绑定身份所需 challenge，`POST /api/users/me/identities` 完成绑定；`POST /api/users/me/reauth/intents` 创建解除身份前的验证 challenge；`DELETE /api/users/me/identities/:identityId` 携带 reauth proof 后解除非最后一个身份。iOS 当前不展示账号管理界面，因此不调用这些接口。
 
-## 角色设定
+## Fanto 设置
 
-- `GET /api/character`：读取当前用户的 `{ character, scenario, instructions, exampleDialogues }`，未保存时返回默认角色与其余空字段。
-- `PUT /api/character`：必须提交上述四个字符串字段，每项最多 16000 字符，整体覆盖；拒绝额外字段。空角色使用默认交流风格，其余空字段清空对应内容。
+- `GET /api/fanto/settings`：读取当前用户唯一的 `{ nickname, description, avatarMediaId, roleConfig, version, createdAt, updatedAt }`。未保存时返回昵称 Fanto、空简介/角色字段、空头像、version=0 和空时间。
+- `PATCH /api/fanto/settings`：提交 `{ expectedVersion, changes }`，changes 可包含 nickname、description、avatarMediaId（null 恢复默认）、roleConfig。只合并传入字段，roleConfig 也按子字段合并；返回提交后的完整设置。有效变更递增 version；版本不一致返回 `409 VERSION_CONFLICT`，无权使用或状态不合法的头像返回 `422 INVALID_AVATAR`。
+- 昵称去除首尾空白，1–30 个 Unicode 字符且不含控制字符；简介最多 300 个 Unicode 字符。roleConfig 当前接受 character、scenario、instructions、exampleDialogues，每项最多 16000 字符；保留换行，空字符串清空该项。拒绝空 changes、空 roleConfig 与未知请求字段。
+- 旧 `GET/PUT /api/character` 保留兼容：四个字符串字段整体读取/覆盖，由 FantoService 适配；写入同样推进设置版本，不改变昵称、简介、头像和其他 JSON 键。
 
-`user_character` 以 `user_id` 为主键，每用户最多一条，随用户删除级联清理；身份只来自 JWT。没有角色 ID、列表、删除接口、配置版本或历史。只用于主对话，每轮读取最新配置；保存不改变正在运行的一轮，从下一轮生效。
+身份只来自 JWT；`user_fanto_settings` 每用户一条，随用户删除级联清理。角色内容在单个 JSONB 字段中，昵称与角色在主对话下一轮生效。头像独立立即保存，不提交未保存文字。存储、并发与清理契约见 [Fanto](../domain/fanto.md)。
 
 ## 记录
 
@@ -122,7 +124,7 @@ Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒�
 | GET | `/api/media/:mediaId/url?variant=original|thumbnail` | 返回已就绪媒体的短期 OSS 签名读取地址与过期时间 |
 | GET | `/api/media/:mediaId/meta` | 返回已就绪媒体的稳定类型与 capture metadata |
 
-创建上传体：`{ mimeType, bytes }`。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
+创建上传体：`{ mimeType, bytes, purpose? }`，purpose 默认为 `record`，另支持 `fanto_avatar`。头像仅接受图片，最大 512 KiB，complete 校验静态方形且边长 128–512；只保存单个对象，original/thumbnail 都读取该对象，`/meta` 不向 Agent 暴露头像。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
 
 `GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Access JWT。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到原始媒体的短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，`variant` 默认为 `original`，图片可请求 `thumbnail`（服务端保存的宽不超过 600、q80、WebP 小图），音频无论 variant 都返回 original；非法 variant 返回 `400 INVALID_INPUT`。读取签名有效期为五分钟，客户端不应持久化，thumbnail / original 应分键缓存，并在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 对客户端上传的图片 / 音频返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`。Task Worker 生成的结果文件由 Server 内部直接上传，不经过 `/api/uploads`，其 `mediaType=file`，meta 额外返回 `bytes / filename`。所有 meta 都不包含 signed URL。
 
@@ -162,7 +164,7 @@ Project 与 Session 分别管理：`projects.status` 表示本轮创作是否在
 
 ## 上传图片
 
-`POST /api/uploads` 声明 image MIME 时最大 10 MiB，超限返回 413 IMAGE_TOO_LARGE；上传完成继续核验 OSS 实际长度与 MIME。音频沿用原有限制。图片完整上传链路、小图元数据、手动重试与存储适配见 [Media](../domain/media.md)。complete 还可能返回 `409 UPLOAD_NOT_FOUND`、`422 INVALID_IMAGE`、`409 UPLOAD_INCOMPLETE`；thumbnail 补图或签名暂时失败返回 `503 MEDIA_UNAVAILABLE`。
+`POST /api/uploads` 默认 record purpose 声明 image MIME 时最大 10 MiB，超限返回 413 IMAGE_TOO_LARGE；上传完成继续核验 OSS 实际长度与 MIME。音频沿用原有限制。图片完整上传链路、小图元数据、手动重试与存储适配见 [Media](../domain/media.md)。complete 还可能返回 `409 UPLOAD_NOT_FOUND`、`422 INVALID_IMAGE`、`409 UPLOAD_INCOMPLETE`；thumbnail 补图或签名暂时失败返回 `503 MEDIA_UNAVAILABLE`。
 
 ## Agent Runtime
 

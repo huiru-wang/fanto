@@ -149,13 +149,10 @@ export interface CreationImageStepsTable {
   error_code: string | null; created_at: Date; updated_at: Date;
 }
 
-export interface UserCharacterTable {
-  user_id: string;
-  character: string;
-  scenario: string;
-  instructions: string;
-  example_dialogues: string;
-  updated_at: Date;
+export interface UserFantoSettingsTable {
+  user_id: string; nickname: string; description: string; avatar_media_id: string | null;
+  role_config: import("kysely").JSONColumnType<{[key: string]: unknown}>;
+  version: number; created_at: Date; updated_at: Date;
 }
 
 export interface DB {
@@ -168,7 +165,7 @@ export interface DB {
   record_links: RecordLinksTable;
   media_assets: MediaAssetsTable;
   memories: MemoriesTable;
-  user_character: UserCharacterTable;
+  user_fanto_settings: UserFantoSettingsTable;
 }
 
 export type User = Selectable<UsersTable>;

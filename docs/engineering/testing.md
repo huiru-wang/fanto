@@ -45,3 +45,7 @@ R2_SMOKE_TEST=1 pnpm --filter @fanto/server exec tsx --test src/infrastructure/c
 ## 会话内存与异步快照
 
 `agent/session/live-session.test.ts` 使用真实 SDK 和 HTTP 路由验证阻塞/失败的快照写入不延迟 done、下一轮或在线历史，停止部分回复刷新/冷恢复、工具自然完成、参数生成时停止和断线继续。`session-snapshots.integration.test.ts` 使用隔离 TEST_DATABASE_URL 自动创建/删除独立数据库，验证 PG 单语句保存、revision/owner 防旧覆盖与旧 Session 冷恢复；需要 CREATEDB。默认未设置测试库时该测试跳过。旧 PgStorage conformance 仅验证兼容适配，不代表当前在线路径仍使用逐帧数据库事务。
+
+## Fanto 设置
+
+`domain/fanto/fanto.test.ts` 覆盖输入约束、路由认证与隔离、版本竞争、JSON 合并、旧接口适配及头像绑定/清理。`migration.integration.test.ts` 在隔离子数据库验证旧角色文本（含换行与 Unicode）无损迁移；需测试账号具备创建数据库权限。`domain/media/avatar.test.ts` 使用内存对象存储验证裁切尺寸、用途边界、单对象读取与不生成小图。H5 的 `tests/fanto-settings.test.ts` 覆盖裁切投影和头像保存后的文字草稿合并。数据库测试需独立 TEST_DATABASE_URL；本地存储 fixture 与自动检查不代替真机相册、OSS CORS 和最终交互验收。

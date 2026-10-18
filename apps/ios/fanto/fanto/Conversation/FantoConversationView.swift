@@ -2,6 +2,11 @@ import SwiftUI
 
 struct FantoConversationView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.fantoProfile) private var profile
+    @State private var fallbackProfile = FantoSettingsStore()
+    private var currentProfile: FantoSettingsStore { profile ?? fallbackProfile }
     @Bindable var store: ConversationStore
     @State private var hasLeftHistoryTop = false
 
@@ -20,6 +25,24 @@ struct FantoConversationView: View {
                     conversation
                 }
             }
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    NavigationLink {
+                        FantoSettingsView(profile: currentProfile)
+                    } label: {
+                        HStack(spacing: 8) {
+                            ConversationAvatar(isFanto: true, size: 32, personalized: true)
+                            Text(currentProfile.settings?.nickname ?? "Fanto").font(.headline).lineLimit(1)
+                        }
+                    }
+                    .accessibilityLabel("Fanto，查看角色设定")
+                }
+
+            }
+            .environment(\.fantoProfile, currentProfile)
+            .task { await currentProfile.load() }
             .task { await store.load() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { store.recoverConversation() }
@@ -30,7 +53,7 @@ struct FantoConversationView: View {
     private var conversation: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 14) {
+                LazyVStack(alignment: .leading, spacing: 24) {
                     historyPaginationHeader
                     if store.messages.isEmpty {
                         welcome
@@ -38,6 +61,7 @@ struct FantoConversationView: View {
                         ForEach(store.messages) { message in
                             ConversationMessageBubble(
                                 message: message,
+                                personalized: true,
                                 retry: store.retryLastMessage
                             )
                             .id(message.id)
@@ -47,6 +71,7 @@ struct FantoConversationView: View {
                 .padding(.horizontal)
                 .padding(.vertical, 18)
             }
+            .scrollDismissesKeyboard(.interactively)
             .onScrollGeometryChange(for: Bool.self, of: { geometry in
                 geometry.contentOffset.y <= geometry.contentInsets.top + 4
             }) { wasAtTop, isAtTop in
@@ -71,9 +96,6 @@ struct FantoConversationView: View {
                     if store.isRecovering || store.isEndingOperation {
                         Text(store.isEndingOperation ? "正在结束当前操作，你可以先输入下一条消息。" : "正在恢复对话…")
                             .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if let notice = store.recoveryNotice {
-                        Text(notice).font(.caption).foregroundStyle(.secondary)
                     }
                     composer
                 }
@@ -120,7 +142,7 @@ struct FantoConversationView: View {
     }
 
     private func scrollToBottom(_ anchor: String, with proxy: ScrollViewProxy, animated: Bool) {
-        if animated {
+        if animated && !reduceMotion {
             withAnimation(.easeOut(duration: 0.18)) {
                 proxy.scrollTo(anchor, anchor: .bottom)
             }
@@ -152,11 +174,12 @@ struct FantoConversationView: View {
 
     private var composer: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            TextField("和 Fanto 聊聊", text: $store.draft, axis: .vertical)
+            TextField(text: $store.draft, axis: .vertical) {
+                Text("和 Fanto 聊聊").foregroundStyle(.secondary)
+            }
                 .lineLimit(1 ... 5)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(.thinMaterial, in: Capsule())
+                .padding(.leading, 18)
+                .padding(.vertical, 12)
                 .disabled(pendingUserInputRequest != nil)
                 .accessibilityLabel("输入消息")
 
@@ -169,6 +192,7 @@ struct FantoConversationView: View {
             } label: {
                 Image(systemName: store.isRecovering ? "arrow.trianglehead.2.clockwise.rotate.90" : store.isResponding ? "stop.fill" : "arrow.up")
                     .font(.headline)
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .frame(width: 44, height: 44)
                     .foregroundStyle(.white)
                     .background(store.isResponding || !store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? FantoTheme.accent : Color.secondary, in: Circle())
@@ -176,14 +200,17 @@ struct FantoConversationView: View {
             .disabled(store.isEndingOperation || store.isRecovering || (!store.isResponding && (pendingUserInputRequest != nil || store.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)))
             .accessibilityLabel(store.isEndingOperation ? "正在结束当前操作" : store.isRecovering ? "正在恢复对话" : store.isResponding ? "停止生成" : "发送消息")
         }
-        .padding(.horizontal)
-        .padding(.vertical, 10)
-        .background(.bar)
+        .padding(6)
+        .modifier(ConversationComposerGlass(reduceTransparency: reduceTransparency))
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
     }
 }
 
 struct ConversationMessageBubble: View {
     let message: ConversationMessage
+    var personalized = false
     let retry: () -> Void
 
     private var legacyMedia: LegacyConversationMedia {
@@ -195,8 +222,11 @@ struct ConversationMessageBubble: View {
     }
 
     var body: some View {
-        HStack {
-            if message.role == .user { Spacer(minLength: 54) }
+        HStack(alignment: .top, spacing: 12) {
+            if message.role == .user { Spacer(minLength: 24) }
+            if message.role == .assistant {
+                ConversationAvatar(isFanto: true, personalized: personalized)
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 if message.role == .assistant, !message.streamBlocks.isEmpty {
@@ -210,12 +240,13 @@ struct ConversationMessageBubble: View {
                 }
                 stateText
             }
-            .padding(.horizontal, message.role == .user ? 14 : 0)
-            .padding(.vertical, 14)
-            .background(background, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
 
-            if message.role == .assistant { Spacer(minLength: 54) }
+            if message.role == .user {
+                ConversationAvatar(isFanto: false)
+            }
+            if message.role == .assistant { Spacer(minLength: 8) }
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
         .accessibilityElement(children: .contain)
@@ -254,7 +285,7 @@ struct ConversationMessageBubble: View {
             } else {
                 Text(message.text)
                     .textSelection(.enabled)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
             }
         }
     }
@@ -289,10 +320,6 @@ struct ConversationMessageBubble: View {
             EmptyView()
         }
     }
-
-    private var background: Color {
-        message.role == .user ? FantoTheme.accent : .clear
-    }
 }
 
 private struct ConversationActivityRow: View {
@@ -323,13 +350,11 @@ private struct UserInputResponseCard: View {
         VStack(alignment: .leading, spacing: 7) {
             Label("已提交表单", systemImage: "checkmark.circle.fill")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.82))
+                .foregroundStyle(.secondary)
             Text(response.content)
                 .font(.subheadline)
                 .textSelection(.enabled)
-                .foregroundStyle(.white)
+                .foregroundStyle(.primary)
         }
-        .padding(10)
-        .background(.white.opacity(0.13), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

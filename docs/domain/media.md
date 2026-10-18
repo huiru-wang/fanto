@@ -1,6 +1,6 @@
 # Media
 
-Media 负责 Record 使用的图片与音频资产。二进制内容存储在站点配置的阿里云 OSS 或 Cloudflare R2，业务元数据保存在 `media_assets`。
+Media 负责 Record、Project 的图片/音频资产及独立用途的 Fanto 头像。二进制内容存储在站点配置的阿里云 OSS 或 Cloudflare R2，业务元数据保存在 `media_assets`。
 
 ## 支持格式
 
@@ -11,7 +11,7 @@ Media 负责 Record 使用的图片与音频资产。二进制内容存储在站
 
 用户上传图片上限 10 × 1024 × 1024 bytes（10 MiB），音频声明大小上限 50,000,000 bytes。H5/iOS 在上传前验证；Server 申请和 complete 分别检查声明与 OSS 实际大小。
 
-## 上传链路
+## Record 上传链路
 
 ```mermaid
 sequenceDiagram
@@ -34,7 +34,7 @@ sequenceDiagram
 
 Server 根据 MIME 决定 media type 和对象后缀。complete 时会验证 OSS 实际对象大小和 MIME；不一致返回 `UPLOAD_MISMATCH`。
 
-用户主动上传的媒体对象键为 `users/<userId>/record/<YYYY-MM>/<mediaId>.<extension>`。创作图片直接保存至 `users/<userId>/project/<projectId>/`。只有图片正式进入 Project 正文/封面时，才在 Project 保存事务中对外部来源的媒体创建副本。客户端通过 Media URL 接口读取短期 OSS signed URL。Project 正文通过 `fanto-media://<mediaId>` 引用媒体，客户端在渲染时解析为短期签名地址，不持久化 signed URL。Fanto 不提供独立的 Task 文件上传/交付与 Task Artifact 预览。
+Record 用户上传的媒体对象键为 `users/<userId>/record/<YYYY-MM>/<mediaId>.<extension>`。创作图片直接保存至 `users/<userId>/project/<projectId>/`。只有图片正式进入 Project 正文/封面时，才在 Project 保存事务中对外部来源的媒体创建副本。客户端通过 Media URL 接口读取短期 OSS signed URL。Project 正文通过 `fanto-media://<mediaId>` 引用媒体，客户端在渲染时解析为短期签名地址，不持久化 signed URL。Fanto 不提供独立的 Task 文件上传/交付与 Task Artifact 预览。
 
 一个图片 mediaId 对应原图和 `<mediaId>.thumbnail-v1.webp` 两个对象；`object_key / mime_type / bytes` 仍表示原图，`ext_data.variants.thumbnail` 保存小图 key、版本、类型、大小、尺寸和源 ETag。生成小图不依赖存储商图片处理接口。图片解码验证声明格式、最多 4000 万像素，自动校正 EXIF 方向，保持比例、不放大、不保留 EXIF，动态图片取首帧；capture 尺寸以实际解码为准。
 
@@ -43,6 +43,12 @@ Server 根据 MIME 决定 media type 和对象后缀。complete 时会验证 OSS
 H5/iOS 任一保存步骤失败均提示“保存失败，请重试”，保留草稿和上传阶段，不自动重试；用户再次保存时复用凭据和已完成步骤。上传响应丢失时，仅在用户再次保存后先调用 complete，明确原对象不存在才重新 PUT。已完成上传可用于再次创建 Record。此机制不提供 Record 创建请求的幂等保证。
 
 ready Media 才能关联到 Record。关联后 `ext_data.recordId` 记录归属，避免同一媒体被不同 Record 重复使用。
+
+## Fanto 头像
+
+上传申请通过 `purpose: "fanto_avatar"` 区分（默认仍为 record），仅接受图片且最多 512 KiB。complete 校验实际类型、长度、解码结果、静态单帧和 128–512 像素的方形尺寸，然后标记 ready；不生成 WebP 小图。客户端只上传裁切结果，单个对象保存在 `users/<userId>/fanto/avatar/<mediaId>.<extension>`，H5/iOS 上传 JPEG。original/thumbnail 读取同一个对象，不补生成 variant。
+
+头像不能关联 Record、复制为 Project 成果或用作 Agent 图片参考，`/meta` 不暴露头像。只有本人 ready 且未退役/未认领清理的头像可以绑定设置；替换或恢复默认会在同一事务标记旧头像退役。解绑不立即删除 OSS，避免在途读取与提交失败。清理入口、保留时间与并发保护见 [Fanto](fanto.md)。
 
 ## 图片理解
 

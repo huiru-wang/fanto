@@ -1,3 +1,6 @@
+import { useNavigate } from "react-router-dom";
+import { useFanto } from "../fanto/FantoContext";
+import { FantoAvatar } from "../fanto/FantoAvatar";
 import { ArrowUp, MessageCircleMore, Plus, RotateCcw, Sparkles, Square } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -26,10 +29,12 @@ const localId = () => `local-${crypto.randomUUID()}`;
 
 export const ChatMessageItem = memo(function ChatMessageItem({
   message,
+  personalized = false,
   responding,
   onSubmitInput,
 }: {
   message: ChatMessage;
+  personalized?: boolean;
   responding: boolean;
   onSubmitInput: (request: PresentedUserInputRequest, visibleText: string) => void;
 }) {
@@ -38,7 +43,7 @@ export const ChatMessageItem = memo(function ChatMessageItem({
 
   return (
     <article className={`message ${message.role}${isClarification ? " clarification" : ""}`}>
-      {message.role === "assistant" && <span className="message-avatar"><Sparkles size={14} /></span>}
+      {message.role === "assistant" && <span className="message-avatar">{personalized ? <FantoAvatar size={28}/> : <Sparkles size={14} />}</span>}
       <div className="message-body">
         {hasContent ? (
           <div className="message-block-list">
@@ -103,6 +108,7 @@ function MessageBlock({
 }
 
 export function ChatPage({ active = true }: { active?: boolean }) {
+  const navigate=useNavigate(); const {settings:fantoSettings}=useFanto();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -408,10 +414,10 @@ export function ChatPage({ active = true }: { active?: boolean }) {
   return (
     <div className="chat-page">
       <header className="chat-header">
-        <div className="chat-title">
-          <span className="chat-avatar"><Sparkles size={17} /></span>
-          <div><strong>Fanto</strong><span>基于你的记录继续聊</span></div>
-        </div>
+        <button type="button" className="chat-title fanto-chat-title" onClick={()=>navigate("/fanto/settings")} aria-label="打开 Fanto 设置">
+          <FantoAvatar size={40}/>
+          <div><strong>{fantoSettings?.nickname ?? "Fanto"}</strong><span>{fantoSettings?.description || "基于你的记录继续聊"}</span></div>
+        </button>
         <button className="secondary-button compact" onClick={() => void newConversation()} disabled={loading || stopping || recovering}>
           <Plus size={16} /><span>新对话</span>
         </button>
@@ -444,6 +450,7 @@ export function ChatPage({ active = true }: { active?: boolean }) {
             <div className="message-list">
               {messages.map(message => (
                 <ChatMessageItem
+                  personalized
                   message={message}
                   responding={responding}
                   onSubmitInput={submitUserInput}
