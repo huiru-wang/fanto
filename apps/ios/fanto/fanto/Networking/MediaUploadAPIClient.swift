@@ -10,8 +10,8 @@ struct MediaUploadAPIClient {
     }()
 
     func upload(_ media: DraftMediaUpload, purpose: String = "record", progress: MediaUploadProgress?, onProgress: (MediaUploadProgress) -> Void) async throws -> String {
-        if media.mimeType.hasPrefix("image/") && media.data.count > (purpose == "fanto_avatar" ? 512 * 1024 : 10 * 1024 * 1024) {
-            throw RecordWriteAPIError.server(purpose == "fanto_avatar" ? "头像不能超过 512KB" : "图片不能超过 10MB")
+        if media.mimeType.hasPrefix("image/") && media.data.count > (["fanto_avatar", "user_avatar"].contains(purpose) ? 512 * 1024 : 10 * 1024 * 1024) {
+            throw RecordWriteAPIError.server(["fanto_avatar", "user_avatar"].contains(purpose) ? "头像不能超过 512KB" : "图片不能超过 10MB")
         }
         var progress = progress
         if let current = progress, current.stage == .ready { return current.ticket.mediaId }

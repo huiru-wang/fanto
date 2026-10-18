@@ -49,3 +49,7 @@ R2_SMOKE_TEST=1 pnpm --filter @fanto/server exec tsx --test src/infrastructure/c
 ## Fanto 设置
 
 `domain/fanto/fanto.test.ts` 覆盖输入约束、路由认证与隔离、版本竞争、JSON 合并、旧接口适配及头像绑定/清理。`migration.integration.test.ts` 在隔离子数据库验证旧角色文本（含换行与 Unicode）无损迁移；需测试账号具备创建数据库权限。`domain/media/avatar.test.ts` 使用内存对象存储验证裁切尺寸、用途边界、单对象读取与不生成小图。H5 的 `tests/fanto-settings.test.ts` 覆盖裁切投影和头像保存后的文字草稿合并。数据库测试需独立 TEST_DATABASE_URL；本地存储 fixture 与自动检查不代替真机相册、OSS CORS 和最终交互验收。
+
+## 用户中心
+
+`domain/users/profile.test.ts` 验证昵称 / 签名单行约束、路由身份边界、并发版本与用户 / Fanto 头像用途隔离、资料级联删除和清理引用保护。数据库部分创建隔离子数据库，需 TEST_DATABASE_URL 与创建数据库权限。`domain/media/avatar.test.ts` 对两类头像执行相同的单对象与实际尺寸校验。iOS 原生菜单、Dynamic Type、照片裁切与账号退出的最终交互由真机验收；构建与静态检查不能代替交互验收。

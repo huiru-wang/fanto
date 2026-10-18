@@ -6,7 +6,7 @@
 
 - `src/bootstrap/`：服务装配、配置、启动、迁移。
 - `src/routes/`：HTTP 参数、用户认证边界与响应；包括统一 `routes/agent/`。
-- `src/domain/`：Records、Media、Memory、Fanto、Projects（含 CreativeService）。
+- `src/domain/`：Records、Media、Memory、Fanto、Users（个人资料）、Projects（含 CreativeService）。
 - `src/agent/`：唯一 Pi Harness、SessionManager、Tool、Context、Prompt 与 Skill。
 - `src/event/`：非持久化的 Record Postprocess、Embedding、AgentExecution 队列及 SessionEventBus。
 - `src/execution/`：AgentWorker、共享 AgentExecutionListener、Proposal/Creator Handler。
@@ -23,6 +23,7 @@
 - Proposal 是否产生以工具保存的业务事实为准，不解析自然语言输出；当前单个 Record 可以支撑新提议。Proposal 在保存前必须说清成果、素材变化和新增价值；关键创作方向由 Proposal 提出，工具与制作步骤留给 Creator。Record postprocess 成功后分别投递 EmbeddingQueue 和 Proposal；失败的 Embedding 不回滚 processed。共享 AgentExecutionQueue 用内存 pending 和并发限制执行 Proposal/Creator；没有 MQ 持久化、自动重试、重启恢复。Fanto 不提供即时/定时/周期 Task、提醒或通用任务委派。
 - `image_generate` 使用本人 ready 图片的 thumbnail 签名地址作为参考输入；`image_review` 保留原图输入。多张参考图输入、单图输出，生成物直接属于 Project OSS 路径。只有媒体进入正式 Project content/cover 后，才复制其它来源的 ready 媒体，换用新的 mediaId；Record 删除事务内清理独占媒体元数据，提交后尽力清理 OSS，失败不自动重试。
 - `create_current_schema_20261011.ts` 是当前完整空库基线，包含异步状态、Agent Session PostgreSQL 与 wx_openid 删除。旧库在完整执行归并前迁移后合并元数据，随后通过 `drop_tasks_20261011.ts` 正式前向迁移删除原 Task/TaskRun 表及其数据；不手动清空 Kysely 表，保持其它业务数据和用户隔离。
+- 用户个人资料由 UserProfileService 管理 `user_profiles`，与角色设置分开。Profile PATCH 校验版本，头像只能为本人 ready 的 user_avatar；nickname / signature 不自动注入角色 Prompt。见 [Users](../../docs/domain/users.md)。
 - FantoService 统一管理 `user_fanto_settings`：基本资料独立列，角色内容保存在 `role_config` JSONB，PATCH 按 version 校验并合并提交字段；旧 Character API 仅为兼容适配。CharacterProvider 每个 Run 通过 business-services 读取一次，读取失败中止该 Run，保存后下一轮生效。头像必须属于本人且 purpose=fanto_avatar，不能用于 Record/Project；生命周期见 [Fanto](../../docs/domain/fanto.md)。
 - Memory 使用个人背景、重要关系、近期关注、相处偏好四类；个人背景/相处偏好默认注入，其他按话题由 Main 检索。读写语义由 fantoCore 指导，沿用 memory_manage；不增加逐消息后台整理、记忆版本或语义校验层。存储与历史类型边界见 [Memory](../../docs/domain/memory.md)。
 - Current docs 描述已实现语义；`plan/` 只作为方案历史，不作为现状依据。密钥、URL Token 和内部 Tool 参数不得写入面向用户的回复、日志或文档。
@@ -38,4 +39,4 @@ pnpm --filter @fanto/server test
 
 涉及 PostgreSQL 需隔离 `TEST_DATABASE_URL`；涉及 OSS/模型时区分 Mock 测试和真实收费 smoke。更多测试矩阵见 [测试](../../docs/engineering/testing.md)。
 
-- 媒体业务依赖 `ObjectStorage`，启动按 `OBJECT_STORAGE_PROVIDER` 装配阿里云 OSS / Cloudflare R2，存储 Client 只操作指定 key，不接收图片 variant。Record 图片在服务端生成并存储 WebP 小图后才标记 ready；Fanto 头像只保存客户端裁切的单张图片，不生成第二份。上传与重试语义见 [Media](../../docs/domain/media.md)。
+- 媒体业务依赖 `ObjectStorage`，启动按 `OBJECT_STORAGE_PROVIDER` 装配阿里云 OSS / Cloudflare R2，存储 Client 只操作指定 key，不接收图片 variant。Record 图片在服务端生成并存储 WebP 小图后才标记 ready；Fanto / 用户头像只保存客户端裁切的单张图片，不生成第二份。上传与重试语义见 [Media](../../docs/domain/media.md)。

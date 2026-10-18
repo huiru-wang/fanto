@@ -2,7 +2,9 @@
 
 目录：`apps/ios/fanto`。当前使用 SwiftUI，最低部署目标为 iOS 26.5。
 
-## Project Session 创作与继续对话（V3）
+## 保留的 Project Session 创作模块
+
+当前“脉络”Tab 已隐藏，Project / Proposal 页面代码保留，未作为主导航能力开放。以下描述保留模块的实现约束。
 
 iOS 采用原生 SwiftUI Project 列表与详情：Proposal 接受只返回 `projectId`，随后直接读取 Project 详情，Server 后台自动处理 Creator，无须手动 `/session/start`。
 
@@ -18,7 +20,19 @@ iOS 采用原生 SwiftUI Project 列表与详情：Proposal 接受只返回 `pro
 
 - 记录；
 - Fanto；
-- 脉络。
+- 我的。
+
+默认进入 Fanto。脉络入口隐藏，启动不再预加载 Project / Proposal；主界面独立读取用户资料，失败不阻止对话。
+
+## 用户中心
+
+“我的”使用原生 NavigationStack 与 insetGrouped List，使用系统语义字号、SF Symbols、系统 Tab 和导航栏的 Liquid Glass，不复刻原型中的自绘栏。封面为内置夕阳图片，未提供更换封面入口；空头像使用系统人物图标，资料来自当前账号，不使用原型中的样例人名、照片或固定天数。“相伴天数”按账号创建日期与设备日历日计算。
+
+点击昵称进入原生 Form 编辑页，仅编辑头像、昵称、签名；照片通过系统 PhotosPicker 选择，再复用圆形裁切。裁切只上传 user_avatar 用途的 JPEG，小图 ready 后更新草稿；编辑页点击保存才统一提交文字与头像。失败保留草稿，版本冲突提供本地 / 远端选择。系统返回保留本账号运行态草稿，不覆盖默认返回手势；账号切换与进程结束后不保留。
+
+偏好仅有外观和强调色，均使用原生 Menu / Picker；外观仅系统（默认）、浅色、深色，强调色仅蓝、青、绿、青柠绿、黄、橙、粉、洋红、紫、黑。选择当场生效，设备 UserDefaults 持久化，不写入账号资料；同一账号不同设备可有不同偏好。彩色强调色采用适应浅深色的可读前景，黑色在深色中采用语义前景。
+
+账号与登录读取 `GET /api/users/me`；数据与隐私及帮助与关于为原生说明页，没有未接入的数据操作按钮。个人资料契约见 [Users](../domain/users.md)。
 
 ## 当前页面与数据来源
 
@@ -39,6 +53,8 @@ iOS 采用原生 SwiftUI Project 列表与详情：Proposal 接受只返回 `pro
 | Fanto 默认长期会话 | `POST /api/agent/sessions` | Client 已接 |
 | Fanto 最近历史 | `GET /api/agent/sessions/:id/history?limit=10` | 已接 iOS 客户端流程 |
 | Fanto 文本流式回复 | `POST /api/agent/stream` | 已接 iOS 客户端流程 |
+| 用户个人资料 | `GET/PATCH /api/users/me/profile`、purpose=user_avatar 的 Media 上传 | 读取、版本化保存与头像裁切已接 |
+| 账号与登录 | `GET /api/users/me`，Keychain 本机退出 | 身份展示、退出已接 |
 | Fanto 设置 | `GET/PATCH /api/fanto/settings`、purpose=fanto_avatar 的 Media 上传 | 已接基本资料、头像裁切和四项角色配置，版本冲突显式处理 |
 
 Record 首批读取 30 条，客户端据此生成日历标记和两种视图；服务端返回 `nextCursor`，连续时间线在滚动到底部时基于 cursor 自动读取并追加更早记录。追加页会按 Record ID 去重并按事件时间倒序排列；追加失败保留已显示记录并在底部提供重试。当前账号最近 200 条已读取 Record 会以受 iOS 文件保护的数据快照保存在 Application Support；认证后的启动过程先恢复该快照，再以服务端首屏结果覆盖。新增与每次成功分页后都会更新快照；认证失效或账号切换时清除该账号快照。记录携带服务端 version；旧快照缺少版本时先读取最新 Record 再删除。删除成功或服务端已不存在时移除本地数据并保存快照，已删除 ID 不允许被进行中的分页请求重新加入；版本冲突刷新列表并要求重新确认。
@@ -48,11 +64,11 @@ Record 首批读取 30 条，客户端据此生成日历标记和两种视图；
 
 App 启动后先进入认证 Gate：
 
-- Keychain 中存在仍有效的 Fanto access token 时先显示与登录页一致的品牌启动页，再进入主界面；启动页使用 Fanto IP、`Pieces become something.` 和浅色渐变背景，并在显示期间并发预读取 Record、Project 与 Fanto 最近会话。读取失败不会阻塞进入主界面，对应页面保留既有失败与重试状态；
+- Keychain 中存在仍有效的 Fanto access token 时先显示与登录页一致的品牌启动页，再进入主界面；启动页使用 Fanto IP、`Pieces become something.` 和浅色渐变背景，并在显示期间并发预读取 Record 与 Fanto 最近会话。读取失败不会阻塞进入主界面，对应页面保留既有失败与重试状态；
 - access token 临近过期时，使用 Keychain 中的 refresh token 调用 `POST /api/auth/tokens/refresh`，成功后原子替换整对 token；
 - refresh token 过期、无效或用户被禁用时清理本地认证状态并回到登录页；
 - access / refresh token 均保存在 Keychain，业务 token 不写入 `UserDefaults`；
-- 当前没有“我的”或退出登录入口；Fanto 对话页提供角色设置入口；认证失效时会清除本地认证状态并回到登录页。
+- “我的 → 账号与登录”读取当前账号的登录方式并提供退出；退出清除 Keychain 凭据、账号记录快照和会话运行态，保留服务端资料。认证失效同样回到登录页。
 
 认证 Gate 直接展示包含 Fanto IP 与 “Pieces become something.” 的登录页，提供 Google 与 Apple 的原生继续按钮。完整链路为：iOS 请求 `/api/auth/intents`（`purpose=authenticate, provider=google|apple`）获得一次性 challenge nonce，再将 nonce 传给对应的原生身份 SDK，并通过 `/api/auth/authentications` 的通用 `proof` 字段把 ID token 发送给 Fanto Server；Server 验证签名、audience、expiry 与 nonce 后，按 `(provider, sub)` 登录已有用户或原子创建新用户，随后签发 Fanto access / refresh JWT。认证成功后进入“记录”Tab；客户端不展示也不判断注册状态。
 

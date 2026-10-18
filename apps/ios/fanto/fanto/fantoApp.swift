@@ -16,6 +16,8 @@ struct FantoApp: App {
         WindowGroup {
             AuthenticationGateView()
                 .environment(store)
+                .preferredColorScheme(AppAppearance.shared.mode.scheme)
+                .tint(FantoTheme.accent)
                 .onOpenURL { url in
                     _ = GIDSignIn.sharedInstance.handle(url)
                 }

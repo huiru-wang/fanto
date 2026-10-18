@@ -18,7 +18,7 @@
 
 ## 清理与迁移
 
-替换头像、恢复默认或上传后未绑定留下的资产，通过运维命令清理。默认 dry-run，只列举超过 24 小时且无设置引用的 fanto_avatar 资产，每批最多 100 项；加 --apply 才删除。逐项锁定媒体并再次核对引用后认领，认领后禁止新绑定，删除单个 OSS 对象后再删除元数据。失败保留认领，可在十分钟后再次执行；无后台定时任务。当前头像始终受引用检查保护。
+替换头像、恢复默认或上传后未绑定留下的资产，通过运维命令清理。默认 dry-run，只列举超过 24 小时且无设置引用的 fanto_avatar / user_avatar 资产，每批最多 100 项；加 --apply 才删除。逐项锁定媒体并再次核对引用后认领，认领后禁止新绑定，删除单个 OSS 对象后再删除元数据。失败保留认领，可在十分钟后再次执行；无后台定时任务。当前头像始终受 user_fanto_settings 与 user_profiles 的引用检查保护。
 
 ```bash
 pnpm --filter @fanto/server exec tsx src/bootstrap/cleanup-fanto-avatars.ts

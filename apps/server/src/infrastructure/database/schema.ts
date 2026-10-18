@@ -155,7 +155,12 @@ export interface UserFantoSettingsTable {
   version: number; created_at: Date; updated_at: Date;
 }
 
+export interface UserProfilesTable {
+  user_id: string; nickname: string; signature: string; avatar_media_id: string | null; version: number; updated_at: Date;
+}
+
 export interface DB {
+  user_profiles: UserProfilesTable;
   users: UsersTable;
   user_login_identities: UserLoginIdentitiesTable;
   auth_challenges: AuthChallengesTable;

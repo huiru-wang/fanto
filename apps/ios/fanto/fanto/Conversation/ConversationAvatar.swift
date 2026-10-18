@@ -4,6 +4,7 @@ struct ConversationAvatar: View {
     let isFanto: Bool
     var size: CGFloat = 30
     var personalized = false
+    @Environment(\.userProfile) private var userProfile
     @Environment(\.fantoProfile) private var profile
     @State private var resolvedID: String?
     @State private var url: URL?
@@ -23,8 +24,7 @@ struct ConversationAvatar: View {
                     }
                 } else { brand }
             } else {
-                Image(systemName: "person.crop.circle.fill")
-                    .resizable().scaledToFit().foregroundStyle(.secondary).padding(2)
+                UserAvatar(mediaID: userProfile?.profile?.avatarMediaId, size: size)
             }
         }
         .frame(width: size, height: size)

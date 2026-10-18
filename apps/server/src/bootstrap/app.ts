@@ -1,3 +1,5 @@
+import type { UserProfileService } from "../domain/users/profile-service.js";
+import { createUserProfileRoutes } from "../routes/user-profile.js";
 import type { CreativeService } from "../domain/projects/creative-service.js";
 import { FantoService } from "../domain/fanto/index.js";
 import { createFantoRoutes } from "../routes/fanto.js";
@@ -31,7 +33,7 @@ const redact = (value: unknown): unknown => {
     /authorization|password|secret|token|key|nonce|display.?hint|email/i.test(key) ? [key, "[REDACTED]"] : [key, redact(item)],
   ));
 };
-export const logSafeBody = (path: string, value: unknown) => /^\/api\/(character|fanto)(\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/media\/[^/]+\/url$/.test(path)
+export const logSafeBody = (path: string, value: unknown) => /^\/api\/users\/me(?:\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/(character|fanto)(\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/media\/[^/]+\/url$/.test(path)
     ? "[REDACTED]"
   : redact(value);
 const jsonBody = async (response: Response, path: string) => {
@@ -51,6 +53,7 @@ export type ServerServices = {
   proposals?: ProposalService;
   agent?: AgentRuntime;
   fanto?: FantoService;
+  userProfile?: UserProfileService;
   healthCheck?: () => Promise<void>;
 };
 
@@ -106,6 +109,7 @@ export function createApp(services: ServerServices) {
       return c.json({ status: "unavailable", database: "unavailable", timestamp: nowIso() }, 503);
     }
   });
+  if (services.userProfile) app.route("/api/users/me/profile", createUserProfileRoutes(services.userProfile));
   if (auth) app.route("/api", createAuthRoutes(auth));
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));

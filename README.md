@@ -1,13 +1,13 @@
 # Fanto
 
-Fanto 是建立在个人长期记录上的 AI 产品：**记住 → 发现 → 继续**。从文字、照片、语音和地点记录中理解值得保留的素材，发现有创作价值的线索，并在用户确认后生成可继续完善的作品。
+Fanto 是以**角色扮演与深度陪伴对话**为主线的 AI 产品：通过可设定的角色、连续的对话和长期记忆，让相处逐渐形成独属于用户的上下文。记录是可选的生活与回忆入口。
 
-> 默认安静，长期记得，偶尔有用。
+> 角色有延续，相处有记忆。
 
 ## 仓库组成
 
 - `apps/server`：Hono / TypeScript 服务，内嵌 Pi Agent Runtime、Record/Media/Memory、Proposal/Project 和进程内异步创作。
-- `apps/ios/fanto`：SwiftUI，Google/Apple 登录、Record 日历与时间线、Fanto 对话、Proposal / Project。
+- `apps/ios/fanto`：SwiftUI，Google/Apple 登录、Fanto 角色设置与对话、Record 日历与时间线、用户资料与外观偏好；脉络入口暂时隐藏，相关模块保留。
 - `apps/h5`：React/Vite 受控测试客户端，Record、多轮对话、Proposal / Project 及作品预览。
 - `packages/shared`：跨端类型和 Record 相关共享定义。
 

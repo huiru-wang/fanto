@@ -1,6 +1,6 @@
 # Media
 
-Media 负责 Record、Project 的图片/音频资产及独立用途的 Fanto 头像。二进制内容存储在站点配置的阿里云 OSS 或 Cloudflare R2，业务元数据保存在 `media_assets`。
+Media 负责 Record、Project 的图片/音频资产及独立用途的 Fanto / 用户头像。二进制内容存储在站点配置的阿里云 OSS 或 Cloudflare R2，业务元数据保存在 `media_assets`。
 
 ## 支持格式
 
@@ -46,7 +46,9 @@ ready Media 才能关联到 Record。关联后 `ext_data.recordId` 记录归属�
 
 ## Fanto 头像
 
-上传申请通过 `purpose: "fanto_avatar"` 区分（默认仍为 record），仅接受图片且最多 512 KiB。complete 校验实际类型、长度、解码结果、静态单帧和 128–512 像素的方形尺寸，然后标记 ready；不生成 WebP 小图。客户端只上传裁切结果，单个对象保存在 `users/<userId>/fanto/avatar/<mediaId>.<extension>`，H5/iOS 上传 JPEG。original/thumbnail 读取同一个对象，不补生成 variant。
+上传申请通过 `purpose: "fanto_avatar"` 或 `"user_avatar"` 区分（默认仍为 record），仅接受图片且最多 512 KiB。complete 校验实际类型、长度、解码结果、静态单帧和 128–512 像素的方形尺寸，然后标记 ready；不生成 WebP 小图。客户端只上传裁切结果，单个对象保存在 `users/<userId>/fanto/avatar/<mediaId>.<extension>`，H5/iOS 上传 JPEG。original/thumbnail 读取同一个对象，不补生成 variant。
+
+用户头像使用独立的 `users/<userId>/profile/avatar/<mediaId>.<extension>` 路径，绑定到 user_profiles；两类头像不可互换绑定。详见 [Users](users.md)。
 
 头像不能关联 Record、复制为 Project 成果或用作 Agent 图片参考，`/meta` 不暴露头像。只有本人 ready 且未退役/未认领清理的头像可以绑定设置；替换或恢复默认会在同一事务标记旧头像退役。解绑不立即删除 OSS，避免在途读取与提交失败。清理入口、保留时间与并发保护见 [Fanto](fanto.md)。
 

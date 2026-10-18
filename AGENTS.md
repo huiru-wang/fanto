@@ -6,7 +6,7 @@
 
 - 产品定位与边界：`docs/product/`
 - 当前系统结构：`docs/architecture/`
-- 业务领域语义：`docs/domain/`；Fanto 设置与头像见 `docs/domain/fanto.md`
+- 业务领域语义：`docs/domain/`；Fanto 设置与头像见 `docs/domain/fanto.md`，用户资料见 `docs/domain/users.md`
 - HTTP 契约：`docs/api/http-api.md`
 - iOS 当前能力：`docs/clients/ios.md`
 - 开发、配置、测试：`docs/engineering/`

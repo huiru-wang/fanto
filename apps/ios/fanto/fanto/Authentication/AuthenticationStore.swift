@@ -65,6 +65,12 @@ final class AuthenticationStore {
         }
     }
 
+    func signOut() async throws {
+        try await AuthSession.shared.signOut()
+        state = .signedOut
+        error = nil
+    }
+
     func clearError() {
         error = nil
     }

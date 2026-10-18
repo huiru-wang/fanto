@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AvatarCropView: View {
     let source: AvatarSource
+    var uploadPurpose = "fanto_avatar"
     let saveAvatar: (String) async throws -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var zoom: CGFloat = 1
@@ -21,7 +22,7 @@ struct AvatarCropView: View {
             let diameter = max(80, min(geometry.size.width - 40, geometry.size.height * 0.56, 460))
             VStack(spacing: 20) {
                 Text("调整头像").font(.title2.bold())
-                Text("拖动或缩放图片，保存后立即更新头像").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                Text(uploadPurpose == "user_avatar" ? "拖动或缩放图片，确认头像范围" : "拖动或缩放图片，保存后立即更新头像").font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                 Spacer(minLength: 0)
                 crop(diameter: diameter)
                 Spacer(minLength: 0)
@@ -117,7 +118,7 @@ struct AvatarCropView: View {
                 }
                 guard let upload else { return }
                 stage = "正在上传头像…"
-                let id = try await MediaUploadAPIClient.shared.upload(upload, purpose: "fanto_avatar", progress: uploadProgress) { uploadProgress = $0 }
+                let id = try await MediaUploadAPIClient.shared.upload(upload, purpose: uploadPurpose, progress: uploadProgress) { uploadProgress = $0 }
                 try Task.checkCancellation()
                 stage = "正在保存头像…"
                 try await saveAvatar(id)

@@ -53,6 +53,15 @@ struct FantoAPIClient {
 
     private let baseURL = URL(string: "https://fanto.robinverse.me")!
 
+    func fetchUserProfile() async throws -> UserProfile {
+        try await request(path: "api/users/me/profile")
+    }
+    func updateUserProfile(version: Int, changes: UserProfileChanges) async throws -> UserProfile {
+        struct Payload: Encodable { let expectedVersion: Int; let changes: UserProfileChanges }
+        return try await request(path: "api/users/me/profile", method: "PATCH", body: JSONEncoder().encode(Payload(expectedVersion: version, changes: changes)))
+    }
+    func fetchAccountInfo() async throws -> AccountInfo { try await request(path: "api/users/me") }
+
     func fetchFantoSettings() async throws -> FantoSettings {
         try await request(path: "api/fanto/settings")
     }

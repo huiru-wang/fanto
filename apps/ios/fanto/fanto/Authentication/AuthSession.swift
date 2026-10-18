@@ -8,6 +8,7 @@ actor AuthSession {
     static let shared = AuthSession()
 
     private let store = AuthCredentialStore()
+    private var generation = 0
     private var cached: StoredAuthSession?
     private var refreshTask: Task<StoredAuthSession, Error>?
 
@@ -25,8 +26,19 @@ actor AuthSession {
         return try await refresh().user
     }
 
+    func signOut() throws {
+        try store.clear()
+        generation += 1
+        refreshTask?.cancel()
+        refreshTask = nil
+        cached = nil
+    }
+
     func install(_ result: AuthResult) throws -> AuthUser {
         let session = try Self.session(from: result)
+        generation += 1
+        refreshTask?.cancel()
+        refreshTask = nil
         try store.save(session)
         cached = session
         return session.user
@@ -52,19 +64,21 @@ actor AuthSession {
             throw AuthenticationError.expired
         }
 
+        let requestGeneration = generation
         let task = Task<StoredAuthSession, Error> {
             let result = try await AuthAPIClient.shared.refresh(current.refreshToken)
             return try Self.session(from: result)
         }
         refreshTask = task
-        defer { refreshTask = nil }
+        defer { if generation == requestGeneration { refreshTask = nil } }
         do {
             let updated = try await task.value
+            guard generation == requestGeneration else { throw CancellationError() }
             try store.save(updated)
             cached = updated
             return updated
         } catch {
-            if let authError = error as? AuthenticationError, authError == .expired || authError == .accountUnavailable {
+            if generation == requestGeneration, let authError = error as? AuthenticationError, authError == .expired || authError == .accountUnavailable {
                 try? store.clear()
                 cached = nil
                 NotificationCenter.default.post(name: .fantoAuthSessionInvalidated, object: nil)

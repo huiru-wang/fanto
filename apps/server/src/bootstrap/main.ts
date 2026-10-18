@@ -1,3 +1,4 @@
+import { UserProfileService } from "../domain/users/profile-service.js";
 import { CreativeService } from "../domain/projects/creative-service.js";
 import { CreativeImageClient } from "../infrastructure/clients/image-client.js";
 import { serve } from "@hono/node-server";
@@ -96,6 +97,7 @@ if (creative) await projects.normalizeLegacyMedia();
 
 const services: ServerServices = {
   auth,
+  userProfile: new UserProfileService(db, media),
   records,
   media,
   projects,

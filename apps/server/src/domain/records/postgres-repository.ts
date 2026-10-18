@@ -132,7 +132,7 @@ export class PostgresRecordRepository implements RecordRepository {
   private async blocks(trx: Kysely<DB>, userId: string, value: SaveRecordContent, recordId?: string): Promise<RecordContent["blocks"] | "invalid_media" | "invalid_content"> {
     const ids = value.media.map(item => item.mediaId);
     const assets = ids.length ? await trx.selectFrom("media_assets").selectAll().where("user_id", "=", userId).where("media_id", "in", ids).orderBy("media_id").forUpdate().execute() : [];
-    if (assets.length !== ids.length || assets.some(asset => asset.status !== "ready" || ext(asset.ext_data).purpose === "fanto_avatar" || ext(asset.ext_data).recordId && ext(asset.ext_data).recordId !== recordId)) return "invalid_media";
+    if (assets.length !== ids.length || assets.some(asset => asset.status !== "ready" || ["fanto_avatar", "user_avatar"].includes(String(ext(asset.ext_data).purpose)) || ext(asset.ext_data).recordId && ext(asset.ext_data).recordId !== recordId)) return "invalid_media";
     const byId = new Map(assets.map(asset => [asset.media_id, asset]));
     const mediaBlocks: Array<ImageContentBlock | AudioContentBlock> = value.media.map(item => {
       const asset = byId.get(item.mediaId)!;
