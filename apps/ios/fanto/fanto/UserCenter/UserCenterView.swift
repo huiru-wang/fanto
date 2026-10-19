@@ -73,6 +73,8 @@ struct UserCenterView: View {
                     Section {
                         NavigationLink { UserAccountView() } label: { settingsLabel("账号与登录", icon: "person.crop.circle") }
                         NavigationLink { UserPrivacyView() } label: { settingsLabel("数据与隐私", icon: "lock.shield") }
+                    }
+                    Section {
                         NavigationLink { UserHelpFeedbackView() } label: { settingsLabel("帮助与反馈", icon: "questionmark.circle") }
                         NavigationLink { UserAboutView() } label: { settingsLabel("关于", icon: "info.circle") }
                     }
