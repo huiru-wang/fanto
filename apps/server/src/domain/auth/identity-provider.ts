@@ -33,6 +33,7 @@ export type VerifiedIdentity = {
   provider: IdentityProviderName;
   subject: string;
   displayHint?: string | null;
+  contactValue?: string | null;
 };
 
 export interface IdentityProvider {

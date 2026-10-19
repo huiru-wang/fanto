@@ -11,7 +11,9 @@ const config = loadConfig();
 const db = createDatabase(config.databaseUrl);
 
 logInfo("migrate", "Running migrations");
-await runMigrations(db);
-logInfo("migrate", "Migrations completed");
-
-db.destroy();
+try {
+  await runMigrations(db);
+  logInfo("migrate", "Migrations completed");
+} finally {
+  await db.destroy();
+}

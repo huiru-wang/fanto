@@ -44,7 +44,7 @@ async function fixture() {
 test("Apple provider verifies a signed token bound to the authentication nonce", async () => {
   const { provider, challenge, token } = await fixture();
   const identity = await provider.verify({ idToken: await token() }, challenge);
-  assert.deepEqual(identity, { provider: "apple", subject: "apple-subject", displayHint: "p***@privaterelay.appleid.com" });
+  assert.deepEqual(identity, { provider: "apple", subject: "apple-subject", contactValue: "person@privaterelay.appleid.com", displayHint: "p***@privaterelay.appleid.com" });
 });
 
 test("Apple provider rejects a token for another audience", async () => {
@@ -59,4 +59,11 @@ test("Apple provider rejects a token whose nonce does not match the intent", asy
     assert.equal(error.message, "Identity provider nonce does not match authentication challenge");
     return true;
   });
+});
+
+test("Apple provider allows a token without an email claim", async () => {
+  const { provider, challenge, token } = await fixture();
+  const identity = await provider.verify({ idToken: await token({ email: undefined }) }, challenge);
+  assert.equal(identity.contactValue, null);
+  assert.equal(identity.displayHint, null);
 });

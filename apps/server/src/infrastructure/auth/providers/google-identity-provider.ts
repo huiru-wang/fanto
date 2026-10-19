@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from "jose";
 import { z } from "zod";
 import type { IdentityProvider, ProviderChallenge, StoredAuthChallenge, VerifiedIdentity } from "../../../domain/auth/identity-provider.js";
 import { AuthError } from "../../../domain/auth/errors.js";
@@ -18,9 +18,10 @@ function displayHint(email?: string): string | null {
 
 export class GoogleIdentityProvider implements IdentityProvider {
   readonly name = "google" as const;
-  private readonly jwks = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs"));
-
-  constructor(private readonly allowedClientIds: string[]) {
+  constructor(
+    private readonly allowedClientIds: string[],
+    private readonly jwks: JWTVerifyGetKey = createRemoteJWKSet(new URL("https://www.googleapis.com/oauth2/v3/certs")),
+  ) {
     if (allowedClientIds.length === 0) throw new Error("GOOGLE_ALLOWED_CLIENT_IDS is required");
   }
 
@@ -51,6 +52,7 @@ export class GoogleIdentityProvider implements IdentityProvider {
       return {
         provider: "google",
         subject: payload.sub,
+        contactValue: typeof payload.email === "string" ? payload.email : null,
         displayHint: displayHint(typeof payload.email === "string" ? payload.email : undefined),
       };
     } catch (cause) {

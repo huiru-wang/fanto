@@ -19,6 +19,14 @@ function uniqueViolation(cause: unknown): boolean {
   return !!cause && typeof cause === "object" && (cause as { code?: unknown }).code === "23505";
 }
 
+// Missing provider contact data must not erase a previously captured address.
+function identityMetadata(identity: VerifiedIdentity) {
+  return {
+    contact_value: (identity.provider === "phone" ? identity.subject : identity.contactValue)?.trim() || undefined,
+    display_hint: identity.displayHint?.trim() || undefined,
+  };
+}
+
 export class AuthService {
   constructor(
     private readonly db: Kysely<DB>,
@@ -83,7 +91,7 @@ export class AuthService {
           user_id: id,
           provider: identity.provider,
           provider_subject: identity.subject,
-          display_hint: identity.displayHint ?? null,
+          ...identityMetadata(identity),
           verified_at: timestamp,
           last_used_at: timestamp,
           revoked_at: null,
@@ -114,7 +122,7 @@ export class AuthService {
       if (!identity) throw new AuthError(404, "IDENTITY_NOT_REGISTERED", "Identity is not registered");
       await this.assertActiveUserIn(trx, identity.user_id);
       await trx.updateTable("user_login_identities")
-        .set({ last_used_at: now(), display_hint: verifiedIdentity.displayHint ?? null })
+        .set({ last_used_at: now(), ...identityMetadata(verifiedIdentity) })
         .where("identity_id", "=", identity.identity_id)
         .execute();
       await this.consumeChallenge(trx, intentId);
@@ -140,7 +148,7 @@ export class AuthService {
       if (existing?.revoked_at === null) {
         await this.assertActiveUserIn(trx, existing.user_id);
         await trx.updateTable("user_login_identities")
-          .set({ last_used_at: timestamp, display_hint: verifiedIdentity.displayHint ?? null })
+          .set({ last_used_at: timestamp, ...identityMetadata(verifiedIdentity) })
           .where("identity_id", "=", existing.identity_id)
           .execute();
         await this.consumeChallenge(trx, intentId);
@@ -162,7 +170,7 @@ export class AuthService {
         user_id: id,
         provider: verifiedIdentity.provider,
         provider_subject: verifiedIdentity.subject,
-        display_hint: verifiedIdentity.displayHint ?? null,
+        ...identityMetadata(verifiedIdentity),
         verified_at: timestamp,
         last_used_at: timestamp,
         revoked_at: null,
@@ -210,7 +218,7 @@ export class AuthService {
             revoked_at: null,
             verified_at: timestamp,
             last_used_at: timestamp,
-            display_hint: verifiedIdentity.displayHint ?? null,
+            ...identityMetadata(verifiedIdentity),
           }).where("identity_id", "=", identityId).execute();
         } else {
           identityId = randomUUID();
@@ -219,7 +227,7 @@ export class AuthService {
             user_id: userId,
             provider: verifiedIdentity.provider,
             provider_subject: verifiedIdentity.subject,
-            display_hint: verifiedIdentity.displayHint ?? null,
+            ...identityMetadata(verifiedIdentity),
             verified_at: timestamp,
             last_used_at: timestamp,
             revoked_at: null,
@@ -230,7 +238,7 @@ export class AuthService {
         return {
           identityId,
           provider: verifiedIdentity.provider,
-          displayHint: verifiedIdentity.displayHint ?? null,
+          displayHint: verifiedIdentity.displayHint?.trim() || existing?.display_hint || null,
           verifiedAt: timestamp.toISOString(),
         };
       });
@@ -313,7 +321,11 @@ export class AuthService {
   }
 
   private async verifyIdentity(proofInput: unknown, challenge: StoredAuthChallenge): Promise<VerifiedIdentity> {
-    return this.providers.get(challenge.provider).verify(proofInput, challenge);
+    const identity = await this.providers.get(challenge.provider).verify(proofInput, challenge);
+    if (identity.provider === "phone" && !/^\+[1-9]\d{1,14}$/.test(identity.subject)) {
+      throw new AuthError(400, "INVALID_PROVIDER_PROOF", "Verified phone number must use international format");
+    }
+    return identity;
   }
 
   private assertVerifiedMatchesChallenge(identity: VerifiedIdentity, challenge: StoredAuthChallenge) {

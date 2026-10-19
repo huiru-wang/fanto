@@ -7,7 +7,6 @@ import { MemorySessionRepo, TODO_CONTEXT } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import type { DB } from "../../infrastructure/database/schema.js";
 import { runMigrations } from "../../infrastructure/database/database.js";
-import { finishLegacyAgentUpgrade } from "../../infrastructure/database/agent-schema.js";
 import { CheckpointRepository } from "./postgres-repository.js";
 import { restoreCheckpoint } from "./restore.js";
 
@@ -24,7 +23,7 @@ integration("V2 checkpoint commits Entries and Usage, paginates by Run and resto
   const memory = new MemorySessionRepo();
   try {
     await runMigrations(db);
-    // Old SDK storage tables and columns must disappear on both fresh and upgraded DBs.
+    // The reset baseline creates only the current checkpoint tables and columns.
     const tables = await sql<{table_name:string}>`SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'agent_session' ORDER BY table_name`.execute(db);
     assert.deepEqual(tables.rows.map(row => row.table_name), ["entries", "sessions", "usage_ledger"]);
@@ -69,24 +68,10 @@ integration("V2 checkpoint commits Entries and Usage, paginates by Run and resto
     const secondPage = await repository.history(sessionId, firstPage.nextCursor!, 1);
     assert.equal(secondPage.entries[0]?.id, first.id);
     assert.equal(secondPage.hasMore, false);
-    // Simulate an existing V2 installation with residual pre-V2 columns/tables.
-    // The forward cleanup must leave its valid transcript and usage intact.
-    await sql`ALTER TABLE agent_session.sessions
-      ADD COLUMN storage_version INT NOT NULL DEFAULT 1`.execute(db);
-    await sql`CREATE TABLE agent_session.snapshots (session_id TEXT PRIMARY KEY)`.execute(db);
-    await sql`CREATE TABLE agent_session.scalar_values (session_id TEXT)`.execute(db);
-    await sql`ALTER TABLE agent_session.sessions ALTER COLUMN user_id DROP NOT NULL`.execute(db);
-    const orphan = randomUUID();
-    await sql`INSERT INTO agent_session.sessions
-      (id, created_at, next_seq, agent_id, updated_at, storage_version)
-      VALUES (${orphan}, ${Date.now()}, 0, 'main', ${Date.now()}, 1)`.execute(db);
-    await finishLegacyAgentUpgrade(db);
-    assert.equal((await repository.getSession(orphan)), undefined);
+    // Repeated migrations must preserve transcript and usage.
+    await runMigrations(db);
     assert.equal((await repository.loadEntries(sessionId)).length, 3);
     assert.equal((await repository.loadUsage(sessionId)).length, 1);
-    const afterCleanup = await sql<{ name:string }>`SELECT table_name AS name
-      FROM information_schema.tables WHERE table_schema='agent_session' ORDER BY table_name`.execute(db);
-    assert.deepEqual(afterCleanup.rows.map(row=>row.name), ["entries", "sessions", "usage_ledger"]);
     const restoredRepo = new MemorySessionRepo();
     try {
       const restored = await restoredRepo.create({ id: sessionId }, TODO_CONTEXT);

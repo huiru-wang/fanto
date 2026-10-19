@@ -9,15 +9,17 @@ NGINX_SOURCE="$ROOT/deploy/manual/nginx/fanto-ssl.conf"
 NGINX_TARGET="${FANTO_NGINX_CONFIG:-/etc/nginx/nginx.conf}"
 INSTALL_NGINX="${FANTO_DEPLOY_NGINX:-0}"
 MAINTENANCE=0
+PULL_LATEST=0
 SERVER_PORT="${FANTO_SERVER_PORT:-3000}"
 HEALTH_RETRIES="${FANTO_HEALTH_RETRIES:-60}"
 HEALTH_INTERVAL_SECONDS="${FANTO_HEALTH_INTERVAL_SECONDS:-5}"
 
 usage() {
   cat <<'EOF'
-Usage: deploy/manual/deploy.sh [--nginx] [--maintenance]
+Usage: deploy/manual/deploy.sh [--pull] [--nginx] [--maintenance]
 
 Deploy Fanto production release:
+  0. optionally fast-forward origin/main and reload the updated deploy script
   1. validate production config
   2. install dependencies
   3. build H5
@@ -28,6 +30,7 @@ Deploy Fanto production release:
   8. verify health checks
 
 Options:
+  --pull    pull origin/main first (requires clean main branch)
   --maintenance  stop the old Server before schema migrations
   --nginx   replace /etc/nginx/nginx.conf with Fanto SSL config
 EOF
@@ -37,6 +40,7 @@ for argument in "$@"; do
   case "$argument" in
     --nginx) INSTALL_NGINX=1 ;;
     --maintenance) MAINTENANCE=1 ;;
+    --pull) PULL_LATEST=1 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 1 ;;
   esac
@@ -46,6 +50,27 @@ fail() {
   echo "[ERROR] $*" >&2
   exit 1
 }
+
+if [[ "$PULL_LATEST" == "1" ]]; then
+  command -v git >/dev/null 2>&1 || fail "missing required command: git"
+  [[ "$(git -C "$ROOT" branch --show-current)" == "main" ]] || fail "--pull requires the main branch"
+  [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || fail "--pull requires a clean working tree; commit or stash local changes first"
+  echo "[PULL] Updating from origin/main"
+  git -C "$ROOT" pull --ff-only origin main
+  echo "[PULL] Deploying commit $(git -C "$ROOT" rev-parse --short HEAD)"
+
+  # Run the newly fetched script too; remove --pull to avoid pulling recursively.
+  remaining_arguments=()
+  for argument in "$@"; do
+    if [[ "$argument" != "--pull" ]]; then
+      remaining_arguments+=("$argument")
+    fi
+  done
+  if [[ "${#remaining_arguments[@]}" == "0" ]]; then
+    exec bash "$ROOT/deploy/manual/deploy.sh"
+  fi
+  exec bash "$ROOT/deploy/manual/deploy.sh" "${remaining_arguments[@]}"
+fi
 
 for command in node pnpm curl pm2; do
   command -v "$command" >/dev/null 2>&1 || fail "missing required command: $command (run deploy/manual/setup-runtime.sh once on a new server)"

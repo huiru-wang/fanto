@@ -48,6 +48,7 @@ export class AppleIdentityProvider implements IdentityProvider {
       return {
         provider: "apple",
         subject: payload.sub,
+        contactValue: typeof payload.email === "string" ? payload.email : null,
         displayHint: displayHint(typeof payload.email === "string" ? payload.email : undefined),
       };
     } catch (cause) {

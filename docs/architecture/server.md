@@ -49,7 +49,7 @@ Proposal accept 在事务中确定所选 Idea，创建或更新 Project 为 `que
 
 Fanto 基本资料与主对话角色统一由 `domain/fanto` 管理，数据与头像生命周期见 [Fanto](../domain/fanto.md)。
 
-启动先执行 Kysely migrations、健康预热再监听端口。最新空库基线是 `create_current_schema_20261019.ts`，仅含当前 Agent Checkpoint 三表。已执行完整业务迁移的旧数据库可合并 Kysely 历史；此前若将三张 Agent 表全部删除，迁移会在事务内重建空的 Session 存储并清理失效的默认会话指针。已有业务表不重建；不要删除 `kysely_migration` 以强制重建。具体归并条件见本地开发文档。生产连接、健康与部署见 [本地开发](../engineering/local-development.md)。
+启动先执行 Kysely migrations、健康预热再监听端口。当前通过 `create_current_schema_20261019.ts` 重置基线一次创建最终业务结构和 Agent Checkpoint 三表；不再自动合并旧历史或升级旧表。已存在对象按名称跳过，重复迁移不删除数据；旧库须由操作者清空业务表、Agent 表与 Kysely 元数据后重建。重放条件和边界见 [本地开发](../engineering/local-development.md#database-migration)。
 
 目前不提供队列消息持久化、自动失败重试、重启执行恢复或跨实例调度协调；任何规模评估应考虑这些真实限制。
 

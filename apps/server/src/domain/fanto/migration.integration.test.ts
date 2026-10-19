@@ -5,7 +5,7 @@ import { sql } from "kysely";
 import { createDatabase, runMigrations } from "../../infrastructure/database/database.js";
 
 const integration = process.env.TEST_DATABASE_URL ? test : test.skip;
-integration("consolidated Fanto settings schema preserves UTF-8 role content and existing data", async () => {
+integration("Fanto reset baseline preserves UTF-8 role content and supports stable per-role identity", async () => {
   const admin = createDatabase(process.env.TEST_DATABASE_URL!);
   const name = `fanto_test_${randomUUID().replaceAll("-", "")}`;
   await sql.raw(`CREATE DATABASE ${name}`).execute(admin);
@@ -19,12 +19,6 @@ integration("consolidated Fanto settings schema preserves UTF-8 role content and
     await db.insertInto("users").values({ user_id: "owner", status: "active", created_at: date, updated_at: date, disabled_at: null }).execute();
     await sql`INSERT INTO user_fanto_settings (user_id, role_config, updated_at)
       VALUES ('owner', ${JSON.stringify(role)}::jsonb, ${date})`.execute(db);
-    // Reconstruct the last deployed table to exercise the forward upgrade with existing data.
-    await sql`ALTER TABLE user_fanto_settings DROP CONSTRAINT user_fanto_settings_pkey;
-      ALTER TABLE user_fanto_settings DROP COLUMN fanto_id;
-      ALTER TABLE user_fanto_settings ADD PRIMARY KEY (user_id);
-      ALTER TABLE user_fanto_settings RENAME COLUMN session_id TO main_session_id;
-      DELETE FROM kysely_migration WHERE name = 'fanto_identity_20261019'`.execute(db);
     await runMigrations(db);
     await runMigrations(db);
     const row = await db.selectFrom("user_fanto_settings").selectAll().executeTakeFirstOrThrow();

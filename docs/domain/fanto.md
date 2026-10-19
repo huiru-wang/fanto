@@ -31,4 +31,4 @@ pnpm --filter @fanto/server exec tsx src/bootstrap/cleanup-fanto-avatars.ts
 pnpm --filter @fanto/server exec tsx src/bootstrap/cleanup-fanto-avatars.ts --apply
 ```
 
-当前空库从 `create_current_schema_20261019.ts` 基线执行，再应用 `fanto_identity_20261019.ts`：为现有行生成 fanto_id、将其设为主键，保留 user_id 外键并增加归属排序索引，main_session_id 重命名为 session_id。角色、头像、版本和现有会话指针不变。停止旧进程后执行 `pnpm db:migrate`，再启动配套版本；不支持新旧字段混用。迁移只做前向升级。部署方式见 [本地开发](../engineering/local-development.md)。
+当前空库由 `create_current_schema_20261019.ts` 重置基线直接创建最终角色表：fanto_id 为主键、user_id 为非唯一归属外键，包含归属排序索引与 session_id。旧版字段不做自动转换，旧库须按重置流程清空后重建。部署与重放边界见 [本地开发](../engineering/local-development.md#database-migration)。

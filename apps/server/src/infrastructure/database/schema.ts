@@ -19,6 +19,7 @@ export interface UserLoginIdentitiesTable {
   user_id: string;
   provider: string;
   provider_subject: string;
+  contact_value: Generated<string | null>;
   display_hint: string | null;
   verified_at: Date;
   last_used_at: Date | null;
