@@ -99,7 +99,7 @@ if (creative) await projects.normalizeLegacyMedia();
 const services: ServerServices = {
   auth,
   admin: new AdminService(new AdminRepository(db)),
-  adminUserIds: new Set(config.adminUserIds),
+  adminAccessKey: config.adminAccessKey,
   userProfile: new UserProfileService(db, media),
   records,
   media,

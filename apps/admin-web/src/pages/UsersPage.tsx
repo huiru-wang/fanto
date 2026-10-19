@@ -6,7 +6,7 @@ import { useAuth } from "../auth/AuthContext";
 import { formatDate, formatNumber } from "../components/UsageStats";
 
 export function UsersPage() {
-  const { token } = useAuth();
+  const { adminKey } = useAuth();
   const [query, setQuery] = useState(""); const [committed, setCommitted] = useState("");
   const [status, setStatus] = useState(""); const [cursor, setCursor] = useState<string | null>(null);
   const [history, setHistory] = useState<(string | null)[]>([]);
@@ -14,18 +14,18 @@ export function UsersPage() {
   const [loading, setLoading] = useState(false); const [error, setError] = useState("");
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
-    if (!token) return;
+    if (!adminKey) return;
     const controller = new AbortController(); // guards late updates from earlier pages
     setLoading(true); setError("");
     const params = new URLSearchParams({ limit: "20" });
     if (committed) params.set("query", committed);
     if (status) params.set("status", status);
     if (cursor) params.set("cursor", cursor);
-    void adminApi.users(token, params).then(result => { if (!controller.signal.aborted) setPage(result); })
+    void adminApi.users(adminKey, params).then(result => { if (!controller.signal.aborted) setPage(result); })
       .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "加载失败"); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [token, committed, status, cursor, refresh]);
+  }, [adminKey, committed, status, cursor, refresh]);
   const newFilter = (search: string, selectedStatus: string) => { setCommitted(search); setStatus(selectedStatus); setCursor(null); setHistory([]); };
   return <div className="page">
     <div className="eyebrow">MANAGEMENT / USERS</div>

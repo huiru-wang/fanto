@@ -4,14 +4,14 @@ import { ArrowLeft, ChevronDown, ChevronUp, MessageSquareText } from "lucide-rea
 import { adminApi, type Page, type Session, type SessionUsage, type User, type UserUsage } from "../api/admin";
 import { useAuth } from "../auth/AuthContext";
 import { UsageStats, formatNumber, formatCost, formatDate } from "../components/UsageStats";
-function SessionItem({ session, token }: { session: Session; token: string }) {
+function SessionItem({ session, adminKey }: { session: Session; adminKey: string }) {
   const [open, setOpen] = useState(false); const [detail, setDetail] = useState<SessionUsage | null>(null); const [error, setError] = useState("");
   useEffect(() => {
     if (!open || detail) return;
     let alive = true;
-    void adminApi.sessionUsage(token, session.sessionId).then(result => { if (alive) setDetail(result); }).catch(cause => { if (alive) setError(String(cause)); });
+    void adminApi.sessionUsage(adminKey, session.sessionId).then(result => { if (alive) setDetail(result); }).catch(cause => { if (alive) setError(String(cause)); });
     return () => { alive = false; };
-  }, [open, detail, token, session.sessionId]);
+  }, [open, detail, adminKey, session.sessionId]);
   return <div className="session-item"><button className="session-trigger" onClick={() => setOpen(x => !x)} aria-expanded={open}>
     <span className="session-type"><MessageSquareText size={19}/></span>
     <span className="session-main"><strong>{session.title || "未命名会话"}</strong><small>{session.agentId} · {session.sessionId}</small></span>
@@ -26,23 +26,23 @@ function SessionItem({ session, token }: { session: Session; token: string }) {
   </div>}</div>;
 }
 export function UserDetailPage() {
-  const { userId = "" } = useParams(); const { token } = useAuth();
+  const { userId = "" } = useParams(); const { adminKey } = useAuth();
   const [user, setUser] = useState<User | null>(null); const [usage, setUsage] = useState<UserUsage | null>(null);
   const [sessions, setSessions] = useState<Session[]>([]); const [cursor, setCursor] = useState<string | null>(null);
   const [more, setMore] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   useEffect(() => {
-    if (!token) return;
+    if (!adminKey) return;
     let alive = true;
     setUser(null); setUsage(null); setSessions([]); setCursor(null); setMore(false); setError("");
-    void Promise.all([adminApi.user(token,userId), adminApi.userUsage(token,userId), adminApi.sessions(token,userId,new URLSearchParams({limit:"20"}))])
+    void Promise.all([adminApi.user(adminKey,userId), adminApi.userUsage(adminKey,userId), adminApi.sessions(adminKey,userId,new URLSearchParams({limit:"20"}))])
       .then(([nextUser,nextUsage,page]) => { if (!alive) return; setUser(nextUser); setUsage(nextUsage); setSessions(page.data); setCursor(page.nextCursor); setMore(page.hasMore); })
       .catch(cause => { if (alive) setError(cause instanceof Error ? cause.message : "加载失败"); });
     return () => { alive = false; };
-  }, [token, userId]);
+  }, [adminKey, userId]);
   const nextPage = async () => {
-    if (!token || !cursor || busy) return;
+    if (!adminKey || !cursor || busy) return;
     setBusy(true); setError("");
-    try { const page: Page<Session> = await adminApi.sessions(token,userId,new URLSearchParams({limit:"20",cursor}));
+    try { const page: Page<Session> = await adminApi.sessions(adminKey,userId,new URLSearchParams({limit:"20",cursor}));
       setSessions(old => [...old,...page.data]); setCursor(page.nextCursor); setMore(page.hasMore); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "加载失败"); }
     finally { setBusy(false); }
@@ -55,7 +55,7 @@ export function UserDetailPage() {
       <section className="panel"><div className="panel-header"><div><h2>用户累计 Token</h2><span>全部 Agent Session 已持久化的模型用量</span></div></div>
         {usage ? <UsageStats usage={usage.usage} sessionCount={usage.sessionCount}/> : <p className="muted panel-padding">加载中…</p>}</section>
       <section className="panel"><div className="panel-header"><div><h2>会话记录</h2><span>包含 main、proposal-agent、creator-agent 等所有 Agent</span></div><span className="count-pill">{sessions.length} 条已加载</span></div>
-        {sessions.length ? sessions.map(s => <SessionItem key={s.sessionId} session={s} token={token!}/>) : <div className="empty">暂无会话记录</div>}
+        {sessions.length ? sessions.map(s => <SessionItem key={s.sessionId} session={s} adminKey={adminKey!}/>) : <div className="empty">暂无会话记录</div>}
         {more && <div className="load-more"><button disabled={busy} onClick={() => void nextPage()}>{busy ? "加载中…" : "加载更多会话"}</button></div>}
       </section></>}
   </div>;

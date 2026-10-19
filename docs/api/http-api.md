@@ -6,11 +6,11 @@
 { "success": true, "result": {}, "errorCode": null, "errorMsg": null }
 ```
 
-除健康检查、第三方认证 intent、第三方认证、兼容的注册/登录接口和 Refresh 外，所有 API 都要求 `Authorization: Bearer <access token>`。Access Token 有效期 30 分钟；Refresh Token 有效期 30 天并采用滑动续期。用户身份只来自服务端验证后的 JWT `sub`。
+除健康检查、第三方认证 intent、第三方认证、兼容的注册/登录接口、Refresh 和独立密钥保护的 `/api/admin/*` 外，所有 API 都要求 `Authorization: Bearer <access token>`。Access Token 有效期 30 分钟；Refresh Token 有效期 30 天并采用滑动续期。用户身份只来自服务端验证后的 JWT `sub`。
 
 ## Admin（只读）
 
-`/api/admin/*` 基于已有 JWT 鉴权并额外要求 `sub` 在 Server 配置的 `ADMIN_USER_IDS` 白名单中；未配置时默认禁止。白名单以外用户返回 403，未认证用户返回 401。该路径的请求/响应体不写入 Access Log。管理界面仅在本地运行，但 API 仍保留严格 Server 端授权。查询全部通过独立 `domain/admin` 的只读 Repository，未修改 `agent/` 下的接口或持久化逻辑。
+`/api/admin/*` **不使用用户 JWT**，仅接受请求头 `X-Admin-Key`，其值必须与 Server 环境变量 `ADMIN_ACCESS_KEY` 一致（至少32字符）。缺少配置、密钥错误或缺失统一返回 `401 UNAUTHENTICATED`，不进入查询 Service。采用固定长度摘要的时序安全比较；响应包含 `Cache-Control: no-store`。请求/响应体不写入 Access Log，密钥不写入 URL、日志或前端代码。管理界面仅在本地运行，跨网络代理只应使用 HTTPS。查询全部通过独立 `domain/admin` 的只读 Repository，不修改 `agent/` 下的接口或持久化逻辑。
 
 | 方法 | URL | 返回 result |
 | --- | --- | --- |

@@ -5,9 +5,9 @@ import { LoginPage } from "../pages/LoginPage";
 import { UsersPage } from "../pages/UsersPage";
 import { UserDetailPage } from "../pages/UserDetailPage";
 function Shell() {
-  const { token, logout } = useAuth();
+  const { adminKey, logout } = useAuth();
   const location = useLocation();
-  if (!token) return <LoginPage/>;
+  if (!adminKey) return <LoginPage/>;
   return <div className="app-layout"><aside className="sidebar">
     <div className="brand"><span className="brand-icon">f</span><span><strong>Fanto</strong><small>ADMIN CONSOLE</small></span></div>
     <span className="sidebar-label">WORKSPACE</span>

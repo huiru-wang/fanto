@@ -45,7 +45,7 @@ const jsonBody = async (response: Response, path: string) => {
 
 export type ServerServices = {
   admin?: AdminService;
-  adminUserIds?: ReadonlySet<string>;
+  adminAccessKey?: string;
   creative?: CreativeService;
   agentQueue?: AgentExecutionQueue;
   events?: SessionEventBus;
@@ -68,7 +68,7 @@ export function createApp(services: ServerServices) {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });
     return c.json({ success: false, errorCode: "INTERNAL_ERROR", errorMsg: "Internal server error" }, 500);
   });
-  app.use("*", cors({ origin: "*", allowHeaders: ["Authorization", "Content-Type", "X-Client-Fingerprint", "X-Trace-Id", "X-Time-Zone"], allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"] }));
+  app.use("*", cors({ origin: "*", allowHeaders: ["Authorization", "Content-Type", "X-Client-Fingerprint", "X-Trace-Id", "X-Time-Zone", "X-Admin-Key"], allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"] }));
   app.use("/api/projects/*", bodyLimit({ maxSize: 13 * 1024 * 1024, onError: c => c.json({ success: false, result: null, errorCode: "CONTENT_TOO_LARGE", errorMsg: "Content too large" }, 413) }));
   app.use("/api/*", async (c, next) => {
     const startedAt = performance.now();
@@ -88,6 +88,8 @@ export function createApp(services: ServerServices) {
       "/api/auth/logins",
       "/api/auth/tokens/refresh",
     ]);
+    // Admin uses its own configured secret, never the user JWT flow.
+    if (c.req.path === "/api/admin" || c.req.path.startsWith("/api/admin/")) return next();
     if (publicAuth.has(c.req.path)) return next();
     if (!auth) return c.json({ success: false, result: null, errorCode: "UNAUTHENTICATED", errorMsg: "Authentication is not configured" }, 401);
     const token = bearerToken(c.req.raw);
@@ -115,7 +117,7 @@ export function createApp(services: ServerServices) {
   });
   if (services.userProfile) app.route("/api/users/me/profile", createUserProfileRoutes(services.userProfile));
   if (auth) app.route("/api", createAuthRoutes(auth));
-  if (services.admin) app.route("/api/admin", createAdminRoutes(services.admin, services.adminUserIds ?? new Set()));
+  if (services.admin) app.route("/api/admin", createAdminRoutes(services.admin, services.adminAccessKey));
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));
   if (services.fanto) { app.route("/api/fanto", createFantoRoutes(services.fanto)); app.route("/api/character", createCharacterRoutes(services.fanto)); }

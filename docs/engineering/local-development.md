@@ -36,14 +36,13 @@ Agent Runtime 已内嵌在 Business Server，不单独启动。首次启动前�
 
 ## Admin Web（仅本地运行）
 
-`apps/admin-web` 是独立 React/Vite 管理客户端，不编译发布至 H5、Nginx 或 PM2。Server 在 `apps/server/.env` 设置 `ADMIN_USER_IDS=user001`，只有 Fanto JWT 的 `sub` 为该已存在、active 用户时才能访问 `/api/admin/*`。没有配置白名单时默认拒绝所有访问。登录入口支持手动输入该账户已有的 Access / Refresh Token，或者在 `apps/admin-web/.env` 配置允许的 `VITE_GOOGLE_CLIENT_ID` 使用 Google 正式登录；不会自动注册管理员，Token 仅保存在页面内存。
-
+`apps/admin-web` 是独立 React/Vite 管理客户端，不编译发布至 H5、Nginx 或 PM2。Server 在 `apps/server/.env` 设置 `ADMIN_ACCESS_KEY`（建议执行 `openssl rand -hex 32` 生成），至少32字符；未配置时所有 Admin API 默认拒绝。页面仅输入与 Server 一致的管理密钥，不使用用户 JWT 或账户身份。密钥仅保存在页面内存，刷新页面须重新输入。
 ```bash
 pnpm dev:server
 pnpm dev:admin
 ```
 
-默认访问 `http://127.0.0.1:5174`，Vite 只监听 `127.0.0.1` 并把 `/api` 代理到 `http://127.0.0.1:3000`。Server 在其它位置时通过本地 `ADMIN_API_PROXY` 覆盖代理目标；目标 Server 仍须自行设置白名单。详见 [Admin Web README](../../apps/admin-web/README.md)。
+默认访问 `http://127.0.0.1:5174`，Vite 只监听 `127.0.0.1` 并把 `/api` 代理到 `http://127.0.0.1:3000`。Server 在其它位置时通过本地 `ADMIN_API_PROXY` 覆盖代理目标；目标 Server 仍须自行设置 `ADMIN_ACCESS_KEY`，跨网络连接必须使用 HTTPS。详见 [Admin Web README](../../apps/admin-web/README.md)。
 
 ## H5
 

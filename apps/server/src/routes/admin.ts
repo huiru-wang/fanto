@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { requireUserId } from "./request-user.js";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { AdminInvalidCursor, AdminNotFound, type AdminService } from "../domain/admin/index.js";
 
 const listUsersSchema = z.object({
@@ -17,12 +17,18 @@ const listSessionsSchema = z.object({
 const ok = (result: unknown) => ({ success: true as const, result, errorCode: null, errorMsg: null });
 const fail = (errorCode: string, errorMsg: string) => ({ success: false as const, result: null, errorCode, errorMsg });
 
-/** Must be mounted *after* common Access JWT authentication middleware. */
-export function createAdminRoutes(service: AdminService, adminUserIds: ReadonlySet<string>): Hono {
+/** Independent admin key; no ordinary user principal or Agent dependency. */
+export function createAdminRoutes(service: AdminService, configuredKey: string | undefined): Hono {
+  // Fail closed if the admin key has not been explicitly configured.
+  const expected = configuredKey && configuredKey.length >= 32
+    ? createHash("sha256").update(configuredKey).digest() : null;
   const app = new Hono();
   app.use("*", async (c, next) => {
-    if (!adminUserIds.has(requireUserId(c.req.raw)))
-      return c.json(fail("FORBIDDEN", "Admin access required"), 403);
+    c.header("Cache-Control", "no-store");
+    const key = c.req.header("x-admin-key");
+    const actual = key && key.length <= 512 ? createHash("sha256").update(key).digest() : null;
+    if (!expected || !actual || !timingSafeEqual(actual, expected))
+      return c.json(fail("UNAUTHENTICATED", "Invalid admin key"), 401);
     await next();
   });
   app.onError((error, c) => {
