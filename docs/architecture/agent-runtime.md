@@ -31,7 +31,7 @@ Tool 和 Context Provider 通过 `agent/business-services.ts` 调用领域 Servi
 
 主对话 Session 独立于 User Settings：Agent 持有 Session 生命周期及 `user_id/agent_id` 权限；`user_fanto_settings.main_session_id` 仅是用户默认打开的主会话指针，创建/切换分别调用 `/api/agent/sessions` 与 `/api/fanto/settings`，Stream 固定明确的 sessionId。Proposal/Creator 继续使用各自关联的 Session。
 
-Pi AgentHarness 和 MemorySessionRepo 完整保留。SDK 内部 Commit、Loop、Tool、Stop、Compaction 及模型上下文构建不作修改；`agent/checkpoint/` 通过 Pi 的 `entry_added`、`usage`、`turn_end`、`run_end` 事件收集已提交 Entry/Usage，在每个 Turn 结束时同步提交 PostgreSQL，Run 正常/异常/停止后同步补齐剩余数据。SSE 成功终态之前必须检查 PG 保存结果；写入失败不返回 `done`。保存只涉及 `agent_session.sessions`、`entries`（包括 `run_id`）和 `usage_ledger` 三张活跃表，老 SDK Storage/Snapshot 表仅作为未迁移的历史数据保留。
+Pi AgentHarness 和 MemorySessionRepo 完整保留。SDK 内部 Commit、Loop、Tool、Stop、Compaction 及模型上下文构建不作修改；`agent/checkpoint/` 通过 Pi 的 `entry_added`、`usage`、`turn_end`、`run_end` 事件收集已提交 Entry/Usage，在每个 Turn 结束时同步提交 PostgreSQL，Run 正常/异常/停止后同步补齐剩余数据。SSE 成功终态之前必须检查 PG 保存结果；写入失败不返回 `done`。保存只涉及 `agent_session.sessions`、`entries`（包括 `run_id`）和 `usage_ledger` 三张活跃表，旧 Pi SDK Storage/Snapshot 表由前向清理 Migration 删除，不修改有效 V2 会话数据；不写入冗余 Session Token 合计。
 
 Session 冷恢复从 PostgreSQL 加载已落库的完整 Entry 主链，通过 Pi 公开的 Session API 恢复后交给 SDK 原生 Compaction 构建上下文。不会修改内部 Lane 或人工拼接摘要；Compaction 限制的是模型上下文，不限制冷恢复所加载的历史长度。当前仅单进程防并发，同一 Session 互斥运行；暂不恢复进程崩溃期间正在执行的工具或流式 Frame。
 

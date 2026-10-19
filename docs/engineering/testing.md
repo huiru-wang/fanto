@@ -18,11 +18,11 @@ xcodebuild -project apps/ios/fanto/fanto.xcodeproj -scheme fanto -sdk iphonesimu
 
 ## 按领域验证
 
-- **数据库**：空库基线 `create_current_schema_20261011.ts`、已有数据库完整迁移历史合并与不完整历史拒绝、`drop_tasks_20261011.ts` 删除废弃 Task 表，`z_agent_session_snapshots_20261017.ts` 增加异步快照表，保留其它业务数据；不要手动删除 `kysely_migration`。
+- **数据库**：空库基线 `create_current_schema_20261011.ts`、已有数据库完整迁移历史合并与不完整历史拒绝、`drop_tasks_20261011.ts` 删除废弃 Task 表，`z_agent_session_snapshots_20261017.ts` 属于历史迁移；后续 `zzzzzzz_agent_storage_cleanup_20261019.ts` 删除 Snapshot 和旧 Pi Storage 表，同时保留有效 V2 Session 数据；不要手动删除 `kysely_migration`。
 - **Record / Media**：按用户、版本、位置字段、五媒体限制、后置 Vision/ASR、独立 EmbeddingQueue、语义检索；真实 OSS PUT/HEAD/URL、删除后的尽力清理以及 Project 最终副本归属；`image-thumbnail.test.ts` 验证 EXIF/WebP/并发上限，`media-service.test.ts` 验证小图失败与 DB 失败后的手动恢复、variant 和用户隔离。H5 `tests/media-upload.test.ts` 验证每个失败阶段不会自动继续请求。
 - **Proposal / Project**：Proposal 1–2 个 Idea、accept 幂等、create/extend 状态、Record 关联、version 乐观并发、媒体复制、旧内容保留和失败状态收敛；测试文件位于 `domain/projects/`、`routes/project-http.test.ts`。
-- **PG Session SDK conformance**：设置只指向独立测试库的 `TEST_DATABASE_URL`（库名需包含 test），运行 `pnpm --filter @fanto/server exec tsx --test src/agent/session/pg-session.test.ts`，验证 Pi Core Storage / SessionRepo 一致性、Fork、失败回滚与 PG 无外键。测试会清空并删除测试数据库中的 `agent_session` schema，不可使用生产数据库。
-- **取消集成回归**：`routes/agent/cancellation.integration.test.ts` 使用真实 Pi Harness、faux Provider 和 HTTP socket，覆盖各阶段输出阻塞、取消持久化、超时、重复 stop、输出 deadline 与续聊。可单独设置 `TEST_DATABASE_URL` 在独立 PG 库验证；它会创建/删除 `agent_session` schema，与 PG conformance 测试分开执行，避免并发操作同一 schema。付费模型与浏览器验证仍需单独执行。
+- **Agent Checkpoint PG Integration**：用仅供测试的 `TEST_DATABASE_URL`（库名含 test），执行 `pnpm --filter @fanto/server exec tsx --test src/agent/checkpoint/*.integration.test.ts`，验证保留三表、清理废弃字段、Entry/Usage 存储、Run 历史分页、冷恢复和主会话权限。测试创建并删除独立的临时数据库，不可使用生产数据库。
+- **取消集成回归**：`routes/agent/cancellation.integration.test.ts` 使用真实 Pi Harness、faux Provider 和 HTTP socket，覆盖各阶段输出阻塞、取消持久化、超时、重复 stop、输出 deadline 与续聊。需要数据库时可单独设置 `TEST_DATABASE_URL` 在独立 PG 库验证；运行时以独立临时库执行，避免与其它集成测试共享生产 Schema。付费模型与浏览器验证仍需单独执行。
 - **Memory**：`agent/context/providers/memory.test.ts` 验证默认两类注入、预算、失败和下一轮刷新；`agent/tools/memory.test.ts` 验证按话题搜索、同条更新和失败语义；`domain/memory/memory.integration.test.ts` 在隔离 PostgreSQL 验证新类型约束、旧内容不转换、CRUD/向量检索、容量和用户隔离。设置 `TEST_DATABASE_URL`（库名含 test，需 CREATEDB）。`MEMORY_SMOKE_TEST=1 pnpm --filter @fanto/server exec tsx --test src/agent/tools/memory.smoke.test.ts` 为付费真实模型验证，使用生产 Main Prompt/Tool/Harness 与隔离的内存工具数据，不能当成生产数据库 E2E。
 - **Agent Session**：History user ownership、Creator 按 projectId+sessionId 绑定 Project 的领域授权、Stream/Events、同一 Session 并发防护、Tool Presentation 隐私投影、取消与超时。可检查 `routes/agent/sessions.test.ts`、`routes/agent/stream.test.ts` 与 `agent/presentation.test.ts`。
 - **异步执行**：`execution/agent-execution.listener.test.ts`、`execution/handlers/proposal-creator.contract.test.ts`；验证 Proposal/Creator 共享并发、创作状态转换、停止/进程中断边界。异步 Queue 不持久化，不能声称自动恢复。
@@ -44,7 +44,7 @@ R2_SMOKE_TEST=1 pnpm --filter @fanto/server exec tsx --test src/infrastructure/c
 
 ## 会话内存与异步快照
 
-`agent/session/live-session.test.ts` 使用真实 SDK 和 HTTP 路由验证阻塞/失败的快照写入不延迟 done、下一轮或在线历史，停止部分回复刷新/冷恢复、工具自然完成、参数生成时停止和断线继续。`session-snapshots.integration.test.ts` 使用隔离 TEST_DATABASE_URL 自动创建/删除独立数据库，验证 PG 单语句保存、revision/owner 防旧覆盖与旧 Session 冷恢复；需要 CREATEDB。默认未设置测试库时该测试跳过。旧 PgStorage conformance 仅验证兼容适配，不代表当前在线路径仍使用逐帧数据库事务。
+`agent/session/live-session.test.ts` 使用真实 Pi SDK 和 HTTP 路由验证 Turn/Run Checkpoint、Run 分页、PG 写入失败、Stop 和重启恢复。`agent/checkpoint/postgres.integration.test.ts` 使用独立 TEST_DATABASE_URL 自动创建/删除临时数据库，验证 Agent 三表清理后的 Schema、Entry/Usage、模型字段、主链恢复；`settings.integration.test.ts` 验证归属和版本冲突。需要 CREATEDB，未配置测试库则集成测试跳过。当前在线链路不会调用旧 PgStorage / Snapshot。
 
 ## Fanto 设置
 

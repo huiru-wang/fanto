@@ -23,7 +23,7 @@ flowchart LR
 - PostgreSQL：用户、身份、Records、Media 元数据、Memory、Proposal、Project、Record 关联。
 - pgvector：`records.embedding`（可重建的派生字段）、`memories.embedding`、`projects.embedding`。
 - 对象存储：Record 上传媒体、生成的 Project 媒体；Server 按 `OBJECT_STORAGE_PROVIDER` 使用 Aliyun OSS 或 Cloudflare R2，客户端读取短期签名 URL。
-- Agent Session 在线使用内存；稳定 transcript/owner 异步保存到 PostgreSQL `agent_session.snapshots`，旧七表只读兼容。历史尽力保存，不阻塞回复，重启可丢失最近消息；工作区位于 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。
+- Agent Session 在线使用 Pi MemorySessionRepo；通过 Pi 原生 `entry_added/usage/turn_end` Event 将 Entry 和 Usage 同步增量写入 PostgreSQL 的 `agent_session.sessions/entries/usage_ledger`，Run 收尾额外 flush；Session 归属来自 `sessions.user_id/agent_id`，不再读取 Snapshot 或旧 Storage；工作区位于 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。
 - Session transcript 记录 Agent 过程；Project 只存最新 `goal/content/status`，不从 UI 消息反推业务事实。
 
 ## 异步与会话

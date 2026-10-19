@@ -56,15 +56,7 @@ pnpm build:h5
 
 ## 数据文件
 
-Agent 开发数据位于根目录 `data/`：
-
-```text
-data/
-├── agent-sessions.sqlite
-└── workspaces/
-```
-
-Business Server 使用 Supabase PostgreSQL；Agent Runtime 保持 SQLite，不共享业务数据库。
+Agent 工作区位于根目录 `data/workspaces/`；Session 内存运行使用 Pi MemorySessionRepo，持久历史和 Token Usage 则由 `src/agent/checkpoint/` 增量写入业务 PostgreSQL 的 `agent_session` Schema。**不使用 SQLite 或整份 Snapshot。**
 
 ## Database Migration
 
@@ -72,6 +64,12 @@ Server 使用 Kysely migration 管理 PostgreSQL schema。`src/bootstrap/main.ts
 
 `create_current_schema_20261011.ts` 是当前完整 PostgreSQL Schema 基线，包含异步 Project 状态、`agent_session` Schema，且不含 `users.wx_openid` 和 `media_object_deletions`。已完整执行旧基线及 `zzzzzz_async_v3`、`zzzzzzzzzzzz_agent_sessions_pg`、`zzzzzzzzzzzzz_drop_users_wx_openid` 的数据库，启动时在事务与 Kysely 迁移锁下仅将迁移元数据归并到新基线，不重建表或修改业务数据。若还保留更早的迁移历史，则这些历史也必须完整。历史不完整或包含未知版本时拒绝合并，须先使用归并前版本升至最新；后续结构变更新增前向 migration。本次 `drop_tasks_20261011.ts` 是正式前向迁移：启动后删除旧 Task 和 TaskRun 表及历史数据，不影响其它领域表。不要手动清空迁移历史或强行重跑基线。历史归并后禁止回滚运行归并前的 Server 版本。本地集成验证使用隔离的 `TEST_DATABASE_URL`。
 
+
+## Agent Session V2 数据结构清理
+
+`zzzzzzz_agent_storage_cleanup_20261019.ts` 为正式前向 Migration，删除旧 Snapshot / Pi SDK Storage 共五张废弃表、旧 Session 字段和失效索引，**保留已有有效 V2 的 sessions、entries、usage_ledger 数据**；旧版本遗留的未归属 Session 数据不迁移。
+
+**请勿手动 DROP `agent_session` 表、清空 `kysely_migration` 或重跑历史基线。** Kysely 已记录执行过的 Migration，删表不会触发自动重建，反而可能破坏当前会话、用户设置里的主会话指针，以及 Project/Proposal 关联的 Session。上线时停止旧 Server，先备份数据库，然后正常执行 `pnpm db:migrate` 再启动新版 Server。**升级后不可启动依赖旧 Storage/Snapshot 的 Server 版本。**
 
 ## 常用命令
 

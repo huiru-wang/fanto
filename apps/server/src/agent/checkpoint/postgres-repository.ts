@@ -18,9 +18,8 @@ export class CheckpointRepository {
   async createSession(id: string, userId: string, agentId: string): Promise<void> {
     const now = Date.now();
     await sql`INSERT INTO agent_session.sessions
-      (id, created_at, storage_version, metadata, message_count, usage_payload, next_seq,
-       user_id, agent_id, updated_at)
-      VALUES (${id}, ${now}, 1, NULL, 0, '{}'::jsonb, 0, ${userId}, ${agentId}, ${now})`.execute(this.db);
+      (id, created_at, next_seq, user_id, agent_id, updated_at)
+      VALUES (${id}, ${now}, 0, ${userId}, ${agentId}, ${now})`.execute(this.db);
   }
 
   async getSession(id: string, userId?: string): Promise<StoredSession | undefined> {
@@ -56,10 +55,9 @@ export class CheckpointRepository {
         const seq = nextSeq++;
         if (item.kind === "entry") {
           const e = item.entry;
-          const role = e.type === "message" ? e.message.role : null;
           entryRows.push(sql`(${id}, ${e.id}, ${e.parentId}, ${seq}, ${e.type},
             ${e.type === "custom" ? e.customType : null}, ${e.timestamp},
-            ${json(payloadForEntry(e))}::jsonb, ${item.runId}, ${role})`);
+            ${json(payloadForEntry(e))}::jsonb, ${item.runId})`);
           tip = e.id;
         } else {
           const r = item.row;
@@ -72,7 +70,7 @@ export class CheckpointRepository {
       }
       if (entryRows.length) {
         await sql`INSERT INTO agent_session.entries
-          (session_id,id,parent_id,seq,type,custom_type,timestamp,payload,run_id,role)
+          (session_id,id,parent_id,seq,type,custom_type,timestamp,payload,run_id)
           VALUES ${sql.join(entryRows)}
           ON CONFLICT (session_id,id) DO NOTHING`.execute(trx);
       }

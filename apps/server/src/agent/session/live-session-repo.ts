@@ -7,8 +7,6 @@ import { restoreCheckpoint } from "../checkpoint/restore.js";
 type Loaded = {
   metadata: SessionMetadata;
   handle?: Session;
-  managed: boolean;
-  readers: number;
   restored: boolean;
   closing?: Promise<void>;
 };
@@ -25,7 +23,7 @@ export class LiveSessionRepo {
 
   async create(options: { id: string }, _context = TODO_CONTEXT): Promise<Session> {
     const handle = await this.memory.create(options, TODO_CONTEXT);
-    this.loaded.set(options.id, { metadata: handle.metadata, handle, managed: true, readers: 0, restored: false });
+    this.loaded.set(options.id, { metadata: handle.metadata, handle, restored: false });
     return handle;
   }
 
@@ -51,7 +49,6 @@ export class LiveSessionRepo {
       await restoreCheckpoint(handle, id, this.checkpoints);
       const record = this.loaded.get(id)!;
       record.restored = true;
-      record.managed = false;
       return record.metadata;
     } catch (error) {
       await handle.close(TODO_CONTEXT);
@@ -61,31 +58,17 @@ export class LiveSessionRepo {
     }
   }
 
-  async open(metadata: SessionMetadata, _context = TODO_CONTEXT, managed = false): Promise<Session> {
+  async open(metadata: SessionMetadata, _context = TODO_CONTEXT): Promise<Session> {
     const record = this.loaded.get(metadata.id);
     if (!record) throw new Error("Session has not been loaded");
     await record.closing;
     if (!record.handle) record.handle = await this.memory.open(record.metadata, TODO_CONTEXT);
-    if (managed) record.managed = true;
-    else record.readers++;
     return record.handle;
   }
 
   closedHandle(id: string): void {
     const record = this.loaded.get(id);
-    if (record) { record.handle = undefined; record.managed = false; }
-  }
-
-  async closeReadHandle(id: string): Promise<void> {
-    const record = this.loaded.get(id);
-    if (!record) return;
-    record.readers = Math.max(0, record.readers - 1);
-    if (!record.managed && record.readers === 0 && record.handle) {
-      const handle = record.handle;
-      record.handle = undefined;
-      record.closing = handle.close(TODO_CONTEXT);
-      try { await record.closing; } finally { record.closing = undefined; }
-    }
+    if (record) record.handle = undefined;
   }
 
   restored(id: string): boolean { return this.loaded.get(id)?.restored ?? false; }
@@ -93,7 +76,7 @@ export class LiveSessionRepo {
 
   async evict(id: string): Promise<void> {
     const record = this.loaded.get(id);
-    if (!record || record.managed || record.readers !== 0) return;
+    if (!record) return;
     if (record.handle) await record.handle.close(TODO_CONTEXT);
     await record.closing;
     await this.memory.delete(record.metadata, TODO_CONTEXT);

@@ -1,4 +1,4 @@
-import type { Entry, EntryStructure, UsageRow } from "@earendil-works/pi-agent-core";
+import type { Entry, UsageRow } from "@earendil-works/pi-agent-core";
 
 export function safeNumber(value: number | string, field: string): number {
   const result = typeof value === "string" ? Number(value) : value;
@@ -51,15 +51,6 @@ export function decodeEntry(row: PgEntryRow): Entry {
     }
     default: throw new Error(`Unknown Session entry type: ${row.type}`);
   }
-}
-
-export function entryStructure(row: PgEntryRow): EntryStructure {
-  return {
-    id: row.id, parentId: row.parent_id, seq: safeNumber(row.seq, "entry.seq"),
-    timestamp: safeNumber(row.timestamp, "entry.timestamp"),
-    type: row.type as EntryStructure["type"],
-    ...(row.custom_type === null ? {} : { customType: row.custom_type }),
-  };
 }
 
 export interface PgUsageRow {

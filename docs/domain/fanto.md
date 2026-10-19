@@ -4,7 +4,7 @@
 
 ## 数据与写入
 
-`user_fanto_settings` 以 user_id 为主键并级联用户删除，包含 nickname、description、avatar_media_id、role_config JSONB、version、created_at、updated_at。角色、场景、交流规则和示例对话保存在 role_config 的 character、scenario、instructions、exampleDialogues 中；后续扩展无需增加列。PATCH 当前只接受已支持键，合并时保留已有未知 JSON 键。头像外键延迟至事务提交检查，支持用户级联删除。
+`user_fanto_settings` 以 user_id 为主键并级联用户删除，包含 nickname、description、avatar_media_id、main_session_id、role_config JSONB、version、created_at、updated_at。角色、场景、交流规则和示例对话保存在 role_config 的 character、scenario、instructions、exampleDialogues 中；后续扩展无需增加列。PATCH 当前只接受已支持键，合并时保留已有未知 JSON 键。头像外键延迟至事务提交检查，支持用户级联删除。
 
 未创建行时读取默认资料，version=0；角色为空时主对话使用代码默认风格。保存按 expectedVersion 校验，只提交变化字段，roleConfig 按子字段合并。更新锁定用户和设置行，首次创建也遵守同一版本边界；有效变更递增版本，无变化保持版本。昵称/简介仅为资料，简介不注入 Prompt。CharacterProvider 每轮读取一次昵称和角色，读取失败中止 Run，不静默退回默认角色；新设置下一轮生效。
 
