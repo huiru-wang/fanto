@@ -7,7 +7,7 @@ import { MemorySessionRepo, TODO_CONTEXT } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage } from "@earendil-works/pi-ai/providers/faux";
 import type { DB } from "../../infrastructure/database/schema.js";
 import { runMigrations } from "../../infrastructure/database/database.js";
-import { up as cleanupLegacyStorage } from "../../migrations/zzzzzzz_agent_storage_cleanup_20261019.js";
+import { finishLegacyAgentUpgrade } from "../../infrastructure/database/agent-schema.js";
 import { CheckpointRepository } from "./postgres-repository.js";
 import { restoreCheckpoint } from "./restore.js";
 
@@ -80,7 +80,7 @@ integration("V2 checkpoint commits Entries and Usage, paginates by Run and resto
     await sql`INSERT INTO agent_session.sessions
       (id, created_at, next_seq, agent_id, updated_at, storage_version)
       VALUES (${orphan}, ${Date.now()}, 0, 'main', ${Date.now()}, 1)`.execute(db);
-    await cleanupLegacyStorage(db);
+    await finishLegacyAgentUpgrade(db);
     assert.equal((await repository.getSession(orphan)), undefined);
     assert.equal((await repository.loadEntries(sessionId)).length, 3);
     assert.equal((await repository.loadUsage(sessionId)).length, 1);

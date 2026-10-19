@@ -5,7 +5,6 @@ import { Kysely, PostgresDialect, sql } from "kysely";
 import { Pool } from "pg";
 import type { DB } from "../../infrastructure/database/schema.js";
 import { runMigrations } from "../../infrastructure/database/database.js";
-import { up as memoryKindsMigration } from "../../migrations/zz_memory_kinds_20261017.js";
 import { MemoryService } from "./memory-service.js";
 import { memoryKinds } from "./model.js";
 
@@ -24,12 +23,9 @@ integration("Memory PostgreSQL: new kinds, untouched legacy rows, progression, i
   try {
     await runMigrations(db);
     for (const id of ["owner", "foreign"]) await db.insertInto("users").values({ user_id: id, status: "active", created_at: new Date(), updated_at: new Date(), disabled_at: null }).execute();
-    // Reproduce the previous constraint and a pre-existing row, then apply ONLY DDL.
-    await sql`ALTER TABLE memories DROP CONSTRAINT memories_kind_check`.execute(db);
-    await sql`ALTER TABLE memories ADD CONSTRAINT memories_kind_check CHECK (kind IN ('profile', 'goal', 'guidance'))`.execute(db);
+    // The consolidated schema still allows reading legacy kinds without altering their rows.
     const legacyId = randomUUID();
     await sql`INSERT INTO memories VALUES (${legacyId}, 'owner', 'profile', '旧资料不转换', ${JSON.stringify(vector)}::vector, NOW(), NOW())`.execute(db);
-    await memoryKindsMigration(db);
     const legacy = (await sql<{ kind: string; content: string }>`SELECT kind, content FROM memories WHERE memory_id=${legacyId}`.execute(db)).rows[0];
     assert.deepEqual(legacy, { kind: "profile", content: "旧资料不转换" });
     assert.deepEqual(await service.list("owner"), []);

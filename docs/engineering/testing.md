@@ -18,7 +18,7 @@ xcodebuild -project apps/ios/fanto/fanto.xcodeproj -scheme fanto -sdk iphonesimu
 
 ## 按领域验证
 
-- **数据库**：空库基线 `create_current_schema_20261011.ts`、已有数据库完整迁移历史合并与不完整历史拒绝、`drop_tasks_20261011.ts` 删除废弃 Task 表，`z_agent_session_snapshots_20261017.ts` 属于历史迁移；后续 `zzzzzzz_agent_storage_cleanup_20261019.ts` 删除 Snapshot 和旧 Pi Storage 表，同时保留有效 V2 Session 数据；不要手动删除 `kysely_migration`。
+- **数据库**：`create_current_schema_20261019.ts` 是唯一完整基线；隔离 PG 中测试空库建表、旧库历史归并、Agent 三表全部缺失后的事务重建与会话指针修复、有效 Checkpoint 数据保留、历史不完整和部分缺表拒绝。旧迁移文件已合并，legacy cleanup 仅为旧库升级兼容逻辑；不要手动删除 `kysely_migration`。
 - **Record / Media**：按用户、版本、位置字段、五媒体限制、后置 Vision/ASR、独立 EmbeddingQueue、语义检索；真实 OSS PUT/HEAD/URL、删除后的尽力清理以及 Project 最终副本归属；`image-thumbnail.test.ts` 验证 EXIF/WebP/并发上限，`media-service.test.ts` 验证小图失败与 DB 失败后的手动恢复、variant 和用户隔离。H5 `tests/media-upload.test.ts` 验证每个失败阶段不会自动继续请求。
 - **Proposal / Project**：Proposal 1–2 个 Idea、accept 幂等、create/extend 状态、Record 关联、version 乐观并发、媒体复制、旧内容保留和失败状态收敛；测试文件位于 `domain/projects/`、`routes/project-http.test.ts`。
 - **Agent Checkpoint PG Integration**：用仅供测试的 `TEST_DATABASE_URL`（库名含 test），执行 `pnpm --filter @fanto/server exec tsx --test src/agent/checkpoint/*.integration.test.ts`，验证保留三表、清理废弃字段、Entry/Usage 存储、Run 历史分页、冷恢复和主会话权限。测试创建并删除独立的临时数据库，不可使用生产数据库。

@@ -1,6 +1,7 @@
 import { sql, type Kysely } from "kysely";
+import { createAgentCheckpointSchema } from "../infrastructure/database/agent-schema.js";
 
-/** Complete PostgreSQL schema baseline. Already-upgraded databases retain their data and compact only migration metadata. */
+/** Full schema as of 2026-10-19. Existing databases are upgraded by history consolidation, without replaying this baseline. */
 export async function up(db: Kysely<any>) {
   await sql`
     CREATE EXTENSION IF NOT EXISTS vector;
@@ -15,7 +16,7 @@ export async function up(db: Kysely<any>) {
     CREATE INDEX idx_records_map_lon ON records(user_id, location_longitude) WHERE location_longitude IS NOT NULL;
     CREATE TABLE media_assets (id SERIAL PRIMARY KEY, media_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, object_key TEXT NOT NULL UNIQUE, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, status TEXT NOT NULL, ext_data TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE INDEX idx_media_assets_user_created ON media_assets(user_id, created_at);
-    CREATE TABLE memories (memory_id UUID PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, kind TEXT NOT NULL CHECK (kind IN ('profile', 'goal', 'guidance')), content TEXT NOT NULL, embedding vector(768) NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL);
+    CREATE TABLE memories (memory_id UUID PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, kind TEXT NOT NULL CHECK (kind IN ('profile', 'goal', 'guidance', 'personal_background', 'important_relationships', 'current_focus', 'interaction_preferences')), content TEXT NOT NULL, embedding vector(768) NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL);
     CREATE INDEX idx_memories_user_updated ON memories(user_id, updated_at DESC, memory_id DESC);
     CREATE TABLE projects (
       project_id UUID PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
@@ -41,8 +42,6 @@ export async function up(db: Kysely<any>) {
     CREATE INDEX idx_proposals_user_created ON proposals(user_id, created_at DESC, proposal_id DESC);
     CREATE INDEX idx_proposals_user_type_status_created ON proposals(user_id, type, status, created_at DESC, proposal_id DESC);
     CREATE INDEX idx_proposals_target_created ON proposals(user_id, target_project_id, created_at DESC, proposal_id DESC);
-    CREATE INDEX idx_proposals_accepted_creation ON proposals(resolved_at, proposal_id)
-      WHERE status = 'accepted' AND content->'creation' IS NOT NULL;
     CREATE TABLE record_links (
       user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, outer_id UUID NOT NULL,
       type TEXT NOT NULL CHECK(type IN ('project','proposal')), record_id TEXT NOT NULL,
@@ -52,74 +51,28 @@ export async function up(db: Kysely<any>) {
     CREATE INDEX idx_record_links_timeline ON record_links(user_id, type, outer_id, record_event_at DESC, record_id DESC);
     CREATE INDEX idx_record_links_record ON record_links(user_id, record_id);
   `.execute(db);
-  await createAgentSessionSchema(db);
-}
-
-/** Shared with the PostgreSQL Session conformance tests. */
-export async function createAgentSessionSchema(db: Kysely<any>): Promise<void> {
-  await sql`CREATE SCHEMA IF NOT EXISTS agent_session`.execute(db);
   await sql`
-    CREATE TABLE agent_session.sessions (
-      id TEXT PRIMARY KEY,
-      created_at BIGINT NOT NULL,
-      parent_session_id TEXT,
-      storage_version INTEGER NOT NULL,
-      metadata JSONB,
-      message_count BIGINT NOT NULL,
-      usage_payload JSONB NOT NULL,
-      next_seq BIGINT NOT NULL
-    )
+    CREATE TABLE user_fanto_settings (
+      user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      nickname TEXT NOT NULL DEFAULT 'Fanto', description TEXT NOT NULL DEFAULT '',
+      avatar_media_id TEXT REFERENCES media_assets(media_id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED,
+      role_config JSONB NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(role_config) = 'object'),
+      version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), main_session_id TEXT
+    );
+    CREATE INDEX user_fanto_avatar_reference ON user_fanto_settings(avatar_media_id) WHERE avatar_media_id IS NOT NULL;
+    CREATE TABLE user_profiles (
+      user_id TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+      nickname TEXT NOT NULL DEFAULT '你', signature TEXT NOT NULL DEFAULT '',
+      avatar_media_id TEXT REFERENCES media_assets(media_id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED,
+      version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      cover_media_id TEXT REFERENCES media_assets(media_id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED
+    );
+    CREATE INDEX user_profile_avatar_reference ON user_profiles(avatar_media_id) WHERE avatar_media_id IS NOT NULL;
+    CREATE INDEX user_profile_cover_reference ON user_profiles(cover_media_id) WHERE cover_media_id IS NOT NULL;
   `.execute(db);
-  await sql`
-    CREATE TABLE agent_session.entries (
-      session_id TEXT NOT NULL, id TEXT NOT NULL, parent_id TEXT,
-      seq BIGINT NOT NULL, type TEXT NOT NULL, custom_type TEXT,
-      timestamp BIGINT NOT NULL, payload JSONB NOT NULL,
-      PRIMARY KEY (session_id, id)
-    )
-  `.execute(db);
-  await sql`CREATE INDEX ix_entry_parent ON agent_session.entries(session_id, parent_id)`.execute(db);
-  await sql`CREATE INDEX ix_entry_seq ON agent_session.entries(session_id, seq, type)`.execute(db);
-  await sql`
-    CREATE TABLE agent_session.scalar_values (
-      session_id TEXT NOT NULL, namespace TEXT NOT NULL, key TEXT NOT NULL,
-      seq BIGINT NOT NULL, value JSONB NOT NULL,
-      PRIMARY KEY (session_id, namespace, key)
-    )
-  `.execute(db);
-  await sql`
-    CREATE TABLE agent_session.list_values (
-      session_id TEXT NOT NULL, namespace TEXT NOT NULL, key TEXT NOT NULL,
-      seq BIGINT NOT NULL, value JSONB NOT NULL,
-      PRIMARY KEY (session_id, namespace, key, seq)
-    )
-  `.execute(db);
-  await sql`
-    CREATE TABLE agent_session.usage_ledger (
-      session_id TEXT NOT NULL, id TEXT NOT NULL, seq BIGINT NOT NULL,
-      entry_id TEXT, adjustment BOOLEAN NOT NULL, usage JSONB NOT NULL, details JSONB,
-      PRIMARY KEY (session_id, id)
-    )
-  `.execute(db);
-  await sql`CREATE INDEX ix_usage_seq ON agent_session.usage_ledger(session_id, seq)`.execute(db);
-  await sql`
-    CREATE TABLE agent_session.branch_entries (
-      session_id TEXT NOT NULL, branch_id TEXT NOT NULL, entry_id TEXT NOT NULL,
-      entry_seq BIGINT NOT NULL, entry_type TEXT NOT NULL,
-      PRIMARY KEY (session_id, branch_id, entry_id)
-    )
-  `.execute(db);
-  await sql`CREATE INDEX ix_be_seq ON agent_session.branch_entries(session_id, branch_id, entry_seq, entry_id, entry_type)`.execute(db);
-  await sql`CREATE INDEX ix_be_type ON agent_session.branch_entries(session_id, branch_id, entry_type, entry_seq, entry_id)`.execute(db);
-  await sql`CREATE INDEX ix_be_entry ON agent_session.branch_entries(session_id, entry_id)`.execute(db);
-  await sql`
-    CREATE TABLE agent_session.branch_meta (
-      session_id TEXT NOT NULL, branch_id TEXT NOT NULL, tip_entry_id TEXT NOT NULL,
-      tip_seq BIGINT NOT NULL, base_branch_id TEXT, base_seq BIGINT,
-      PRIMARY KEY (session_id, branch_id)
-    )
-  `.execute(db);
-  await sql`CREATE UNIQUE INDEX ix_bm_tip ON agent_session.branch_meta(session_id, tip_entry_id)`.execute(db);
+  await createAgentCheckpointSchema(db);
 }
 
 export async function down(_db: Kysely<any>) { /* Forward only. */ }

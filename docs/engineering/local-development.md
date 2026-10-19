@@ -62,14 +62,11 @@ Agent 工作区位于根目录 `data/workspaces/`；Session 内存运行使用 P
 
 Server 使用 Kysely migration 管理 PostgreSQL schema。`src/bootstrap/main.ts` 在服务监听端口前自动执行 `runMigrations()`；生产部署脚本也会在重启 Server 前显式执行一次 migration，因此正常启动和 `pnpm deploy` 都会自动创建尚未存在的表和索引。已执行过的 migration 由 Kysely migration 元数据记录，不会在每次重启时重复执行。
 
-`create_current_schema_20261011.ts` 是当前完整 PostgreSQL Schema 基线，包含异步 Project 状态、`agent_session` Schema，且不含 `users.wx_openid` 和 `media_object_deletions`。已完整执行旧基线及 `zzzzzz_async_v3`、`zzzzzzzzzzzz_agent_sessions_pg`、`zzzzzzzzzzzzz_drop_users_wx_openid` 的数据库，启动时在事务与 Kysely 迁移锁下仅将迁移元数据归并到新基线，不重建表或修改业务数据。若还保留更早的迁移历史，则这些历史也必须完整。历史不完整或包含未知版本时拒绝合并，须先使用归并前版本升至最新；后续结构变更新增前向 migration。本次 `drop_tasks_20261011.ts` 是正式前向迁移：启动后删除旧 Task 和 TaskRun 表及历史数据，不影响其它领域表。不要手动清空迁移历史或强行重跑基线。历史归并后禁止回滚运行归并前的 Server 版本。本地集成验证使用隔离的 `TEST_DATABASE_URL`。
+`create_current_schema_20261019.ts` 是当前**唯一完整基线**，覆盖所有业务表、最新 Fanto 设置/资料字段以及 `agent_session.sessions`、`entries`、`usage_ledger` 三张 Checkpoint 表，不再创建旧 Pi SDK Storage、Snapshot、Task 表和废弃索引。首次安装只需正常执行 `pnpm db:migrate`。
 
+已完成到 `zzzzzz_agent_checkpoint_20261019` 的旧库，启动迁移时会在事务及 Kysely advisory lock 下检查完整历史，并合并为一个新基线记录；原 `zzzzzzz_agent_storage_cleanup_20261019` 是否执行过都受支持。此前已手动删除 **全部** Agent Session 表的数据库，会创建当前三张空表，并将 `user_fanto_settings.main_session_id` 清空，避免引用已经不存在的默认 Session。**已删除的 Session 对话及 Usage 无法靠迁移恢复**；Project/Proposal 中既有的 Session ID 不会自行恢复对应历史。
 
-## Agent Session V2 数据结构清理
-
-`zzzzzzz_agent_storage_cleanup_20261019.ts` 为正式前向 Migration，删除旧 Snapshot / Pi SDK Storage 共五张废弃表、旧 Session 字段和失效索引，**保留已有有效 V2 的 sessions、entries、usage_ledger 数据**；旧版本遗留的未归属 Session 数据不迁移。
-
-**请勿手动 DROP `agent_session` 表、清空 `kysely_migration` 或重跑历史基线。** Kysely 已记录执行过的 Migration，删表不会触发自动重建，反而可能破坏当前会话、用户设置里的主会话指针，以及 Project/Proposal 关联的 Session。上线时停止旧 Server，先备份数据库，然后正常执行 `pnpm db:migrate` 再启动新版 Server。**升级后不可启动依赖旧 Storage/Snapshot 的 Server 版本。**
+三张 Agent 表仅有部分缺失、迁移历史不完整/包含未知名称时会报错，避免覆盖已有数据或错误标记为最新。旧 Agent 表仍在时，仅运行必要的旧结构清理，保留有效的 V2 会话。**不要手工删除 `kysely_migration`**；升级前备份数据库并停止旧版 Server，避免新旧服务同时写入不同 Schema。历史归并后不可再运行旧版本 Server。
 
 ## 常用命令
 
