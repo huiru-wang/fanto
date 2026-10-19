@@ -32,7 +32,7 @@ struct FantoConversationView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     NavigationLink {
-                        FantoSettingsView(profile: currentProfile)
+                        FantoSettingsView(profile: currentProfile, conversation: store)
                     } label: {
                         HStack(spacing: 8) {
                             ConversationAvatar(isFanto: true, size: 32, personalized: true)
@@ -87,7 +87,7 @@ struct FantoConversationView: View {
             }
             .environment(\.fantoProfile, currentProfile)
             .task { await currentProfile.load() }
-            .task { await store.load() }
+            .task { await store.load(profile: currentProfile) }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { store.recoverConversation() }
             }

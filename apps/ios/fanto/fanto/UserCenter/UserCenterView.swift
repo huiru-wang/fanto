@@ -78,10 +78,10 @@ struct UserCenterView: View {
                         NavigationLink { UserHelpFeedbackView() } label: { settingsLabel("帮助与反馈", icon: "questionmark.circle") }
                         NavigationLink { UserAboutView() } label: { settingsLabel("关于", icon: "info.circle") }
                     }
-                    if let error = profile.error {
+                    if let error = profile.error ?? profile.statisticsError {
                         Section {
                             Text(error).foregroundStyle(.secondary)
-                            Button("重新读取资料") { Task { await profile.load(force: true) } }
+                            Button("重新读取资料") { Task { await reload() } }
                         }
                     }
                 }
@@ -89,7 +89,7 @@ struct UserCenterView: View {
                 .scrollContentBackground(.hidden)
                 .contentMargins(.top, 0, for: .scrollContent)
                 .onScrollGeometryChange(for: CGFloat.self) { $0.contentOffset.y + $0.contentInsets.top } action: { _, value in scroll.update(value) }
-                .refreshable { await profile.load(force: true) }
+                .refreshable { await reload() }
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -103,6 +103,24 @@ struct UserCenterView: View {
         Label { Text(title) } icon: {
             Image(systemName: icon).foregroundStyle(.primary)
         }
+    }
+
+    private func reload() async {
+        async let details: Void = profile.load(force: true)
+        async let statistics: Void = profile.loadStatistics(force: true)
+        _ = await (details, statistics)
+    }
+
+    private func statistic(_ title: String, value: Int?, placeholder: Bool = false) -> some View {
+        VStack(spacing: 6) {
+            Text(value.map { String($0) } ?? "—")
+                .font(.title2.weight(.semibold)).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Text(title).font(.subheadline).foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title)，\(value.map { String($0) } ?? "暂未读取")\(placeholder ? "，示例值" : "")")
     }
 
     private var header: some View {
@@ -122,9 +140,13 @@ struct UserCenterView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("\(value.nickname)，修改个人信息")
-                let days = max(1, (Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: value.joinedAt), to: Calendar.current.startOfDay(for: .now)).day ?? 0) + 1)
-                Label("与 Fanto 相伴的第 \(days) 天", systemImage: "sparkles")
-                    .font(.footnote).foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 12) {
+                    statistic("相伴天数", value: profile.statistics?.companionDays)
+                    statistic("记录数", value: profile.statistics?.recordCount)
+                    statistic("亲密度", value: profile.statistics?.intimacy,
+                              placeholder: profile.statistics?.intimacyIsPlaceholder ?? false)
+                }
+                .padding(.top, 8)
             } else if profile.isLoading { ProgressView("正在读取资料").frame(maxWidth: .infinity) }
         }
         .padding(.horizontal, 16).padding(.top, 172).padding(.bottom, 12)

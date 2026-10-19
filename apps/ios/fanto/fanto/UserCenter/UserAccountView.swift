@@ -58,7 +58,7 @@ struct UserPrivacyView: View {
                 PendingSettingsLink(title: "导出我的数据", symbol: "square.and.arrow.up")
             }
             Section {
-                PendingSettingsLink(title: "AI 数据处理与授权", symbol: "lock.shield")
+                PendingSettingsLink(title: "数据处理与授权", symbol: "lock.shield")
             }
         }
         .navigationTitle("数据与隐私").navigationBarTitleDisplayMode(.inline)
@@ -69,7 +69,9 @@ struct UserHelpFeedbackView: View {
     var body: some View {
         List {
             Section {
-                NavigationLink("使用帮助") { UserHelpView() }
+                Link(destination: FantoWebsite.help) {
+                    HStack { Text("使用帮助"); Spacer(); Image(systemName: "arrow.up.right").foregroundStyle(.secondary) }
+                }
             }
             Section {
                 PendingSettingsLink(title: "问题反馈", symbol: "bubble.left.and.bubble.right")
@@ -87,33 +89,27 @@ struct UserAboutView: View {
                 NavigationLink("关于 Fanto") { FantoAboutDetailView() }
             }
             Section {
-                PendingSettingsLink(title: "使用条款", symbol: "doc.text", status: "待发布")
-                PendingSettingsLink(title: "隐私政策", symbol: "hand.raised", status: "待发布")
-                PendingSettingsLink(title: "开源许可", symbol: "list.bullet.rectangle", status: "待完善")
+                Link(destination: FantoWebsite.terms) {
+                    HStack { Text("使用条款"); Spacer(); Image(systemName: "arrow.up.right").foregroundStyle(.secondary) }
+                }
+                Link(destination: FantoWebsite.privacy) {
+                    HStack { Text("隐私政策"); Spacer(); Image(systemName: "arrow.up.right").foregroundStyle(.secondary) }
+                }
             }
         }
         .navigationTitle("关于").navigationBarTitleDisplayMode(.inline)
     }
 }
 
-private struct UserHelpView: View {
-    var body: some View {
-        List {
-            Section("Fanto") {
-                Text("在对话页点击左上角头像，修改昵称与角色设定。每项内容在自己的编辑页保存。")
-            }
-            Section("我的") {
-                Text("点击昵称进入个人信息，修改头像、背景图、昵称与签名。")
-                Text("在偏好中选择外观和强调色，选择后立即生效。")
-            }
-        }
-        .navigationTitle("使用帮助").navigationBarTitleDisplayMode(.inline)
-    }
+/// Reserved landing-page routes; website content will be published separately.
+private enum FantoWebsite {
+    static let help = URL(string: "https://fanto.robinverse.me/help")!
+    static let terms = URL(string: "https://fanto.robinverse.me/terms")!
+    static let privacy = URL(string: "https://fanto.robinverse.me/privacy")!
 }
 
 private struct FantoAboutDetailView: View {
     private var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—" }
-    private var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—" }
     var body: some View {
         List {
             Section {
@@ -121,7 +117,6 @@ private struct FantoAboutDetailView: View {
             }
             Section {
                 LabeledContent("版本号", value: version)
-                LabeledContent("构建号", value: build)
             }
         }
         .navigationTitle("关于 Fanto").navigationBarTitleDisplayMode(.inline)

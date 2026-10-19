@@ -18,6 +18,10 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
     private let manager = CLLocationManager()
     private var reverseRequest: MKReverseGeocodingRequest?
     private var locationUnknownRetryCount = 0
+    private var wantsLocation = false
+    private var requestGeneration = UUID()
+    var authorizationStatus: CLAuthorizationStatus { manager.authorizationStatus }
+    var locationServicesEnabled: Bool { CLLocationManager.locationServicesEnabled() }
 
     override init() {
         super.init()
@@ -25,7 +29,9 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
     }
 
-    func start() {
+    func start(requestAuthorization: Bool = true) {
+        stop()
+        wantsLocation = true
         suggestion = nil
         locationUnknownRetryCount = 0
         guard CLLocationManager.locationServicesEnabled() else {
@@ -34,7 +40,8 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
         }
         switch manager.authorizationStatus {
         case .notDetermined:
-            manager.requestWhenInUseAuthorization()
+            if requestAuthorization { manager.requestWhenInUseAuthorization() }
+            else { wantsLocation = false; state = .idle }
         case .authorizedAlways, .authorizedWhenInUse:
             requestLocation()
         case .denied, .restricted:
@@ -45,6 +52,8 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
     }
 
     func stop() {
+        requestGeneration = UUID()
+        wantsLocation = false
         manager.stopUpdatingLocation()
         reverseRequest?.cancel()
         reverseRequest = nil
@@ -52,6 +61,7 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        guard wantsLocation else { return }
         if manager.authorizationStatus == .authorizedAlways || manager.authorizationStatus == .authorizedWhenInUse {
             requestLocation()
         } else if manager.authorizationStatus == .denied || manager.authorizationStatus == .restricted {
@@ -60,15 +70,21 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        guard wantsLocation else { return }
         guard let location = locations.last, location.horizontalAccuracy >= 0 else {
             state = .unavailable
             return
         }
         manager.stopUpdatingLocation()
-        Task { await reverseGeocode(location) }
+        let generation = requestGeneration
+        Task {
+            guard requestGeneration == generation, wantsLocation else { return }
+            await reverseGeocode(location)
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        guard wantsLocation else { return }
         let nsError = error as NSError
         if nsError.domain == kCLErrorDomain,
            nsError.code == CLError.locationUnknown.rawValue,
@@ -81,11 +97,13 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
     }
 
     private func requestLocation() {
+        guard wantsLocation, state != .locating else { return }
         state = .locating
         manager.requestLocation()
     }
 
     private func reverseGeocode(_ location: CLLocation) async {
+        guard wantsLocation else { return }
         guard let request = MKReverseGeocodingRequest(location: location) else {
             useCoordinateFallback(location)
             return
@@ -93,13 +111,14 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
         reverseRequest?.cancel()
         reverseRequest = request
         do {
-            guard let placemark = try await request.mapItems.first?.placemark else {
+            guard let item = try await request.mapItems.first else {
                 guard reverseRequest === request else { return }
                 useCoordinateFallback(location)
                 return
             }
             guard reverseRequest === request else { return }
-            suggestion = RecordLocationFormatter.location(from: placemark, fallbackName: "当前位置")
+            wantsLocation = false
+            suggestion = RecordLocationFormatter.location(from: item, coordinate: location.coordinate, fallbackName: "当前位置")
             reverseRequest = nil
             state = .idle
         } catch {
@@ -109,6 +128,7 @@ final class RecordLocationCoordinator: NSObject, ObservableObject, CLLocationMan
     }
 
     private func useCoordinateFallback(_ location: CLLocation) {
+        wantsLocation = false
         reverseRequest = nil
         suggestion = RecordLocation(
             name: "当前位置",

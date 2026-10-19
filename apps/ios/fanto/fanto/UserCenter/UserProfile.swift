@@ -4,7 +4,10 @@ import Observation
 @MainActor @Observable
 final class UserProfileStore {
     private let resource: CachedResource<UserProfile>
+    private let statisticsResource: CachedResource<UserStatistics>
     private let accountResource: CachedResource<AccountInfo>
+    var statistics: UserStatistics? { statisticsResource.value }
+    var statisticsError: String? { statisticsResource.error }
     var profile: UserProfile? { resource.value }
     var isSaving: Bool { resource.isUpdating }
     func save(_ field: UserProfileField, value: String?, original: String?) async throws {
@@ -22,6 +25,10 @@ final class UserProfileStore {
         resource = CachedResource(key: "user-profile", scope: scope, version: { $0.version },
             isCurrent: { scope != nil && AccountCache.shared.scope == scope },
             fetch: { try await FantoAPIClient.shared.fetchUserProfile() })
+        statisticsResource = CachedResource(key: "user-statistics", scope: scope,
+            version: { Int($0.asOf.timeIntervalSince1970 * 1000) },
+            isCurrent: { scope != nil && AccountCache.shared.scope == scope },
+            fetch: { try await FantoAPIClient.shared.fetchUserStatistics() })
         accountResource = CachedResource(key: "account-info", scope: scope, version: { _ in 0 },
             isCurrent: { scope != nil && AccountCache.shared.scope == scope },
             fetch: { try await FantoAPIClient.shared.fetchAccountInfo() })
@@ -30,8 +37,17 @@ final class UserProfileStore {
     func restore() async {
         await resource.restore()
         await accountResource.restore()
+        await statisticsResource.restore()
     }
     func load(force: Bool = false) async { await resource.load(force: force) }
+    func loadStatistics(force: Bool = false) async {
+        // A mutation may arrive while the initial GET is still in flight: wait, then query again.
+        if force {
+            await statisticsResource.load()
+            guard !Task.isCancelled else { return }
+        }
+        await statisticsResource.load(force: force)
+    }
     func loadAccount(force: Bool = false) async { await accountResource.load(force: force) }
 }
 private struct UserProfileKey: EnvironmentKey { static let defaultValue: UserProfileStore? = nil }

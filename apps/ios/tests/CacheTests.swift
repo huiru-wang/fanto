@@ -123,6 +123,43 @@ private enum TestFailure: Error { case failed(String) }
             else { try check(object[field.rawValue] is NSNull, "clearing a media binding must encode explicit null") }
         }
 
+        // Rebinding the Fanto session writes through without changing the role or losing to an old GET.
+        var fanto = FantoSettings()
+        fanto.fantoId = UUID().uuidString; fanto.sessionId = UUID().uuidString
+        fanto.nickname = "角色昵称"; fanto.roleConfig.character = "保留角色"; fanto.version = 1
+        let oldFanto = fanto
+        let newSessionID = UUID().uuidString
+        var pendingFanto: CheckedContinuation<FantoSettings, Error>?
+        let fantoResource = CachedResource(key: "fanto", scope: a, disk: disk, version: { $0.version },
+            isCurrent: { active == a }, fetch: { try await withCheckedThrowingContinuation { pendingFanto = $0 } })
+        fantoResource.accept(oldFanto)
+        let staleFanto = Task { await fantoResource.load(force: true) }
+        for _ in 0..<10_000 { if pendingFanto != nil { break }; await Task.yield() }
+        try check(pendingFanto != nil, "Fanto refresh must start")
+        try await fantoResource.update(original: oldFanto.sessionId, desired: newSessionID, field: { $0.sessionId }) { current in
+            var updated = current
+            updated.sessionId = newSessionID; updated.version += 1
+            return updated
+        }
+        pendingFanto?.resume(returning: oldFanto)
+        await staleFanto.value
+        try check(fantoResource.value?.sessionId == newSessionID, "old GET must not resurrect cleared conversation")
+        try check(fantoResource.value?.fantoId == oldFanto.fantoId && fantoResource.value?.roleConfig == oldFanto.roleConfig,
+                  "new session must keep the Fanto identity and role")
+        var sessionChanges = FantoSettingsChanges()
+        sessionChanges.sessionId = newSessionID
+        let sessionObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(sessionChanges)) as! [String: Any]
+        try check(Set(sessionObject.keys) == ["sessionId"], "session PATCH must not include any role or legacy session fields")
+        for _ in 0..<10_000 {
+            if let data = await disk.read("fanto", scope: a),
+               (try? JSONDecoder().decode(FantoSettings.self, from: data).sessionId) == newSessionID { break }
+            await Task.yield()
+        }
+        let reopened = CachedResource(key: "fanto", scope: a, disk: disk, version: { $0.version },
+            isCurrent: { active == a }, fetch: { oldFanto })
+        await reopened.restore()
+        try check(reopened.value?.sessionId == newSessionID, "reopening must restore the newly selected session")
+
         // Account switch blocks pending responses and old-session disk writes.
         let old = Task { await resource.load(force: true) }
         try await probe.waitUntilRequested()
@@ -144,12 +181,47 @@ private enum TestFailure: Error { case failed(String) }
         let cleared = await disk.read("profile", scope: b)
         try check(cleared == nil, "logout must remove persistent account data")
 
+        // Unsaved composer work survives closing/relaunch, stays account-scoped, and clears after queued writes.
+        let drafts = RecordDraftStore(root: root.appending(path: "drafts"))
+        let persistence = RecordDraftPersistence(disk: drafts)
+        await drafts.activate(a)
+        let photoID = UUID()
+        let photo = RecordDraftPhoto(id: photoID, data: Data("original-jpeg-bytes".utf8), width: 1024, height: 768, mediaID: "ready-media")
+        let place = RecordLocation(name: "手动地点", country: "中国", city: "北京市", district: "西城区", latitude: 39.9, longitude: 116.3)
+        let draft = RecordComposerDraft(text: "未提交的文字\n保持换行", eventAt: Date(timeIntervalSince1970: 1000),
+            location: place, acceptsLocationSuggestion: false, photos: [photo])
+        persistence.save(draft, scope: a)
+        let resumed = try await persistence.load(scope: a)
+        try check(resumed?.text == draft.text && resumed?.eventAt == draft.eventAt && resumed?.location == place,
+                  "closing/reopening must restore composer text, date and manually chosen location")
+        try check(resumed?.photos.first?.data == photo.data && resumed?.photos.first?.mediaID == "ready-media",
+                  "draft photos must restore exact JPEG bytes and completed upload IDs")
+        let newSession = AccountCacheScope(userID: a.userID)
+        await drafts.activate(newSession)
+        let coldDraft = try await drafts.load(scope: newSession)
+        try check(coldDraft?.photos.first?.id == photoID,
+                  "a new authenticated session must restore the same account's draft")
+        await drafts.activate(b)
+        let otherDraft = try await drafts.load(scope: b)
+        try check(otherDraft == nil, "another account must not see the draft")
+        do {
+            try await drafts.save(draft, scope: a)
+            throw TestFailure.failed("stale account must not write draft")
+        } catch is CancellationError { }
+        await drafts.activate(a)
+        persistence.save(draft, scope: a)
+        try await persistence.clear(scope: a)
+        let submittedDraft = try await persistence.load(scope: a)
+        try check(submittedDraft == nil, "pending autosaves must not resurrect a submitted draft")
+        let remaining = try FileManager.default.subpathsOfDirectory(atPath: root.appending(path: "drafts").path)
+        try check(!remaining.contains(where: { $0.hasSuffix(".jpg") }), "submit must also remove draft photo files")
+
         // Image disk budget is bounded and the most recent access survives eviction.
         await disk.write(Data(repeating: 1, count: 6), key: "old", scope: b, image: true)
         await disk.write(Data(repeating: 2, count: 6), key: "new", scope: b, image: true)
         let oldImage = await disk.read("old", scope: b, image: true)
         let newImage = await disk.read("new", scope: b, image: true)
         try check(oldImage == nil && newImage?.count == 6, "image budget must evict the oldest file")
-        print("PASS: cache reuse, coalescing, mutation races, offline, cold restore, individual saves, conflict protection, uncertain response recovery, partial PATCH encoding, account isolation, logout, image budget")
+        print("PASS: cache reuse, coalescing, mutation races, offline, cold restore, individual saves, conflict protection, uncertain response recovery, partial PATCH encoding, account isolation, logout, image budget, composer draft restoration/isolation/submit cleanup")
     }
 }

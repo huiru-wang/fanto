@@ -4,6 +4,7 @@ import SwiftUI
 struct RecordComposerView: View {
     @Environment(FantoStore.self) private var store
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     let didSave: (Date) -> Void
 
@@ -20,11 +21,14 @@ struct RecordComposerView: View {
     @State private var errorMessage = ""
     @State private var location: RecordLocation?
     @State private var acceptsLocationSuggestion = true
+    @State private var draftScope: AccountCacheScope?
+    @State private var draftLoaded = false
+    @State private var didSubmit = false
     @StateObject private var locationCoordinator = RecordLocationCoordinator()
     @FocusState private var isEditingText: Bool
 
     private let maximumPhotoCount = 5
-    private var isBusy: Bool { isSaving || isImportingPhotos }
+    private var isBusy: Bool { isSaving || isImportingPhotos || !draftLoaded }
     private var canSave: Bool {
         !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !images.isEmpty
     }
@@ -39,8 +43,7 @@ struct RecordComposerView: View {
                         location: location,
                         state: locationCoordinator.state,
                         edit: editLocation,
-                        remove: removeLocation,
-                        retry: { locationCoordinator.start() }
+                        remove: removeLocation
                     )
                 }
                 .padding(.horizontal, 20)
@@ -53,10 +56,11 @@ struct RecordComposerView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") {
+                    Button("返回", systemImage: "chevron.left") {
                         guard !isSaving else { return }
                         dismiss()
                     }
+                    .labelStyle(.iconOnly)
                     .allowsHitTesting(!isSaving)
                 }
                 ToolbarItem(placement: .principal) {
@@ -121,7 +125,10 @@ struct RecordComposerView: View {
                 RecordDatePickerView(date: eventAt) { eventAt = $0 }
             }
             .sheet(isPresented: $showingLocationEditor) {
-                RecordLocationEditorView(initialLocation: location) { location = $0 }
+                RecordLocationEditorView(initialLocation: location) {
+                    acceptsLocationSuggestion = false
+                    location = $0
+                }
             }
             .alert("无法完成操作", isPresented: $showingError) {
                 Button("好", role: .cancel) {}
@@ -133,10 +140,18 @@ struct RecordComposerView: View {
                 guard acceptsLocationSuggestion, let suggestion else { return }
                 location = suggestion
             }
-            .onAppear {
-                if acceptsLocationSuggestion { locationCoordinator.start() }
+            .task { await restoreDraft() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active {
+                    if draftLoaded, acceptsLocationSuggestion, location == nil {
+                        locationCoordinator.start(requestAuthorization: false)
+                    }
+                } else { persistDraft() }
             }
-            .onDisappear { locationCoordinator.stop() }
+            .onDisappear {
+                locationCoordinator.stop()
+                persistDraft()
+            }
         }
         .tint(.primary)
     }
@@ -207,10 +222,36 @@ struct RecordComposerView: View {
         }
     }
 
+    private func restoreDraft() async {
+        guard !draftLoaded else { return }
+        guard let scope = AccountCache.shared.scope else { return }
+        draftScope = scope
+        do {
+            let draft = try await RecordDraftPersistence.shared.load(scope: scope)
+            guard !Task.isCancelled, AccountCache.shared.scope == scope else { return }
+            if let draft {
+                let restoredImages = try draft.photos.map { try DraftRecordImage(restoring: $0) }
+                text = draft.text; eventAt = draft.eventAt; images = restoredImages; location = draft.location
+                acceptsLocationSuggestion = draft.acceptsLocationSuggestion && draft.location == nil
+            }
+            draftLoaded = true
+            if acceptsLocationSuggestion, location == nil { locationCoordinator.start(requestAuthorization: false) }
+        } catch {
+            if !(error is CancellationError) { showError("草稿读取失败，请返回后重试，原草稿已保留。") }
+        }
+    }
+
+    private func persistDraft() {
+        guard draftLoaded, !didSubmit, let draftScope, AccountCache.shared.scope == draftScope else { return }
+        let draft = RecordComposerDraft(text: text, eventAt: eventAt, location: location,
+            acceptsLocationSuggestion: acceptsLocationSuggestion,
+            photos: images.map { RecordDraftPhoto(id: $0.id, data: $0.data, width: $0.width, height: $0.height, mediaID: $0.mediaID) })
+        RecordDraftPersistence.shared.save(draft, scope: draftScope)
+    }
+
     private func editLocation() {
         guard !isBusy else { return }
         isEditingText = false
-        acceptsLocationSuggestion = false
         locationCoordinator.stop()
         showingLocationEditor = true
     }
@@ -250,7 +291,7 @@ struct RecordComposerView: View {
     }
 
     private func save() async {
-        guard canSave, !isBusy else { return }
+        guard canSave, !isBusy, let draftScope, AccountCache.shared.scope == draftScope else { return }
         isSaving = true
         acceptsLocationSuggestion = false
         locationCoordinator.stop()
@@ -268,16 +309,21 @@ struct RecordComposerView: View {
                     mediaIds.append(try await uploadImage(at: index))
                 }
             }
+            guard AccountCache.shared.scope == draftScope else { throw CancellationError() }
             let created = try await RecordWriteAPIClient.shared.createRecord(
                 text: text.trimmingCharacters(in: .whitespacesAndNewlines),
                 mediaIds: mediaIds,
                 location: location,
                 eventAt: eventAt
             )
+            guard AccountCache.shared.scope == draftScope else { throw CancellationError() }
+            didSubmit = true
+            try? await RecordDraftPersistence.shared.clear(scope: draftScope)
             store.insertCreatedRecord(created)
             didSave(eventAt)
             dismiss()
         } catch {
+            persistDraft()
             showError("保存失败，请重试")
         }
     }

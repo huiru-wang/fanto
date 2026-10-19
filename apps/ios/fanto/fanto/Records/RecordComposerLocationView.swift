@@ -1,3 +1,4 @@
+import MapKit
 import SwiftUI
 
 struct RecordComposerLocationView: View {
@@ -5,114 +6,64 @@ struct RecordComposerLocationView: View {
     let state: RecordLocationCoordinator.State
     let edit: () -> Void
     let remove: () -> Void
-    let retry: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            if let location {
-                HStack(spacing: 0) {
-                    Button(action: edit) {
-                        HStack(spacing: 12) {
-                            locationIcon("mappin", active: true)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(location.name)
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(.primary)
-                                let administrativeText = RecordLocationFormatter.administrativeText(for: location)
-                                if !administrativeText.isEmpty {
-                                    Text(administrativeText)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
+        if let location {
+            let coordinate = CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude)
+            Map(position: .constant(.region(MKCoordinateRegion(center: coordinate,
+                span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012)))), interactionModes: []) {
+                Marker(location.name, systemImage: "mappin", coordinate: coordinate).tint(FantoTheme.accent)
+            }
+            .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
+            .frame(height: 260)
+            .clipShape(.rect(cornerRadius: 20))
+            .accessibilityLabel("\(location.name)，地图预览")
+            .overlay(alignment: .bottomTrailing) {
+                Button(action: edit) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "mappin.circle.fill").font(.title2).foregroundStyle(FantoTheme.accent)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(location.name).font(.subheadline.weight(.semibold)).lineLimit(2)
+                            let administrativeText = RecordLocationFormatter.detailText(for: location)
+                            if !administrativeText.isEmpty {
+                                Text(administrativeText).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
                         }
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("搜索地点或在地图上重新选点")
-                    Button("移除地点", systemImage: "xmark.circle.fill", action: remove)
-                        .labelStyle(.iconOnly)
-                        .font(.title3)
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 44, height: 44)
-                        .buttonStyle(.plain)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .frame(minHeight: 44)
                 }
-            } else {
+                .buttonStyle(.glass)
+                .buttonBorderShape(.roundedRectangle(radius: 16))
+                .accessibilityHint("搜索地点或在地图上重新选点")
+                .padding(.leading, 90).padding([.trailing, .bottom], 12)
+            }
+            .overlay(alignment: .topTrailing) {
+                Menu {
+                    Button("修改地点", systemImage: "magnifyingglass", action: edit)
+                    Button("移除地点", systemImage: "trash", role: .destructive, action: remove)
+                } label: {
+                    Image(systemName: "ellipsis").frame(width: 44, height: 44)
+                }
+                .buttonStyle(.glass).buttonBorderShape(.circle)
+                .accessibilityLabel("地点选项")
+                .padding(10)
+            }
+        } else {
+            Button(action: edit) {
                 HStack(spacing: 12) {
-                    locationIcon(state == .denied ? "location.slash" : "mappin", active: false)
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(title).font(.subheadline.weight(.medium))
-                        if let detail {
-                            Text(detail).font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                    if state == .locating { ProgressView() }
+                    Image(systemName: "mappin").foregroundStyle(.secondary)
+                    Text("添加地点").font(.subheadline.weight(.medium)).foregroundStyle(.primary)
+                    Spacer()
+                    if state == .locating { ProgressView().accessibilityLabel("正在获取当前位置") }
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
                 }
-                if state == .idle {
-                    Button("添加地点", systemImage: "plus", action: edit)
-                        .font(.subheadline.weight(.medium))
-                        .frame(minHeight: 44)
-                } else {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 16) { locationActions }
-                        VStack(alignment: .leading, spacing: 8) { locationActions }
-                    }
-                }
+                .padding(.horizontal, 16).frame(minHeight: 56)
+                .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 16))
+                .contentShape(.rect)
             }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 18))
-    }
-
-    private func locationIcon(_ name: String, active: Bool) -> some View {
-        Image(systemName: name)
-            .font(.body.weight(.medium))
-            .foregroundStyle(active ? Color.accentColor : .secondary)
-            .frame(width: 36, height: 36)
-            .background(active ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.08), in: Circle())
-            .accessibilityHidden(true)
-    }
-
-    @ViewBuilder private var locationActions: some View {
-        Button("手动添加地点", systemImage: "mappin.and.ellipse", action: edit)
-            .buttonStyle(.borderedProminent)
-            .font(.subheadline)
-            .frame(minHeight: 44)
-        if state == .denied {
-            Button("去设置", systemImage: "arrow.up.right.square") {
-                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-                UIApplication.shared.open(url)
-            }
-            .font(.subheadline)
-            .frame(minHeight: 44)
-        } else if state == .unavailable {
-            Button("重试定位", action: retry)
-                .font(.subheadline)
-                .frame(minHeight: 44)
-        }
-    }
-
-    private var title: String {
-        switch state {
-        case .idle: "未添加地点"
-        case .locating: "正在获取当前位置"
-        case .unavailable: "未能获取当前位置"
-        case .denied: "定位权限未开启"
-        }
-    }
-
-    private var detail: String? {
-        switch state {
-        case .idle: nil
-        case .locating: "可以继续记录，也可以手动选择地点"
-        case .unavailable, .denied: "仍可搜索地点或在地图上选点"
+            .buttonStyle(.plain)
+            .accessibilityHint("搜索地点或在地图上选点")
         }
     }
 }

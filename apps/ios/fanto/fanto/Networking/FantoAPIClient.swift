@@ -60,6 +60,12 @@ struct FantoAPIClient {
         struct Payload: Encodable { let expectedVersion: Int; let changes: UserProfileChanges }
         return try await request(path: "api/users/me/profile", method: "PATCH", body: JSONEncoder().encode(Payload(expectedVersion: version, changes: changes)))
     }
+    func fetchUserStatistics() async throws -> UserStatistics {
+        var components = URLComponents(url: baseURL.appending(path: "api/users/me/statistics"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "timeZone", value: TimeZone.current.identifier)]
+        guard let url = components?.url else { throw FantoAPIError.invalidBaseURL }
+        return try await request(url: url)
+    }
     func fetchAccountInfo() async throws -> AccountInfo { try await request(path: "api/users/me") }
 
     func fetchFantoSettings() async throws -> FantoSettings {

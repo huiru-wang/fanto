@@ -1,16 +1,5 @@
 import Foundation
 
-struct RecordLocation: Hashable, Codable {
-    var name: String
-    var countryCode: String? = nil
-    var country: String? = nil
-    var province: String? = nil
-    var city: String? = nil
-    var district: String? = nil
-    var latitude: Double
-    var longitude: Double
-}
-
 struct Record: Identifiable, Hashable, Codable {
     let id: String
     let text: String

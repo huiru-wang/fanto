@@ -6,16 +6,17 @@ export type RoleConfig = {
     exampleDialogues: string;
 };
 export type FantoSettings = {
+    fantoId: string | null;
     nickname: string;
     description: string;
     avatarMediaId: string | null;
-    mainSessionId: string | null;
+    sessionId: string | null;
     roleConfig: RoleConfig;
     version: number;
     createdAt: string | null;
     updatedAt: string | null;
 };
-export type SettingsChanges = Partial<Pick<FantoSettings, "nickname" | "description" | "avatarMediaId" | "mainSessionId">> & {
+export type SettingsChanges = Partial<Pick<FantoSettings, "nickname" | "description" | "avatarMediaId" | "sessionId">> & {
     roleConfig?: Partial<RoleConfig>;
 };
 export const getFantoSettings = (signal?: AbortSignal) => requestJson<FantoSettings>("/api/fanto/settings", { signal });

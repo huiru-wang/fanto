@@ -14,8 +14,8 @@ export class FantoService {
     async getSettings(userId: string): Promise<FantoSettings> { return await this.repository.find(userId) ?? defaultSettings(); }
     async updateSettings(userId: string, input: unknown) {
         const parsed = settingsPatchSchema.parse(input);
-        if (parsed.changes.mainSessionId !== undefined && parsed.changes.mainSessionId !== null &&
-            (!this.validateMainSession || !await this.validateMainSession(userId, parsed.changes.mainSessionId)))
+        if (parsed.changes.sessionId !== undefined && parsed.changes.sessionId !== null &&
+            (!this.validateMainSession || !await this.validateMainSession(userId, parsed.changes.sessionId)))
             throw new FantoError("INVALID_SESSION", 422);
         return this.repository.update(userId, parsed.expectedVersion, parsed.changes, (u, id, trx) => this.media.validateAvatar(u, id, trx));
     }

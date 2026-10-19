@@ -2,7 +2,7 @@ import ImageIO
 import UIKit
 
 struct DraftRecordImage: Identifiable {
-    let id = UUID()
+    let id: UUID
     let data: Data
     let preview: UIImage
     let width: Int
@@ -11,6 +11,7 @@ struct DraftRecordImage: Identifiable {
     var uploadProgress: MediaUploadProgress?
 
     init(data originalData: Data) throws {
+        id = UUID()
         guard let source = CGImageSourceCreateWithData(originalData as CFData, nil),
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                 kCGImageSourceCreateThumbnailFromImageAlways: true,
@@ -30,4 +31,15 @@ struct DraftRecordImage: Identifiable {
             kCGImageSourceThumbnailMaxPixelSize: 320,
         ] as CFDictionary) ?? image)
     }
+    init(restoring photo: RecordDraftPhoto) throws {
+        guard let source = CGImageSourceCreateWithData(photo.data as CFData, nil),
+              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 320,
+              ] as CFDictionary) else { throw CocoaError(.fileReadCorruptFile) }
+        id = photo.id; data = photo.data; width = photo.width; height = photo.height
+        preview = UIImage(cgImage: thumbnail); mediaID = photo.mediaID
+    }
+
 }

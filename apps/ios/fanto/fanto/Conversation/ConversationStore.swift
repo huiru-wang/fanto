@@ -24,6 +24,9 @@ final class ConversationStore {
 
     private let client: AgentAPIClient
     private var sessionID: String?
+    private weak var settingsStore: FantoSettingsStore?
+    private(set) var isClearingHistory = false
+    private var pendingClearSessionID: String?
     private var historyNextCursor: Int?
     private var activeAssistantMessageID: String?
     private var activePrompt: String?
@@ -47,15 +50,17 @@ final class ConversationStore {
         return false
     }
 
-    var isResponding: Bool { runTask != nil || isStopping || isRecovering }
+    var isResponding: Bool { runTask != nil || isStopping || isRecovering || isClearingHistory }
 
-    func load() async {
+    func load(profile: FantoSettingsStore? = nil) async {
+        if let profile { settingsStore = profile }
         guard !isReady, loadState != .loading else { return }
         loadState = .loading
 
         do {
             let settings = try await FantoAPIClient.shared.fetchFantoSettings()
-            if let storedID = settings.mainSessionId {
+            settingsStore?.accept(settings)
+            if let storedID = settings.sessionId {
                 do {
                     let page = try await client.fetchHistory(sessionID: storedID)
                     messages = project(page.messages)
@@ -92,8 +97,13 @@ final class ConversationStore {
         runTask?.cancel()
         runTask = nil
         sessionID = nil
+        pendingClearSessionID = nil
+        isClearingHistory = false
+        knownSessions = []
+        sessionListError = nil
         activeAssistantMessageID = nil
         activePrompt = nil
+        textBlockOpen = false
         pendingPresentedMedia = []
         messages = []
         draft = ""
@@ -109,7 +119,7 @@ final class ConversationStore {
 
     func send() {
         let prompt = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard isReady, runTask == nil, !isStopping, !isRecovering, sessionID != nil, !prompt.isEmpty else { return }
+        guard isReady, !isClearingHistory, runTask == nil, !isStopping, !isRecovering, sessionID != nil, !prompt.isEmpty else { return }
 
         draft = ""
         messages.append(.user(id: nextLocalMessageID(), text: prompt))
@@ -117,7 +127,7 @@ final class ConversationStore {
     }
 
     func submitUserInput(request: FantoUserInputRequest, answers: [String]) {
-        guard isReady, runTask == nil, !isStopping, !isRecovering, sessionID != nil, answers.count == request.questions.count else { return }
+        guard isReady, !isClearingHistory, runTask == nil, !isStopping, !isRecovering, sessionID != nil, answers.count == request.questions.count else { return }
         let visibleText = zip(request.questions, answers)
             .map { "\($0.label)：\($1)" }
             .joined(separator: "\n")
@@ -129,7 +139,7 @@ final class ConversationStore {
     }
 
     private func beginRun(message: String) {
-        guard isReady, runTask == nil, !isStopping, !isRecovering, let sessionID else { return }
+        guard isReady, !isClearingHistory, runTask == nil, !isStopping, !isRecovering, let sessionID else { return }
         let assistant = ConversationMessage.assistantPlaceholder(id: nextLocalMessageID())
         messages.append(assistant)
         activeAssistantMessageID = assistant.id
@@ -167,7 +177,7 @@ final class ConversationStore {
 
     // Reconcile durable history after a lost connection; never replay the POST.
     func recoverConversation() {
-        guard runTask == nil, !isStopping, recoveryTask == nil, let sessionID else { return }
+        guard !isClearingHistory, runTask == nil, !isStopping, recoveryTask == nil, let sessionID else { return }
         isRecovering = true
         recoveryTask = Task { [weak self, client] in
             while !Task.isCancelled {
@@ -293,13 +303,41 @@ final class ConversationStore {
         }
     }
 
+    func clearHistory(profile: FantoSettingsStore) async throws {
+        guard isReady, !isResponding, let originalID = sessionID,
+              let scope = AccountCache.shared.scope else {
+            throw NSError(domain: "FantoConversation", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "请等待当前对话操作完成后再清除。"])
+        }
+        guard profile.settings?.sessionId == originalID else {
+            throw SettingFieldConflict(remoteValue: profile.settings?.sessionId)
+        }
+        isClearingHistory = true
+        defer { isClearingHistory = false }
+        // Keep an unconfirmed new ID for an explicit retry, never automatically create another session.
+        let createdID: String
+        if let pendingClearSessionID { createdID = pendingClearSessionID }
+        else {
+            createdID = try await client.createSession()
+            guard AccountCache.shared.scope == scope, sessionID == originalID else { throw CancellationError() }
+            pendingClearSessionID = createdID
+        }
+        guard AccountCache.shared.scope == scope, sessionID == originalID else { throw CancellationError() }
+        try await profile.selectSession(createdID, original: originalID)
+        guard AccountCache.shared.scope == scope, sessionID == originalID else { throw CancellationError() }
+        reset()
+        sessionID = createdID
+        loadState = .ready
+    }
+
     private func selectMainSession(_ id: String) async throws {
         for attempt in 0..<2 {
             let settings = try await FantoAPIClient.shared.fetchFantoSettings()
             var changes = FantoSettingsChanges()
-            changes.mainSessionId = id
+            changes.sessionId = id
             do {
-                _ = try await FantoAPIClient.shared.updateFantoSettings(version: settings.version, changes: changes)
+                let updated = try await FantoAPIClient.shared.updateFantoSettings(version: settings.version, changes: changes)
+                settingsStore?.accept(updated)
                 return
             } catch let error as FantoAPIError where error.code == "VERSION_CONFLICT" && attempt == 0 {
                 continue
@@ -330,6 +368,7 @@ final class ConversationStore {
 
         do {
             let page = try await client.fetchHistory(sessionID: sessionID, cursor: historyNextCursor)
+            guard self.sessionID == sessionID else { return }
             let knownIDs = Set(messages.map(\.id))
             let olderMessages = project(page.messages).filter { !knownIDs.contains($0.id) }
             messages = olderMessages + messages
@@ -337,6 +376,7 @@ final class ConversationStore {
             self.historyNextCursor = page.nextCursor
             historyRestoreAnchorID = visibleTopMessageID
         } catch {
+            guard self.sessionID == sessionID else { return }
             historyLoadEarlierError = userVisibleError(for: error)
         }
     }

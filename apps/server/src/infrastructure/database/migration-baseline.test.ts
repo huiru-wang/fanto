@@ -32,13 +32,13 @@ integration("current baseline and recovery from fully deleted Agent storage", as
   const tables = async () => (await sql<{table_name:string}>`SELECT table_name FROM information_schema.tables
     WHERE table_schema='agent_session' ORDER BY table_name`.execute(db)).rows.map(r => r.table_name);
   const setHistory = async (history: string[]) => {
-    await sql`DELETE FROM kysely_migration`.execute(db);
+    await sql`DELETE FROM kysely_migration WHERE name <> 'fanto_identity_20261019'`.execute(db);
     for (let i=0; i<history.length; i++) await sql`INSERT INTO kysely_migration(name,timestamp)
       VALUES (${history[i]},${new Date(1700000000000 + i*1000).toISOString()})`.execute(db);
   };
   try {
     await runMigrations(db); await runMigrations(db);
-    assert.deepEqual(await names(), [baseline]);
+    assert.deepEqual(await names(), [baseline, "fanto_identity_20261019"]);
     assert.deepEqual(await tables(), ["entries", "sessions", "usage_ledger"]);
     const business = (await sql<{table_name:string}>`SELECT table_name FROM information_schema.tables
       WHERE table_schema='public'`.execute(db)).rows.map(r => r.table_name);
@@ -57,14 +57,14 @@ integration("current baseline and recovery from fully deleted Agent storage", as
 
     const userId=randomUUID(), now=new Date();
     await db.insertInto('users').values({user_id:userId,status:'active',created_at:now,updated_at:now,disabled_at:null}).execute();
-    await sql`INSERT INTO user_fanto_settings (user_id,main_session_id) VALUES (${userId}, 'deleted-id')`.execute(db);
+    await sql`INSERT INTO user_fanto_settings (user_id,session_id) VALUES (${userId}, 'deleted-id')`.execute(db);
     await sql`DROP TABLE agent_session.entries,agent_session.sessions,agent_session.usage_ledger`.execute(db);
     await setHistory(modern); // Mirrors actual deployed DB, cleanup not applied.
     await runMigrations(db); await runMigrations(db);
-    assert.deepEqual(await names(),[baseline]);
+    assert.deepEqual(await names(),[baseline, "fanto_identity_20261019"]);
     assert.deepEqual(await tables(),["entries","sessions","usage_ledger"]);
     assert.equal((await db.selectFrom('users').select('user_id').executeTakeFirstOrThrow()).user_id,userId);
-    assert.equal((await db.selectFrom('user_fanto_settings').select('main_session_id').executeTakeFirstOrThrow()).main_session_id,null);
+    assert.equal((await db.selectFrom('user_fanto_settings').select('session_id').executeTakeFirstOrThrow()).session_id,null);
 
     // Complete old history and valid V2 records are preserved.
     const sessionId=randomUUID();
@@ -72,16 +72,16 @@ integration("current baseline and recovery from fully deleted Agent storage", as
       VALUES (${sessionId},0,0,${userId},'main',0)`.execute(db);
     await setHistory([...modern,finalCleanup]);
     await runMigrations(db);
-    assert.deepEqual(await names(),[baseline]);
+    assert.deepEqual(await names(),[baseline, "fanto_identity_20261019"]);
     assert.equal((await sql`SELECT 1 FROM agent_session.sessions WHERE id=${sessionId}`.execute(db)).rows.length,1);
     await setHistory([...previous,...legacy,...modern,finalCleanup]);
     await runMigrations(db);
-    assert.deepEqual(await names(),[baseline]);
+    assert.deepEqual(await names(),[baseline, "fanto_identity_20261019"]);
 
     // Never stamp incomplete or unrecognized histories as current.
     await setHistory(modern.slice(0,-1));
     await assert.rejects(runMigrations(db),/Cannot consolidate incomplete\/unknown migration history/);
-    assert.deepEqual(await names(),modern.slice(0,-1).sort());
+    assert.deepEqual(await names(),[...modern.slice(0,-1), "fanto_identity_20261019"].sort());
     await setHistory([...modern,'unknown_migration']);
     await assert.rejects(runMigrations(db),/Cannot consolidate incomplete\/unknown migration history/);
 
@@ -89,7 +89,7 @@ integration("current baseline and recovery from fully deleted Agent storage", as
     await setHistory(modern);
     await sql`DROP TABLE agent_session.entries`.execute(db);
     await assert.rejects(runMigrations(db),/Partially missing Agent checkpoint tables/);
-    assert.deepEqual(await names(),[...modern].sort());
+    assert.deepEqual(await names(),[...modern, "fanto_identity_20261019"].sort());
   } finally {
     await db.destroy();
     await sql.raw(`DROP DATABASE ${name} WITH (FORCE)`).execute(admin);

@@ -17,6 +17,7 @@ enum RecordLoadState: Equatable {
 
 @Observable
 final class FantoStore {
+    private(set) var recordStatisticsRevision = 0
     var records: [Record]
     var projects: [Project]
     var proposals: [Proposal]
@@ -172,6 +173,7 @@ final class FantoStore {
         guard generation == dataGeneration else { return }
         deletedRecordIDs.insert(record.id)
         records.removeAll { $0.id == record.id }
+        recordStatisticsRevision += 1
         await saveRecordSnapshot()
         guard generation == dataGeneration else { return }
         await loadProjects()
@@ -262,6 +264,7 @@ final class FantoStore {
 
     func insertCreatedRecord(_ record: Record) {
         records = orderedUniqueRecords([record] + records)
+        recordStatisticsRevision += 1
         saveRecordSnapshotInBackground()
     }
 

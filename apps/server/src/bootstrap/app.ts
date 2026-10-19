@@ -1,7 +1,7 @@
 import type { AdminService } from "../domain/admin/index.js";
 import { createAdminRoutes } from "../routes/admin.js";
 import type { UserProfileService } from "../domain/users/profile-service.js";
-import { createUserProfileRoutes } from "../routes/user-profile.js";
+import { createUserProfileRoutes, createUserStatisticsRoutes } from "../routes/user-profile.js";
 import type { CreativeService } from "../domain/projects/creative-service.js";
 import { FantoService } from "../domain/fanto/index.js";
 import { createFantoRoutes } from "../routes/fanto.js";
@@ -115,7 +115,10 @@ export function createApp(services: ServerServices) {
       return c.json({ status: "unavailable", database: "unavailable", timestamp: nowIso() }, 503);
     }
   });
-  if (services.userProfile) app.route("/api/users/me/profile", createUserProfileRoutes(services.userProfile));
+  if (services.userProfile) {
+    app.route("/api/users/me/profile", createUserProfileRoutes(services.userProfile));
+    app.route("/api/users/me/statistics", createUserStatisticsRoutes(services.userProfile));
+  }
   if (auth) app.route("/api", createAuthRoutes(auth));
   if (services.admin) app.route("/api/admin", createAdminRoutes(services.admin, services.adminAccessKey));
   app.route("/api/uploads", createUploadRoutes(mediaService));

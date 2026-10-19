@@ -3,6 +3,7 @@ import SwiftUI
 
 struct RecordLocationEditorView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     let initialLocation: RecordLocation?
     let onSave: (RecordLocation) -> Void
@@ -12,6 +13,8 @@ struct RecordLocationEditorView: View {
     @State private var selectedLocation: RecordLocation?
     @State private var selectedCoordinate: CLLocationCoordinate2D?
     @State private var cameraPosition: MapCameraPosition
+    @State private var showingLocationSettings = false
+    @State private var requestingCurrentLocation = false
     @State private var isSearching = false
     @State private var isResolvingMapPoint = false
     @State private var errorMessage: String?
@@ -27,7 +30,7 @@ struct RecordLocationEditorView: View {
         _selectedCoordinate = State(initialValue: initialLocation.map {
             CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude)
         })
-        _cameraPosition = State(initialValue: initialLocation.map(Self.cameraPosition(for:)) ?? .userLocation(fallback: .automatic))
+        _cameraPosition = State(initialValue: initialLocation.map(Self.cameraPosition(for:)) ?? .automatic)
     }
 
     var body: some View {
@@ -53,7 +56,9 @@ struct RecordLocationEditorView: View {
 
                     MapReader { proxy in
                         Map(position: $cameraPosition) {
-                            UserAnnotation()
+                            if locationCoordinator.authorizationStatus == .authorizedAlways || locationCoordinator.authorizationStatus == .authorizedWhenInUse {
+                                UserAnnotation()
+                            }
                             if let selectedCoordinate {
                                 Marker(selectedLocation?.name ?? "地图选点", coordinate: selectedCoordinate)
                             }
@@ -68,13 +73,25 @@ struct RecordLocationEditorView: View {
                     .frame(height: 330)
                     .clipShape(.rect(cornerRadius: 18))
                     .overlay(alignment: .bottom) {
-                        Text(isResolvingMapPoint ? "正在确认地图位置" : "轻点地图选择地点")
-                            .font(.caption.weight(.medium))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(.regularMaterial, in: Capsule())
-                            .padding(.bottom, 12)
-                            .allowsHitTesting(false)
+                        Button(action: requestCurrentLocation) {
+                            Label {
+                                Text("当前位置")
+                            } icon: {
+                                if locationCoordinator.state == .locating {
+                                    ProgressView().controlSize(.mini)
+                                } else {
+                                    Image(systemName: "location.fill")
+                                }
+                            }
+                            .font(.subheadline.weight(.medium))
+                            .frame(minHeight: 44)
+                            .padding(.horizontal, 14)
+                        }
+                        .buttonStyle(.glass)
+                        .buttonBorderShape(.capsule)
+                        .disabled(locationCoordinator.state == .locating)
+                        .accessibilityHint("定位并选择当前位置，地图其他区域仍可轻点选点")
+                        .padding(.bottom, 12)
                     }
                     .accessibilityLabel("地点地图")
                     .accessibilityHint("轻点地图选点，也可以使用搜索结果")
@@ -91,7 +108,7 @@ struct RecordLocationEditorView: View {
                                     .background(Color.accentColor.opacity(0.1), in: Circle())
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(selectedLocation.name).font(.subheadline.weight(.semibold))
-                                    let administrativeText = RecordLocationFormatter.administrativeText(for: selectedLocation)
+                                    let administrativeText = RecordLocationFormatter.detailText(for: selectedLocation)
                                     if !administrativeText.isEmpty {
                                         Text(administrativeText)
                                             .font(.caption)
@@ -106,13 +123,6 @@ struct RecordLocationEditorView: View {
                             .padding(14)
                             .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 16))
                         }
-                    }
-
-                    if locationCoordinator.state != .denied {
-                        Button("使用当前位置", systemImage: "location.fill") {
-                            locationCoordinator.start()
-                        }
-                        .disabled(locationCoordinator.state == .locating)
                     }
 
                     if !query.isEmpty {
@@ -163,14 +173,14 @@ struct RecordLocationEditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
+                    Button("返回", systemImage: "chevron.left") { dismiss() }.labelStyle(.iconOnly)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成", systemImage: "checkmark", action: save).labelStyle(.iconOnly)
-                        .disabled(selectedLocation == nil || isResolvingMapPoint)
+                        .disabled(selectedLocation == nil || isResolvingMapPoint || locationCoordinator.state == .locating)
                 }
             }
-            .alert("无法保存地点", isPresented: Binding(
+            .alert("地点暂不可用", isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
             )) {
@@ -178,9 +188,28 @@ struct RecordLocationEditorView: View {
             } message: {
                 Text(errorMessage ?? "请检查输入。")
             }
+            .alert("前往设置开启定位？", isPresented: $showingLocationSettings) {
+                Button("取消", role: .cancel) { }
+                Button("前往设置") {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    UIApplication.shared.open(url)
+                }
+            } message: {
+                Text(locationCoordinator.locationServicesEnabled ? "开启后可自动添加当前位置。" : "请在系统设置的隐私与安全性中开启定位服务，也可以继续搜索地点。")
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active, requestingCurrentLocation { locationCoordinator.start(requestAuthorization: false) }
+            }
             .onChange(of: locationCoordinator.suggestion) { _, suggestion in
-                guard let suggestion else { return }
+                guard requestingCurrentLocation, let suggestion else { return }
+                requestingCurrentLocation = false
                 select(suggestion)
+            }
+            .onChange(of: locationCoordinator.state) { _, state in
+                if requestingCurrentLocation, state == .unavailable {
+                    requestingCurrentLocation = false
+                    errorMessage = "暂时无法获取当前位置，请重试，或搜索地点、在地图上选点。"
+                }
             }
             .task(id: query) {
                 guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -217,41 +246,67 @@ struct RecordLocationEditorView: View {
         }
     }
 
+    private func requestCurrentLocation() {
+        reverseRequest?.cancel()
+        reverseRequest = nil
+        isResolvingMapPoint = false
+        searchFocused = false
+        requestingCurrentLocation = true
+        guard locationCoordinator.locationServicesEnabled else { showingLocationSettings = true; return }
+        switch locationCoordinator.authorizationStatus {
+        case .denied: showingLocationSettings = true
+        case .restricted:
+            requestingCurrentLocation = false
+            errorMessage = "当前设备限制了定位权限，你仍可搜索地点或在地图上选点。"
+        default: locationCoordinator.start()
+        }
+    }
+
     private func apply(_ item: MKMapItem) {
-        let coordinate = item.placemark.coordinate
+        requestingCurrentLocation = false
+        locationCoordinator.stop()
+        reverseRequest?.cancel()
+        reverseRequest = nil
+        isResolvingMapPoint = false
+        let coordinate = item.location.coordinate
         guard CLLocationCoordinate2DIsValid(coordinate) else { return }
         select(location(for: item))
         results = []
     }
 
     private func selectMapPoint(_ coordinate: CLLocationCoordinate2D) async {
+        requestingCurrentLocation = false
+        locationCoordinator.stop()
         guard CLLocationCoordinate2DIsValid(coordinate) else { return }
         reverseRequest?.cancel()
+        reverseRequest = nil
         selectedLocation = nil
         selectedCoordinate = coordinate
-        isResolvingMapPoint = true
-        defer { isResolvingMapPoint = false }
-
+        let fallback = RecordLocation(name: "地图选点", latitude: coordinate.latitude, longitude: coordinate.longitude)
         let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
         guard let request = MKReverseGeocodingRequest(location: location) else {
-            select(RecordLocation(name: "地图选点", latitude: coordinate.latitude, longitude: coordinate.longitude))
+            isResolvingMapPoint = false
+            select(fallback)
             return
         }
         reverseRequest = request
+        isResolvingMapPoint = true
+        defer {
+            // An older cancelled request must not clear the new selection's progress.
+            if reverseRequest === request {
+                reverseRequest = nil
+                isResolvingMapPoint = false
+            }
+        }
         do {
-            let placemark = try await request.mapItems.first?.placemark
-            guard selectedCoordinate?.latitude == coordinate.latitude,
-                  selectedCoordinate?.longitude == coordinate.longitude else { return }
-            if let placemark {
-                var resolved = RecordLocationFormatter.location(from: placemark, fallbackName: "地图选点")
-                resolved.latitude = coordinate.latitude
-                resolved.longitude = coordinate.longitude
-                select(resolved)
-            } else { select(RecordLocation(name: "地图选点", latitude: coordinate.latitude, longitude: coordinate.longitude)) }
+            let item = try await request.mapItems.first
+            guard reverseRequest === request else { return }
+            select(item.map {
+                RecordLocationFormatter.location(from: $0, coordinate: coordinate, fallbackName: "地图选点")
+            } ?? fallback)
         } catch {
-            guard selectedCoordinate?.latitude == coordinate.latitude,
-                  selectedCoordinate?.longitude == coordinate.longitude else { return }
-            select(RecordLocation(name: "地图选点", latitude: coordinate.latitude, longitude: coordinate.longitude))
+            guard reverseRequest === request else { return }
+            select(fallback)
         }
     }
 
@@ -263,7 +318,7 @@ struct RecordLocationEditorView: View {
 
     private func location(for item: MKMapItem) -> RecordLocation {
         RecordLocationFormatter.location(
-            from: item.placemark,
+            from: item,
             name: item.name,
             fallbackName: "未命名地点"
         )

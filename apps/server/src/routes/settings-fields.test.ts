@@ -52,3 +52,27 @@ test("authenticated upload route accepts user_cover and forwards its isolated pu
   assert.deepEqual(received, input);
   assert.equal((await app.request("/api/uploads", { method: "POST", headers, body: JSON.stringify({ ...input, bytes: 2 * 1024 * 1024 + 1 }) })).status, 413);
 });
+
+
+test("session rebinding accepts only the owned main session and only submits sessionId", async () => {
+  const sessionId = "10000000-0000-4000-8000-000000000001";
+  const fantoId = "20000000-0000-4000-8000-000000000001";
+  const current = { ...defaultSettings(), fantoId, nickname: "保持角色", version: 3 };
+  const service = new FantoService({ find: async () => current, update: async (userId, version, changes) => {
+    assert.equal(userId, "owner"); assert.equal(version, 3);
+    assert.deepEqual(changes, { sessionId });
+    return { ...current, ...changes, version: 4 };
+  } }, { validateAvatar: async () => true }, async (userId, id) => userId === "owner" && id === sessionId);
+  const app = createApp({ auth, fanto: service, records: {} as never, media: {} as never });
+  const patch = (changes: unknown, owner = "owner") => app.request("/api/fanto/settings", {
+    method: "PATCH", headers: { ...headers, Authorization: `Bearer ${owner}` },
+    body: JSON.stringify({expectedVersion: 3, changes}),
+  });
+  const response = await patch({ sessionId });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json() as any).result, { ...current, sessionId, version: 4 });
+  assert.equal((await patch({ sessionId }, "outsider")).status, 422);
+  assert.equal((await patch({ sessionId: "not-a-uuid" })).status, 400);
+  assert.equal((await patch({ fantoId })).status, 400);
+  assert.equal((await patch({ mainSessionId: sessionId })).status, 400);
+});

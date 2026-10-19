@@ -39,9 +39,6 @@ struct AvatarCropView: View {
                         Image(systemName: "plus.magnifyingglass")
                     }
                     .disabled(stage != nil || maximumZoom <= 1)
-                    Button("重置构图") { zoom = 1; offset = .zero; invalidateUpload() }
-                        .buttonStyle(.glass).tint(FantoTheme.accent)
-                        .disabled(stage != nil)
 
                 }
                 .padding(20)

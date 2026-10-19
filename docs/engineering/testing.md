@@ -18,7 +18,7 @@ xcodebuild -project apps/ios/fanto/fanto.xcodeproj -scheme fanto -sdk iphonesimu
 
 ## 按领域验证
 
-- **数据库**：`create_current_schema_20261019.ts` 是唯一完整基线；隔离 PG 中测试空库建表、旧库历史归并、Agent 三表全部缺失后的事务重建与会话指针修复、有效 Checkpoint 数据保留、历史不完整和部分缺表拒绝。旧迁移文件已合并，legacy cleanup 仅为旧库升级兼容逻辑；不要手动删除 `kysely_migration`。
+- **数据库**：`create_current_schema_20261019.ts` 是完整基线，随后执行 fanto_identity_20261019；隔离 PG 中测试空库建表、旧库历史归并、Agent 三表全部缺失后的事务重建与会话指针修复、有效 Checkpoint 数据保留、历史不完整和部分缺表拒绝。旧迁移文件已合并，legacy cleanup 仅为旧库升级兼容逻辑；不要手动删除 `kysely_migration`。
 - **Record / Media**：按用户、版本、位置字段、五媒体限制、后置 Vision/ASR、独立 EmbeddingQueue、语义检索；真实 OSS PUT/HEAD/URL、删除后的尽力清理以及 Project 最终副本归属；`image-thumbnail.test.ts` 验证 EXIF/WebP/并发上限，`media-service.test.ts` 验证小图失败与 DB 失败后的手动恢复、variant 和用户隔离。H5 `tests/media-upload.test.ts` 验证每个失败阶段不会自动继续请求。
 - **Proposal / Project**：Proposal 1–2 个 Idea、accept 幂等、create/extend 状态、Record 关联、version 乐观并发、媒体复制、旧内容保留和失败状态收敛；测试文件位于 `domain/projects/`、`routes/project-http.test.ts`。
 - **Agent Checkpoint PG Integration**：用仅供测试的 `TEST_DATABASE_URL`（库名含 test），执行 `pnpm --filter @fanto/server exec tsx --test src/agent/checkpoint/*.integration.test.ts`，验证保留三表、清理废弃字段、Entry/Usage 存储、Run 历史分页、冷恢复和主会话权限。测试创建并删除独立的临时数据库，不可使用生产数据库。
@@ -48,14 +48,20 @@ R2_SMOKE_TEST=1 pnpm --filter @fanto/server exec tsx --test src/infrastructure/c
 
 ## Fanto 设置
 
-`domain/fanto/fanto.test.ts` 覆盖输入约束、路由认证与隔离、版本竞争、JSON 合并、旧接口适配及头像绑定/清理。`migration.integration.test.ts` 在隔离子数据库验证旧角色文本（含换行与 Unicode）无损迁移；需测试账号具备创建数据库权限。`domain/media/avatar.test.ts` 使用内存对象存储验证裁切尺寸、用途边界、单对象读取与不生成小图。H5 的 `tests/fanto-settings.test.ts` 覆盖裁切投影和头像保存后的文字草稿合并。数据库测试需独立 TEST_DATABASE_URL；本地存储 fixture 与自动检查不代替真机相册、OSS CORS 和最终交互验收。
+`domain/fanto/fanto.test.ts` 覆盖输入约束、路由认证与隔离、版本竞争、JSON 合并、旧接口适配及头像绑定/清理。`migration.integration.test.ts` 在隔离子数据库验证 fanto_id 主键 / session_id 前向迁移、旧角色文本无损、同用户可存多个角色且当前 API 仅选择首个；需测试账号具备创建数据库权限。`domain/media/avatar.test.ts` 使用内存对象存储验证裁切尺寸、用途边界、单对象读取与不生成小图。H5 的 `tests/fanto-settings.test.ts` 覆盖裁切投影和头像保存后的文字草稿合并。数据库测试需独立 TEST_DATABASE_URL；本地存储 fixture 与自动检查不代替真机相册、OSS CORS 和最终交互验收。
 
 ## 用户中心
 
 `domain/users/profile.test.ts` 验证昵称 / 签名单行约束、路由身份边界、并发版本与用户 / Fanto 头像用途隔离、背景图4:3尺寸约束、资料级联删除和清理引用保护。数据库部分创建隔离子数据库，需 TEST_DATABASE_URL 与创建数据库权限。`domain/media/avatar.test.ts` 对两类头像执行相同的单对象与实际尺寸校验。iOS 原生菜单、Dynamic Type、照片裁切与账号退出的最终交互由真机验收；构建与静态检查不能代替交互验收。
 
+`domain/users/statistics.test.ts` 覆盖注册当天 / 跨时区 / 夏令时的相伴日计算、统计路由认证与时区校验；在隔离 PostgreSQL 子库验证当前用户总记录数、未处理记录计数、删除后更新及跨账号隔离。亲密度只验证固定占位字段。
+
+## iOS 地点映射
+
+`sh apps/ios/tests/run-location-tests.sh` 使用本机 MapKit 验证新版地址读取、搜索 POI 名称、旧版行政字段、原始选点坐标保留、行政区去重与地址未识别提示，不调用在线定位服务。真实定位 / 逆地理编码、地图点击与“当前位置”按钮的手势隔离仍需真机验收。
+
 ## iOS 资料缓存
 
-`sh apps/ios/tests/run-cache-tests.sh` 在本机编译并执行生产缓存组件，覆盖跨页面复用、并发读取合并、保存与旧查询竞争、断网保留、启动快照先显示后同步、账号作用域隔离、退出清理与图片磁盘预算。iOS 模拟器构建校验图片解码和 SwiftUI 接入；真机验证头像 / 背景图不闪、相册上传、弱网及切换账号的实际体验。没有定时刷新或资料 TTL。
+`sh apps/ios/tests/run-cache-tests.sh` 在本机编译并执行生产缓存组件，覆盖跨页面复用、并发读取合并、保存与旧查询竞争、断网保留、启动快照先显示后同步、账号作用域隔离、退出清理与图片磁盘预算；同时覆盖创建草稿文字 / 日期 / 地点 / JPEG 字节与已完成上传 ID 恢复、重新登录恢复、账号隔离及提交清除后不被旧写入复活。iOS 模拟器构建校验图片解码和 SwiftUI 接入；真机验证头像 / 背景图不闪、相册上传、弱网及切换账号的实际体验。没有定时刷新或资料 TTL。
 
-`routes/settings-fields.test.ts` 验证用户资料逐字段 PATCH、四项角色配置各自提交单个 JSON 子键，以及经过认证的 user_cover 上传路由和大小限制。iOS 缓存回归同时验证单字段序列化（遗漏不等于 null）、独立保存写回、同字段冲突保护及丢失保存响应后的读取确认。背景图 Unsupported media 代表上传申请参数被拒绝，仅凭此错误不能判定线上版本；需核对上传参数与线上支持的 purpose。仓库已支持 user_cover，头像用例同时通过认证后的真实上传 / complete 路由验证 4:3 JPEG 与实际尺寸（对象存储使用 fixture，不代表线上 OSS 验收）。部署仍需包含 coverMediaId 对应迁移，不能通过改用 Record 用途绕过。
+`routes/settings-fields.test.ts` 验证用户资料逐字段 PATCH、四项角色配置各自提交单个 JSON 子键，以及经过认证的 user_cover 上传路由和大小限制。iOS 缓存回归同时验证单字段序列化（遗漏不等于 null）、独立保存写回、同字段冲突保护及丢失保存响应后的读取确认。会话重绑定回归验证 sessionId 单字段编码、共享设置与磁盘写回、旧 GET 不恢复旧指针，并在隔离 PG 验证身份不变、旧会话保留、归属校验与版本冲突。背景图 Unsupported media 代表上传申请参数被拒绝，仅凭此错误不能判定线上版本；需核对上传参数与线上支持的 purpose。仓库已支持 user_cover，头像用例同时通过认证后的真实上传 / complete 路由验证 4:3 JPEG 与实际尺寸（对象存储使用 fixture，不代表线上 OSS 验收）。部署仍需包含 coverMediaId 对应迁移，不能通过改用 Record 用途绕过。

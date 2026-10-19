@@ -47,3 +47,11 @@ nonisolated struct AccountInfo: Codable, Sendable {
         var title: String { switch provider { case "apple": "Apple"; case "google": "Google"; case "phone": "手机号"; default: provider } }
     }
 }
+
+nonisolated struct UserStatistics: Codable, Sendable {
+    let companionDays: Int
+    let recordCount: Int
+    let intimacy: Int
+    let intimacyIsPlaceholder: Bool
+    let asOf: Date
+}

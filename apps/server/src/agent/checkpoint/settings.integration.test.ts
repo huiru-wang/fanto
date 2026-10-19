@@ -29,24 +29,41 @@ integration("checkpoint-owned main session selection enforces user ownership and
     await checkpoint.createSession(mainId, owner, "main");
     await checkpoint.createSession(creatorId, owner, "creator-agent");
     const fanto = FantoService.create(db, {validateAvatar: async () => false} as never);
-    assert.equal((await fanto.getSettings(owner)).mainSessionId, null);
+    assert.equal((await fanto.getSettings(owner)).sessionId, null);
     const updated = await fanto.updateSettings(owner, {
-      expectedVersion: 0, changes: {mainSessionId: mainId},
+      expectedVersion: 0, changes: {sessionId: mainId},
     });
-    assert.equal(updated.mainSessionId, mainId);
-    assert.equal((await fanto.getSettings(owner)).mainSessionId, mainId);
+    assert.equal(updated.sessionId, mainId);
+    assert.equal((await fanto.getSettings(owner)).sessionId, mainId);
     await assert.rejects(fanto.updateSettings(outsider, {
-      expectedVersion: 0, changes: {mainSessionId: mainId},
+      expectedVersion: 0, changes: {sessionId: mainId},
     }), {code: "INVALID_SESSION"});
     await assert.rejects(fanto.updateSettings(owner, {
-      expectedVersion: updated.version, changes: {mainSessionId: creatorId},
+      expectedVersion: updated.version, changes: {sessionId: creatorId},
     }), {code: "INVALID_SESSION"});
     await assert.rejects(fanto.updateSettings(owner, {
-      expectedVersion: 0, changes: {mainSessionId: mainId},
+      expectedVersion: 0, changes: {sessionId: mainId},
     }), {code: "VERSION_CONFLICT"});
     assert.equal((await fanto.updateSettings(owner, {
       expectedVersion: updated.version, changes: {description: "unchanged chat"},
-    })).mainSessionId, mainId);
+    })).sessionId, mainId);
+    const before = await fanto.getSettings(owner);
+    const freshId = randomUUID();
+    await checkpoint.createSession(freshId, owner, "main");
+    const switched = await fanto.updateSettings(owner, {
+      expectedVersion: before.version, changes: {sessionId: freshId},
+    });
+    assert.equal(switched.fantoId, before.fantoId);
+    assert.equal(switched.sessionId, freshId);
+    assert.equal(switched.description, before.description);
+    assert.deepEqual(switched.roleConfig, before.roleConfig);
+    assert.equal((await fanto.getSettings(owner)).sessionId, freshId);
+    assert.equal((await checkpoint.getSession(mainId, owner))?.id, mainId);
+    assert.equal(await checkpoint.getSession(freshId, outsider), undefined);
+    await assert.rejects(fanto.updateSettings(owner, {
+      expectedVersion: before.version, changes: {sessionId: mainId},
+    }), {code: "VERSION_CONFLICT"});
+    assert.equal((await fanto.getSettings(owner)).sessionId, freshId);
   } finally {
     await db.destroy();
     await sql.raw(`DROP DATABASE ${name} WITH (FORCE)`).execute(admin);

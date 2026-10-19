@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
 import type { MediaService } from "../media/index.js";
 export class UserProfileError extends Error {
@@ -12,8 +12,36 @@ export const profilePatch = z.object({
   expectedVersion: z.number().int().nonnegative(),
   changes: z.object({nickname: line(30, true).optional(), signature: line(40).optional(), avatarMediaId: z.string().min(1).max(200).nullable().optional(), coverMediaId: z.string().min(1).max(200).nullable().optional()}).strict().refine(value => Object.keys(value).length > 0),
 }).strict();
+export const statsTimeZone = z.string().min(1).max(100).default("UTC").refine(value => {
+  try { new Intl.DateTimeFormat("en", { timeZone: value }); return true; } catch { return false; }
+}, "时区无效");
+
+export function companionDaysSince(joinedAt: Date, now: Date, timeZone: string): number {
+  const formatter = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "numeric", day: "numeric" });
+  const day = (date: Date) => {
+    const parts = formatter.formatToParts(date);
+    const value = (type: string) => Number(parts.find(part => part.type === type)!.value);
+    return Date.UTC(value("year"), value("month") - 1, value("day")) / 86400000;
+  };
+  return Math.max(1, day(now) - day(joinedAt) + 1);
+}
+
 export class UserProfileService {
   constructor(private readonly db: Kysely<DB>, private readonly media: MediaService) {}
+  async getStatistics(userId: string, timeZone = "UTC") {
+    const asOf = new Date();
+    const user = await this.db.selectFrom("users").select([
+      "created_at",
+      sql<string>`(SELECT COUNT(*) FROM records WHERE user_id = ${userId})`.as("record_count"),
+    ]).where("user_id", "=", userId).executeTakeFirstOrThrow();
+    return {
+      companionDays: companionDaysSince(user.created_at, asOf, timeZone),
+      recordCount: Number(user.record_count),
+      intimacy: 12,
+      intimacyIsPlaceholder: true,
+      asOf: asOf.toISOString(),
+    };
+  }
   async get(userId: string) {
     const user = await this.db.selectFrom("users").select("created_at").where("user_id", "=", userId).executeTakeFirstOrThrow();
     const row = await this.db.selectFrom("user_profiles").selectAll().where("user_id", "=", userId).executeTakeFirst();

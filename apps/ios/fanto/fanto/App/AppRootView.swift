@@ -73,9 +73,13 @@ struct AppRootView: View {
         }
         .task { await userProfile.load() }
         .task { await userProfile.loadAccount() }
+        .task { await userProfile.loadStatistics() }
+        .onChange(of: fantoStore.recordStatisticsRevision) { _, _ in
+            Task { await userProfile.loadStatistics(force: true) }
+        }
         .tint(FantoTheme.accent)
         .task {
-            await conversationStore.load()
+            await conversationStore.load(profile: fantoProfile)
         }
     }
 

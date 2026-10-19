@@ -149,7 +149,7 @@ export function ChatPage({ active = true }: { active?: boolean }) {
     for (let attempt = 0; attempt < 2; attempt++) {
       const settings = await getFantoSettings();
       try {
-        acceptFantoSettings(await patchFantoSettings(settings.version, { mainSessionId: id }));
+        acceptFantoSettings(await patchFantoSettings(settings.version, { sessionId: id }));
         return;
       } catch (cause) {
         if (!(cause instanceof ApiError && cause.status === 409 && attempt === 0)) throw cause;
@@ -229,7 +229,7 @@ export function ChatPage({ active = true }: { active?: boolean }) {
     setLoading(true);
     setError(null);
     try {
-      const stored = (await getFantoSettings()).mainSessionId;
+      const stored = (await getFantoSettings()).sessionId;
       if (!stored) {
         await createFreshSession();
       } else {

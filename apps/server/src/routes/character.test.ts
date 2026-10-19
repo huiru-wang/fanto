@@ -89,6 +89,8 @@ test("character provider snapshots identity once per run and propagates unavaila
   const run = createRunContext({ runId: "snapshot", userId: "owner", sessionId: "same", query: "你好", slots: {}, recentMessages: [] });
   const first = await prompt.resolve({} as never, run);
   assert.ok(first.includes('"nickname":"月见灯"'));
+  assert.ok(first.includes("Fanto 这个 Agent 自己的显示昵称"));
+  assert.ok(first.includes("用户的姓名或称呼只从用户当轮明确陈述和个人背景记忆判断"));
   assert.equal(await prompt.resolve({} as never, run), first);
   assert.equal(calls, 1);
   const broken = createSystemPrompt({ template: mainPrompt, providers: [new CharacterProvider({ getFantoConversationSettings: async () => { throw new Error("settings unavailable"); } })] });

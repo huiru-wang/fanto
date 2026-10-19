@@ -12,7 +12,7 @@
 | `proposal-agent` | 后台 AgentExecutionQueue | 读取 Record / Creative Skill，按价值判断并保存 1–2 个候选 |
 | `creator-agent` | 后台首次创作 + 用户继续 Stream | 按接受的 Goal 在 Project Session 创作和修改作品 |
 
-Tool 仅按 Agent YAML 白名单加载，包含 `record_read`、`memory_manage`、`present_media`、`collect_user_input`、`skill_read`、`project_read`、`proposal_create`、`image_generate`、`project_manage` 与可配置的 `read/write/edit/bash`。不是每个 Agent 都能使用所有工具。Skill 按 `apps/server/skills/<id>/SKILL.md` 加载；Creative Skill 有四份意图参考。
+Tool 仅按 Agent YAML 白名单加载，包含 `record_read`、`memory_manage`、`present_media`、`skill_read`、`project_read`、`proposal_create`、`image_generate`、`project_manage` 与可配置的 `read/write/edit/bash`。不是每个 Agent 都能使用所有工具。Skill 按 `apps/server/skills/<id>/SKILL.md` 加载；Creative Skill 有四份意图参考。
 
 Tool 和 Context Provider 通过 `agent/business-services.ts` 调用领域 Service，不调用内部 HTTP Route 或 Repository；用户身份固定来自 Server Principal / Session Run Context，工具输入不提供用户身份替换权限。
 
@@ -20,7 +20,7 @@ Tool 和 Context Provider 通过 `agent/business-services.ts` 调用领域 Servi
 
 `harness/run.ts` 统一创建 Run Context，包含 userId、sessionId、runId、query、最近消息和必要的 creative/project 元数据。`harness/build-runtime.ts` 在一个 Run 内解析 Prompt 引用的 Provider 插槽，按需获取 Context；不是每个模型 turn 都重复查询。
 
-- Main：通过 CharacterProvider 经 FantoService 从 `user_fanto_settings.role_config` 读取当前用户唯一的角色配置与昵称，以 `character`、`scenario`、`character_instructions`、`example_dialogues` 插值注入现有 Prompt。昵称通过 `fanto_identity` 注入。每个 Run 读取一次，读取失败中止该 Run，保存后同一 Session 下一轮生效；角色配置不参与代码 Prompt 的 revision，不需要重启或重建会话。个人背景与相处偏好由 MemoryProvider 按预算注入，关系与近期关注按话题检索（见 [Memory](../domain/memory.md)）；近期 Record、当前日期继续由对应 Provider 提供；近期 Record 采用代码配置的最近两条，相关历史由模型主动调用 `record_read(query)`。
+- Main：通过 CharacterProvider 经 FantoService 从 `user_fanto_settings.role_config` 读取当前用户唯一的角色配置与昵称，以 `character`、`scenario`、`character_instructions`、`example_dialogues` 插值注入现有 Prompt。昵称通过 `fanto_identity` 注入，**专指 Fanto Agent 自己的昵称**，不是用户名字；与角色设定中出现的其他名字冲突时以该昵称为准，用户姓名由用户自述与个人背景记忆决定。Main 不再配置 `collect_user_input`，普通澄清直接在对话中提问；历史表单消息的存储与客户端兼容代码仍保留。每个 Run 读取一次，读取失败中止该 Run，保存后同一 Session 下一轮生效；角色配置不参与代码 Prompt 的 revision，不需要重启或重建会话。个人背景与相处偏好由 MemoryProvider 按预算注入，关系与近期关注按话题检索（见 [Memory](../domain/memory.md)）；近期 Record、当前日期继续由对应 Provider 提供；近期 Record 采用代码配置的最近两条，相关历史由模型主动调用 `record_read(query)`。
 - Creator：可信 `creation_context` 绑定 Project，按需用 `project_read` 获取最新 Goal、正文、version、关联资料。
 - Proposal：可信触发 Record 信息，按需读取 Creative Skill、真实 Record 与相关 Project。
 - `transform_context` 只修改模型请求视图，不更改 Session 持久 transcript。
@@ -29,7 +29,7 @@ Tool 和 Context Provider 通过 `agent/business-services.ts` 调用领域 Servi
 
 ## Session
 
-主对话 Session 独立于 User Settings：Agent 持有 Session 生命周期及 `user_id/agent_id` 权限；`user_fanto_settings.main_session_id` 仅是用户默认打开的主会话指针，创建/切换分别调用 `/api/agent/sessions` 与 `/api/fanto/settings`，Stream 固定明确的 sessionId。Proposal/Creator 继续使用各自关联的 Session。
+主对话 Session 独立于 User Settings：Agent 持有 Session 生命周期及 `user_id/agent_id` 权限；`user_fanto_settings.session_id` 仅是用户默认打开的主会话指针，创建/切换分别调用 `/api/agent/sessions` 与 `/api/fanto/settings`，Stream 固定明确的 sessionId。Proposal/Creator 继续使用各自关联的 Session。
 
 Pi AgentHarness 和 MemorySessionRepo 完整保留。SDK 内部 Commit、Loop、Tool、Stop、Compaction 及模型上下文构建不作修改；`agent/checkpoint/` 通过 Pi 的 `entry_added`、`usage`、`turn_end`、`run_end` 事件收集已提交 Entry/Usage，在每个 Turn 结束时同步提交 PostgreSQL，Run 正常/异常/停止后同步补齐剩余数据。SSE 成功终态之前必须检查 PG 保存结果；写入失败不返回 `done`。保存只涉及 `agent_session.sessions`、`entries`（包括 `run_id`）和 `usage_ledger` 三张活跃表，旧 Pi SDK Storage/Snapshot 表由前向清理 Migration 删除，不修改有效 V2 会话数据；不写入冗余 Session Token 合计。
 

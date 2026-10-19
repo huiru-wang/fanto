@@ -109,7 +109,6 @@ export function AvatarCropper({ file, onCancel, onSave }: {
    <canvas ref={canvas}/><div className="avatar-crop-mask"/>
   </div>
   <label className="avatar-zoom">缩放<input type="range" min={1} max={image ? Math.min(5, Math.min(image.width, image.height) / 128) : 1} step={.01} value={transform.zoom} disabled={!!stage || !image} onChange={e => update({ ...transformRef.current, zoom: Number(e.target.value) })}/></label>
-  <button type="button" disabled={!!stage} onClick={() => update({ zoom: 1, x: 0, y: 0 })}>重置构图</button>
   {error && <p role="alert">{error}</p>}{stage && <p role="status">{stage}</p>}
   <footer><button ref={cancel} type="button" onClick={onCancel} disabled={!!stage}>取消</button><button type="button" className="provider-action" onClick={() => void save()} disabled={!image || !!stage}>保存</button></footer>
  </div>;

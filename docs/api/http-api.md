@@ -52,14 +52,15 @@
 
 PATCH 支持单项更新；changes 省略的字段保持不变，显式 null 仅用于清除媒体引用。iOS 头像 / 背景图上传后立即单项绑定，昵称 / 签名在独立编辑页保存。
 
+- `GET /api/users/me/statistics?timeZone=Asia%2FShanghai`：返回 `{ companionDays, recordCount, intimacy, intimacyIsPlaceholder, asOf }`，仅统计 JWT 当前用户。timeZone 为有效 IANA 时区，省略默认 UTC，非法时区返回400。相伴天数按注册日至统计日的当地日历日期差加1，最少1；recordCount 是当前所有未删除 Record 总数，包含待处理 / 处理失败的记录，不是分页条数；亲密度固定12，intimacyIsPlaceholder=true，未实现业务计算。asOf 为本次统计时间。
 - `GET /api/users/me/profile`：返回 `{ nickname, signature, avatarMediaId, coverMediaId, version, joinedAt }`，joinedAt 为账号创建时间。未保存时昵称“你”、空签名 / 空头像、version=0。
 - `PATCH /api/users/me/profile`：`{ expectedVersion, changes: { nickname?, signature?, avatarMediaId?, coverMediaId? } }`，至少一个变更字段；昵称去除首尾空白后1–30个 Unicode 字符，签名最多40个，均为单行且不含控制 / 格式字符。null 头像 / 背景图恢复默认。背景图只接受本人 ready 的 user_cover，错误用途返回 `422 INVALID_COVER`。版本不符为 `409 VERSION_CONFLICT`，无权或非法用途头像为 `422 INVALID_AVATAR`，输入错误为400。
 - 返回提交后的完整资料。与 Fanto Settings 分开，不改变角色 Prompt。user_avatar 仅可绑定本人 ready、未退役 / 未认领清理的小图，不接受 record / fanto_avatar。媒体用途、数据生命周期见 [Users](../domain/users.md)。
 
 ## Fanto 设置
 
-- `GET /api/fanto/settings`：读取当前用户唯一的 `{ nickname, description, avatarMediaId, mainSessionId, roleConfig, version, createdAt, updatedAt }`。未保存时返回昵称 Fanto、空简介/角色字段、空头像、version=0 和空时间。
-- `PATCH /api/fanto/settings`：提交 `{ expectedVersion, changes }`，changes 可包含 nickname、description、avatarMediaId（null 恢复默认）、roleConfig、mainSessionId（用户默认主对话指针）。只合并传入字段，roleConfig 也按子字段合并；返回提交后的完整设置。有效变更递增 version；版本不一致返回 `409 VERSION_CONFLICT`，无权使用或状态不合法的头像返回 `422 INVALID_AVATAR`；mainSessionId 必须是本人 main Agent Session，否则 `422 INVALID_SESSION`。
+- `GET /api/fanto/settings`：读取当前用户默认 Fanto 的 `{ fantoId, nickname, description, avatarMediaId, sessionId, roleConfig, version, createdAt, updatedAt }`。未保存时返回昵称 Fanto、空简介/角色字段、空头像、空 fantoId/sessionId、version=0 和空时间；首次保存分配不可变 fantoId。
+- `PATCH /api/fanto/settings`：提交 `{ expectedVersion, changes }`，changes 可包含 nickname、description、avatarMediaId（null 恢复默认）、roleConfig、sessionId（当前 Fanto 使用的 main Agent 会话指针）。只合并传入字段，roleConfig 也按子字段合并；返回提交后的完整设置。有效变更递增 version；版本不一致返回 `409 VERSION_CONFLICT`，无权使用或状态不合法的头像返回 `422 INVALID_AVATAR`；sessionId 必须是本人 main Agent Session，否则 `422 INVALID_SESSION`。fantoId 为只读 UUID，不允许 PATCH；数据表支持同一用户多个角色，当前 API 仅操作按 created_at/fanto_id 排序的首个默认角色，不提供角色创建或切换入口。
 - 昵称去除首尾空白，1–30 个 Unicode 字符且不含控制字符；简介最多 300 个 Unicode 字符。roleConfig 当前接受 character、scenario、instructions、exampleDialogues，每项最多 16000 字符；保留换行，空字符串清空该项。拒绝空 changes、空 roleConfig 与未知请求字段。
 - 旧 `GET/PUT /api/character` 保留兼容：四个字符串字段整体读取/覆盖，由 FantoService 适配；写入同样推进设置版本，不改变昵称、简介、头像和其他 JSON 键。
 

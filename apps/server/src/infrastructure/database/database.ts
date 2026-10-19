@@ -67,6 +67,7 @@ export async function checkDatabaseHealth(db: Kysely<DB>, timeoutMs = 5_000): Pr
 // dropped Agent tables prevent it from executing; missing business migrations
 // must never be silently marked as applied.
 const BASELINE_MIGRATION = "create_current_schema_20261019";
+const FORWARD_MIGRATIONS = new Set(["fanto_identity_20261019"]);
 const PREVIOUS_MIGRATIONS = [
   "create_current_schema",
   "zzzzzz_async_v3",
@@ -106,8 +107,11 @@ async function ensureAgentTables(trx: Kysely<DB>, legacyCleanupPending: boolean)
     // All Agent storage has been manually deleted. Recreate only current tables.
     await createAgentCheckpointSchema(trx);
     // A former main-session pointer cannot resolve after those rows were lost.
-    await sql`UPDATE user_fanto_settings SET main_session_id = NULL
-      WHERE main_session_id IS NOT NULL`.execute(trx);
+    const columns = await sql<{ column_name: string }>`SELECT column_name FROM information_schema.columns
+      WHERE table_schema = current_schema() AND table_name = 'user_fanto_settings'`.execute(trx);
+    const sessionColumn = columns.rows.some(row => row.column_name === "session_id") ? "session_id" : "main_session_id";
+    await sql`UPDATE user_fanto_settings SET ${sql.ref(sessionColumn)} = NULL
+      WHERE ${sql.ref(sessionColumn)} IS NOT NULL`.execute(trx);
     await sql`DROP INDEX IF EXISTS idx_proposals_accepted_creation`.execute(trx);
     logInfo("database", "Recreated missing Agent checkpoint tables (old session data is not recoverable)");
     return true;
@@ -145,7 +149,8 @@ async function consolidateMigrationHistory(db: Kysely<DB>): Promise<void> {
       throw new Error("Empty migration history in an existing database; manual review required");
     }
     if (names.has(BASELINE_MIGRATION)) {
-      if (names.size !== 1) throw new Error("Unknown migrations alongside the current baseline");
+      if ([...names].some(name => name !== BASELINE_MIGRATION && !FORWARD_MIGRATIONS.has(name)))
+        throw new Error("Unknown migrations alongside the current baseline");
       const restored = await ensureAgentTables(trx, false);
       return { removed: 0, restored };
     }
@@ -157,7 +162,7 @@ async function consolidateMigrationHistory(db: Kysely<DB>): Promise<void> {
       ...(hasPrevious || hasSquashed ? PREVIOUS_MIGRATIONS : []),
       ...(hasSquashed ? SQUASHED_MIGRATIONS : []),
     ];
-    const allowed = new Set<string>([...required, LAST_AGENT_CLEANUP]);
+    const allowed = new Set<string>([...required, LAST_AGENT_CLEANUP, ...FORWARD_MIGRATIONS]);
     const missing = required.filter(name => !names.has(name));
     const unknown = [...names].filter(name => !allowed.has(name));
     if (missing.length || unknown.length) {
@@ -170,7 +175,8 @@ async function consolidateMigrationHistory(db: Kysely<DB>): Promise<void> {
     const restored = await ensureAgentTables(trx, !names.has(LAST_AGENT_CLEANUP));
     await sql`INSERT INTO kysely_migration (name, timestamp)
       SELECT ${BASELINE_MIGRATION}, MAX(timestamp) FROM kysely_migration`.execute(trx);
-    await sql`DELETE FROM kysely_migration WHERE name <> ${BASELINE_MIGRATION}`.execute(trx);
+    await sql`DELETE FROM kysely_migration WHERE name <> ${BASELINE_MIGRATION}
+      AND name NOT IN (${sql.join([...FORWARD_MIGRATIONS])})`.execute(trx);
     return { removed: names.size, restored };
   });
   if (result.removed) logInfo("database", "Consolidated migration history", { removed: result.removed });

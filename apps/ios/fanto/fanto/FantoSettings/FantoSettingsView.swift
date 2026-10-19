@@ -3,6 +3,7 @@ import PhotosUI
 
 struct FantoSettingsView: View {
     @Bindable var profile: FantoSettingsStore
+    @Bindable var conversation: ConversationStore
     @State private var photo: PhotosPickerItem?
     @State private var cropSource: AvatarSource?
     @State private var avatarOriginal: String?
@@ -30,7 +31,8 @@ struct FantoSettingsView: View {
                             .disabled(profile.isSaving || isImporting)
                             Text(value.nickname).font(.title2.bold())
                         }
-                        .frame(maxWidth: .infinity).padding(.vertical, 16)
+                        .frame(maxWidth: .infinity).padding(.vertical, 8)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
                         .listRowBackground(Color.clear)
                     }
                     Section {
@@ -47,13 +49,18 @@ struct FantoSettingsView: View {
                         roleLink("示例对话", field: "exampleDialogues", value: value)
                     }
                     Section {
-                        PendingSettingsLink(title: "记忆管理", symbol: "brain")
-                    }
-                    Section {
-                        Button("清除对话记录", role: .destructive) { confirmingClearHistory = true }
+                        Button(role: .destructive) { confirmingClearHistory = true } label: {
+                            HStack {
+                                Text("清除对话记录")
+                                Spacer()
+                                if conversation.isClearingHistory { ProgressView().accessibilityLabel("正在清除对话记录") }
+                            }
+                        }
+                        .disabled(!conversation.isReady || conversation.isResponding || profile.isSaving)
                     }
                     if let error { Section { Text(error).foregroundStyle(.red) } }
                 }
+                .contentMargins(.top, 0, for: .scrollContent)
             } else if profile.isLoading {
                 ProgressView("正在读取设置")
             } else {
@@ -63,14 +70,18 @@ struct FantoSettingsView: View {
                 actions: { Button("重新读取") { Task { await profile.load(force: true) } } }
             }
         }
-        .navigationTitle("Fanto 设置").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("").navigationBarTitleDisplayMode(.inline)
         .alert("清除对话记录？", isPresented: $confirmingClearHistory) {
             Button("清除对话记录", role: .destructive) {
-                // Confirmation UI only until the user-facing deletion API is implemented.
+                Task {
+                    error = nil
+                    do { try await conversation.clearHistory(profile: profile) }
+                    catch { if !(error is CancellationError) { self.error = error.localizedDescription } }
+                }
             }
             Button("取消", role: .cancel) { }
         } message: {
-            Text("此功能尚未开放，暂不会删除任何数据。开放后，清除操作不可撤销，记忆将保留。")
+            Text("将开始一段空白对话，之后使用新会话继续。原会话保留在历史对话中，角色设定、记忆和记录不受影响。")
         }
         .task { await profile.load() }
         .task(id: photo) {

@@ -10,6 +10,7 @@ final class AccountCache {
         scope = next
         MediaImageCache.shared.reset()
         await AccountCacheDisk.shared.activate(next)
+        await RecordDraftStore.shared.activate(next)
     }
 
     func clear() async {

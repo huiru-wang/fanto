@@ -9,7 +9,7 @@ import { SkillLoader } from "../skills/loader.js";
 
 test("agent.yaml registers only conversational and creative agents", () => {
   const registry = new AgentRegistry(resolve("agent.yaml"), builtinModels(), new SkillLoader(resolve("skills")));
-  assert.ok(registry.get("main")?.tools.includes("collect_user_input"));
+  assert.deepEqual(registry.get("main")?.tools, ["record_read", "memory_manage", "present_media"]);
   assert.equal(registry.get("task-worker"), undefined);
   assert.equal(registry.get("main")?.tools.some(tool => tool.includes("task")), false);
 });

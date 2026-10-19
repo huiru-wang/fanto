@@ -23,6 +23,13 @@ final class FantoSettingsStore {
             try await FantoAPIClient.shared.updateFantoSettings(version: current.version, changes: changes)
         }
     }
+    func selectSession(_ id: String, original: String?) async throws {
+        var changes = FantoSettingsChanges()
+        changes.sessionId = id
+        try await resource.update(original: original, desired: id, field: { $0.sessionId }) { current in
+            try await FantoAPIClient.shared.updateFantoSettings(version: current.version, changes: changes)
+        }
+    }
     var isLoading: Bool { resource.isLoading }
     var errorMessage: String? { resource.error }
     init() {
