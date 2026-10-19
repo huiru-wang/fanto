@@ -4,6 +4,7 @@ nonisolated struct FantoSettings: Codable, Equatable, Sendable {
     var nickname = "Fanto"
     var description = ""
     var avatarMediaId: String?
+    var mainSessionId: String?
     var roleConfig = CharacterPrompt()
     var version = 0
     var createdAt: Date?
@@ -24,15 +25,17 @@ nonisolated struct FantoSettingsChanges: Encodable {
     var nickname: String?
     var description: String?
     var roleConfig: [String: String]?
+    var mainSessionId: String?
     var updatesAvatar = false
     var avatarMediaId: String?
-    var isEmpty: Bool { nickname == nil && description == nil && roleConfig == nil && !updatesAvatar }
-    private enum CodingKeys: String, CodingKey { case nickname, description, roleConfig, avatarMediaId }
+    var isEmpty: Bool { nickname == nil && description == nil && roleConfig == nil && mainSessionId == nil && !updatesAvatar }
+    private enum CodingKeys: String, CodingKey { case nickname, description, roleConfig, avatarMediaId, mainSessionId }
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encodeIfPresent(nickname, forKey: .nickname)
         try container.encodeIfPresent(description, forKey: .description)
         try container.encodeIfPresent(roleConfig, forKey: .roleConfig)
+        try container.encodeIfPresent(mainSessionId, forKey: .mainSessionId)
         if updatesAvatar {
             if let avatarMediaId { try container.encode(avatarMediaId, forKey: .avatarMediaId) }
             else { try container.encodeNil(forKey: .avatarMediaId) }

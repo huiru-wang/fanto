@@ -25,6 +25,23 @@ export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSess
     return c.json({ success: true, result: { sessionId: session.id, agentId: session.agentId, createdAt: new Date().toISOString(), traceId: traceId.data } }, 201);
   });
 
+  app.get("/sessions", async c => {
+    const userId = requireUserId(c.req.raw);
+    const agentId = c.req.query("agentId") ?? "main";
+    const limit = limitSchema.safeParse(c.req.query("limit"));
+    const cursor = c.req.query("cursor");
+    if (!limit.success || !registry.get(agentId) || (cursor !== undefined && !/^[A-Za-z0-9_-]{1,512}$/.test(cursor)))
+      return c.json({ error: "Invalid session list query" }, 400);
+    try {
+      const result = await sessions.list(userId, agentId, cursor, limit.data);
+      return c.json({ success: true, result });
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "Invalid session list cursor")
+        return c.json({ error: cause.message }, 400);
+      return sessionError(c, cause);
+    }
+  });
+
   app.post("/sessions/:sessionId/stop", async c => {
     const params = sessionParamsSchema.safeParse(c.req.param());
     if (!params.success) return c.json({error:"sessionId is invalid"},400);

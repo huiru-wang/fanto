@@ -13,6 +13,8 @@ enum ConversationLoadState: Equatable {
 final class ConversationStore {
     var messages: [ConversationMessage] = []
     var draft = ""
+    var knownSessions: [AgentSessionSummary] = []
+    var sessionListError: String?
     var loadState: ConversationLoadState = .idle
     var scrollAnchorID: String?
     private(set) var hasMoreHistory = false
@@ -21,7 +23,6 @@ final class ConversationStore {
     private(set) var historyRestoreAnchorID: String?
 
     private let client: AgentAPIClient
-    private let persistence: AgentSessionPersistence
     private var sessionID: String?
     private var historyNextCursor: Int?
     private var activeAssistantMessageID: String?
@@ -37,9 +38,8 @@ final class ConversationStore {
     private var isStopping = false
     private var localMessageSequence = 0
 
-    init(client: AgentAPIClient = .shared, persistence: AgentSessionPersistence = .init()) {
+    init(client: AgentAPIClient = .shared) {
         self.client = client
-        self.persistence = persistence
     }
 
     var isReady: Bool {
@@ -54,7 +54,8 @@ final class ConversationStore {
         loadState = .loading
 
         do {
-            if let storedID = try persistence.load(userID: client.userID, agentID: client.agentID) {
+            let settings = try await FantoAPIClient.shared.fetchFantoSettings()
+            if let storedID = settings.mainSessionId {
                 do {
                     let page = try await client.fetchHistory(sessionID: storedID)
                     messages = project(page.messages)
@@ -63,7 +64,6 @@ final class ConversationStore {
                     sessionID = storedID
                     if page.running { recoverConversation() }
                 } catch let error as AgentAPIError where error.invalidatesSession {
-                    try persistence.clear(userID: client.userID, agentID: client.agentID)
                     try await createSession()
                 }
             } else {
@@ -254,9 +254,62 @@ final class ConversationStore {
         send()
     }
 
+    func loadSessions() async {
+        do {
+            knownSessions = try await client.fetchSessions()
+            sessionListError = nil
+        } catch {
+            sessionListError = userVisibleError(for: error)
+        }
+    }
+
+    func switchSession(_ id: String) async {
+        guard isReady, !isResponding, sessionID != id else { return }
+        do {
+            let page = try await client.fetchHistory(sessionID: id)
+            try await selectMainSession(id)
+            sessionID = id
+            messages = project(page.messages)
+            hasMoreHistory = page.hasMore
+            historyNextCursor = page.nextCursor
+            scrollAnchorID = messages.last?.id
+            if page.running { recoverConversation() }
+            sessionListError = nil
+        } catch {
+            sessionListError = userVisibleError(for: error)
+        }
+    }
+
+    func newConversation() async {
+        guard isReady, !isResponding else { return }
+        loadState = .loading
+        do {
+            try await createSession()
+            scrollAnchorID = nil
+            loadState = .ready
+        } catch {
+            // Keep the previous conversation usable when the settings write fails.
+            loadState = .ready
+        }
+    }
+
+    private func selectMainSession(_ id: String) async throws {
+        for attempt in 0..<2 {
+            let settings = try await FantoAPIClient.shared.fetchFantoSettings()
+            var changes = FantoSettingsChanges()
+            changes.mainSessionId = id
+            do {
+                _ = try await FantoAPIClient.shared.updateFantoSettings(version: settings.version, changes: changes)
+                return
+            } catch let error as FantoAPIError where error.code == "VERSION_CONFLICT" && attempt == 0 {
+                continue
+            }
+        }
+    }
+
     private func createSession() async throws {
         let createdID = try await client.createSession()
-        try persistence.save(createdID, userID: client.userID, agentID: client.agentID)
+        try await selectMainSession(createdID)
         sessionID = createdID
         messages = []
         hasMoreHistory = false

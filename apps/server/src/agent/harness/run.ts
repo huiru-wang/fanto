@@ -10,7 +10,7 @@ import type { RunData } from "../context/run-context.js";
 import type { Entry } from "@earendil-works/pi-agent-core";
 import type { HarnessRuntime } from "./build-runtime.js";
 
-export type RunSession = { id: string; userId: string; agentId?: string; runtime: HarnessRuntime };
+export type RunSession = { id: string; userId: string; agentId?: string; runtime: HarnessRuntime; checkpoint?: { beginRun(id: string): void; endRun(): void; flush(): Promise<void> } };
 export type RunMetadata = { proposalId?: string; projectId?: string; recordId?: string; recordVersion?: number; traceId?: string; timeZone?: string; };
 
 type ActiveRun = {controller: AbortController; settled: Promise<void>; finish: () => void; error?: unknown; stop: StopState; data?: RunData};
@@ -99,6 +99,9 @@ async function run(
   }));
   const data=createRunContext.read(context);
   active.data = data;
+  // Do not start the next Pi Run on top of any uncommitted previous history.
+  await session.checkpoint?.flush();
+  session.checkpoint?.beginRun(data.runId);
   const stopLogging=startRunLogging(data);
   let abortPromise: Promise<void> | undefined;
   const abort = () => {
@@ -137,8 +140,10 @@ async function run(
         await session.runtime.appendCustomEntry("fanto.run_stopped", {runId:data.runId,sourceMessageId:data.sourceMessageId});
         logRunEvent(data,"stop recorded in memory",{sourceMessageId:data.sourceMessageId});
       }
+      await session.checkpoint?.flush();
     }
     finally {
+      session.checkpoint?.endRun();
       stopLogging();
       signal.removeEventListener("abort", abort);
     }

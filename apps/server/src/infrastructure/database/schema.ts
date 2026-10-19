@@ -150,7 +150,7 @@ export interface CreationImageStepsTable {
 }
 
 export interface UserFantoSettingsTable {
-  user_id: string; nickname: string; description: string; avatar_media_id: string | null;
+  user_id: string; nickname: string; description: string; avatar_media_id: string | null; main_session_id: string | null;
   role_config: import("kysely").JSONColumnType<{[key: string]: unknown}>;
   version: number; created_at: Date; updated_at: Date;
 }

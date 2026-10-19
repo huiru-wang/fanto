@@ -1,13 +1,8 @@
 import assert from "node:assert/strict";
-import test, {before, after} from "node:test";
+import test from "node:test";
 import type {Server} from "node:http";
 import {serve} from "@hono/node-server";
 import {Hono} from "hono";
-import {Kysely, PostgresDialect, sql} from "kysely";
-import {Pool} from "pg";
-import {PgSessionRepo} from "../../agent/session/pg-session-repo.js";
-import {createAgentSessionSchema} from "../../migrations/create_current_schema_20261011.js";
-import type {DB} from "../../infrastructure/database/schema.js";
 import { AgentHarness, TODO_CONTEXT, type Context } from "@earendil-works/pi-agent-core";
 import { MemorySessionRepo } from "@earendil-works/pi-agent-core/harness/session";
 import { createModels } from "@earendil-works/pi-ai";
@@ -21,16 +16,6 @@ import { cancelLaneOperation } from "../../agent/harness/build-runtime.js";
 import { installStopHooks } from "../../agent/harness/stop-state.js";
 import { runAgent, stopAgentRun } from "../../agent/harness/run.js";
 
-const testUrl=process.env.TEST_DATABASE_URL;
-let db:Kysely<DB> | undefined;
-before(async()=>{
-  if(!testUrl)return;
-  if(!/(^|[_-])test($|[_-])|test$/i.test(new URL(testUrl).pathname.slice(1)))throw Error("Dedicated test database required");
-  db=new Kysely<DB>({dialect:new PostgresDialect({pool:new Pool({connectionString:testUrl})})});
-  await sql`DROP SCHEMA IF EXISTS agent_session CASCADE`.execute(db);
-  await createAgentSessionSchema(db);
-});
-after(async()=>{if(db){await sql`DROP SCHEMA agent_session CASCADE`.execute(db);await db.destroy();}});
 
 async function deadline<T>(promise: Promise<T>, ms = 1000): Promise<T> {
   let timer: ReturnType<typeof setTimeout>;
@@ -39,7 +24,7 @@ async function deadline<T>(promise: Promise<T>, ms = 1000): Promise<T> {
 }
 
 async function fixture(timeoutMs?:number, stopTimeoutMs?:number, withTool=false) {
-  const repo = db ? new PgSessionRepo(db) : new MemorySessionRepo();
+  const repo = new MemorySessionRepo();
   const stored = await repo.create({},TODO_CONTEXT);
   const faux = fauxProvider({tokensPerSecond:100,tokenSize:{min:1,max:1}});
   faux.setResponses([fauxAssistantMessage("a".repeat(300)),fauxAssistantMessage("continued")]);

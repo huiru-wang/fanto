@@ -71,6 +71,18 @@ struct AgentHistoryPage {
     var restored: Bool = false
 }
 
+struct AgentSessionSummary: Identifiable, Decodable {
+    let sessionId: String
+    let agentId: String
+    let title: String?
+    let updatedAt: String
+    var id: String { sessionId }
+}
+
+private struct AgentSessionsPage: Decodable {
+    let data: [AgentSessionSummary]
+}
+
 enum AgentStreamEvent {
     case finalizing
     case processing(String)
@@ -97,6 +109,14 @@ struct AgentAPIClient {
         let body = CreateSessionRequest(agentID: agentID)
         let response: CreateSessionResponse = try await request(path: "api/agent/sessions", method: "POST", body: body)
         return response.sessionID
+    }
+
+    func fetchSessions() async throws -> [AgentSessionSummary] {
+        var components = URLComponents(url: baseURL.appending(path: "api/agent/sessions"), resolvingAgainstBaseURL: false)
+        components?.queryItems = [URLQueryItem(name: "agentId", value: "main"), URLQueryItem(name: "limit", value: "100")]
+        guard let url = components?.url else { throw AgentAPIError.invalidResponse }
+        let page: AgentSessionsPage = try await request(url: url)
+        return page.data
     }
 
     @discardableResult

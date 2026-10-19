@@ -2976,3 +2976,23 @@ input:focus-visible {
 .avatar-crop-dialog button{min-height:44px;padding:8px 20px;border:1px solid #777;border-radius:24px;color:white;background:#333;cursor:pointer}
 .avatar-crop-dialog footer{display:flex;justify-content:space-between;width:min(85vw,520px);gap:20px}.avatar-crop-dialog button:disabled{opacity:.5;cursor:default}
 @media(prefers-reduced-motion:reduce){.avatar-crop-dialog *{transition:none!important}}
+
+/* Session selector overlays the conversation grid; it does not consume a chat row. */
+.chat-session-history {
+  position: fixed;
+  top: 112px;
+  right: max(18px, calc((100vw - 1160px) / 2));
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(65dvh, 520px);
+  overflow-y: auto;
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  z-index: 40;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface, #fff);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .10);
+}
+.chat-session-history-header { display: flex; align-items: center; justify-content: space-between; }
+.chat-session-history > button.secondary-button { text-align: left; justify-content: flex-start; }

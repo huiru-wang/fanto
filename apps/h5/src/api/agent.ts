@@ -46,6 +46,8 @@ export type AgentHistoryMessage = {
 };
 
 type HistoryResult = {
+  hasMore: boolean;
+  nextCursor: number | null;
   running: boolean;
   stopping?: boolean;
   restored?: boolean;
@@ -166,12 +168,19 @@ export async function createAgentSession(): Promise<string> {
   return result.sessionId;
 }
 
+export type AgentSessionSummary = { sessionId: string; agentId: string; title: string | null; createdAt: string; updatedAt: string };
+export async function listAgentSessions(cursor?: string): Promise<{ data: AgentSessionSummary[]; hasMore: boolean; nextCursor: string | null }> {
+  const suffix = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
+  return requestJson(`/api/agent/sessions?agentId=main&limit=50${suffix}`, { headers: agentHeaders() });
+}
+
 export async function stopAgentSession(sessionId: string): Promise<{ stopping: boolean }> {
   return requestJson(`/api/agent/sessions/${encodeURIComponent(sessionId)}/stop`, {method:"POST",headers:agentHeaders(),signal:AbortSignal.timeout(25_000)});
 }
 
-export async function fetchAgentSnapshot(sessionId: string): Promise<HistoryResult> {
-  return requestJson<HistoryResult>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/history?limit=100`, { headers: agentHeaders() });
+export async function fetchAgentSnapshot(sessionId: string, cursor?: number): Promise<HistoryResult> {
+  const paging = cursor === undefined ? "" : `&cursor=${cursor}`;
+  return requestJson<HistoryResult>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/history?limit=50${paging}`, { headers: agentHeaders() });
 }
 
 export async function fetchAgentHistory(sessionId: string): Promise<AgentHistoryMessage[]> {

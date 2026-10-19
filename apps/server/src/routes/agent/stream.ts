@@ -26,7 +26,7 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
     }
     const runTraceId = traceId.data ?? randomUUID();
     let session;
-    let release: (() => void) | undefined;
+    let release: ((error?: unknown) => void) | undefined;
     try {
       const agentId = await sessions.resolveAgentId(body.data.sessionId, userId);
       const definition = registry.get(agentId);
@@ -65,14 +65,21 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
             }),
           );
         } finally {
-          await sessions.checkpoint?.(session.id);
-          // In-memory Agent cleanup is complete. Network backpressure must not
-          // keep the Session reserved or block the separate stop request.
-          release?.();
-          release = undefined;
-          clearTimeout(timeout);
-          clearInterval(heartbeat);
-          logInfo("agent-stream", "session released", {userId,sessionId:session.id,agentId:session.agentId,traceId:runTraceId});
+          let persistenceError: unknown;
+          try {
+            await sessions.checkpoint?.(session.id);
+          } catch (cause) {
+            persistenceError = cause;
+            throw cause;
+          } finally {
+            // Stop waiters must receive checkpoint failure. Ordinary Pi abort
+            // is not a persistence failure and must not poison the next Run.
+            release?.(persistenceError);
+            release = undefined;
+            clearTimeout(timeout);
+            clearInterval(heartbeat);
+            logInfo("agent-stream", "session released", {userId,sessionId:session.id,agentId:session.agentId,traceId:runTraceId});
+          }
         }
         controller.signal.throwIfAborted();
         await deliver(() => stream.writeSSE({ event: "done", data: "{}" }));

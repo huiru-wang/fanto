@@ -9,12 +9,13 @@ export type FantoSettings = {
     nickname: string;
     description: string;
     avatarMediaId: string | null;
+    mainSessionId: string | null;
     roleConfig: RoleConfig;
     version: number;
     createdAt: string | null;
     updatedAt: string | null;
 };
-export type SettingsChanges = Partial<Pick<FantoSettings, "nickname" | "description" | "avatarMediaId">> & {
+export type SettingsChanges = Partial<Pick<FantoSettings, "nickname" | "description" | "avatarMediaId" | "mainSessionId">> & {
     roleConfig?: Partial<RoleConfig>;
 };
 export const getFantoSettings = (signal?: AbortSignal) => requestJson<FantoSettings>("/api/fanto/settings", { signal });

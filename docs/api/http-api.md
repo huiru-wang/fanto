@@ -44,8 +44,8 @@ PATCH 支持单项更新；changes 省略的字段保持不变，显式 null 仅
 
 ## Fanto 设置
 
-- `GET /api/fanto/settings`：读取当前用户唯一的 `{ nickname, description, avatarMediaId, roleConfig, version, createdAt, updatedAt }`。未保存时返回昵称 Fanto、空简介/角色字段、空头像、version=0 和空时间。
-- `PATCH /api/fanto/settings`：提交 `{ expectedVersion, changes }`，changes 可包含 nickname、description、avatarMediaId（null 恢复默认）、roleConfig。只合并传入字段，roleConfig 也按子字段合并；返回提交后的完整设置。有效变更递增 version；版本不一致返回 `409 VERSION_CONFLICT`，无权使用或状态不合法的头像返回 `422 INVALID_AVATAR`。
+- `GET /api/fanto/settings`：读取当前用户唯一的 `{ nickname, description, avatarMediaId, mainSessionId, roleConfig, version, createdAt, updatedAt }`。未保存时返回昵称 Fanto、空简介/角色字段、空头像、version=0 和空时间。
+- `PATCH /api/fanto/settings`：提交 `{ expectedVersion, changes }`，changes 可包含 nickname、description、avatarMediaId（null 恢复默认）、roleConfig、mainSessionId（用户默认主对话指针）。只合并传入字段，roleConfig 也按子字段合并；返回提交后的完整设置。有效变更递增 version；版本不一致返回 `409 VERSION_CONFLICT`，无权使用或状态不合法的头像返回 `422 INVALID_AVATAR`；mainSessionId 必须是本人 main Agent Session，否则 `422 INVALID_SESSION`。
 - 昵称去除首尾空白，1–30 个 Unicode 字符且不含控制字符；简介最多 300 个 Unicode 字符。roleConfig 当前接受 character、scenario、instructions、exampleDialogues，每项最多 16000 字符；保留换行，空字符串清空该项。拒绝空 changes、空 roleConfig 与未知请求字段。
 - 旧 `GET/PUT /api/character` 保留兼容：四个字符串字段整体读取/覆盖，由 FantoService 适配；写入同样推进设置版本，不改变昵称、简介、头像和其他 JSON 键。
 
@@ -176,7 +176,7 @@ Project 与 Session 分别管理：`projects.status` 表示本轮创作是否在
 
 ## Agent Runtime
 
-Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 在线运行使用内存，稳定历史异步尽力保存到 PostgreSQL `agent_session.snapshots`；存储边界见 [Agent Runtime](../architecture/agent-runtime.md#session)。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间和最近 2 条紧凑 Recent Records，再填充 System Prompt；Recent Records 通过 `listRecords(limit=2)` 读取，可命中 Record 首页缓存，不执行 Query Rewrite 或向量搜索，记录时间按请求时区展示。Record Tool、`present_media` 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
+Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 在线运行使用内存，在 Pi `turn_end`/`run_end` 后将完整 Entry/Usage 增量同步保存到 PostgreSQL `agent_session.sessions/entries/usage_ledger`；存储边界见 [Agent Runtime](../architecture/agent-runtime.md#session)。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间和最近 2 条紧凑 Recent Records，再填充 System Prompt；Recent Records 通过 `listRecords(limit=2)` 读取，可命中 Record 首页缓存，不执行 Query Rewrite 或向量搜索，记录时间按请求时区展示。Record Tool、`present_media` 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
 
 ```text
 Authorization: Bearer <ACCESS_TOKEN>
@@ -187,9 +187,10 @@ X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC
 | 方法 | 路径 | 请求 | 成功响应 |
 | --- | --- | --- | --- |
 | POST | `/api/agent/sessions` | `{ agentId? }` | `201`，返回 `sessionId` 与 `agentId` |
+| GET | `/api/agent/sessions?agentId=&limit=&cursor=` | 无请求体 | `200`，当前用户会话列表，游标按更新时间排序 |
 | POST | `/api/agent/sessions/:sessionId/stop` | 无请求体 | `200/202`，返回 `{ sessionId, stopped, stopping }`；202 仅表示停止已接受、仍在结束当前操作，终态后可续聊；无运行时 stopped/stopping 均为 false，非本人会话 403 |
 | POST | `/api/agent/stream` | `{ sessionId, message, metadata?: { projectId?: uuid } }` | `200`，SSE 事件流 |
-| GET | `/api/agent/sessions/:sessionId/history?cursor=&limit=` | 无请求体 | `200`，倒序历史页，包含 `messages` 投影 |
+| GET | `/api/agent/sessions/:sessionId/history?cursor=&limit=` | 无请求体 | `200`，按完整 Run 分页的倒序历史页，包含 `messages` 投影；`limit` 为 Run 数量，`nextCursor` 为下一页游标 |
 | GET | `/api/agent/sessions/:sessionId/events` | 无请求体 | `200`，只读 SSE 订阅，不发起执行或重放 |
 
 先创建 Session；`stream` 必须使用已有的 `sessionId`。创建 Session 时 `agentId` 可省略（默认 `main`）。Stream 不接受 `agentId`，只从 Session 所有权绑定解析其类型；所有 Agent 都可公开创建 Session，但 Proposal 需要服务端注入可信 Record 才能执行。Creator 的 `metadata.projectId` 需经过当前用户及 Project↔Session 绑定校验，普通续聊不更新 Project 执行状态。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<userId>/<sessionId>`。

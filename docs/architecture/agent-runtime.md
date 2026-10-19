@@ -29,18 +29,18 @@ Tool 和 Context Provider 通过 `agent/business-services.ts` 调用领域 Servi
 
 ## Session
 
-通过 `POST /api/agent/sessions` 创建已配置 Agent 的 Session；稳定的 `fanto.session_owner` entry 绑定用户、Agent 与 revision，工作区为 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。AgentSessionManager 持有公开 MemorySessionRepo，所有 SDK commit、frame drain、History 与下一轮上下文都在内存完成。`reserve` 保持单 Session 串行，仅支持单进程；不提供跨实例协调。
+主对话 Session 独立于 User Settings：Agent 持有 Session 生命周期及 `user_id/agent_id` 权限；`user_fanto_settings.main_session_id` 仅是用户默认打开的主会话指针，创建/切换分别调用 `/api/agent/sessions` 与 `/api/fanto/settings`，Stream 固定明确的 sessionId。Proposal/Creator 继续使用各自关联的 Session。
 
-每轮完成或停止收尾后，在内存提取稳定 transcript/main tip，通过单条 UPSERT 异步保存到 `agent_session.snapshots`；不保存 Operation 或 pending frames。每会话最多一份在途和一份最新待写快照，后台最多两个数据库写入并发、失败最多尝试两次、单份快照上限 1 MiB。历史保存慢或失败不延迟 `done`、Session 释放或下一轮；进程退出/资源压力可能丢失最近未保存消息。最多保留 128 个已加载 Session，优先淘汰已保存的空闲会话，无可淘汰空间时拒绝新会话加载，不淘汰正在执行的会话。停止后刷新页面从同进程内存恢复部分回复；冷恢复从最后成功快照重建稳定历史，不自动恢复模型或工具执行。
+Pi AgentHarness 和 MemorySessionRepo 完整保留。SDK 内部 Commit、Loop、Tool、Stop、Compaction 及模型上下文构建不作修改；`agent/checkpoint/` 通过 Pi 的 `entry_added`、`usage`、`turn_end`、`run_end` 事件收集已提交 Entry/Usage，在每个 Turn 结束时同步提交 PostgreSQL，Run 正常/异常/停止后同步补齐剩余数据。SSE 成功终态之前必须检查 PG 保存结果；写入失败不返回 `done`。保存只涉及 `agent_session.sessions`、`entries`（包括 `run_id`）和 `usage_ledger` 三张活跃表，老 SDK Storage/Snapshot 表仅作为未迁移的历史数据保留。
 
-既有七表 PG Session 作为旧会话只读兼容来源；无新快照时冷读稳定 entries/main tip 并恢复内存，下轮结束后保存新快照。旧的 pending 操作不恢复，缺少结果的 tool call 被关闭，不重放工具。业务 Record/Project 等写入继续使用领域服务原有事务。
+Session 冷恢复从 PostgreSQL 加载已落库的完整 Entry 主链，通过 Pi 公开的 Session API 恢复后交给 SDK 原生 Compaction 构建上下文。不会修改内部 Lane 或人工拼接摘要；Compaction 限制的是模型上下文，不限制冷恢复所加载的历史长度。当前仅单进程防并发，同一 Session 互斥运行；暂不恢复进程崩溃期间正在执行的工具或流式 Frame。
 
-空闲 Session 可以应用更新后的 Agent definition revision，但 `agentId`、`userId` 一经绑定不可改变。Stream 从当前用户的 Session 解析 Agent ID；Creator 仅在 Project↔Session 绑定和归档写保护校验通过后获得 Project 工具权限。Proposal 缺可信 Record 上下文时，必需 Provider 在模型调用前拒绝执行。
+History API 从 PG 按完整 Fanto `run_id` 分页，再经既有 `projectHistory()` 投影，避免同一用户请求中的多个 Pi Turn/Tool Result 跨页拆开。空闲 Session 可从缓存淘汰并在下次使用时冷恢复；未保存完的缓存不能淘汰。`GET /api/agent/sessions` 支持当前用户的会话列表和游标分页。旧 Session 数据不搬迁，不影响新 Session 正常使用。
 
 ## 唯一对话 HTTP 协议
 
-- `POST /api/agent/stream`：`{sessionId,message,metadata?:{projectId?}}`，响应 SSE。客户端断线仅分离输出，不取消运行；可从 History 的内存快照恢复当前文本。超时仍保留独立的取消控制。正常终态在内存收尾和释放会话后发送，不等待 PostgreSQL。
-- `POST /api/agent/sessions/:sessionId/stop`：先校验归属、标记停止。停止文字输出和未启动的模型/工具；已开始工具不接收用户停止的取消信号，按原超时自然完成并保留结果，不再请求模型总结。已结束返回 `200 {sessionId,stopped,stopping:false}`；仍在收尾返回 `202 {sessionId,stopped:true,stopping:true}`，客户端保持发送锁及原 SSE，工具结果收尾后收到 `stopped` 恢复发送。stop 本身不等待工具或数据库；所有权等请求处理超时仍可返回 503。保留部分文字与 `fanto.run_stopped` 内存标记，下一轮可继续，不重放 POST/工具。
+- `POST /api/agent/stream`：`{sessionId,message,metadata?:{projectId?}}`，响应 SSE。客户端断线仅分离输出，不取消运行；可从已保存 History 和运行中内存片段恢复当前文本。超时仍保留独立取消控制；正常 `done` 在同步 checkpoint 成功后才发送。
+- `POST /api/agent/sessions/:sessionId/stop`：先校验归属、标记停止。停止文字输出和未启动的模型/工具；已开始工具不接收用户停止的取消信号，按原超时自然完成并保留结果，不再请求模型总结。已结束返回 `200 {sessionId,stopped,stopping:false}`；仍在收尾返回 `202 {sessionId,stopped:true,stopping:true}`，客户端保持发送锁及原 SSE，工具结果收尾后收到 `stopped` 恢复发送。stop 本身不等待工具或数据库；所有权等请求处理超时仍可返回 503。已正式提交的部分文字/工具结果与 `fanto.run_stopped` 在停止收尾后同步落库，下一轮可继续，不重放 POST/工具。
 - `GET /api/agent/sessions/:sessionId/history?cursor=&limit=`：按 Session 所有权读取，返回产品化 `messages[].blocks`，包含文本、可见 Tool 活动、媒体及澄清表单信息；内部 Session 也可按用户归属读取。
 - `GET /api/agent/sessions/:sessionId/events`：只读订阅既有 Session 的执行事件。适用于后台 Creator 首次创作；不发起 Run，不缓存和回放消息。断开后查询 History 补齐事实。
 
@@ -50,4 +50,4 @@ H5/iOS 在 Main 与 Project 对话复用相同消息语义和组件（Markdown�
 
 统一 JWT 鉴权，并在会话和领域操作分别校验用户；模型不能声明 userId、任意 projectId 。Agent 的 `bash` 执行仍使用宿主环境工作区约束，不能将其等同于容器或微虚拟机隔离。
 
-History 返回 `running/stopping/restored`；活跃回复由内存中的已接受片段补齐，旧历史请求不得覆盖新轮次。`finalizing` 保留为兼容进度，不显示数据库保存锁；会话完成仍以 `done/stopped/error` 为准。排障区分 `model response ready after memory drain`、`agent-stream session released` 和异步 `session-snapshot saved/save failed`，日志不含消息内容或凭据。
+History 返回 `running/stopping/restored`；活跃回复由内存中的已接受片段补齐，旧历史请求不得覆盖新轮次。`finalizing` 保留为兼容进度，不显示数据库保存锁；会话完成仍以 `done/stopped/error` 为准。排障区分 `model response ready after memory drain`、Turn checkpoint 保存耗时、Run final flush 与 `agent-stream session released`，日志不含消息内容或凭据。
