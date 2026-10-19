@@ -11,6 +11,7 @@ apps/server/src/
 │   └── agent/         # Session History / Events / Stream
 ├── domain/            # records / media / memory / projects 等领域
 │   ├── projects/      # Proposal、Project、CreativeService
+│   └── admin/         # 独立只读Repository：用户 / Agent Session / Usage 聚合
 ├── agent/             # Pi Harness、Session、Tool、Prompt、Skills
 ├── event/             # Record / Embedding / Agent Execution 队列与 SessionEventBus
 ├── execution/         # AgentWorker、AgentExecutionListener、各业务 Handler
@@ -19,7 +20,7 @@ apps/server/src/
 └── migrations/        # schema 基线与前向增量
 ```
 
-路由只处理输入与响应边界；领域操作交给 Service，Agent Tool 只能通过 `agent/business-services.ts` 访问领域能力。受保护请求均从验证后的 Access JWT `sub` 获取 userId。用户状态与 Record 首页缓存是单进程 TTL 缓存，不具备多实例失效广播。
+路由只处理输入与响应边界；领域操作交给 Service，Agent Tool 只能通过 `agent/business-services.ts` 访问领域能力。受保护请求均从验证后的 Access JWT `sub` 获取 userId。`/api/admin/*` 额外校验 `ADMIN_USER_IDS` 白名单，并通过独立 `domain/admin` 的 Repository 直接执行跨用户只读数据库查询，不依赖或修改 `agent/` Runtime 与 Checkpoint 代码。Admin 请求/响应体不写入 Access Log。用户状态与 Record 首页缓存是单进程 TTL 缓存，不具备多实例失效广播。
 
 ## 事件链路
 

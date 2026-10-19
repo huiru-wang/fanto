@@ -34,6 +34,17 @@ curl http://127.0.0.1:3000/health
 
 Agent Runtime 已内嵌在 Business Server，不单独启动。首次启动前在 `apps/server/.env` 配置 `DEEPSEEK_API_KEY`；模型、Agent 与 Tool 定义位于 `apps/server/agent.yaml`，Prompt 位于 `apps/server/src/agent/prompts/`。
 
+## Admin Web（仅本地运行）
+
+`apps/admin-web` 是独立 React/Vite 管理客户端，不编译发布至 H5、Nginx 或 PM2。Server 在 `apps/server/.env` 设置 `ADMIN_USER_IDS=user001`，只有 Fanto JWT 的 `sub` 为该已存在、active 用户时才能访问 `/api/admin/*`。没有配置白名单时默认拒绝所有访问。登录入口支持手动输入该账户已有的 Access / Refresh Token，或者在 `apps/admin-web/.env` 配置允许的 `VITE_GOOGLE_CLIENT_ID` 使用 Google 正式登录；不会自动注册管理员，Token 仅保存在页面内存。
+
+```bash
+pnpm dev:server
+pnpm dev:admin
+```
+
+默认访问 `http://127.0.0.1:5174`，Vite 只监听 `127.0.0.1` 并把 `/api` 代理到 `http://127.0.0.1:3000`。Server 在其它位置时通过本地 `ADMIN_API_PROXY` 覆盖代理目标；目标 Server 仍须自行设置白名单。详见 [Admin Web README](../../apps/admin-web/README.md)。
+
 ## H5
 
 先启动 Business Server（其中已包含 Agent Runtime），再在仓库根目录运行：

@@ -10,6 +10,7 @@ import { loadObjectStorageConfig, type ObjectStorageConfig } from "./object-stor
 
 export type AppConfig = {
   databaseUrl: string;
+  adminUserIds: string[];
   port: number;
   host: string;
   auth: {
@@ -74,6 +75,7 @@ export function loadConfig(): AppConfig {
   if (creativeEnabled && !imageApiKey) throw new Error("CREATIVE_IMAGE_API_KEY or DASHSCOPE_API_KEY is required when creative agents are enabled");
   return {
     databaseUrl,
+    adminUserIds: (process.env.ADMIN_USER_IDS ?? "").split(",").map(id => id.trim()).filter(Boolean),
     port: parseInt(process.env.PORT ?? "3000", 10),
     host: process.env.HOST ?? "0.0.0.0",
     auth: {

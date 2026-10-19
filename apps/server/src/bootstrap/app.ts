@@ -1,3 +1,5 @@
+import type { AdminService } from "../domain/admin/index.js";
+import { createAdminRoutes } from "../routes/admin.js";
 import type { UserProfileService } from "../domain/users/profile-service.js";
 import { createUserProfileRoutes } from "../routes/user-profile.js";
 import type { CreativeService } from "../domain/projects/creative-service.js";
@@ -33,7 +35,7 @@ const redact = (value: unknown): unknown => {
     /authorization|password|secret|token|key|nonce|display.?hint|email/i.test(key) ? [key, "[REDACTED]"] : [key, redact(item)],
   ));
 };
-export const logSafeBody = (path: string, value: unknown) => /^\/api\/users\/me(?:\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/(character|fanto)(\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/media\/[^/]+\/url$/.test(path)
+export const logSafeBody = (path: string, value: unknown) => /^\/api\/admin(?:\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/users\/me(?:\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/(character|fanto)(\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/media\/[^/]+\/url$/.test(path)
     ? "[REDACTED]"
   : redact(value);
 const jsonBody = async (response: Response, path: string) => {
@@ -42,6 +44,8 @@ const jsonBody = async (response: Response, path: string) => {
 };
 
 export type ServerServices = {
+  admin?: AdminService;
+  adminUserIds?: ReadonlySet<string>;
   creative?: CreativeService;
   agentQueue?: AgentExecutionQueue;
   events?: SessionEventBus;
@@ -111,6 +115,7 @@ export function createApp(services: ServerServices) {
   });
   if (services.userProfile) app.route("/api/users/me/profile", createUserProfileRoutes(services.userProfile));
   if (auth) app.route("/api", createAuthRoutes(auth));
+  if (services.admin) app.route("/api/admin", createAdminRoutes(services.admin, services.adminUserIds ?? new Set()));
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));
   if (services.fanto) { app.route("/api/fanto", createFantoRoutes(services.fanto)); app.route("/api/character", createCharacterRoutes(services.fanto)); }

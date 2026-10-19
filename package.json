@@ -8,6 +8,7 @@
     "dev:backend": "pnpm --filter @fanto/server start",
     "dev:frontend": "pnpm dev:h5",
     "dev:h5": "pnpm --filter @fanto/h5 dev",
+    "dev:admin": "pnpm --filter @fanto/admin-web dev",
     "build:h5": "pnpm --filter @fanto/h5 build",
     "deploy": "bash deploy/manual/deploy.sh",
     "deploy:nginx": "bash deploy/manual/deploy.sh --nginx",

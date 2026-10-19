@@ -1,3 +1,4 @@
+import { AdminRepository, AdminService } from "../domain/admin/index.js";
 import { UserProfileService } from "../domain/users/profile-service.js";
 import { CreativeService } from "../domain/projects/creative-service.js";
 import { CreativeImageClient } from "../infrastructure/clients/image-client.js";
@@ -97,6 +98,8 @@ if (creative) await projects.normalizeLegacyMedia();
 
 const services: ServerServices = {
   auth,
+  admin: new AdminService(new AdminRepository(db)),
+  adminUserIds: new Set(config.adminUserIds),
   userProfile: new UserProfileService(db, media),
   records,
   media,

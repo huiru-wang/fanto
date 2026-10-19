@@ -8,6 +8,20 @@
 
 除健康检查、第三方认证 intent、第三方认证、兼容的注册/登录接口和 Refresh 外，所有 API 都要求 `Authorization: Bearer <access token>`。Access Token 有效期 30 分钟；Refresh Token 有效期 30 天并采用滑动续期。用户身份只来自服务端验证后的 JWT `sub`。
 
+## Admin（只读）
+
+`/api/admin/*` 基于已有 JWT 鉴权并额外要求 `sub` 在 Server 配置的 `ADMIN_USER_IDS` 白名单中；未配置时默认禁止。白名单以外用户返回 403，未认证用户返回 401。该路径的请求/响应体不写入 Access Log。管理界面仅在本地运行，但 API 仍保留严格 Server 端授权。查询全部通过独立 `domain/admin` 的只读 Repository，未修改 `agent/` 下的接口或持久化逻辑。
+
+| 方法 | URL | 返回 result |
+| --- | --- | --- |
+| GET | `/api/admin/users?limit=20&cursor=&query=&status=` | `data[{userId,nickname,status,providers,createdAt,lastLoginAt,sessionCount,usage}],hasMore,nextCursor` |
+| GET | `/api/admin/users/:userId` | 用户基本信息 |
+| GET | `/api/admin/users/:userId/usage` | `userId,sessionCount,usage` |
+| GET | `/api/admin/users/:userId/sessions?limit=20&cursor=&agentId=` | `data[{sessionId,userId,agentId,title,createdAt,updatedAt,usage}],hasMore,nextCursor` |
+| GET | `/api/admin/sessions/:sessionId/usage` | `session,usage,models[{provider,model,usage}]` |
+
+分页 limit 取值 1–100，默认20。`usage` 为 `{input,output,cacheRead,cacheWrite,totalTokens,estimatedCost}`。统计来自已持久化的 `agent_session.usage_ledger`，包含普通用量和 `adjustment`；缺失 Provider/Model 显示 `unknown`，没有记录则为零。Token / Cost 仅是 Pi SDK Ledger 的模型用量和估算费用，不包括其它独立调用的图片、音频和 Embedding 用量。无全局统计 API、不展示原始会话内容。
+
 ## 健康检查
 
 `GET /health` 表示整体服务可用性并检查 PostgreSQL。数据库可用时返回 `200 { status: "ok", database: "ok", timestamp }`；不可用时返回 `503 { status: "unavailable", database: "unavailable", timestamp }`。当前不提供独立 `/ready`。
