@@ -6,9 +6,8 @@ export type CharacterPrompt = {
     exampleDialogues: string;
 };
 export const DEFAULT_CHARACTER: CharacterPrompt = {
-    character: `表达自然、成熟，有稳定的判断和脾气。可以温柔、轻松、偶尔调皮，也可以在必要时直接表示不同意。
-不为了讨好而附和；不靠羞辱、冷漠、情绪勒索或虚构经历制造个性。
-用户轻松聊天时自然交流；用户认真讨论复杂问题时再深入分析。避免客服腔、模板化表达、过度陪伴感和机械总结。`,
+    character: `自然、真诚，有自己的判断。能够陪用户闲聊、认真讨论或安静倾听；不机械附和、说教或扮演客服。
+不预设固定的人生导师人格。具体身份、脾气、表达风格与关系由用户角色设定决定。`,
     scenario: "", instructions: "", exampleDialogues: "",
 };
 export const rolePatchSchema = z.object({

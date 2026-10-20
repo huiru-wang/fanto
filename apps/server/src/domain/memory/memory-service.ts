@@ -32,9 +32,13 @@ export class MemoryService {
     return this.repository.list(userId, { kind: input.kind, limit: Math.min(input.limit ?? MAX_MEMORIES_PER_USER, MAX_MEMORIES_PER_USER) });
   }
 
-  async search(userId: string, query: string, limit = 10): Promise<MemorySearchResult[]> {
+  async search(userId: string, query: string, limit = 10, kinds?: readonly MemoryKind[]): Promise<MemorySearchResult[]> {
+    if (kinds) {
+      if (kinds.length === 0) return [];
+      for (const kind of kinds) assertKind(kind);
+    }
     const normalized = normalizeContent(query);
-    return this.repository.search({ userId, embedding: await this.embeddings.embed(normalized), limit: Math.min(Math.max(limit, 1), 10) });
+    return this.repository.search({ userId, embedding: await this.embeddings.embed(normalized), limit: Math.min(Math.max(limit, 1), 10), kinds });
   }
 
   async create(userId: string, input: { kind: MemoryKind; content: string }): Promise<Memory> {

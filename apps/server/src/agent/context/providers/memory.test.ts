@@ -4,7 +4,7 @@ import { withAbortSignal } from "@earendil-works/pi-agent-core";
 import type { AgentMemory } from "../../business-services.js";
 import { createRunContext } from "../run-context.js";
 import { createSystemPrompt } from "../system-prompt.js";
-import { MemoryProvider } from "./memory.js";
+import { MemoryProvider, RelevantMemoryProvider, relevantMemoryQuery } from "./memory.js";
 
 const context = () => createRunContext({ runId: "run", userId: "owner", sessionId: "session", query: "hi", slots: {}, recentMessages: [] });
 const memory = (kind: AgentMemory["kind"], content: string, memoryId: string = kind): AgentMemory => ({
@@ -52,4 +52,42 @@ test("empty and unavailable are distinct, and cancellation is not hidden", async
   assert.deepEqual(JSON.parse((await failed.build(context())).content), { status: "unavailable" });
   const controller = new AbortController(); controller.abort();
   await assert.rejects(failed.build(withAbortSignal(controller.signal, context())));
+});
+
+test("relevant memory uses filtered one-shot lookup only for continuity cues", async () => {
+  let searches = 0;
+  const provider = new RelevantMemoryProvider({ async searchMemories(request, options) {
+    searches++;
+    assert.equal(request.userId, "owner");
+    assert.deepEqual(options, { query: "之前我们约定过什么？", limit: 3,
+      kinds: ["important_relationships", "current_focus", "shared_history"] });
+    return [{ ...memory("shared_history", "虚构剧情：两人约好周末一起看海", "together"), distance: 0.2 }];
+  }});
+  const skipped = await provider.build(context());
+  assert.match(skipped.content, /无需额外检索/);
+  assert.equal(searches, 0);
+  const recalled = createRunContext({ runId: "r2", userId: "owner", sessionId: "session", query: "之前我们约定过什么？", slots: {}, recentMessages: [] });
+  const result = await provider.build(recalled);
+  assert.equal(searches, 1);
+  const history = JSON.parse(result.content);
+  assert.equal(history[0].kind, "shared_history");
+  assert.match(history[0].content, /虚构剧情/);
+  assert.equal(history[0].id, "together");
+});
+
+test("relevant memory query carries a short follow-up's nearest user topic and skips unsupported input", () => {
+  assert.equal(relevantMemoryQuery("后来呢？", [
+    { role: "user", text: "我的朋友最近换工作了" },
+    { role: "assistant", text: "助手随意编造的剧情" },
+  ]), "我的朋友最近换工作了；后来呢？");
+  assert.equal(relevantMemoryQuery("今天天气怎么样？", []), undefined);
+  assert.equal(relevantMemoryQuery("你好", []), undefined);
+});
+
+test("related memory search failure degrades without claiming empty memory; abort propagates", async () => {
+  const provider = new RelevantMemoryProvider({ searchMemories: async () => { throw Error("vector search failed"); } });
+  const makeContext = () => createRunContext({ runId: "r3", userId: "owner", sessionId: "session", query: "还记得上次聊天吗", slots: {}, recentMessages: [] });
+  assert.match((await provider.build(makeContext())).content, /暂不可用/);
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(provider.build(withAbortSignal(controller.signal, makeContext())));
 });

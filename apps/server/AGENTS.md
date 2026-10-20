@@ -26,7 +26,7 @@
 - 登录身份的 contact_value 保存 Provider 验证结果中的完整邮箱或国际格式手机号；缺失返回不清空旧值，不从脱敏提示反推，不按邮箱合并身份。接口继续仅返回 displayHint；手机号实际短信 Provider 尚未接入。具体契约见 [Users](../../docs/domain/users.md#认证)。
 - 用户统计由 UserProfileService 按 JWT userId 读取注册时间与全部现存 Record 数，相伴日按请求时区计算（默认UTC），亲密度暂固定12并标记为占位；不新增统计表。用户个人资料由 UserProfileService 管理 `user_profiles`，与角色设置分开。Profile PATCH 校验版本，头像只能为本人 ready 的 user_avatar，背景图只能为本人 ready 的 user_cover；nickname / signature 不自动注入角色 Prompt。见 [Users](../../docs/domain/users.md)。
 - FantoService 统一管理 `user_fanto_settings`：fanto_id 为独立角色主键，user_id 为非唯一归属；当前 API 只操作按创建时间及 ID 排序的首个默认角色，锁定用户确保首次并发保存只创建一行。session_id 只接受本人 main Agent Session，切换会话不改变角色身份，不删除旧会话或记忆。基本资料独立列，角色内容保存在 `role_config` JSONB，PATCH 按 version 校验并合并提交字段；旧 Character API 仅为兼容适配。CharacterProvider 每个 Run 通过 business-services 读取一次，读取失败中止该 Run，保存后下一轮生效。头像必须属于本人且 purpose=fanto_avatar，不能用于 Record/Project；生命周期见 [Fanto](../../docs/domain/fanto.md)。
-- Memory 使用个人背景、重要关系、近期关注、相处偏好四类；个人背景/相处偏好默认注入，其他按话题由 Main 检索。读写语义由 fantoCore 指导，沿用 memory_manage；不增加逐消息后台整理、记忆版本或语义校验层。存储与历史类型边界见 [Memory](../../docs/domain/memory.md)。
+- Memory 使用个人背景、重要关系、近期关注、相处偏好、共同经历五类；个人背景/相处偏好默认注入，其他由 Main 按需检索或 Provider 在连续性话题上轻量预检索。Main 的 Core/Persona/Memory/Response 约束集中在 `agent/prompts/main.ts`，沿用 memory_manage；不增加逐消息后台整理、记忆版本或语义校验层。存储与历史类型边界见 [Memory](../../docs/domain/memory.md)。
 - Current docs 描述已实现语义；`plan/` 只作为方案历史，不作为现状依据。密钥、URL Token 和内部 Tool 参数不得写入面向用户的回复、日志或文档。
 
 Proposal / Creator 创建或复用 Session 后立即记录业务 ID 绑定；Agent Run 日志携带 sessionId/runId，记录阶段与工具耗时，不记录原始参数、模型内容或流式 delta。外部调用日志统一记录安全元数据与调用结果/耗时，不记录媒体内容或 SDK 原始响应；图片理解、生成与下载统一在 `infrastructure/clients/image-client.ts`。字段与范围见 [Server：外部调用日志](../../docs/architecture/server.md#外部调用日志)。链路排障日志见 [创作执行：日志排查](../../docs/architecture/creative-runtime.md#日志排查)。

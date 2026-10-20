@@ -16,7 +16,7 @@ export async function up(db: Kysely<any>) {
     CREATE INDEX IF NOT EXISTS idx_records_map_lon ON records(user_id, location_longitude) WHERE location_longitude IS NOT NULL;
     CREATE TABLE IF NOT EXISTS media_assets (id SERIAL PRIMARY KEY, media_id TEXT NOT NULL UNIQUE, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, object_key TEXT NOT NULL UNIQUE, media_type TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, status TEXT NOT NULL, ext_data TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_media_assets_user_created ON media_assets(user_id, created_at);
-    CREATE TABLE IF NOT EXISTS memories (memory_id UUID PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, kind TEXT NOT NULL CHECK (kind IN ('profile', 'goal', 'guidance', 'personal_background', 'important_relationships', 'current_focus', 'interaction_preferences')), content TEXT NOT NULL, embedding vector(768) NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL);
+    CREATE TABLE IF NOT EXISTS memories (memory_id UUID PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE, kind TEXT NOT NULL CHECK (kind IN ('profile', 'goal', 'guidance', 'personal_background', 'important_relationships', 'current_focus', 'interaction_preferences', 'shared_history')), content TEXT NOT NULL, embedding vector(768) NOT NULL, created_at TIMESTAMPTZ NOT NULL, updated_at TIMESTAMPTZ NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_memories_user_updated ON memories(user_id, updated_at DESC, memory_id DESC);
     CREATE TABLE IF NOT EXISTS projects (
       project_id UUID PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,

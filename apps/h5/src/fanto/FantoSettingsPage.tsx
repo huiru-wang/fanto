@@ -9,7 +9,7 @@ const fields: [
     keyof RoleConfig,
     string,
     string
-][] = [["character", "角色与性格", "身份、性格与表达风格；留空使用默认风格"], ["scenario", "互动场景", "关系、场景或世界观"], ["instructions", "交流规则", "希望遵循的规则与边界"], ["exampleDialogues", "示例对话", "用几段对话示范交流方式"]];
+][] = [["character", "角色设定", "人物身份、性格、习惯、目标与语言气质；留空使用默认角色"], ["scenario", "世界与关系", "世界背景、与用户的初始关系和常见互动环境"], ["instructions", "互动偏好", "交流方式、动作描写多少、互动边界；话语不用引号"], ["exampleDialogues", "示例对话", "示范角色的语气与节奏；动作写为 > 引用块，话语直接写，不加引号"]];
 export function FantoSettingsPage() {
     const profile = useFanto(), navigate = useNavigate();
     const [base, setBase] = useState<FantoSettings | null>(null), [draft, setDraft] = useState<FantoSettings | null>(null), [file, setFile] = useState<File | null>(null), [busy, setBusy] = useState(false), [error, setError] = useState(""), [conflicts, setConflicts] = useState<string[]>([]);

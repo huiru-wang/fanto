@@ -17,6 +17,7 @@ struct SettingTextEditor: View {
     let limit: Int
     var multiline = false
     var required = false
+    var guidance: String?
     let save: (String, String) async throws -> Void
     @State private var original: String
     @State private var text: String
@@ -27,9 +28,9 @@ struct SettingTextEditor: View {
     @FocusState private var focused: Bool
     @Environment(\.dismiss) private var dismiss
 
-    init(title: String, value: String, limit: Int, multiline: Bool = false, required: Bool = false,
+    init(title: String, value: String, limit: Int, multiline: Bool = false, required: Bool = false, guidance: String? = nil,
          save: @escaping (String, String) async throws -> Void) {
-        self.title = title; self.limit = limit; self.multiline = multiline; self.required = required; self.save = save
+        self.title = title; self.limit = limit; self.multiline = multiline; self.required = required; self.guidance = guidance; self.save = save
         _original = State(initialValue: value); _text = State(initialValue: value)
     }
     private var submitted: String { multiline ? text : text.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -59,7 +60,10 @@ struct SettingTextEditor: View {
                     }
                 }
             } footer: {
-                Text(multiline ? "最多 \(limit) 字符。" : required ? "请输入 1–\(limit) 字的单行文字。" : "最多 \(limit) 字，请使用单行文字。")
+                VStack(alignment: .leading, spacing: 4) {
+                    if let guidance { Text(guidance) }
+                    Text(multiline ? "最多 \(limit) 字符。" : required ? "请输入 1–\(limit) 字的单行文字。" : "最多 \(limit) 字，请使用单行文字。")
+                }
             }
             if let error { Section { Text(error).foregroundStyle(.red) } }
         }

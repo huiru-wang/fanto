@@ -36,3 +36,16 @@ test("failed writes propagate failure instead of returning a successful memory r
   const tool = createMemoryManageTool({ createMemory: async () => { throw Error("embedding unavailable"); } } as unknown as AgentBusinessServices);
   await assert.rejects(tool.execute("call", { action: "create", kind: "personal_background", content: "用户住北京" }, () => {}, {} as never, {} as never, context()), /embedding unavailable/);
 });
+
+test("shared_history kind is accepted by memory tool and preserves fictional context", async () => {
+  const tool = createMemoryManageTool({ createMemory: async (request: Parameters<AgentBusinessServices["createMemory"]>[0], input: Parameters<AgentBusinessServices["createMemory"]>[1]) => {
+    assert.equal(request.userId, "owner");
+    assert.equal(input.kind, "shared_history");
+    assert.match(input.content, /虚构剧情/);
+    return { ...row, ...input };
+  } } as unknown as AgentBusinessServices);
+  const response = await tool.execute("call", {
+    action: "create", kind: "shared_history", content: "虚构剧情：两人在海边约好明天再来"
+  }, () => {}, {} as never, {} as never, context());
+  assert.equal(response.details?.action, "create");
+});

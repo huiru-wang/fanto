@@ -44,8 +44,8 @@ struct FantoSettingsView: View {
                     }
                     Section {
                         roleLink("角色设定", field: "character", value: value)
-                        roleLink("互动场景", field: "scenario", value: value)
-                        roleLink("交流规则", field: "instructions", value: value)
+                        roleLink("世界与关系", field: "scenario", value: value)
+                        roleLink("互动偏好", field: "instructions", value: value)
                         roleLink("示例对话", field: "exampleDialogues", value: value)
                     }
                     Section {

@@ -120,7 +120,7 @@ export interface MediaAssetsTable {
 export interface MemoriesTable {
   memory_id: string;
   user_id: string;
-  kind: "personal_background" | "important_relationships" | "current_focus" | "interaction_preferences";
+  kind: "personal_background" | "important_relationships" | "current_focus" | "interaction_preferences" | "shared_history";
   content: string;
   embedding: unknown;
   created_at: Date;

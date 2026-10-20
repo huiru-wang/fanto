@@ -70,12 +70,13 @@ export class PostgresMemoryRepository implements MemoryRepository {
     return Boolean(row);
   }
 
-  async search(input: { userId: string; embedding: number[]; limit: number }): Promise<MemorySearchResult[]> {
+  async search(input: { userId: string; embedding: number[]; limit: number; kinds?: readonly MemoryKind[] }): Promise<MemorySearchResult[]> {
+    const kinds = input.kinds ?? memoryKinds;
     const rows = await sql<{
       memory_id: string; user_id: string; kind: MemoryKind; content: string; created_at: Date; updated_at: Date; distance: number;
     }>`SELECT memory_id, user_id, kind, content, created_at, updated_at,
         (embedding <-> ${vectorLiteral(input.embedding)}::vector)::float8 AS distance
-      FROM memories WHERE user_id = ${input.userId} AND kind IN (${sql.join(memoryKinds)})
+      FROM memories WHERE user_id = ${input.userId} AND kind IN (${sql.join(kinds)})
       ORDER BY embedding <-> ${vectorLiteral(input.embedding)}::vector
       LIMIT ${input.limit}`.execute(this.db);
     return rows.rows.map(row => ({ ...toMemory(row), distance: Number(row.distance) }));

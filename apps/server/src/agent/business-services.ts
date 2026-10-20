@@ -37,7 +37,7 @@ export type AgentBusinessServices = {
   getMediaMetadata(context: AgentRequestContext, mediaId: string): Promise<AgentMediaMetadata>;
   getFantoConversationSettings(context: AgentRequestContext): Promise<CharacterPrompt & {nickname: string}>;
   listMemories(context: AgentRequestContext, input?: { kind?: MemoryKind }): Promise<AgentMemory[]>;
-  searchMemories(context: AgentRequestContext, input: { query: string; limit: number }): Promise<AgentMemorySearch[]>;
+  searchMemories(context: AgentRequestContext, input: { query: string; limit: number; kinds?: readonly MemoryKind[] }): Promise<AgentMemorySearch[]>;
   createMemory(context: AgentRequestContext, input: { kind: MemoryKind; content: string }): Promise<AgentMemory>;
   updateMemory(context: AgentRequestContext, memoryId: string, input: { kind: MemoryKind; content: string }): Promise<AgentMemory>;
   deleteMemory(context: AgentRequestContext, memoryId: string): Promise<void>;
@@ -86,7 +86,7 @@ export function createAgentBusinessServices(services: {
       return memories.map(({ userId: _userId, ...memory }) => memory);
     },
     async searchMemories(context, input) {
-      const memories = await withRunAbort(context, () => services.memories.search(context.userId, input.query, input.limit));
+      const memories = await withRunAbort(context, () => services.memories.search(context.userId, input.query, input.limit, input.kinds));
       return memories.map(({ userId: _userId, ...memory }) => memory);
     },
     async createMemory(context, input) {

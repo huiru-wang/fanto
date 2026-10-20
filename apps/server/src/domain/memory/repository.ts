@@ -7,5 +7,5 @@ export interface MemoryRepository {
   list(userId: string, input: { kind?: MemoryKind; limit: number }): Promise<Memory[]>;
   update(input: Pick<Memory, "userId" | "memoryId" | "kind" | "content"> & { embedding: number[] }): Promise<Memory | undefined>;
   remove(userId: string, memoryId: string): Promise<boolean>;
-  search(input: { userId: string; embedding: number[]; limit: number }): Promise<MemorySearchResult[]>;
+  search(input: { userId: string; embedding: number[]; limit: number; kinds?: readonly MemoryKind[] }): Promise<MemorySearchResult[]>;
 }

@@ -9,6 +9,7 @@ const memoryKind = Type.Union([
   Type.Literal("important_relationships"),
   Type.Literal("current_focus"),
   Type.Literal("interaction_preferences"),
+  Type.Literal("shared_history"),
 ]);
 
 const schema = Type.Object({
@@ -60,7 +61,7 @@ export function createMemoryManageTool(client: MemoryClient): FantoTool<typeof s
     name: "memory_manage",
     label: "管理长期记忆",
     presentation: { visible: false },
-    description: "管理对话长期记忆。personal_background（个人背景）和 interaction_preferences（相处偏好）默认提供；important_relationships（重要关系）、current_focus（近期关注）按话题 search。已有上下文足够时不重复检索。明确、持续有用的用户自述应本轮保存，不必等用户说记住；写入边界遵循核心记忆规则。创建前确认无重复；关系/关注未在上下文中时先 search，修改前用已知 memoryId 或 search 定位原条目；补充、纠错、递进、完成用 update 完整替换同一条，重复不操作，歧义不覆盖。list 用于查看记忆，可选 kind；search 必填 query，可选 limit；create 必填 kind/content；update 必填 memoryId/kind/content；delete 仅用户明确要求忘记时使用，必填 memoryId。只传对应 action 所需字段，成功后才能声称已保存；本轮变更以工具成功返回内容为准，不再引用旧值。",
+    description: "检索与管理长期记忆。默认提供个人背景及互动偏好；重要关系、持续关注和 shared_history（共同约定与已确认的经历/剧情）按需查找。对未来持续有用的明确事实、进展和约定应保存，但不存未经确认的推断或即兴虚构；shared_history 须标记虚构剧情性质。create 前确认无重复，同一事项优先 update，用户要求遗忘才 delete。list 可选 kind；search 传 query/limit；create 传 kind/content；update 传 memoryId/kind/content；delete 传 memoryId。仅成功后才声称写入。",
     parameters: schema,
     executionMode: "sequential",
     replay: "never",
