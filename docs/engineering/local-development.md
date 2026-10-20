@@ -28,7 +28,7 @@ curl http://127.0.0.1:3000/health
 
 `/health` 会实际检查 PostgreSQL；数据库不可用时返回 503，当前没有独立 `/ready`。生产进程还会每 10 秒执行数据库健康检查，连续 3 次失败后主动退出，由 PM2 拉起新进程。
 
-启动时 Server 会执行尚未运行的 migration。用户通过正式注册流程创建，不再自动创建演示用户。
+启动时 Server 会执行尚未运行的 migration。用户通过正式注册流程创建，不自动创建演示用户。受控测试可显式运行 `pnpm --filter @fanto/server db:seed:test-user`，幂等插入 user001；已有用户不覆盖，不自动签发或提交凭据。
 
 ## Agent Runtime
 
@@ -74,13 +74,11 @@ Agent 工作区位于根目录 `data/workspaces/`；Session 内存运行使用 P
 
 Server 使用 Kysely migration 管理 PostgreSQL schema。`src/bootstrap/main.ts` 在服务监听端口前自动执行 `runMigrations()`；生产部署脚本也会在重启 Server 前显式执行一次 migration，因此正常启动和 `pnpm deploy` 都会自动创建尚未存在的表和索引。已执行过的 migration 由 Kysely migration 元数据记录，不会在每次重启时重复执行。
 
-`create_current_schema_20261019.ts` 是当前唯一重置基线，直接创建最终业务表（含 `user_fanto_settings.fanto_id` 主键、`session_id`）及 `agent_session.sessions`、`entries`、`usage_ledger` 三张 Checkpoint 表。不再执行旧历史归并或 `fanto_identity_20261019` 字段改造，也不创建旧 Pi SDK Storage、Snapshot、Task 表。
+`create_current_schema_20261019.ts` 为新空库创建当前业务结构：user_fantos、Owner Records/Memories、fanto_media_deletions，以及 agent_session 的固定 scope_key Session/Entry/Usage 三表。所有表无 SQL 外键；保留主键、唯一索引、CHECK 和 vector 扩展。
 
-本次基线面向清库重建：停止连接该库的 Server，由操作者删除全部业务表、`agent_session` 下全部表，以及 `kysely_migration`、`kysely_migration_lock`，再执行 `pnpm db:migrate` 并启动配套版本。扩展和空 Schema 可保留；迁移不会主动删除数据。
+迁移目录仅保留 `create_current_schema_20261019.ts` 一个脚本。操作者已手动清空库表后，确认 public 业务表、agent_session 三表及 kysely_migration/kysely_migration_lock 均已清除，执行 `pnpm db:migrate` 即可创建最终结构；空 Schema 和 vector 扩展可保留。旧迁移记录不能保留，否则 Kysely 会跳过已记录的基线或提示历史迁移缺失。应用和迁移均不自动删除这些对象。
 
-表、索引、Schema 和 vector 扩展均按 `IF NOT EXISTS` 创建。正常重复执行由 Kysely 历史跳过；仅删除两张 Kysely 元数据表后重跑，也可对**当前结构**重新创建缺失对象，保留已有表和数据。已记录执行的基线不会在每次启动重跑，因此保留历史时手动删除表不会自动重建。
-
-`IF NOT EXISTS` 只按对象名称跳过创建，不会修改或校验已有表的列、主键、约束和索引定义；不能据此兼容旧结构。保留旧迁移历史时，Kysely 会拒绝缺失的历史迁移文件。已有旧版库需按上述方式完整重置；后续结构变更新增有序前向迁移，不再修改此基线。
+正常重复执行由 Kysely 历史跳过；基线的 IF NOT EXISTS 也允许对当前结构重放并保留数据，但不负责升级不兼容的旧表。
 
 ## 常用命令
 
@@ -92,6 +90,6 @@ pnpm db:migrate
 
 ## 数据库重置与维护部署
 
-重置前先停止连接该数据库的 Server；清库重建会丢失原数据，部署脚本不负责清空数据库。重置后运行 `pnpm db:migrate`，成功后启动新版 Server。新建 Fanto 表直接使用 `fanto_id` 与 `session_id`，无需额外字段改造。数据结构见 [Fanto](../domain/fanto.md)。
+不要直接清空实际数据库。经操作者批准准备新空库、运行 `pnpm db:migrate` 并验证后，再单独安排服务切换；部署脚本不负责数据重置。Fanto Session 由 scope_key 映射，不在角色表保存 session_id。数据结构见 [Fanto](../domain/fanto.md)。
 
 部署脚本可使用 `bash deploy/manual/deploy.sh --maintenance`（需要更新 Nginx 时追加 `--nginx`），在构建后先停止旧进程，再迁移并启动新版本。该模式不负责入口摘流、等待活跃会话排空或自动清库。

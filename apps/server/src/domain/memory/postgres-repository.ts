@@ -1,84 +1,64 @@
-import { sql, type Kysely } from "kysely";
-import type { DB } from "../../infrastructure/database/schema.js";
-import { memoryKinds, type Memory, type MemoryKind, type MemorySearchResult } from "./model.js";
-import type { MemoryRepository } from "./repository.js";
-
-const vectorLiteral = (embedding: number[]) => JSON.stringify(embedding);
-const iso = (value: Date | string): string => value instanceof Date ? value.toISOString() : new Date(value).toISOString();
-
-function toMemory(row: {
-  memory_id: string;
-  user_id: string;
-  kind: MemoryKind;
-  content: string;
-  created_at: Date | string;
-  updated_at: Date | string;
-}): Memory {
-  return {
-    memoryId: row.memory_id,
-    userId: row.user_id,
-    kind: row.kind,
-    content: row.content,
-    createdAt: iso(row.created_at),
-    updatedAt: iso(row.updated_at),
-  };
-}
-
+import {sql,type Kysely} from "kysely";
+import type {DB} from "../../infrastructure/database/schema.js";
+import {type Memory,type MemoryKind,type MemoryOwner,type MemorySearchResult} from "./model.js";
+import type {MemoryRepository} from "./repository.js";
+const iso=(value:Date|string)=>value instanceof Date?value.toISOString():new Date(value).toISOString();
+const vector=(items:number[])=>JSON.stringify(items);
+type Row={memory_id:string;owner_type:"user"|"fanto";owner_id:string;kind:MemoryKind;content:string;created_at:Date;updated_at:Date};
+const convert=(r:Row):Memory=>({memoryId:r.memory_id,ownerType:r.owner_type,ownerId:r.owner_id,kind:r.kind,content:r.content,createdAt:iso(r.created_at),updatedAt:iso(r.updated_at)});
 export class PostgresMemoryRepository implements MemoryRepository {
-  constructor(private readonly db: Kysely<DB>) {}
-
-  async countByUser(userId: string, kind?: MemoryKind): Promise<number> {
-    let query = this.db.selectFrom("memories").select(({ fn }) => fn.count<number>("memory_id").as("count")).where("user_id", "=", userId).where("kind", "in", [...memoryKinds]);
-    if (kind) query = query.where("kind", "=", kind);
-    return Number((await query.executeTakeFirstOrThrow()).count);
-  }
-
-  async create(input: Omit<Memory, "createdAt" | "updatedAt"> & { embedding: number[] }): Promise<Memory> {
-    const now = new Date();
-    const row = await sql<{
-      memory_id: string; user_id: string; kind: MemoryKind; content: string; created_at: Date; updated_at: Date;
-    }>`INSERT INTO memories (memory_id, user_id, kind, content, embedding, created_at, updated_at)
-      VALUES (${input.memoryId}, ${input.userId}, ${input.kind}, ${input.content}, ${vectorLiteral(input.embedding)}::vector, ${now}, ${now})
-      RETURNING memory_id, user_id, kind, content, created_at, updated_at`.execute(this.db);
-    return toMemory(row.rows[0]!);
-  }
-
-  async find(userId: string, memoryId: string): Promise<Memory | undefined> {
-    const row = await this.db.selectFrom("memories").selectAll().where("user_id", "=", userId).where("memory_id", "=", memoryId).executeTakeFirst();
-    return row ? toMemory(row) : undefined;
-  }
-
-  async list(userId: string, input: { kind?: MemoryKind; limit: number }): Promise<Memory[]> {
-    let query = this.db.selectFrom("memories").selectAll().where("user_id", "=", userId).where("kind", "in", [...memoryKinds]);
-    if (input.kind) query = query.where("kind", "=", input.kind);
-    const rows = await query.orderBy("updated_at", "desc").orderBy("memory_id", "desc").limit(input.limit).execute();
-    return rows.map(toMemory);
-  }
-
-  async update(input: Pick<Memory, "userId" | "memoryId" | "kind" | "content"> & { embedding: number[] }): Promise<Memory | undefined> {
-    const now = new Date();
-    const row = await sql<{
-      memory_id: string; user_id: string; kind: MemoryKind; content: string; created_at: Date; updated_at: Date;
-    }>`UPDATE memories SET kind = ${input.kind}, content = ${input.content}, embedding = ${vectorLiteral(input.embedding)}::vector, updated_at = ${now}
-      WHERE user_id = ${input.userId} AND memory_id = ${input.memoryId}
-      RETURNING memory_id, user_id, kind, content, created_at, updated_at`.execute(this.db);
-    return row.rows[0] ? toMemory(row.rows[0]) : undefined;
-  }
-
-  async remove(userId: string, memoryId: string): Promise<boolean> {
-    const row = await this.db.deleteFrom("memories").where("user_id", "=", userId).where("memory_id", "=", memoryId).returning("memory_id").executeTakeFirst();
-    return Boolean(row);
-  }
-
-  async search(input: { userId: string; embedding: number[]; limit: number; kinds?: readonly MemoryKind[] }): Promise<MemorySearchResult[]> {
-    const kinds = input.kinds ?? memoryKinds;
-    const rows = await sql<{
-      memory_id: string; user_id: string; kind: MemoryKind; content: string; created_at: Date; updated_at: Date; distance: number;
-    }>`SELECT memory_id, user_id, kind, content, created_at, updated_at,
-        (embedding <-> ${vectorLiteral(input.embedding)}::vector)::float8 AS distance
-      FROM memories WHERE user_id = ${input.userId} AND kind IN (${sql.join(kinds)})
-      ORDER BY embedding <-> ${vectorLiteral(input.embedding)}::vector
-      LIMIT ${input.limit}`.execute(this.db);
-    return rows.rows.map(row => ({ ...toMemory(row), distance: Number(row.distance) }));
-  }
+ constructor(private readonly db:Kysely<DB>){}
+ async countByOwner(owner:MemoryOwner,kind?:MemoryKind):Promise<number>{
+  let q=this.db.selectFrom("memories").select(({fn})=>fn.count<number>("memory_id").as("count")).where("owner_type","=",owner.ownerType).where("owner_id","=",owner.ownerId);
+  if(kind)q=q.where("kind","=",kind);
+  return Number((await q.executeTakeFirstOrThrow()).count);
+ }
+ async create(input:Omit<Memory,"createdAt"|"updatedAt">&{embedding:number[]}):Promise<Memory>{
+  return this.db.transaction().execute(async trx=>{
+  await sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.ownerType+":"+input.ownerId},0))`.execute(trx);
+  const repo=new PostgresMemoryRepository(trx);
+  if(await repo.countByOwner(input)>=50)throw new Error("Memory capacity reached");
+  if(input.kind==="interaction_preferences"&&await repo.countByOwner(input,input.kind)>=20)throw new Error("Memory preferences capacity reached");
+  const now=new Date();
+  const rows=await sql<Row>`INSERT INTO memories (memory_id,owner_type,owner_id,kind,content,embedding,created_at,updated_at)
+    VALUES (${input.memoryId},${input.ownerType},${input.ownerId},${input.kind},${input.content},${vector(input.embedding)}::vector,${now},${now})
+    RETURNING memory_id,owner_type,owner_id,kind,content,created_at,updated_at`.execute(trx);
+  return convert(rows.rows[0]!);
+  });
+ }
+ async find(owner:MemoryOwner,memoryId:string):Promise<Memory|undefined>{
+  const row=await this.db.selectFrom("memories").selectAll().where("owner_type","=",owner.ownerType).where("owner_id","=",owner.ownerId).where("memory_id","=",memoryId).executeTakeFirst();
+  return row?convert(row):undefined;
+ }
+ async list(owner:MemoryOwner,input:{kind?:MemoryKind;limit:number}):Promise<Memory[]>{
+  let q=this.db.selectFrom("memories").selectAll().where("owner_type","=",owner.ownerType).where("owner_id","=",owner.ownerId);
+  if(input.kind)q=q.where("kind","=",input.kind);
+  return (await q.orderBy("updated_at","desc").orderBy("memory_id","desc").limit(input.limit).execute()).map(convert);
+ }
+ async update(input:Pick<Memory,"ownerType"|"ownerId"|"memoryId"|"kind"|"content">&{embedding:number[]}):Promise<Memory|undefined>{
+  return this.db.transaction().execute(async trx=>{
+  await sql`SELECT pg_advisory_xact_lock(hashtextextended(${input.ownerType+":"+input.ownerId},0))`.execute(trx);
+  const repo=new PostgresMemoryRepository(trx),existing=await repo.find(input,input.memoryId);
+  if(!existing)return undefined;
+  if(input.kind==="interaction_preferences"&&existing.kind!==input.kind&&await repo.countByOwner(input,input.kind)>=20)throw new Error("Memory preferences capacity reached");
+  const now=new Date();
+  const rows=await sql<Row>`UPDATE memories SET kind=${input.kind},content=${input.content},embedding=${vector(input.embedding)}::vector,updated_at=${now}
+    WHERE owner_type=${input.ownerType} AND owner_id=${input.ownerId} AND memory_id=${input.memoryId}
+    RETURNING memory_id,owner_type,owner_id,kind,content,created_at,updated_at`.execute(trx);
+  return rows.rows[0]?convert(rows.rows[0]):undefined;
+  });
+ }
+ async remove(owner:MemoryOwner,memoryId:string):Promise<boolean>{
+  const row=await this.db.deleteFrom("memories").where("owner_type","=",owner.ownerType).where("owner_id","=",owner.ownerId).where("memory_id","=",memoryId).returning("memory_id").executeTakeFirst();
+  return Boolean(row);
+ }
+ async search(input:MemoryOwner&{embedding:number[];limit:number;kinds?:readonly MemoryKind[]}):Promise<MemorySearchResult[]>{
+  const kinds=input.kinds??(input.ownerType==="user"?["personal_background","important_relationships","current_focus","interaction_preferences"]:["shared_history","relationship_state","ongoing_threads","personal_experiences"]);
+  if(kinds.length===0)return [];
+  const rows=await sql<Row&{distance:number}>`SELECT memory_id,owner_type,owner_id,kind,content,created_at,updated_at,
+     (embedding <-> ${vector(input.embedding)}::vector)::float8 AS distance
+     FROM memories WHERE owner_type=${input.ownerType} AND owner_id=${input.ownerId} AND kind IN (${sql.join(kinds)})
+     ORDER BY embedding <-> ${vector(input.embedding)}::vector LIMIT ${input.limit}`.execute(this.db);
+  return rows.rows.map(row=>({...convert(row),distance:Number(row.distance)}));
+ }
 }

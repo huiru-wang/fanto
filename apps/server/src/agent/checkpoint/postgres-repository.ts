@@ -8,30 +8,30 @@ export type CheckpointItem =
   | { kind: "usage"; row: UsageRow; runId: string | null };
 
 export type StoredSession = {
-  id: string; userId: string; agentId: string; createdAt: number;
+  id: string; userId: string; agentId: string; scopeKey?: string; createdAt: number;
   updatedAt: number; title: string | null; tipId: string | null;
 };
 
 export class CheckpointRepository {
   constructor(private readonly db: Kysely<DB>) {}
 
-  async createSession(id: string, userId: string, agentId: string): Promise<void> {
+  async createSession(id: string, userId: string, agentId: string, scopeKey = "default"): Promise<void> {
     const now = Date.now();
     await sql`INSERT INTO agent_session.sessions
-      (id, created_at, next_seq, user_id, agent_id, updated_at)
-      VALUES (${id}, ${now}, 0, ${userId}, ${agentId}, ${now})`.execute(this.db);
+      (id, created_at, next_seq, user_id, agent_id, scope_key, updated_at)
+      VALUES (${id}, ${now}, 0, ${userId}, ${agentId}, ${scopeKey}, ${now})`.execute(this.db);
   }
 
   async getSession(id: string, userId?: string): Promise<StoredSession | undefined> {
     const owner = userId === undefined ? sql`TRUE` : sql`user_id = ${userId}`;
     const result = await sql<{
-      id: string; user_id: string; agent_id: string; created_at: string | number;
+      id: string; user_id: string; agent_id: string; scope_key: string; created_at: string | number;
       updated_at: string | number; title: string | null; tip_entry_id: string | null;
-    }>`SELECT id, user_id, agent_id, created_at, updated_at, title, tip_entry_id
+    }>`SELECT id, user_id, agent_id, scope_key, created_at, updated_at, title, tip_entry_id
       FROM agent_session.sessions WHERE id = ${id} AND ${owner}
         AND user_id IS NOT NULL AND agent_id IS NOT NULL`.execute(this.db);
     const row = result.rows[0];
-    return row ? { id: row.id, userId: row.user_id, agentId: row.agent_id,
+    return row ? { id: row.id, userId: row.user_id, agentId: row.agent_id, scopeKey: row.scope_key,
       createdAt: safeNumber(row.created_at, "session.created_at"),
       updatedAt: safeNumber(row.updated_at, "session.updated_at"),
       title: row.title, tipId: row.tip_entry_id } : undefined;

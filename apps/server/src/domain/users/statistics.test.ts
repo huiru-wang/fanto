@@ -52,8 +52,8 @@ test("statistics count all retained records for only the authenticated user, inc
     assert.equal((await service.getStatistics(owner)).recordCount, 0);
     const add = async (userId: string, status: string) => {
       const id = randomUUID(), stamp = new Date().toISOString();
-      await sql`INSERT INTO records (record_id,user_id,source,content,version,status,event_at,created_at,updated_at)
-        VALUES (${id},${userId},'home','{"text":"test","blocks":[]}',1,${status},${stamp},${stamp},${stamp})`.execute(db);
+      await sql`INSERT INTO records (record_id,owner_type,owner_id,source,content,version,status,event_at,created_at,updated_at)
+        VALUES (${id},'user',${userId},'home','{"text":"test","blocks":[]}',1,${status},${stamp},${stamp},${stamp})`.execute(db);
       return id;
     };
     const first = await add(owner, "pending");
@@ -63,7 +63,7 @@ test("statistics count all retained records for only the authenticated user, inc
     assert.equal(stats.companionDays, companionDaysSince(joined, new Date(stats.asOf), "Asia/Shanghai"));
     assert.equal(stats.intimacy, 12); assert.equal(stats.intimacyIsPlaceholder, true);
     assert.equal((await service.getStatistics(other)).recordCount, 1);
-    await db.deleteFrom("records").where("record_id", "=", first).where("user_id", "=", owner).execute();
+    await db.deleteFrom("records").where("record_id", "=", first).where("owner_type", "=", "user").where("owner_id", "=", owner).execute();
     assert.equal((await service.getStatistics(owner)).recordCount, 2);
   } finally {
     await db.destroy();

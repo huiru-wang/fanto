@@ -1,25 +1,29 @@
-import type { FantoSettings, SettingsChanges, RoleConfig } from "../api/fanto";
-export function textChanges(base: FantoSettings, draft: FantoSettings): SettingsChanges {
-    const changes: SettingsChanges = {};
-    for (const key of ["nickname", "description"] as const)
-        if (base[key] !== draft[key])
-            changes[key] = draft[key];
-    const role: Partial<RoleConfig> = {};
-    for (const key of Object.keys(base.roleConfig) as (keyof RoleConfig)[])
-        if (draft.roleConfig[key] !== base.roleConfig[key])
-            role[key] = draft.roleConfig[key];
-    if (Object.keys(role).length)
-        changes.roleConfig = role;
-    return changes;
+import type { AgentConfig, FantoSettings, SettingsChanges } from "../api/fanto";
+
+export function configChanges(base: AgentConfig, draft: AgentConfig): SettingsChanges {
+  const changes: Partial<AgentConfig> = {};
+  for (const key of Object.keys(base) as (keyof AgentConfig)[]) {
+    if (base[key] !== draft[key]) changes[key] = draft[key];
+  }
+  return Object.keys(changes).length ? { agentConfig: changes } : {};
 }
-// Preserve local edits after an avatar-only write; don't silently overwrite remote text changes.
-export function rebaseText(base: FantoSettings, draft: FantoSettings, remote: FantoSettings) {
-    const changes = textChanges(base, draft), conflicts: string[] = [];
-    for (const key of ["nickname", "description"] as const)
-        if (changes[key] !== undefined && remote[key] !== base[key] && remote[key] !== draft[key])
-            conflicts.push(key);
-    for (const key of Object.keys(changes.roleConfig ?? {}) as (keyof RoleConfig)[])
-        if (remote.roleConfig[key] !== base.roleConfig[key] && remote.roleConfig[key] !== draft.roleConfig[key])
-            conflicts.push(key);
-    return { draft: { ...remote, ...changes, roleConfig: { ...remote.roleConfig, ...changes.roleConfig } }, conflicts };
+
+export function rebaseConfig(base: AgentConfig, draft: AgentConfig, remote: AgentConfig) {
+  const changes = configChanges(base, draft).agentConfig ?? {};
+  const conflicts = (Object.keys(changes) as (keyof AgentConfig)[])
+    .filter(key => remote[key] !== base[key] && remote[key] !== draft[key]);
+  return { draft: { ...remote, ...changes }, conflicts };
 }
+
+export function mergeFanto(roles: FantoSettings[], incoming: FantoSettings): FantoSettings[] {
+  const existing = roles.find(role => role.fantoId === incoming.fantoId);
+  if (existing && existing.version > incoming.version) return roles;
+  return [...roles.filter(role => role.fantoId !== incoming.fantoId), incoming]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.fantoId.localeCompare(a.fantoId));
+}
+
+export function usableSelection(selectedId: string | null, roles: FantoSettings[]): string | null {
+  return roles.some(role => role.fantoId === selectedId && role.status === "active") ? selectedId : null;
+}
+
+export const fantoLabel = (role: Pick<FantoSettings, "nickname"> | null) => role ? role.nickname.trim() || "未命名角色" : "默认 Main";

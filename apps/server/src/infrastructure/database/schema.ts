@@ -48,7 +48,8 @@ export interface RecordsTable {
   ext_data: Generated<string | null>;
   id: Generated<number>;
   record_id: string;
-  user_id: string;
+  owner_type: "user" | "fanto";
+  owner_id: string;
   source: string;
   content: string;
   version: number;
@@ -78,18 +79,28 @@ export interface MediaAssetsTable {
 
 export interface MemoriesTable {
   memory_id: string;
-  user_id: string;
-  kind: "personal_background" | "important_relationships" | "current_focus" | "interaction_preferences" | "shared_history";
+  owner_type: "user" | "fanto";
+  owner_id: string;
+  kind: "personal_background" | "important_relationships" | "current_focus" | "interaction_preferences" | "shared_history" | "relationship_state" | "ongoing_threads" | "personal_experiences";
   content: string;
   embedding: unknown;
   created_at: Date;
   updated_at: Date;
 }
 
-export interface UserFantoSettingsTable {
-  fanto_id: Generated<string>; user_id: string; nickname: string; description: string; avatar_media_id: string | null; session_id: string | null;
+export interface UserFantosTable {
+  fanto_id: string;
+  user_id: string;
+  nickname: string;
+  description: string;
+  avatar_media_id: string | null;
   role_config: import("kysely").JSONColumnType<{[key: string]: unknown}>;
-  version: number; created_at: Date; updated_at: Date;
+  agent_config: import("kysely").JSONColumnType<{[key: string]: unknown}>;
+  status: "active" | "archived";
+  archived_at: Date | null;
+  version: number;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export interface UserProfilesTable {
@@ -104,7 +115,7 @@ export interface DB {
   records: RecordsTable;
   media_assets: MediaAssetsTable;
   memories: MemoriesTable;
-  user_fanto_settings: UserFantoSettingsTable;
+  user_fantos: UserFantosTable;
 }
 
 export type User = Selectable<UsersTable>;

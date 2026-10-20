@@ -1,49 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { randomUUID } from "node:crypto";
-import { sql } from "kysely";
-import { createDatabase, runMigrations } from "../../infrastructure/database/database.js";
-
-const integration = process.env.TEST_DATABASE_URL ? test : test.skip;
-integration("Fanto reset baseline preserves UTF-8 role content and supports stable per-role identity", async () => {
-  const admin = createDatabase(process.env.TEST_DATABASE_URL!);
-  const name = `fanto_test_${randomUUID().replaceAll("-", "")}`;
-  await sql.raw(`CREATE DATABASE ${name}`).execute(admin);
-  const url = new URL(process.env.TEST_DATABASE_URL!);
-  url.pathname = `/${name}`;
-  const db = createDatabase(url.href);
-  try {
-    await runMigrations(db);
-    const date = new Date("2026-01-01T00:00:00Z");
-    const role = { character: "角色😀\n\n保留换行和空格  ", scenario: "", instructions: "规则", exampleDialogues: "示例" };
-    await db.insertInto("users").values({ user_id: "owner", status: "active", created_at: date, updated_at: date, disabled_at: null }).execute();
-    await sql`INSERT INTO user_fanto_settings (user_id, role_config, updated_at)
-      VALUES ('owner', ${JSON.stringify(role)}::jsonb, ${date})`.execute(db);
-    await runMigrations(db);
-    await runMigrations(db);
-    const row = await db.selectFrom("user_fanto_settings").selectAll().executeTakeFirstOrThrow();
-    assert.deepEqual(row.role_config, role);
-    assert.equal(row.updated_at.toISOString(), date.toISOString());
-    assert.equal(row.nickname, "Fanto");
-    assert.equal(row.session_id, null);
-    assert.match(row.fanto_id, /^[0-9a-f-]{36}$/);
-    const firstID = row.fanto_id;
-    await sql`INSERT INTO user_fanto_settings (user_id, nickname, created_at)
-      VALUES ('owner', 'future second role', NOW())`.execute(db);
-    assert.equal((await db.selectFrom("user_fanto_settings").select("fanto_id").where("user_id", "=", "owner").execute()).length, 2);
-    const { PostgresFantoRepository } = await import("./postgres-repository.js");
-    const repository = new PostgresFantoRepository(db);
-    assert.equal((await repository.find("owner"))?.fantoId, firstID);
-    const updated = await repository.update("owner", row.version, { nickname: "updated first" }, async () => false);
-    assert.equal(updated.fantoId, firstID);
-    assert.equal((await db.selectFrom("user_fanto_settings").select("nickname").where("user_id", "=", "owner")
-      .where("fanto_id", "!=", firstID).executeTakeFirstOrThrow()).nickname, "future second role");
-    const columns = await sql<{column_name: string}>`SELECT column_name FROM information_schema.columns WHERE table_name='user_fanto_settings'`.execute(db);
-    for (const removed of ["character", "scenario", "instructions", "example_dialogues"])
-      assert.equal(columns.rows.some(row => row.column_name === removed), false);
-  } finally {
-    await db.destroy();
-    await sql.raw(`DROP DATABASE ${name} WITH (FORCE)`).execute(admin);
-    await admin.destroy();
+import {randomUUID} from "node:crypto";
+import {sql} from "kysely";
+import {createDatabase,runMigrations} from "../../infrastructure/database/database.js";
+test("fresh baseline has user_fantos, owner scopes, session scope_key and zero foreign keys",{skip:!process.env.TEST_DATABASE_URL},async()=>{
+ const admin=createDatabase(process.env.TEST_DATABASE_URL!),name="fanto_schema_"+randomUUID().replaceAll("-","");
+ await sql.raw("CREATE DATABASE "+name).execute(admin);
+ const url=new URL(process.env.TEST_DATABASE_URL!);url.pathname="/"+name;
+ const db=createDatabase(url.href);
+ try{
+  await runMigrations(db);
+  const f=(await sql<{column_name:string}>`SELECT column_name FROM information_schema.columns WHERE table_name='user_fantos'`.execute(db)).rows.map(x=>x.column_name);
+  for(const key of ["fanto_id","status","archived_at","agent_config","role_config"])assert.ok(f.includes(key));
+  assert.ok(!f.includes("deleted")&&!f.includes("deleted_at")&&!f.includes("session_id"));
+  for(const t of ["records","memories"]){
+   const cols=(await sql<{column_name:string}>`SELECT column_name FROM information_schema.columns WHERE table_name=${t}`.execute(db)).rows.map(x=>x.column_name);
+   assert.ok(cols.includes("owner_type")&&cols.includes("owner_id")&&!cols.includes("user_id"));
   }
+  const fk=(await sql`SELECT conname FROM pg_constraint WHERE contype='f' AND connamespace IN ('public'::regnamespace,'agent_session'::regnamespace)`.execute(db)).rows;
+  assert.equal(fk.length,0);
+ }finally{await db.destroy();await sql.raw("DROP DATABASE "+name+" WITH (FORCE)").execute(admin);await admin.destroy();}
 });

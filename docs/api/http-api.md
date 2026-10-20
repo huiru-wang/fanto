@@ -59,12 +59,25 @@ PATCH 支持单项更新；changes 省略的字段保持不变，显式 null 仅
 
 ## Fanto 设置
 
-- `GET /api/fanto/settings`：读取当前用户默认 Fanto 的 `{ fantoId, nickname, description, avatarMediaId, sessionId, roleConfig, version, createdAt, updatedAt }`。未保存时返回昵称 Fanto、空简介/角色字段、空头像、空 fantoId/sessionId、version=0 和空时间；首次保存分配不可变 fantoId。
-- `PATCH /api/fanto/settings`：提交 `{ expectedVersion, changes }`，changes 可包含 nickname、description、avatarMediaId（null 恢复默认）、roleConfig、sessionId（当前 Fanto 使用的 main Agent 会话指针）。只合并传入字段，roleConfig 也按子字段合并；返回提交后的完整设置。有效变更递增 version；版本不一致返回 `409 VERSION_CONFLICT`，无权使用或状态不合法的头像返回 `422 INVALID_AVATAR`；sessionId 必须是本人 main Agent Session，否则 `422 INVALID_SESSION`。fantoId 为只读 UUID，不允许 PATCH；数据表支持同一用户多个角色，当前 API 仅操作按 created_at/fanto_id 排序的首个默认角色，不提供角色创建或切换入口。
-- 昵称去除首尾空白，1–30 个 Unicode 字符且不含控制字符；简介最多 300 个 Unicode 字符。roleConfig 当前接受 character、scenario、instructions、exampleDialogues，每项最多 16000 字符；保留换行，空字符串清空该项。拒绝空 changes、空 roleConfig 与未知请求字段。
-- 旧 `GET/PUT /api/character` 保留兼容：四个字符串字段整体读取/覆盖，由 FantoService 适配；写入同样推进设置版本，不改变昵称、简介、头像和其他 JSON 键。
+身份固定来自 JWT。多角色 API 属于本轮 Server breaking change，H5 已适配，iOS 尚未适配。
 
-身份只来自 JWT；`user_fanto_settings` 每用户一条，随用户删除级联清理。角色内容在单个 JSONB 字段中，昵称与角色在主对话下一轮生效。头像独立立即保存，不提交未保存文字。存储、并发与清理契约见 [Fanto](../domain/fanto.md)。
+| 方法 | 路径 | 请求与结果 |
+| --- | --- | --- |
+| GET | `/api/fantos?includeArchived=false` | 默认仅 active，true 包含 archived；按创建时间及 ID 降序 |
+| POST | `/api/fanto` | nickname?/description?/roleConfig?/agentConfig?/avatarMediaId?；201 返回角色和固定 sessionId |
+| GET | `/api/fanto?fantoId=<UUID>` | 本人角色详情，包含 archived |
+| PATCH | `/api/fanto` | `{fantoId,expectedVersion,changes:{agentConfig?,avatarMediaId?}}` |
+| POST | `/api/fanto/archive` | `{fantoId,expectedVersion}`；保留角色数据与 Session |
+| POST | `/api/fanto/restore` | 同上，重新检查活跃名额 |
+| DELETE | `/api/fanto?fantoId=<UUID>` | `If-Match: <version>`；204 完成，202 表示外部对象清理待重试 |
+
+角色响应包含 fantoId、userId、nickname、description、avatarMediaId、roleConfig、agentConfig、status、archivedAt、sessionId、version、createdAt、updatedAt。最多 3 个 active；归档不占名额。nickname 最长 30、description 最长 300，roleConfig 的 character/scenario/instructions/exampleDialogues 各最长 16000，可省略、null 或空串，统一存空串；身份创建后不可 PATCH。agentConfig 的 recordReadEnabled/userMemoryEnabled/narrationEnabled 默认 false，PATCH 合并子键。userMemoryEnabled 仅读 User Memory，角色不获写权限。头像只能绑定本人 ready 的 fanto_avatar，null 清除。
+
+版本不符返回 409 VERSION_CONFLICT；名额已满为 409 FANTO_LIMIT_REACHED；运行中修改配置、归档、删除为 409 FANTO_BUSY；非法状态为 409 INVALID_STATE；头像无效为 422 INVALID_AVATAR；输入未知键、空 changes/agentConfig 或非法 UUID 返回 400；跨用户和不存在统一 404 NOT_FOUND。
+
+DELETE 202 的 result 为 `{fantoId,deletionState:'pending'}`，角色和数据库子资源已物理删除，独立清理清单保留对象 key；同用户重复 DELETE 推进清理，pending 重试不再校验旧版本。完全清理后的重复 DELETE 为 404。无 deleted/deleted_at，不存在可恢复的删除角色。生命周期见 [Fanto](../domain/fanto.md)。
+
+旧 `/api/fanto/settings` 写入入口已移除；旧 `GET /api/character` 仅返回最新活跃角色四段配置或 null，PUT 返回 409 CHARACTER_IMMUTABLE。会话不能创建或重绑定来重置角色身份。
 
 ## 记录
 
@@ -157,7 +170,7 @@ Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒�
 
 ## Agent Runtime
 
-Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 在线运行使用内存，在 Pi `turn_end`/`run_end` 后将完整 Entry/Usage 增量同步保存到 PostgreSQL `agent_session.sessions/entries/usage_ledger`；存储边界见 [Agent Runtime](../architecture/agent-runtime.md#session)。当前 `main` Agent 在每次 Run 前通过 Context Runtime 构建 Character、当前时间和最近 2 条紧凑 Recent Records，再填充 System Prompt；Recent Records 通过 `listRecords(limit=2)` 读取，可命中 Record 首页缓存，不执行 Query Rewrite 或向量搜索，记录时间按请求时区展示。Record Tool、`present_media` 通过 `business-services.ts` 调用对应领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
+Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 在线运行使用内存，在 Pi `turn_end`/`run_end` 后将完整 Entry/Usage 增量同步保存到 PostgreSQL `agent_session.sessions/entries/usage_ledger`；存储边界见 [Agent Runtime](../architecture/agent-runtime.md#session)。当前 main 每 Run 从可信 Session 的 scope_key 解析默认 Main 或 active Fanto，动态选择工具及 Prompt。默认 Main 使用 record_read、user_memory_manage、present_media，角色始终可用 fanto_memory_manage 和 present_media，其他工具按 agentConfig 开启；角色的 User Memory 工具仅读。MainDynamicProvider 只注入授权记忆、非空角色段与当前日期，不自动查询最近 Record。Tool、Provider 通过 business-services 调用领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
 
 ```text
 Authorization: Bearer <ACCESS_TOKEN>
@@ -167,22 +180,22 @@ X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC
 
 | 方法 | 路径 | 请求 | 成功响应 |
 | --- | --- | --- | --- |
-| POST | `/api/agent/sessions` | `{ agentId? }` | `201`，返回 `sessionId` 与 `agentId` |
+| POST | `/api/agent/sessions` | 任意 | `403 SESSION_CREATION_DISABLED` |
+| GET | `/api/agent/main-session` | 无 | `200`，幂等返回 `{sessionId,agentId,scopeKey:"default"}` |
 | GET | `/api/agent/sessions?agentId=&limit=&cursor=` | 无请求体 | `200`，当前用户会话列表，游标按更新时间排序 |
 | POST | `/api/agent/sessions/:sessionId/stop` | 无请求体 | `200/202`，返回 `{ sessionId, stopped, stopping }`；202 仅表示停止已接受、仍在结束当前操作，终态后可续聊；无运行时 stopped/stopping 均为 false，非本人会话 403 |
 | POST | `/api/agent/stream` | `{ sessionId, message }` | `200`，SSE 事件流 |
 | GET | `/api/agent/sessions/:sessionId/history?cursor=&limit=` | 无请求体 | `200`，按完整 Run 分页的倒序历史页，包含 `messages` 投影；`limit` 为 Run 数量，`nextCursor` 为下一页游标 |
 
-先创建 Session；stream 使用已有 sessionId。创建时 agentId 可省略，默认 main；当前仅注册 main，Stream 从 Session 归属解析身份。请求不接受 projectId / metadata 或客户端工作目录，工作区固定映射至 data/workspaces/<userId>/<sessionId>。
+默认 Main 先 GET /api/agent/main-session；角色通过 POST /api/fanto 获得固定 sessionId。Stream 从 Session 归属解析身份并验证角色 active；归档禁止新 Run，History/Stop 仍按所有权校验。当前仅注册 main。请求不接受 projectId / metadata 或客户端工作目录，工作区固定映射至 data/workspaces/<userId>/<sessionId>。
 
 ```sh
 export ACCESS_TOKEN='替换为服务端 ACCESS_TOKEN'
 
-SESSION_ID=$(curl -sS http://127.0.0.1:3000/api/agent/sessions \
+SESSION_ID=$(curl -sS http://127.0.0.1:3000/api/agent/main-session \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'X-Trace-Id: trace_001' \
   -H 'Content-Type: application/json' \
-  -d '{"agentId":"main"}' \
   | node -pe 'JSON.parse(require("fs").readFileSync(0, "utf8")).result.sessionId')
 ```
 

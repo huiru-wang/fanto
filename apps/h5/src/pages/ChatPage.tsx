@@ -4,7 +4,6 @@ import { FantoAvatar } from "../fanto/FantoAvatar";
 import { ArrowUp, MessageCircleMore, RotateCcw, Sparkles, Square } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
-  createAgentSession,
   encodeUserInputResponse,
   fetchAgentHistory,
   streamAgentMessage,
@@ -20,7 +19,7 @@ import { ChatMarkdown } from "../components/ChatMarkdown";
 import { MediaPresentation } from "../components/MediaPresentation";
 import { UserClarificationCard } from "../components/UserClarificationCard";
 import { UserInputCard } from "../components/UserInputCard";
-import { getFantoSettings, patchFantoSettings } from "../api/fanto";
+import { fantoLabel } from "../fanto/settings-state";
 
 type MessageState = "complete" | "processing" | "streaming" | "stopped" | "failed";
 export type ChatMessage = Omit<AgentHistoryMessage, "state"> & { state: MessageState };
@@ -108,14 +107,20 @@ function MessageBlock({
 }
 
 export function ChatPage({ active = true }: { active?: boolean }) {
-  const navigate=useNavigate(); const {settings:fantoSettings,accept:acceptFantoSettings}=useFanto();
+  const navigate = useNavigate();
+  const profile = useFanto();
+  const { settings: fantoSettings, sessionId, refresh: refreshRoles } = profile;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [historyCursor, setHistoryCursor] = useState<number | null>(null);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const loadingEarlierRef = useRef(false);
-  const [draft, setDraft] = useState("");
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [draft, setDraft] = useState(() => {
+    try { return sessionId ? sessionStorage.getItem(`fanto.chat-draft.${sessionId}`) ?? "" : ""; } catch { return ""; }
+  });
+  useEffect(() => {
+    try { if (sessionId) sessionStorage.setItem(`fanto.chat-draft.${sessionId}`, draft); } catch { /* Draft remains in memory. */ }
+  }, [draft, sessionId]);
   const [loading, setLoading] = useState(true);
   const [stopping, setStopping] = useState(false);
   const [responding, setResponding] = useState(false);
@@ -139,30 +144,6 @@ export function ChatPage({ active = true }: { active?: boolean }) {
       if (element) element.scrollTop = element.scrollHeight;
     });
   }, []);
-
-  const selectMainSession = useCallback(async (id: string) => {
-    // Settings has an optimistic version shared with profile edits; retry a stale write once.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const settings = await getFantoSettings();
-      try {
-        acceptFantoSettings(await patchFantoSettings(settings.version, { sessionId: id }));
-        return;
-      } catch (cause) {
-        if (!(cause instanceof ApiError && cause.status === 409 && attempt === 0)) throw cause;
-      }
-    }
-  }, [acceptFantoSettings]);
-
-  const createFreshSession = useCallback(async () => {
-    const id = await createAgentSession();
-    await selectMainSession(id);
-    conversationRevision.current += 1;
-    setSessionId(id);
-    setMessages([]);
-    setHasMoreHistory(false);
-    setHistoryCursor(null);
-    return id;
-  }, [selectMainSession]);
 
   const loadEarlierHistory = async () => {
     const element = scrollRef.current;
@@ -197,37 +178,19 @@ export function ChatPage({ active = true }: { active?: boolean }) {
   };
 
   const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+    if (!sessionId) { setLoading(false); return; }
+    setLoading(true); setError(null);
     try {
-      const stored = (await getFantoSettings()).sessionId;
-      if (!stored) {
-        await createFreshSession();
-      } else {
-        try {
-          const snapshot = await fetchAgentSnapshot(stored);
-          const history = snapshot.messages;
-          if (snapshot.restored) setRecoveryNotice("已恢复保存的历史，部分最近消息可能未保存。");
-          setRecovering(snapshot.running);
-          setSessionId(stored);
-          setMessages(history.map(message => ({ ...message, state: message.state ?? "complete" })));
-          setHasMoreHistory(snapshot.hasMore);
-          setHistoryCursor(snapshot.nextCursor);
-        } catch (cause) {
-          if (cause instanceof ApiError && (cause.status === 403 || cause.status === 404)) {
-            await createFreshSession();
-          } else {
-            throw cause;
-          }
-        }
-      }
+      const snapshot = await fetchAgentSnapshot(sessionId);
+      if (snapshot.restored) setRecoveryNotice("已恢复保存的历史，部分最近消息可能未保存。");
+      setRecovering(snapshot.running);
+      setMessages(snapshot.messages.map(message => ({ ...message, state: message.state ?? "complete" })));
+      setHasMoreHistory(snapshot.hasMore); setHistoryCursor(snapshot.nextCursor);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "暂时无法连接 Fanto");
-    } finally {
-      setLoading(false);
-      scrollToEnd();
-    }
-  }, [createFreshSession, scrollToEnd]);
+      setError("暂时无法读取这个对话，请重试或切换角色。");
+      if (cause instanceof ApiError && (cause.status === 403 || cause.status === 404)) void refreshRoles();
+    } finally { setLoading(false); scrollToEnd(); }
+  }, [sessionId, refreshRoles, scrollToEnd]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (active) scrollToEnd(); }, [active, scrollToEnd]);
@@ -256,12 +219,18 @@ export function ChatPage({ active = true }: { active?: boolean }) {
           setError(null);
           return;
         }
-      } catch { if (!cancelled) setError("正在恢复对话，请检查网络连接。"); }
+      } catch (cause) {
+        if (cancelled) return;
+        if (cause instanceof ApiError && (cause.status === 403 || cause.status === 404)) {
+          setRecovering(false); setStopping(false); setError("这个对话已不可用，请切换角色。"); void refreshRoles(); return;
+        }
+        setError("正在恢复对话，请检查网络连接。");
+      }
       if (!cancelled) timer = setTimeout(() => void refresh(), 1500);
     };
     void refresh();
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [recovering, sessionId]);
+  }, [recovering, sessionId, refreshRoles]);
 
   useEffect(() => {
     const reconcile = () => {
@@ -276,7 +245,7 @@ export function ChatPage({ active = true }: { active?: boolean }) {
   }, [loading, sessionId]);
 
   const sendMessage = async (wireText: string, visibleText: string, clarificationInteractionId?: string) => {
-    if (!wireText.trim() || !sessionId || responding || stopping || recovering) return;
+    if (!wireText.trim() || !sessionId || loading || responding || stopping || recovering) return;
     const userMessage: ChatMessage = {
       id: localId(),
       role: "user",
@@ -385,6 +354,9 @@ export function ChatPage({ active = true }: { active?: boolean }) {
       if (abortRef.current !== controller) return;
       if (controller.signal.aborted) {
         updateAssistant(message => ({ ...message, state: "stopped" }));
+      } else if (cause instanceof ApiError && (cause.status === 403 || cause.status === 404 || cause.code === "INVALID_STATE")) {
+        updateAssistant(message => ({ ...message, state: "failed" }));
+        setError("这个角色已不可用，请切换对话。"); setDraft(current => current || visibleText); void refreshRoles();
       } else {
         setRecovering(true);
         updateAssistant(message => ({ ...message, state: "failed" }));
@@ -404,7 +376,7 @@ export function ChatPage({ active = true }: { active?: boolean }) {
 
   const send = async () => {
     const text = draft.trim();
-    if (!text) return;
+    if (!text || !sessionId || loading || responding || stopping || recovering) return;
     setDraft("");
     await sendMessage(text, text);
   };
@@ -453,32 +425,40 @@ export function ChatPage({ active = true }: { active?: boolean }) {
   return (
     <div className="chat-page">
       <header className="chat-header">
-        <button type="button" className="chat-title fanto-chat-title" onClick={()=>navigate("/fanto/settings")} aria-label="打开 Fanto 设置">
+        <button type="button" className="chat-title fanto-chat-title" onClick={() => navigate(fantoSettings ? `/fantos/${fantoSettings.fantoId}` : "/fantos")} aria-label="打开当前角色配置">
           <FantoAvatar size={40}/>
-          <div><strong>{fantoSettings?.nickname ?? "Fanto"}</strong><span>{fantoSettings?.description || "基于你的记录继续聊"}</span></div>
+          <div><strong>{fantoLabel(fantoSettings)}</strong><span>{fantoSettings?.description || (fantoSettings ? "独立对话与记忆" : "基于你的记录继续聊")}</span></div>
         </button>
+        <div className="fanto-chat-controls">
+          <label className="sr-only" htmlFor="chat-role">切换对话角色</label>
+          <select id="chat-role" value={profile.selectedId ?? "default"} onChange={event => profile.select(event.target.value === "default" ? null : event.target.value)}>
+            <option value="default">默认 Main</option>
+            {profile.roles.filter(role => role.status === "active").map(role => <option key={role.fantoId} value={role.fantoId}>{fantoLabel(role)}</option>)}
+          </select>
+          <button className="secondary-button" onClick={() => navigate("/fantos")}>管理角色</button>
+        </div>
       </header>
 
       <div className="chat-debug"><DebugId label="sessionId" value={sessionId} /></div>
       <div className="chat-scroll" ref={scrollRef} onScroll={() => void loadEarlierHistory()}>
         <div className="chat-content">
           {loadingEarlier && <div className="chat-history-loading">正在加载更早对话…</div>}
-          {loading ? (
+          {loading || profile.loading && !sessionId ? (
             <div className="empty-state chat-loading"><span className="large-loader" /><p>正在恢复对话…</p></div>
-          ) : error && messages.length === 0 ? (
+          ) : (error || profile.error) && messages.length === 0 ? (
             <div className="empty-state">
               <div className="empty-orb"><RotateCcw size={22} /></div>
-              <h2>暂时没有连接上 Fanto</h2><p>{error}</p>
-              <button className="secondary-button" onClick={() => void load()}><RotateCcw size={16} />重新连接</button>
+              <h2>暂时没有连接上 Fanto</h2><p>{error || profile.error}</p>
+              <button className="secondary-button" onClick={() => void (sessionId ? load() : refreshRoles())}><RotateCcw size={16} />重新连接</button>
             </div>
           ) : messages.length === 0 ? (
             <div className="chat-welcome">
               <div className="welcome-mark"><MessageCircleMore size={28} /></div>
               <p className="eyebrow">Fanto</p>
-              <h1>从现在想说的事情开始。</h1>
-              <p>我会在需要的时候回想你的记录，但不会把工具和检索过程打扰到对话里。</p>
+              <h1>{fantoSettings ? `与${fantoLabel(fantoSettings)}开始对话。` : "从现在想说的事情开始。"}</h1>
+              <p>{fantoSettings ? "这段对话与记忆属于当前角色，你可以在角色配置中调整授权。" : "默认 Main 可以按需回想你的记录，管理你的个人长期记忆。"}</p>
               <div className="prompt-suggestions">
-                <button onClick={() => setDraft("最近我都记录了什么？")}>最近我都记录了什么？</button>
+                <button onClick={() => setDraft(fantoSettings && !fantoSettings.agentConfig.recordReadEnabled ? "今天想和你聊聊。" : "最近我都记录了什么？")}>{fantoSettings && !fantoSettings.agentConfig.recordReadEnabled ? "今天想和你聊聊。" : "最近我都记录了什么？"}</button>
                 <button onClick={() => setDraft("帮我回顾一下最近反复在想的事情。")}>最近反复在想什么？</button>
               </div>
             </div>
@@ -505,7 +485,7 @@ export function ChatPage({ active = true }: { active?: boolean }) {
             value={draft}
             onChange={event => setDraft(event.target.value)}
             rows={1}
-            placeholder="和 Fanto 聊聊"
+            placeholder={`和${fantoLabel(fantoSettings)}聊聊`}
             disabled={loading || !sessionId}
             onKeyDown={event => {
               if (event.key === "Enter" && !event.shiftKey) {

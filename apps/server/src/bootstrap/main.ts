@@ -65,6 +65,7 @@ const fanto = FantoService.create(db, media);
 const queue = new RecordPostprocessQueue();
 const records = RecordService.create(db, queue, retrieval, recordListCache, media);
 const agent = createAgentRuntime({ db, records, media, memories, fanto, ...config.agent });
+fanto.bindSessions({isRunning:id=>agent.sessions.isRunning(id),release:id=>agent.sessions.release(id)});
 const embeddingQueue=new RecordEmbeddingQueue();
 registerRecordPostprocessListener(
   queue,records,media,oss,

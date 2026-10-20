@@ -16,6 +16,7 @@ import type { AgentDefinition } from "../harness/definition.js";
 import type { AgentBusinessServices, AgentRequestContext } from "../business-services.js";
 import type { CheckpointItem, CheckpointRepository, StoredSession } from "../checkpoint/postgres-repository.js";
 import type { Entry, UsageRow } from "@earendil-works/pi-agent-core";
+import {defaultAgentConfig,emptyRole,type FantoSettings} from "../../domain/fanto/model.js";
 
 class MemoryCheckpoint {
   readonly sessions = new Map<string, StoredSession>();
@@ -72,12 +73,13 @@ const makeDefinition = (provider: string, model: string, tools: AgentDefinition[
   skills: [], compaction: { enabled: false, reserveTokens: 1024, keepRecentTokens: 1024 }, revision: "v1",
 });
 const principal = { userId: "owner", source: "user" } as const;
-function fixture(checkpoints: MemoryCheckpoint, fanto = {} as AgentBusinessServices, tools: AgentDefinition["tools"] = []) {
+function fixture(checkpoints: MemoryCheckpoint, fanto: Partial<AgentBusinessServices> = {}, tools: AgentDefinition["tools"] = []) {
+  fanto={getFantoConversationSettings:async()=>null,reserveMainRun:async(_ctx,reserve)=>await reserve(),...fanto} as AgentBusinessServices;
   const workspace = mkdtempSync(join(tmpdir(), "fanto-v2-"));
   const faux = fauxProvider({ tokensPerSecond: 100000, tokenSize: { min: 1, max: 1 } });
   const models = createModels(); models.setProvider(faux.provider);
   const model = faux.getModel(), definition = makeDefinition(model.provider, model.id, tools);
-  const manager = new AgentSessionManager(models, fanto, new SkillLoader(join(workspace, "skills")),
+  const manager = new AgentSessionManager(models, fanto as AgentBusinessServices, new SkillLoader(join(workspace, "skills")),
     undefined as never, workspace, checkpoints as unknown as CheckpointRepository);
   const registry = { get: (id: string) => id === "main" ? definition : undefined };
   const streams = createAgentRoutes(registry as never, manager), sessions = createSessionRoutes(registry as never, manager);
@@ -172,4 +174,26 @@ test("Pi SDK runs remain isolated by Session owner", async () => {
       createSessionRoutes({get:()=>f.definition} as never,f.manager).request(`/sessions/${session.id}/history`));
     assert.equal(response.status,403);
   } finally { await f.close(); }
+});
+
+test("cached Pi Harness switches Main and Fanto memory tool schemas per run",async()=>{
+  let current:FantoSettings|null=null;const calls:string[]=[];
+  const f=fixture(new MemoryCheckpoint(),{
+    getFantoConversationSettings:async()=>current,
+    listMemories:async(_ctx,_input,scope)=>{calls.push(scope!);return [];},
+  },["record_read","user_memory_manage","present_media"]);
+  try{
+    const s=await f.manager.create(f.definition,"owner");
+    f.faux.setResponses([fauxAssistantMessage(fauxToolCall("user_memory_manage",{action:"list"})),fauxAssistantMessage("default")]);
+    assert.match(await (await f.chat(s.id,"remember")).text(),/event: done/);
+    current={fantoId:"role",userId:"owner",sessionId:s.id,nickname:"",description:"",avatarMediaId:null,
+      roleConfig:emptyRole(),agentConfig:defaultAgentConfig(),status:"active",archivedAt:null,version:1,createdAt:"now",updatedAt:"now"};
+    f.faux.setResponses([fauxAssistantMessage(fauxToolCall("fanto_memory_manage",{action:"list"})),fauxAssistantMessage("role")]);
+    assert.match(await (await f.chat(s.id,"remember role")).text(),/event: done/);
+    current.agentConfig.userMemoryEnabled=true;
+    f.faux.setResponses([fauxAssistantMessage(fauxToolCall("user_memory_manage",{action:"list"})),fauxAssistantMessage("read only")]);
+    assert.match(await (await f.chat(s.id,"read user")).text(),/event: done/);
+    assert.deepEqual(calls,["user","fanto","user"]);
+    assert.equal(await f.manager.acquire(f.definition,s.id,"owner"),s);
+  }finally{await f.close();}
 });

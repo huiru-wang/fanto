@@ -33,7 +33,7 @@ function route(persisted: Promise<void> = Promise.resolve()) {
       return "main";
     },
     acquire: async (definition: { id: string }) => { assert.equal(definition.id, "main"); return session; },
-    reserve: () => () => { released = true; },
+    acquireForRun: async () => ({session,release:()=>{released=true;}}),
   };
   const registry = { get: (id: string) => id === "main" ? { id, revision: "v1" } : undefined };
   return { app: createAgentRoutes(registry as never, sessions as never), observed: () => observed, released: () => released };

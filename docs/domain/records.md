@@ -1,6 +1,6 @@
 # Record
 
-Record 是用户原始记录，是 Fanto 个人数据的基础事实之一。它属于单一用户，并保留用户的原始文字、媒体顺序与可选地点。
+Record 是用户原始记录，是 Fanto 个人数据的基础事实之一。表模型以 owner_type/owner_id 标识 user 或 fanto 所有者；现有 HTTP CRUD、检索、后置处理和 Embedding 仅支持 user owner，保留用户原始文字、媒体顺序与可选地点。Fanto-owned Record 的创建与世界时间线不在本期提供，删除角色时会清理该 Owner 数据。媒体仍以真实 user_id 校验，不将 fantoId 当账号。
 
 ## 内容模型
 

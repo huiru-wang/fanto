@@ -32,7 +32,7 @@ export class UserProfileService {
     const asOf = new Date();
     const user = await this.db.selectFrom("users").select([
       "created_at",
-      sql<string>`(SELECT COUNT(*) FROM records WHERE user_id = ${userId})`.as("record_count"),
+      sql<string>`(SELECT COUNT(*) FROM records WHERE owner_type = 'user' AND owner_id = ${userId})`.as("record_count"),
     ]).where("user_id", "=", userId).executeTakeFirstOrThrow();
     return {
       companionDays: companionDaysSince(user.created_at, asOf, timeZone),

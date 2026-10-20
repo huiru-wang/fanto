@@ -9,7 +9,7 @@ import { SkillLoader } from "../skills/loader.js";
 
 test("agent.yaml registers only Main without retired creative agents", () => {
   const registry = new AgentRegistry(resolve("agent.yaml"), builtinModels(), new SkillLoader(resolve("skills")));
-  assert.deepEqual(registry.get("main")?.tools, ["record_read", "memory_manage", "present_media"]);
+  assert.deepEqual(registry.get("main")?.tools, ["record_read", "user_memory_manage", "present_media"]);
   assert.equal(registry.get("task-worker"), undefined);
   assert.equal(registry.get("proposal-agent"), undefined);
   assert.equal(registry.get("creator-agent"), undefined);

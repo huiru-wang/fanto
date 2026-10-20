@@ -8,7 +8,7 @@ Fanto 是以**角色扮演与深度陪伴对话**为主线的 AI 产品：通过
 
 - `apps/server`：Hono / TypeScript 服务，内嵌 Pi Agent Runtime、Record/Media/Memory和 Record 后置处理。
 - `apps/ios/fanto`：SwiftUI，Google/Apple 登录、Fanto 角色设置与对话、Record 日历与时间线、用户资料与外观偏好。
-- `apps/h5`：React/Vite 受控测试客户端，Record、多轮对话。
+- `apps/h5`：React/Vite 受控测试客户端，Record、默认 Main、多角色固定对话与独立能力配置、归档/恢复及删除清理。
 - `apps/admin-web`：仅本地运行的只读管理界面，查询用户、Session 和 Token 用量，不参与部署。
 - `packages/shared`：跨端类型和 Record 相关共享定义。
 

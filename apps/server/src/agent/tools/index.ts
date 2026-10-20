@@ -13,7 +13,7 @@ import { prepareBashExecution } from "../workspace/bash.js";
 import { createCollectUserInputTool } from "./user-input.js";
 import { createPresentMediaTool } from "./media.js";
 import { createRecordReadTool } from "./records.js";
-import { createMemoryManageTool } from "./memory.js";
+import { createUserMemoryTool, createFantoMemoryTool } from "./memory.js";
 import { createSkillReadTool } from "./skills.js";
 import type { FantoTool, ToolPresentationConfig } from "./types.js";
 
@@ -31,7 +31,8 @@ export function createTools(
       case "edit": return createFantoEditTool();
       case "bash": return createFantoBashTool(workspace);
       case "record_read": return createRecordReadTool(fanto);
-      case "memory_manage": return createMemoryManageTool(fanto);
+      case "user_memory_manage": return createUserMemoryTool(fanto);
+      case "fanto_memory_manage": return createFantoMemoryTool(fanto);
       case "present_media": return createPresentMediaTool(fanto);
       case "collect_user_input": return createCollectUserInputTool();
       case "skill_read":

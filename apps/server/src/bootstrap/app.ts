@@ -3,7 +3,7 @@ import { createAdminRoutes } from "../routes/admin.js";
 import type { UserProfileService } from "../domain/users/profile-service.js";
 import { createUserProfileRoutes, createUserStatisticsRoutes } from "../routes/user-profile.js";
 import { FantoService } from "../domain/fanto/index.js";
-import { createFantoRoutes } from "../routes/fanto.js";
+import { createFantoRoutes,createFantosRoutes } from "../routes/fanto.js";
 import { createCharacterRoutes } from "../routes/character.js";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -29,7 +29,7 @@ const redact = (value: unknown): unknown => {
     /authorization|password|secret|token|key|nonce|display.?hint|email/i.test(key) ? [key, "[REDACTED]"] : [key, redact(item)],
   ));
 };
-export const logSafeBody = (path: string, value: unknown) => /^\/api\/admin(?:\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/users\/me(?:\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/(character|fanto)(\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/media\/[^/]+\/url$/.test(path)
+export const logSafeBody = (path: string, value: unknown) => /^\/api\/admin(?:\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/users\/me(?:\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/(character|fantos?)(\/|$)/.test(path) ? "[REDACTED]" : /^\/api\/media\/[^/]+\/url$/.test(path)
     ? "[REDACTED]"
   : redact(value);
 const jsonBody = async (response: Response, path: string) => {
@@ -110,7 +110,7 @@ export function createApp(services: ServerServices) {
   if (services.admin) app.route("/api/admin", createAdminRoutes(services.admin, services.adminAccessKey));
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));
-  if (services.fanto) { app.route("/api/fanto", createFantoRoutes(services.fanto)); app.route("/api/character", createCharacterRoutes(services.fanto)); }
+  if (services.fanto) { app.route("/api/fanto", createFantoRoutes(services.fanto)); app.route("/api/fantos", createFantosRoutes(services.fanto)); app.route("/api/character", createCharacterRoutes(services.fanto)); }
 
   if (services.agent) {
     app.use("/api/agent/*", bodyLimit({ maxSize: 64 * 1024 }));

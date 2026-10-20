@@ -60,8 +60,8 @@ test("relevant memory uses filtered one-shot lookup only for continuity cues", a
     searches++;
     assert.equal(request.userId, "owner");
     assert.deepEqual(options, { query: "之前我们约定过什么？", limit: 3,
-      kinds: ["important_relationships", "current_focus", "shared_history"] });
-    return [{ ...memory("shared_history", "虚构剧情：两人约好周末一起看海", "together"), distance: 0.2 }];
+      kinds: ["important_relationships", "current_focus"] });
+    return [{ ...memory("current_focus", "正在准备周末行程", "together"), distance: 0.2 }];
   }});
   const skipped = await provider.build(context());
   assert.match(skipped.content, /无需额外检索/);
@@ -70,8 +70,8 @@ test("relevant memory uses filtered one-shot lookup only for continuity cues", a
   const result = await provider.build(recalled);
   assert.equal(searches, 1);
   const history = JSON.parse(result.content);
-  assert.equal(history[0].kind, "shared_history");
-  assert.match(history[0].content, /虚构剧情/);
+  assert.equal(history[0].kind, "current_focus");
+  assert.match(history[0].content, /周末/);
   assert.equal(history[0].id, "together");
 });
 

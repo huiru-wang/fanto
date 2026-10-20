@@ -1,43 +1,43 @@
-import { randomUUID } from "node:crypto";
-import type { Kysely, Transaction } from "kysely";
-import type { DB } from "../../infrastructure/database/schema.js";
-import { defaultSettings, emptyRole, FantoError, type FantoSettings, type SettingsChanges } from "./model.js";
-export type AvatarValidator = (userId: string, mediaId: string, trx: Transaction<DB>) => Promise<boolean>;
+import type {Kysely,Transaction} from "kysely";
+import {sql} from "kysely";
+import type {DB} from "../../infrastructure/database/schema.js";
+import {agentConfigSchema,roleSchema,FantoError,type FantoSettings} from "./model.js";
+export const MAX_ACTIVE_FANTOS=3;
+type Runner=Kysely<DB>|Transaction<DB>;
 export class PostgresFantoRepository {
-    constructor(private readonly db: Kysely<DB>) { }
-    async find(userId: string): Promise<FantoSettings | null> {
-        const row = await this.db.selectFrom("user_fanto_settings").selectAll().where("user_id", "=", userId).orderBy("created_at").orderBy("fanto_id").limit(1).executeTakeFirst();
-        return row ? { fantoId: row.fanto_id, nickname: row.nickname, description: row.description, avatarMediaId: row.avatar_media_id, sessionId: row.session_id,
-            roleConfig: { ...emptyRole(), ...row.role_config }, version: row.version, createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString() } : null;
-    }
-    async update(userId: string, expectedVersion: number | null, changes: SettingsChanges, validate: AvatarValidator): Promise<FantoSettings> {
-        return this.db.transaction().execute(async (trx) => {
-            // Lock the user first, including when a settings row does not exist yet.
-            await trx.selectFrom("users").select("user_id").where("user_id", "=", userId).forUpdate().executeTakeFirstOrThrow();
-            const row = await trx.selectFrom("user_fanto_settings").selectAll().where("user_id", "=", userId).orderBy("created_at").orderBy("fanto_id").limit(1).forUpdate().executeTakeFirst();
-            if (expectedVersion !== null && expectedVersion !== (row?.version ?? 0))
-                throw new FantoError("VERSION_CONFLICT", 409);
-            const current = row ? { fantoId: row.fanto_id, nickname: row.nickname, description: row.description, avatarMediaId: row.avatar_media_id, sessionId: row.session_id, roleConfig: { ...emptyRole(), ...row.role_config } } : defaultSettings();
-            if (changes.avatarMediaId && changes.avatarMediaId !== row?.avatar_media_id && !await validate(userId, changes.avatarMediaId, trx))
-                throw new FantoError("INVALID_AVATAR", 422);
-            const next = { fantoId: row?.fanto_id ?? randomUUID(), nickname: changes.nickname ?? current.nickname, description: changes.description ?? current.description,
-                avatarMediaId: changes.avatarMediaId === undefined ? current.avatarMediaId : changes.avatarMediaId,
-                sessionId: changes.sessionId === undefined ? current.sessionId : changes.sessionId,
-                roleConfig: { ...current.roleConfig, ...changes.roleConfig } };
-            if (row && next.nickname === row.nickname && next.description === row.description && next.avatarMediaId === row.avatar_media_id && next.sessionId === row.session_id &&
-                JSON.stringify(Object.entries(next.roleConfig).sort()) === JSON.stringify(Object.entries(current.roleConfig).sort()))
-                return { ...current, version: row.version, createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString() };
-            const now = new Date();
-            await trx.insertInto("user_fanto_settings").values({ fanto_id: next.fantoId, user_id: userId, nickname: next.nickname, description: next.description, avatar_media_id: next.avatarMediaId, session_id: next.sessionId,
-                role_config: JSON.stringify(next.roleConfig), version: (row?.version ?? 0) + 1, created_at: row?.created_at ?? now, updated_at: now })
-                .onConflict(oc => oc.column("fanto_id").doUpdateSet({ nickname: next.nickname, description: next.description, avatar_media_id: next.avatarMediaId, session_id: next.sessionId,
-                role_config: JSON.stringify(next.roleConfig), version: (row?.version ?? 0) + 1, updated_at: now })).execute();
-            if (row?.avatar_media_id && row.avatar_media_id !== next.avatarMediaId) {
-                const old = await trx.selectFrom("media_assets").selectAll().where("user_id", "=", userId).where("media_id", "=", row.avatar_media_id).forUpdate().executeTakeFirst();
-                if (old)
-                    await trx.updateTable("media_assets").set({ ext_data: JSON.stringify({ ...JSON.parse(old.ext_data ?? "{}"), retiredAt: now.toISOString() }) }).where("user_id", "=", userId).where("media_id", "=", old.media_id).execute();
-            }
-            return { ...next, version: (row?.version ?? 0) + 1, createdAt: (row?.created_at ?? now).toISOString(), updatedAt: now.toISOString() };
-        });
-    }
+ constructor(readonly db:Kysely<DB>){}
+ async list(userId:string,includeArchived=false):Promise<FantoSettings[]>{
+   let q=this.db.selectFrom("user_fantos").selectAll().where("user_id","=",userId);
+   if(!includeArchived)q=q.where("status","=","active");
+   const rows=await q.orderBy("created_at","desc").orderBy("fanto_id","desc").execute();
+   return Promise.all(rows.map(row=>this.toSettings(row)));
+ }
+ async find(userId:string,fantoId:string):Promise<FantoSettings|undefined>{
+  const row=await this.db.selectFrom("user_fantos").selectAll().where("user_id","=",userId).where("fanto_id","=",fantoId).executeTakeFirst();
+  return row?this.toSettings(row):undefined;
+ }
+ async findBySession(userId:string,sessionId:string):Promise<FantoSettings|null>{
+  const owner=await sql<{scope_key:string}>`SELECT scope_key FROM agent_session.sessions WHERE id=${sessionId} AND user_id=${userId} AND agent_id='main'`.execute(this.db);
+  const scope=owner.rows[0]?.scope_key;
+  if(!scope)throw new FantoError("NOT_FOUND",404);
+  if(scope==="default")return null;
+  const result=await this.find(userId,scope);
+  if(!result || result.status!=="active")throw new FantoError("INVALID_STATE",409);
+  return result;
+ }
+ async sessionId(db:Runner,userId:string,scopeKey:string):Promise<string|undefined>{
+  const result=await sql<{id:string}>`SELECT id FROM agent_session.sessions WHERE user_id=${userId} AND agent_id='main' AND scope_key=${scopeKey}`.execute(db);
+  return result.rows[0]?.id;
+ }
+ async toSettings(row:import("kysely").Selectable<import("../../infrastructure/database/schema.js").UserFantosTable>):Promise<FantoSettings>{
+  const sessionId=await this.sessionId(this.db,row.user_id,row.fanto_id);
+  if(!sessionId)throw new Error("FANTO_SESSION_MISSING");
+  return {
+   fantoId:row.fanto_id,userId:row.user_id,nickname:row.nickname,description:row.description,
+   avatarMediaId:row.avatar_media_id,roleConfig:roleSchema.parse(row.role_config),
+   agentConfig:agentConfigSchema.parse(row.agent_config),status:row.status,
+   archivedAt:row.archived_at?.toISOString()??null,sessionId,version:row.version,
+   createdAt:row.created_at.toISOString(),updatedAt:row.updated_at.toISOString()
+  };
+ }
 }

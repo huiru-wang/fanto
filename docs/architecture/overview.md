@@ -11,7 +11,7 @@ flowchart LR
   API --> Q[Record 后置理解 / Embedding]
 ```
 
-Server 与 Agent 同进程，没有独立 Gateway。H5 静态资源由 Nginx 提供；受保护请求使用 Fanto JWT。iOS 使用 Google / Apple 原生登录，H5 是受控测试客户端，Admin 仅本地使用独立只读密钥。
+Server 与 Agent 同进程，没有独立 Gateway。H5 通过角色 API 管理多角色，以 default Main 或角色固定 Session 隔离聊天；静态资源由 Nginx 提供；受保护请求使用 Fanto JWT。iOS 使用 Google / Apple 原生登录，H5 是受控测试客户端，Admin 仅本地使用独立只读密钥。
 
 ## 事实与派生数据
 

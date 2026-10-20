@@ -48,7 +48,7 @@ test("Cold-open Session takes the current Agent revision without old owner entry
 test("a Session being closed by its reserved owner cannot reopen until released", async () => {
   const id=randomUUID();const manager=Object.create(AgentSessionManager.prototype) as any;
   manager.sessions=new Map();manager.running=new Set();manager.idleWaiters=new Map();
-  manager.repository={checkpoint:async()=>{},closedHandle:()=>{}};
+  manager.repository={checkpoint:async()=>{},closedHandle:()=>{},evict:async()=>{}};
   manager.checkpoint=async()=>{};
   let close!:()=>void;
   manager.sessions.set(id,{runtime:{close:()=>new Promise<void>(resolve=>{close=resolve;})}});

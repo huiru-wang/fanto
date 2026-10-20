@@ -41,7 +41,7 @@ async function fixture(timeoutMs?:number, stopTimeoutMs?:number, withTool=false)
     abort:()=>cancelLaneOperation(lane,context),appendCustomEntry:(type:string,data:any)=>lane.appendCustomEntry(type,data,TODO_CONTEXT),
   }};
   const manager=Object.create(AgentSessionManager.prototype) as AgentSessionManager;
-  Object.assign(manager,{checkpoint:async()=>{},restored:()=>false,running:new Set(),idleWaiters:new Map(),assertOwnership:async()=>{},resolveAgentId:async()=>"main",acquire:async()=>session,
+  Object.assign(manager,{acquireForRun:async()=>({session,release:manager.reserve(session as never)}),checkpoint:async()=>{},restored:()=>false,running:new Set(),idleWaiters:new Map(),assertOwnership:async()=>{},resolveAgentId:async()=>"main",acquire:async()=>session,
     history:async()=>({agentId:"main",entries:await lane.findEntries({order:"newestFirst"},TODO_CONTEXT),hasMore:false,nextCursor:null}),toolsForHistory:()=>[],
   });
   const registry={get:()=>({id:"main"})};

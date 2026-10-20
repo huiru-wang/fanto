@@ -17,7 +17,7 @@ test("stop releases Session even when the SSE client stops reading terminal even
     prompt:async()=>{admitted();await new Promise<void>(resolve=>{complete=resolve;});return {ok:true,value:{status:"completed"}};},
     abort:async()=>{complete();},
   }};
-  Object.assign(manager, {checkpoint:async()=>{},running:new Set(), idleWaiters:new Map(),
+  Object.assign(manager, {acquireForRun:async()=>({session,release:manager.reserve(session as never)}),checkpoint:async()=>{},running:new Set(), idleWaiters:new Map(),
     resolveAgentId:async()=>"main", acquire:async()=>session, assertOwnership:async()=>{},
   });
   const registry = {get:()=>({id:"main"})};
@@ -52,7 +52,7 @@ test("stop releases Session even when the SSE client stops reading terminal even
 test("stop checks ownership before cancellation and waits for Session release", async () => {
   const id=randomUUID();
   const manager=Object.create(AgentSessionManager.prototype) as AgentSessionManager;
-  Object.assign(manager,{running:new Set(),idleWaiters:new Map(),assertOwnership:async(_:string,user:string)=>{
+  Object.assign(manager,{acquireForRun:async()=>({session,release:manager.reserve(session as never)}),running:new Set(),idleWaiters:new Map(),assertOwnership:async(_:string,user:string)=>{
     if(user!=="owner")throw new SessionOwnershipError("wrong user");
   }});
   let admitted!:()=>void, complete!:()=>void, aborted=false;

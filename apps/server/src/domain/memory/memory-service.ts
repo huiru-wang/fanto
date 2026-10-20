@@ -1,64 +1,37 @@
-import type { Kysely } from "kysely";
-import type { DB } from "../../infrastructure/database/schema.js";
-import type { EmbeddingProvider } from "./embedding-provider.js";
-import { memoryKinds, type Memory, type MemoryKind, type MemorySearchResult } from "./model.js";
-import { PostgresMemoryRepository } from "./postgres-repository.js";
-import type { MemoryRepository } from "./repository.js";
-
-const MAX_MEMORIES_PER_USER = 50;
-const MAX_PREFERENCES_PER_USER = 20;
-const MAX_CONTENT_LENGTH = 1_000;
-
-function normalizeContent(content: string): string {
-  const normalized = content.trim();
-  if (!normalized) throw new Error("Memory content must not be empty");
-  if (normalized.length > MAX_CONTENT_LENGTH) throw new Error(`Memory content must not exceed ${MAX_CONTENT_LENGTH} characters`);
-  return normalized;
-}
-
-function assertKind(kind: string): asserts kind is MemoryKind {
-  if (!(memoryKinds as readonly string[]).includes(kind)) throw new Error("Unknown memory kind");
-}
-
+import type {Kysely} from "kysely";
+import type {DB} from "../../infrastructure/database/schema.js";
+import type {EmbeddingProvider} from "./embedding-provider.js";
+import {type Memory, type MemoryKind, type MemoryOwner, type MemorySearchResult, validMemoryKind, userOwner} from "./model.js";
+import type {MemoryRepository} from "./repository.js";
+import {PostgresMemoryRepository} from "./postgres-repository.js";
+const MAX_PER_OWNER=50, MAX_PREFERENCES=20, MAX_CONTENT=1000;
+const normalized = (text:string) => { const content=text.trim(); if(!content || content.length>MAX_CONTENT) throw new Error("Invalid memory content"); return content; };
+const ownerOf=(owner:MemoryOwner|string):MemoryOwner=>typeof owner==="string"?userOwner(owner):owner;
+function check(owner:MemoryOwner,kind:MemoryKind) { if(!validMemoryKind(owner,kind)) throw new Error("Memory kind not allowed for owner"); }
 export class MemoryService {
-  constructor(private readonly repository: MemoryRepository, private readonly embeddings: EmbeddingProvider) {}
-
-  static create(db: Kysely<DB>, embeddings: EmbeddingProvider): MemoryService {
-    return new MemoryService(new PostgresMemoryRepository(db), embeddings);
-  }
-
-  async list(userId: string, input: { kind?: MemoryKind; limit?: number } = {}): Promise<Memory[]> {
-    if (input.kind) assertKind(input.kind);
-    return this.repository.list(userId, { kind: input.kind, limit: Math.min(input.limit ?? MAX_MEMORIES_PER_USER, MAX_MEMORIES_PER_USER) });
-  }
-
-  async search(userId: string, query: string, limit = 10, kinds?: readonly MemoryKind[]): Promise<MemorySearchResult[]> {
-    if (kinds) {
-      if (kinds.length === 0) return [];
-      for (const kind of kinds) assertKind(kind);
-    }
-    const normalized = normalizeContent(query);
-    return this.repository.search({ userId, embedding: await this.embeddings.embed(normalized), limit: Math.min(Math.max(limit, 1), 10), kinds });
-  }
-
-  async create(userId: string, input: { kind: MemoryKind; content: string }): Promise<Memory> {
-    assertKind(input.kind);
-    const content = normalizeContent(input.content);
-    if (await this.repository.countByUser(userId) >= MAX_MEMORIES_PER_USER) throw new Error(`A user can store at most ${MAX_MEMORIES_PER_USER} memories`);
-    if (input.kind === "interaction_preferences" && await this.repository.countByUser(userId, "interaction_preferences") >= MAX_PREFERENCES_PER_USER) throw new Error(`A user can store at most ${MAX_PREFERENCES_PER_USER} interaction preference memories`);
-    return this.repository.create({ memoryId: crypto.randomUUID(), userId, kind: input.kind, content, embedding: await this.embeddings.embed(content) });
-  }
-
-  async update(userId: string, memoryId: string, input: { kind: MemoryKind; content: string }): Promise<Memory | undefined> {
-    assertKind(input.kind);
-    const existing = await this.repository.find(userId, memoryId);
-    if (!existing) return undefined;
-    if (input.kind === "interaction_preferences" && existing.kind !== "interaction_preferences" && await this.repository.countByUser(userId, "interaction_preferences") >= MAX_PREFERENCES_PER_USER) throw new Error(`A user can store at most ${MAX_PREFERENCES_PER_USER} interaction preference memories`);
-    const content = normalizeContent(input.content);
-    return this.repository.update({ userId, memoryId, kind: input.kind, content, embedding: await this.embeddings.embed(content) });
-  }
-
-  remove(userId: string, memoryId: string): Promise<boolean> {
-    return this.repository.remove(userId, memoryId);
-  }
+ constructor(private readonly repository:MemoryRepository,private readonly embeddings:EmbeddingProvider) {}
+ static create(db:Kysely<DB>,embeddings:EmbeddingProvider) {return new MemoryService(new PostgresMemoryRepository(db),embeddings);}
+ async list(target:MemoryOwner|string,input:{kind?:MemoryKind;limit?:number}={}):Promise<Memory[]>{
+  const owner=ownerOf(target); if(input.kind)check(owner,input.kind);
+  return this.repository.list(owner,{kind:input.kind,limit:Math.min(Math.max(input.limit??50,1),50)});
+ }
+ async search(target:MemoryOwner|string,query:string,limit=10,kinds?:readonly MemoryKind[]):Promise<MemorySearchResult[]>{
+  const owner=ownerOf(target); if(kinds)for(const kind of kinds)check(owner,kind);
+  if(kinds?.length===0)return [];
+  return this.repository.search({...owner,embedding:await this.embeddings.embed(normalized(query)),limit:Math.min(Math.max(limit,1),10),kinds});
+ }
+ async create(target:MemoryOwner|string,input:{kind:MemoryKind;content:string}):Promise<Memory>{
+  const owner=ownerOf(target);check(owner,input.kind);const content=normalized(input.content);
+  if(await this.repository.countByOwner(owner)>=MAX_PER_OWNER)throw new Error("Memory capacity reached");
+  if(input.kind==="interaction_preferences"&&await this.repository.countByOwner(owner,input.kind)>=MAX_PREFERENCES)throw new Error("Memory preferences capacity reached");
+  return this.repository.create({...owner,memoryId:crypto.randomUUID(),kind:input.kind,content,embedding:await this.embeddings.embed(content)});
+ }
+ async update(target:MemoryOwner|string,memoryId:string,input:{kind:MemoryKind;content:string}):Promise<Memory|undefined>{
+  const owner=ownerOf(target);check(owner,input.kind);
+  const existing=await this.repository.find(owner,memoryId);if(!existing)return undefined;
+  if(input.kind==="interaction_preferences"&&existing.kind!=="interaction_preferences"&&await this.repository.countByOwner(owner,input.kind)>=MAX_PREFERENCES)throw new Error("Memory preferences capacity reached");
+  const content=normalized(input.content);
+  return this.repository.update({...owner,memoryId,kind:input.kind,content,embedding:await this.embeddings.embed(content)});
+ }
+ remove(target:MemoryOwner|string,memoryId:string){return this.repository.remove(ownerOf(target),memoryId);}
 }

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {Hono} from "hono";
 import { createAuthRoutes } from "./auth.js";
 import type { AuthService } from "../domain/auth/auth-service.js";
 
@@ -37,4 +38,17 @@ test("unsupported provider is rejected before service invocation", async () => {
   assert.equal(response.status, 400);
   const body = await response.json() as { errorCode: string };
   assert.equal(body.errorCode, "INVALID_INPUT");
+});
+
+
+test("mounted auth quota does not count or block normal multi-role requests",async()=>{
+  const app=new Hono();
+  app.route("/api",createAuthRoutes({createIntent:async()=>({intentId:"test"})} as never));
+  app.get("/api/fantos",c=>c.json({success:true,result:[]}));
+  for(let i=0;i<65;i++)assert.equal((await app.request("/api/fantos")).status,200);
+  for(let i=0;i<61;i++){
+    const response=await app.request("/api/auth/intents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({purpose:"login",provider:"google"})});
+    assert.equal(response.status,i<60?200:429);
+  }
+  assert.equal((await app.request("/api/fantos")).status,200,"auth quota exhaustion must not block role management");
 });

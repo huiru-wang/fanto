@@ -14,6 +14,7 @@
 进入子模块时继续读取最近的局部规则：
 
 - Server：`apps/server/AGENTS.md`
+- H5：`apps/h5/AGENTS.md`
 - Agent Runtime：`apps/server/AGENTS.md`
 - iOS：`apps/ios/fanto/AGENTS.md`
 

@@ -31,8 +31,9 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
       const agentId = await sessions.resolveAgentId(body.data.sessionId, userId);
       const definition = registry.get(agentId);
       if (!definition) return c.json({ error: "Agent not found" }, 404);
-      session = await sessions.acquire(definition, body.data.sessionId, userId);
-      release = sessions.reserve(session);
+      const acquired=await sessions.acquireForRun(definition,body.data.sessionId,userId);
+      session=acquired.session;
+      release=acquired.release;
     } catch (cause) {
       return sessionError(c, cause);
     }

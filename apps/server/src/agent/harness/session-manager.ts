@@ -25,6 +25,7 @@ export class SessionBusyError extends Error {}
 export type ManagedSession = {
   id: string;
   agentId: string;
+  scopeKey?: string;
   userId: string;
   revision: string;
   runtime: HarnessRuntime;
@@ -82,6 +83,17 @@ export class AgentSessionManager {
     return this.openAndConfigure(definition, id, userId);
   }
 
+  async acquireForRun(definition:AgentDefinition,id:string,userId:string){
+    let session:ManagedSession|undefined;
+    const release=await this.fanto.reserveMainRun({userId,sessionId:id},async()=>{
+      session=await this.acquire(definition,id,userId);
+      return this.reserve(session);
+    });
+    return {session:session!,release};
+  }
+  async defaultMain(userId:string){
+    return this.fanto.getDefaultMainSession({userId});
+  }
   async resolveAgentId(id: string, userId: string): Promise<string> {
     if (!validSessionId.test(id)) throw new SessionNotFoundError("Invalid session id");
     const cached = this.sessions.get(id);
@@ -173,6 +185,7 @@ export class AgentSessionManager {
     this.sessions.delete(id);
     await current.runtime.close();
     this.repository.closedHandle(id);
+    await this.repository.evict(id);
   }
 
   async checkpoint(id: string): Promise<void> {

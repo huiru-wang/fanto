@@ -38,16 +38,16 @@ test("Main Session History enforces ownership",async()=>{
 });
 
 
-test("Session creation accepts Main and rejects retired Agent identities", async () => {
-  const created: string[] = [];
-  const registry = {get:(agentId?:string) => agentId && agentId === "main" ? {id:agentId} : undefined};
-  const sessions = {create:async (definition:{id:string},userId:string)=>{assert.equal(userId,"owner");created.push(definition.id);return {id:randomUUID(),agentId:definition.id};}};
-  const app = createSessionRoutes(registry as never,sessions as never);
-  for (const agentId of ["main","proposal-agent","creator-agent"]) {
-    const response = await runWithRequestPrincipal({userId:"owner",source:"user"}, () => app.request("/sessions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({agentId})}));
-    assert.equal(response.status,agentId === "main" ? 201 : 404);
+test("Session creation is disabled; default Main resolves idempotently", async () => {
+  const app=createSessionRoutes({} as never,{defaultMain:async(userId:string)=>{
+    assert.equal(userId,"owner");return {sessionId:"fixed",agentId:"main",scopeKey:"default"};
+  }} as never);
+  for(const agentId of ["main","creator-agent","proposal-agent"]){
+    const response=await runWithRequestPrincipal({userId:"owner",source:"user"},()=>app.request("/sessions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({agentId})}));
+    assert.equal(response.status,403);
   }
-  assert.deepEqual(created,["main"]);
+  const result=await runWithRequestPrincipal({userId:"owner",source:"user"},()=>app.request("/main-session"));
+  assert.equal(result.status,200);assert.equal((await result.json() as any).result.scopeKey,"default");
 });
 
 test("stop without an active run is idempotent and does not wait on persistence",async()=>{

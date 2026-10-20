@@ -56,5 +56,13 @@ export class PostgresMediaRepository {
   }
 
   async findMedia(id: string, userId: string) { const row = await this.db.selectFrom("media_assets").selectAll().where("media_id", "=", id).where("user_id", "=", userId).executeTakeFirst(); return row ? asset(row) : null; }
+  async findRecordMedia(id: string, userId: string) {
+    const media=await this.findMedia(id,userId);
+    const recordId=media?.extData.recordId;
+    if(!media||typeof recordId!=="string")return null;
+    const record=await this.db.selectFrom("records").select("record_id").where("record_id","=",recordId)
+      .where("owner_type","=","user").where("owner_id","=",userId).executeTakeFirst();
+    return record?media:null;
+  }
   async findMediaByIds(ids: string[], userId: string, database: Kysely<DB> = this.db, lock = false) { if (!ids.length) return []; const q = database.selectFrom("media_assets").selectAll().where("user_id", "=", userId).where("media_id", "in", ids).orderBy("media_id"); return (await (lock ? q.forShare() : q).execute()).map(asset); }
 }

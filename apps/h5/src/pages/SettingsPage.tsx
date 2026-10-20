@@ -95,7 +95,7 @@ export function SettingsPage() {
         </SettingsSection>
 
         <SettingsSection title="Fanto">
-          <SettingsRow icon={<Sparkles size={18} />} title="Fanto 设置" value="编辑" onClick={() => navigate("/fanto/settings")} />
+          <SettingsRow icon={<Sparkles size={18} />} title="角色与对话" value="管理角色" onClick={() => navigate("/fantos")} />
         </SettingsSection>
 
         <SettingsSection title="通知">
@@ -130,7 +130,7 @@ export function SettingsPage() {
           <span>退出登录</span>
         </button>
 
-        <p className="settings-demo-note">角色设定保存后会同步到账号；其他设置仍为交互原型，仅保留在当前页面。</p>
+        <p className="settings-demo-note">角色创建与能力配置会同步到账号；其他设置仍为交互原型，仅保留在当前页面。</p>
       </div>
 
       <SettingsModal title="个人资料" open={profileOpen} onClose={() => setProfileOpen(false)}>

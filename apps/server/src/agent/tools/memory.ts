@@ -1,97 +1,53 @@
-import { Type } from "typebox";
-import type { Context } from "@earendil-works/pi-agent-core";
-import type { AgentBusinessServices, AgentMemory, AgentMemorySearch } from "../business-services.js";
-import { createRunContext } from "../context/index.js";
-import type { FantoTool } from "./types.js";
-
-const memoryKind = Type.Union([
-  Type.Literal("personal_background"),
-  Type.Literal("important_relationships"),
-  Type.Literal("current_focus"),
-  Type.Literal("interaction_preferences"),
-  Type.Literal("shared_history"),
-]);
-
-const schema = Type.Object({
-  action: Type.Union([Type.Literal("list"), Type.Literal("search"), Type.Literal("create"), Type.Literal("update"), Type.Literal("delete")]),
-  memoryId: Type.Optional(Type.String({ minLength: 1, description: "要修改或删除的记忆 ID。" })),
-  kind: Type.Optional(memoryKind),
-  content: Type.Optional(Type.String({ minLength: 1, maxLength: 1000, description: "一个可独立理解的简洁事实或主题；update 须包含更新后的完整正文，保留兼容信息及必要日期。" })),
-  query: Type.Optional(Type.String({ minLength: 1, maxLength: 1000, description: "按当前对话的对象和话题描述要回想的信息，例如小宝与用户的关系、求职面试进展。" })),
-  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, description: "search 最多返回多少条，默认 5。" })),
-}, { additionalProperties: false });
-
-type MemoryDetails =
-  | { action: "list"; memories: AgentMemory[] }
-  | { action: "search"; memories: AgentMemorySearch[] }
-  | { action: "create" | "update"; memory: AgentMemory }
-  | { action: "delete"; memoryId: string };
-
-type MemoryClient = Pick<AgentBusinessServices, "listMemories" | "searchMemories" | "createMemory" | "updateMemory" | "deleteMemory">;
-
-function requestContext(context: Context) {
-  const run = createRunContext.read(context);
-  return {
-    userId: run.userId,
-    traceId: run.traceId,
-    signal: context.abortSignal,
-    sessionId: run.sessionId,
-    sourceMessageId: run.sourceMessageId,
-    timeZone: run.timeZone,
-  };
+import {Type} from "typebox";
+import type {Context} from "@earendil-works/pi-agent-core";
+import type {AgentBusinessServices,AgentMemory,AgentMemorySearch,MemoryToolScope} from "../business-services.js";
+import {createRunContext} from "../context/index.js";
+import type {FantoTool} from "./types.js";
+import {userMemoryKinds,fantoMemoryKinds,type MemoryKind} from "../../domain/memory/model.js";
+const actions=Type.Union(["list","search","create","update","delete"].map(x=>Type.Literal(x)) as [ReturnType<typeof Type.Literal>,...ReturnType<typeof Type.Literal>[]]);
+function toolSchema(scope:MemoryToolScope,readOnly=false){
+ const kinds=scope==="user"?userMemoryKinds:fantoMemoryKinds;
+ return Type.Object({
+  action:readOnly?Type.Union([Type.Literal("list"),Type.Literal("search")]):actions,memoryId:Type.Optional(Type.String({minLength:1})),
+  kind:Type.Optional(Type.Union(kinds.map(x=>Type.Literal(x)) as [ReturnType<typeof Type.Literal>,...ReturnType<typeof Type.Literal>[]])),
+  content:Type.Optional(Type.String({minLength:1,maxLength:1000})),
+  query:Type.Optional(Type.String({minLength:1,maxLength:1000})),
+  limit:Type.Optional(Type.Integer({minimum:1,maximum:10}))
+ },{additionalProperties:false});
 }
-
-function result(details: MemoryDetails) {
-  return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details };
+type Details={action:string;memories?:AgentMemory[]|AgentMemorySearch[];memory?:AgentMemory;memoryId?:string};
+function runContext(context:Context){
+ const r=createRunContext.read(context);
+ return {userId:r.userId,sessionId:r.sessionId,signal:context.abortSignal,traceId:r.traceId,sourceMessageId:r.sourceMessageId,timeZone:r.timeZone};
 }
-
-function requireString(value: string | undefined, name: string): string {
-  if (!value?.trim()) throw new Error(`memory_manage action requires ${name}`);
-  return value.trim();
+function requireText(v:string|undefined,k:string){if(!v?.trim())throw new Error("Missing "+k);return v.trim();}
+function assertKeys(params:Record<string,unknown>,keys:string[]){
+ for(const [key,value] of Object.entries(params))if(value!==undefined&&key!=="action"&&!keys.includes(key))throw new Error("Action does not accept "+key);
 }
-
-function assertAllowed(params: Record<string, unknown>, allowed: readonly string[]) {
-  for (const [key, value] of Object.entries(params)) {
-    if (key !== "action" && value !== undefined && !allowed.includes(key)) throw new Error(`memory_manage action does not accept ${key}`);
+function createTool(client:AgentBusinessServices,scope:MemoryToolScope,readOnly=false){
+ const schema=toolSchema(scope,readOnly),name=scope==="user"?"user_memory_manage":"fanto_memory_manage";
+ return {
+  name,label:scope==="user"?"用户长期记忆":"角色独立记忆",
+  description:scope==="user"?"按需读取用户个人背景/关系/目标/互动偏好；仅在允许时使用。":"维护当前角色与用户的共同经历、关系状态、待续事项和个人成长。记录确认的事实，不杜撰。",
+  presentation:{visible:false},parameters:schema,executionMode:"sequential" as const,replay:"never" as const,
+  async execute(_id:string,p:any,_update:any,_tc:any,_inv:any,ctx:Context){
+   const request=runContext(ctx);
+   if(readOnly&&!["list","search"].includes(p.action))throw new Error("USER_MEMORY_READ_ONLY");
+   if(p.kind&&!(scope==="user"?userMemoryKinds:fantoMemoryKinds as readonly string[]).includes(p.kind))throw new Error("Memory kind not allowed for owner");
+   let details:Details;
+   switch(p.action){
+    case "list":assertKeys(p,["kind"]);details={action:p.action,memories:await client.listMemories(request,{kind:p.kind},scope)};break;
+    case "search":assertKeys(p,["query","limit"]);details={action:p.action,memories:await client.searchMemories(request,{query:requireText(p.query,"query"),limit:p.limit??5},scope)};break;
+    case "create":assertKeys(p,["kind","content"]);if(!p.kind)throw new Error("kind required");details={action:p.action,memory:await client.createMemory(request,{kind:p.kind as MemoryKind,content:requireText(p.content,"content")},scope)};break;
+    case "update":assertKeys(p,["memoryId","kind","content"]);if(!p.kind)throw new Error("kind required");details={action:p.action,memory:await client.updateMemory(request,requireText(p.memoryId,"memoryId"),{kind:p.kind as MemoryKind,content:requireText(p.content,"content")},scope)};break;
+    case "delete":assertKeys(p,["memoryId"]);await client.deleteMemory(request,requireText(p.memoryId,"memoryId"),scope);details={action:p.action,memoryId:p.memoryId};break;
+    default:throw new Error("Unknown memory action");
+   }
+   return {content:[{type:"text" as const,text:JSON.stringify(details)}],details};
   }
+ } as FantoTool;
 }
-
-export function createMemoryManageTool(client: MemoryClient): FantoTool<typeof schema, MemoryDetails> {
-  return {
-    name: "memory_manage",
-    label: "管理长期记忆",
-    presentation: { visible: false },
-    description: "检索与管理长期记忆。默认提供个人背景及互动偏好；重要关系、持续关注和 shared_history（共同约定与已确认的经历/剧情）按需查找。对未来持续有用的明确事实、进展和约定应保存，但不存未经确认的推断或即兴虚构；shared_history 须标记虚构剧情性质。create 前确认无重复，同一事项优先 update，用户要求遗忘才 delete。list 可选 kind；search 传 query/limit；create 传 kind/content；update 传 memoryId/kind/content；delete 传 memoryId。仅成功后才声称写入。",
-    parameters: schema,
-    executionMode: "sequential",
-    replay: "never",
-    async execute(_toolCallId, params, _onUpdate, _toolContext, _invocation, context) {
-      switch (params.action) {
-        case "list": {
-          assertAllowed(params, ["kind"]);
-          return result({ action: "list", memories: await client.listMemories(requestContext(context), { kind: params.kind }) });
-        }
-        case "search": {
-          assertAllowed(params, ["query", "limit"]);
-          return result({ action: "search", memories: await client.searchMemories(requestContext(context), { query: requireString(params.query, "query"), limit: params.limit ?? 5 }) });
-        }
-        case "create": {
-          assertAllowed(params, ["kind", "content"]);
-          if (!params.kind) throw new Error("memory_manage action requires kind");
-          return result({ action: "create", memory: await client.createMemory(requestContext(context), { kind: params.kind, content: requireString(params.content, "content") }) });
-        }
-        case "update": {
-          assertAllowed(params, ["memoryId", "kind", "content"]);
-          if (!params.kind) throw new Error("memory_manage action requires kind");
-          return result({ action: "update", memory: await client.updateMemory(requestContext(context), requireString(params.memoryId, "memoryId"), { kind: params.kind, content: requireString(params.content, "content") }) });
-        }
-        case "delete": {
-          assertAllowed(params, ["memoryId"]);
-          const memoryId = requireString(params.memoryId, "memoryId");
-          await client.deleteMemory(requestContext(context), memoryId);
-          return result({ action: "delete", memoryId });
-        }
-      }
-    },
-  };
-}
+export const createUserMemoryTool=(c:AgentBusinessServices,readOnly=false)=>createTool(c,"user",readOnly);
+export const createFantoMemoryTool=(c:AgentBusinessServices)=>createTool(c,"fanto");
+/** Legacy test helper (runtime no longer registers memory_manage). */
+export const createMemoryManageTool=createUserMemoryTool;

@@ -11,6 +11,43 @@ export class MediaService {
   private readonly thumbnailWork = new ThumbnailWork();
   constructor(private readonly media: PostgresMediaRepository, private readonly oss: ObjectStorage) {}
   static create(db: Kysely<DB>, oss: ObjectStorage) { return new MediaService(new PostgresMediaRepository(db), oss); }
+  /** Durable cleanup survives the physical removal of the Fanto itself. No role tombstone. */
+  async queueFantoDeletion(trx: Transaction<DB>, userId: string, fantoId: string, avatarId: string | null) {
+    const assets = await trx.selectFrom("media_assets").selectAll().where("user_id", "=", userId)
+      .where(sql<boolean>`(
+        media_id=${avatarId} OR ext_data::jsonb->>'recordId' IN
+          (SELECT record_id FROM records WHERE owner_type='fanto' AND owner_id=${fantoId})
+      ) AND NOT EXISTS (SELECT 1 FROM user_fantos WHERE avatar_media_id=media_assets.media_id AND fanto_id<>${fantoId}::uuid)
+        AND NOT EXISTS (SELECT 1 FROM user_profiles WHERE avatar_media_id=media_assets.media_id OR cover_media_id=media_assets.media_id)`)
+      .orderBy("media_id").forUpdate().execute();
+    const keys = assets.flatMap(asset => {
+      const thumbnail = storedThumbnail(JSON.parse(asset.ext_data ?? "{}"), asset.object_key);
+      return [asset.object_key, ...(thumbnail ? [thumbnail.objectKey] : [])];
+    });
+    await sql`INSERT INTO fanto_media_deletions(fanto_id,user_id,object_keys)
+      VALUES(${fantoId},${userId},${JSON.stringify(keys)}::jsonb)`.execute(trx);
+    if (assets.length) await trx.deleteFrom("media_assets").where("user_id", "=", userId)
+      .where("media_id", "in", assets.map(asset => asset.media_id)).execute();
+  }
+  async finishFantoDeletion(db: Kysely<DB>, userId: string, fantoId: string): Promise<boolean> {
+    const result = await sql<{object_keys:string[]}>`SELECT object_keys FROM fanto_media_deletions
+      WHERE user_id=${userId} AND fanto_id=${fantoId}`.execute(db);
+    if (!result.rows[0]) return true;
+    try {
+      for (const key of result.rows[0].object_keys) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([this.oss.remove(key),new Promise<never>((_,reject)=>{
+            timer=setTimeout(()=>reject(new Error("Object deletion timed out")),2000);
+          })]);
+        } catch(error) {
+          if (!(error instanceof StorageError && error.code === "NoSuchKey")) throw error;
+        } finally {clearTimeout(timer);}
+      }
+      await sql`DELETE FROM fanto_media_deletions WHERE user_id=${userId} AND fanto_id=${fantoId}`.execute(db);
+      return true;
+    } catch {return false;}
+  }
   findOwnedByIds(userId: string, ids: string[], options: { transaction?: Transaction<DB> } = {}) { return this.media.findMediaByIds(ids, userId, options.transaction, !!options.transaction); }
   static enqueueRecordDeletion(userId: string, ids: string[], transaction: Transaction<DB>) {
     return PostgresMediaRepository.enqueueRecordDeletion(userId, ids, transaction);
@@ -103,13 +140,13 @@ export class MediaService {
     const cutoff=new Date(Date.now()-24*60*60*1000).toISOString();
     const candidates=await db.selectFrom("media_assets").select(["media_id","user_id"]).where(sql<boolean>`ext_data::jsonb->>'purpose' IN ('fanto_avatar','user_avatar','user_cover')`)
       .where("created_at","<",cutoff)
-      .where(sql<boolean>`NOT EXISTS (SELECT 1 FROM user_fanto_settings WHERE avatar_media_id=media_assets.media_id) AND NOT EXISTS (SELECT 1 FROM user_profiles WHERE avatar_media_id=media_assets.media_id OR cover_media_id=media_assets.media_id)`).orderBy("media_id").limit(100).execute();
+      .where(sql<boolean>`NOT EXISTS (SELECT 1 FROM user_fantos WHERE avatar_media_id=media_assets.media_id) AND NOT EXISTS (SELECT 1 FROM user_profiles WHERE avatar_media_id=media_assets.media_id OR cover_media_id=media_assets.media_id)`).orderBy("media_id").limit(100).execute();
     let eligible=0,removed=0,failed=0;
     for (const candidate of candidates) {
       const claimed=await db.transaction().execute(async trx=>{
         const row=await trx.selectFrom("media_assets").selectAll().where("user_id","=",candidate.user_id).where("media_id","=",candidate.media_id).forUpdate().executeTakeFirst();
         if(!row) return null;
-        if(await trx.selectFrom("user_fanto_settings").select("user_id").where("avatar_media_id","=",row.media_id).executeTakeFirst() || await trx.selectFrom("user_profiles").select("user_id").where(eb=>eb.or([eb("avatar_media_id","=",row.media_id),eb("cover_media_id","=",row.media_id)])).executeTakeFirst()) return null;
+        if(await trx.selectFrom("user_fantos").select("user_id").where("avatar_media_id","=",row.media_id).executeTakeFirst() || await trx.selectFrom("user_profiles").select("user_id").where(eb=>eb.or([eb("avatar_media_id","=",row.media_id),eb("cover_media_id","=",row.media_id)])).executeTakeFirst()) return null;
         const data=JSON.parse(row.ext_data ?? "{}");
         if(data.cleanupClaimedAt && Date.now()-Date.parse(data.cleanupClaimedAt)<600_000) return null;
         if(apply) await trx.updateTable("media_assets").set({ext_data:JSON.stringify({...data,cleanupClaimedAt:new Date().toISOString()})}).where("user_id","=",row.user_id).where("media_id","=",row.media_id).execute();
@@ -122,7 +159,7 @@ export class MediaService {
         await this.oss.remove(claimed.object_key);
         await db.transaction().execute(async trx=>{
           const row=await trx.selectFrom("media_assets").select("media_id").where("user_id","=",claimed.user_id).where("media_id","=",claimed.media_id).forUpdate().executeTakeFirst();
-          if(row && !await trx.selectFrom("user_fanto_settings").select("user_id").where("avatar_media_id","=",row.media_id).executeTakeFirst() && !await trx.selectFrom("user_profiles").select("user_id").where(eb=>eb.or([eb("avatar_media_id","=",row.media_id),eb("cover_media_id","=",row.media_id)])).executeTakeFirst())
+          if(row && !await trx.selectFrom("user_fantos").select("user_id").where("avatar_media_id","=",row.media_id).executeTakeFirst() && !await trx.selectFrom("user_profiles").select("user_id").where(eb=>eb.or([eb("avatar_media_id","=",row.media_id),eb("cover_media_id","=",row.media_id)])).executeTakeFirst())
             await trx.deleteFrom("media_assets").where("user_id","=",claimed.user_id).where("media_id","=",row.media_id).execute();
         });
         removed++;
@@ -136,6 +173,11 @@ export class MediaService {
     return !!asset && asset.status === "ready" && asset.mediaType === "image" && asset.extData.purpose === purpose && !asset.extData.retiredAt && !asset.extData.cleanupClaimedAt;
   }
   async readyMetadata(userId: string, id: string) { const asset = await this.media.findMedia(id, userId); return asset?.status === "ready" && !["fanto_avatar", "user_avatar", "user_cover"].includes(String(asset.extData.purpose)) ? metadata(asset) : null; }
+  async readyRecordMetadata(userId:string,id:string){
+    const asset=await this.media.findRecordMedia(id,userId);
+    return asset?.status==="ready"&&!asset.extData.cleanupClaimedAt&&!asset.extData.retiredAt
+      &&!["fanto_avatar","user_avatar","user_cover"].includes(String(asset.extData.purpose))?metadata(asset):null;
+  }
   private async resolveThumbnail(asset: MediaAsset) {
     const thumbnail = storedThumbnail(asset.extData, asset.objectKey);
     if (thumbnail) return thumbnail;

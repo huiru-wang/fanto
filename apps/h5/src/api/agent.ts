@@ -1,4 +1,3 @@
-import { FANTO_AGENT_ID } from "../config";
 import { authorizedFetch } from "../auth/test-session";
 import { ApiError, requestJson } from "./http";
 
@@ -159,12 +158,8 @@ function extractToolPresentation(value: unknown): ToolPresentation {
   };
 }
 
-export async function createAgentSession(): Promise<string> {
-  const result = await requestJson<{ sessionId: string }>("/api/agent/sessions", {
-    method: "POST",
-    headers: agentHeaders(),
-    body: JSON.stringify({ agentId: FANTO_AGENT_ID }),
-  });
+export async function getDefaultMainSession(signal?: AbortSignal): Promise<string> {
+  const result = await requestJson<{ sessionId: string }>("/api/agent/main-session", { headers: agentHeaders(), signal });
   return result.sessionId;
 }
 
@@ -196,8 +191,8 @@ export async function streamAgentMessage(
     signal,
   });
   if (!response.ok || !response.body) {
-    const payload = await response.json().catch(() => null) as { error?: string } | null;
-    throw new ApiError(payload?.error ?? `Agent request failed (${response.status})`, response.status);
+    const payload = await response.json().catch(() => null) as { error?: string; errorCode?: string; errorMsg?: string } | null;
+    throw new ApiError(payload?.errorMsg ?? payload?.error ?? `Agent request failed (${response.status})`, response.status, payload?.errorCode);
   }
 
   const reader = response.body.getReader();

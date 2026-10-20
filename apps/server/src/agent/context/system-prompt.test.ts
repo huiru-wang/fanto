@@ -49,11 +49,7 @@ test("original single-slot providers and optional fallback remain compatible", a
 test("main prompt keeps persona, base memory, related memory and plain spoken Markdown contract", async () => {
   const { mainPrompt } = await import("../prompts/main.js");
   const slots = [...mainPrompt.matchAll(/\{\{([a-z][a-z0-9_]*)\}\}/g)].map(match => match[1]);
-  assert.deepEqual(slots, [
-    "fanto_identity", "character", "scenario", "character_instructions", "example_dialogues",
-    "user_memories", "relevant_memories", "recent_records", "current_time",
-  ]);
-  assert.match(mainPrompt, /不要给话语加引号/);
-  assert.match(mainPrompt, /Markdown 引用块/);
+  assert.deepEqual(slots, ["dynamic_main","current_time"]);
+  assert.doesNotMatch(mainPrompt, /recent_records|memory_manage/);
   assert.doesNotMatch(mainPrompt, /fantoCore/);
 });

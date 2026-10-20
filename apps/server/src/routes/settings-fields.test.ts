@@ -23,20 +23,15 @@ test("profile PATCH forwards only the selected field, including an explicit cove
   }
 });
 
-test("each Fanto prompt can be saved separately without submitting the other prompts", async () => {
-  let received: SettingsChanges | undefined;
-  const service = new FantoService({ find: async () => null, update: async (userId, version, changes) => {
-    assert.equal(userId, "owner"); assert.equal(version, 7);
-    received = changes;
-    return { ...defaultSettings(), version: 8 };
-  } }, { validateAvatar: async () => true });
-  const app = createApp({ auth, fanto: service, records: {} as never, media: {} as never });
-  for (const field of ["character", "scenario", "instructions", "exampleDialogues"]) {
-    const changes = { roleConfig: { [field]: field === "scenario" ? "" : "只保存这一项\n保留换行" } };
-    const response = await app.request("/api/fanto/settings", { method: "PATCH", headers, body: JSON.stringify({ expectedVersion: 7, changes }) });
-    assert.equal(response.status, 200);
-    assert.deepEqual(received, changes);
-  }
+test("Fanto API forwards per-role agent settings, never permits an identity patch",async()=>{
+ const received:unknown[]=[];
+ const service={patch:async (userId:string,input:unknown)=>{received.push([userId,input]);return {version:2};}} as unknown as FantoService;
+ const app=createApp({auth,fanto:service,records:{} as never,media:{} as never});
+ const body={fantoId:"a1111111-1111-4111-8111-111111111111",expectedVersion:1,changes:{agentConfig:{narrationEnabled:true}}};
+ const response=await app.request("/api/fanto",{method:"PATCH",headers,body:JSON.stringify(body)});
+ assert.equal(response.status,200);assert.deepEqual(received,[["owner",body]]);
+ const changed={...body,changes:{roleConfig:{character:"new"}}};
+ assert.equal((await app.request("/api/fanto",{method:"PATCH",headers,body:JSON.stringify(changed)})).status,400);
 });
 
 test("authenticated upload route accepts user_cover and forwards its isolated purpose", async () => {
@@ -54,25 +49,8 @@ test("authenticated upload route accepts user_cover and forwards its isolated pu
 });
 
 
-test("session rebinding accepts only the owned main session and only submits sessionId", async () => {
-  const sessionId = "10000000-0000-4000-8000-000000000001";
-  const fantoId = "20000000-0000-4000-8000-000000000001";
-  const current = { ...defaultSettings(), fantoId, nickname: "保持角色", version: 3 };
-  const service = new FantoService({ find: async () => current, update: async (userId, version, changes) => {
-    assert.equal(userId, "owner"); assert.equal(version, 3);
-    assert.deepEqual(changes, { sessionId });
-    return { ...current, ...changes, version: 4 };
-  } }, { validateAvatar: async () => true }, async (userId, id) => userId === "owner" && id === sessionId);
-  const app = createApp({ auth, fanto: service, records: {} as never, media: {} as never });
-  const patch = (changes: unknown, owner = "owner") => app.request("/api/fanto/settings", {
-    method: "PATCH", headers: { ...headers, Authorization: `Bearer ${owner}` },
-    body: JSON.stringify({expectedVersion: 3, changes}),
-  });
-  const response = await patch({ sessionId });
-  assert.equal(response.status, 200);
-  assert.deepEqual((await response.json() as any).result, { ...current, sessionId, version: 4 });
-  assert.equal((await patch({ sessionId }, "outsider")).status, 422);
-  assert.equal((await patch({ sessionId: "not-a-uuid" })).status, 400);
-  assert.equal((await patch({ fantoId })).status, 400);
-  assert.equal((await patch({ mainSessionId: sessionId })).status, 400);
+test("Fanto PATCH never accepts session rebinding",async()=>{
+ const app=createApp({auth,fanto:{patch:async()=>({})} as never,records:{} as never,media:{} as never});
+ const body={fantoId:"a1111111-1111-4111-8111-111111111111",expectedVersion:1,changes:{sessionId:"a1111111-1111-4111-8111-111111111112"}};
+ assert.equal((await app.request("/api/fanto",{method:"PATCH",headers,body:JSON.stringify(body)})).status,400);
 });

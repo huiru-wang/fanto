@@ -18,11 +18,12 @@
 - HTTP Route 不直接访问 Repository；领域操作走 Service。Agent Tool / Context Provider 只能通过 `agent/business-services.ts` 调用获准领域服务，不调用内部 HTTP。
 - 所有数据读取、写入和查询必须 user-scoped，身份只能来自已校验 JWT / Session；模型与请求参数不能替换用户身份。
 - 停止使用通用 Session stop：先标记停止，已开始工具自然完成，不把用户停止信号传入工具内部；禁止后续模型请求与新工具。200 表示已收尾，202/stopping 表示仍在结束当前操作，终态才可续发。SDK Session 与 frame drain 在内存运行；稳定历史异步尽力保存，正常结束/停止不等数据库。断线仅分离 SSE，History 优先恢复内存。Record 正式写入继续保持事务。唯一对话契约、快照/冷恢复/容量边界见 [Agent Runtime](../../docs/architecture/agent-runtime.md)。
-- `create_current_schema_20261019.ts` 为唯一重置基线，直接创建当前最终业务结构（含 fanto_id 主键、session_id）及 Agent Checkpoint 三表；不再归并旧迁移历史或自动修复旧结构。表、索引、Schema、vector 扩展均使用 IF NOT EXISTS，保留已存在对象与数据。正常重复执行由 Kysely 历史跳过；删除两张 Kysely 元数据表后可幂等重放当前基线。旧版结构须先由操作者清空业务表、agent_session 表与 Kysely 元数据；IF NOT EXISTS 不等于旧结构升级或校验。禁止应用自动清库。
+- 当前基线仅供空库：user_fantos、多 Owner Records/Memories、scope_key 固定 Session、独立媒体清理清单；全部业务表无 SQL 外键。禁止应用自动清库。迁移目录仅保留 create_current_schema_20261019.ts 一个基线脚本，部署需使用操作者准备的空库（包括清除旧 Kysely 迁移元数据）；应用不执行真实库数据重置。
 - 登录身份的 contact_value 保存 Provider 验证结果中的完整邮箱或国际格式手机号；缺失返回不清空旧值，不从脱敏提示反推，不按邮箱合并身份。接口继续仅返回 displayHint；手机号实际短信 Provider 尚未接入。具体契约见 [Users](../../docs/domain/users.md#认证)。
 - 用户统计由 UserProfileService 按 JWT userId 读取注册时间与全部现存 Record 数，相伴日按请求时区计算（默认UTC），亲密度暂固定12并标记为占位；不新增统计表。用户个人资料由 UserProfileService 管理 `user_profiles`，与角色设置分开。Profile PATCH 校验版本，头像只能为本人 ready 的 user_avatar，背景图只能为本人 ready 的 user_cover；nickname / signature 不自动注入角色 Prompt。见 [Users](../../docs/domain/users.md)。
-- FantoService 统一管理 `user_fanto_settings`：fanto_id 为独立角色主键，user_id 为非唯一归属；当前 API 只操作按创建时间及 ID 排序的首个默认角色，锁定用户确保首次并发保存只创建一行。session_id 只接受本人 main Agent Session，切换会话不改变角色身份，不删除旧会话或记忆。基本资料独立列，角色内容保存在 `role_config` JSONB，PATCH 按 version 校验并合并提交字段；旧 Character API 仅为兼容适配。CharacterProvider 每个 Run 通过 business-services 读取一次，读取失败中止该 Run，保存后下一轮生效。头像必须属于本人且 purpose=fanto_avatar，不能用于 Record；生命周期见 [Fanto](../../docs/domain/fanto.md)。
-- Memory 使用个人背景、重要关系、近期关注、相处偏好、共同经历五类；个人背景/相处偏好默认注入，其他由 Main 按需检索或 Provider 在连续性话题上轻量预检索。Main 的 Core/Persona/Memory/Response 约束集中在 `agent/prompts/main.ts`，沿用 memory_manage；不增加逐消息后台整理、记忆版本或语义校验层。存储与历史类型边界见 [Memory](../../docs/domain/memory.md)。
+- FantoService 管理 user_fantos：每用户最多 3 active，身份字段可空且创建后固定；PATCH 仅改 agent_config/头像。active/archived 可恢复切换，物理删除不保留 deleted 标记。main Session 以 user_id/agent_id/scope_key 唯一，scope_key=default 或 fantoId；角色创建时绑定固定 Session，default Main 幂等初始化，禁止通用创建/重绑定。用户行锁内校验并预留 Run；运行中 PATCH/归档/删除返回 FANTO_BUSY。当前仅单进程运行门禁，多实例需分布式租约。
+- 删除角色先排空并驱逐 Session Checkpoint，再显式删除角色 Owner 数据、会话子表与独占媒体；User 数据和其他角色保留。对象 key 持久化到 fanto_media_deletions，提交后删除对象；失败返回 202，重复 DELETE 重试，全部清理才返回 204。不能以数据库行删除成功冒充外部对象清理完成。无 FK 不代表裸删 users 会级联，当前没有账户物理删除 API。
+- Memory 按 owner_type/owner_id 隔离：User 四类、Fanto 四类，数据库和 Service 校验 kind。默认 Main 三工具 record_read/user_memory_manage/present_media；角色按配置启用 User Record/User Memory，User Memory 仅读，FantoMemoryTool 固定本角色。MainDynamicProvider 条件注入 Prompt，空身份段省略，不自动注入 recent_records；每 Scope 记忆上下文预算 12000 字节。详见 Fanto/Memory/Agent Runtime 文档。
 - Current docs 描述已实现语义；`plan/` 只作为方案历史，不作为现状依据。密钥、URL Token 和内部 Tool 参数不得写入面向用户的回复、日志或文档。
 
 

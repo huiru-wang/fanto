@@ -21,24 +21,24 @@ export class PostgresRecordRepository implements RecordRepository {
       if (typeof blocks === "string") return blocks;
       const now = nowIso();
       const location = input.value.location ? normalizedLocation(input.value.location) : null;
-      const row = { record_id: randomUUID(), user_id: input.userId, source: input.source ?? "home", content: JSON.stringify({ text: input.value.text, blocks }), version: 1, status: "pending", task_id: null, location_latitude: location?.latitude ?? null, location_longitude: location?.longitude ?? null, event_at: input.eventAt, created_at: now, updated_at: now, embedding: null };
+      const row = { record_id: randomUUID(), owner_type: "user" as const, owner_id: input.userId, source: input.source ?? "home", content: JSON.stringify({ text: input.value.text, blocks }), version: 1, status: "pending", task_id: null, location_latitude: location?.latitude ?? null, location_longitude: location?.longitude ?? null, event_at: input.eventAt, created_at: now, updated_at: now, embedding: null };
       await trx.insertInto("records").values(row).execute();
       await this.link(trx, input.userId, input.value.media.map(item => item.mediaId), row.record_id);
       return this.toEntity(row);
     });
   }
 
-  async findById(id: string) { const row = await this.db.selectFrom("records").selectAll().where("record_id", "=", id).executeTakeFirst(); return row ? this.toEntity(row) : null; }
+  async findById(id: string) { const row = await this.db.selectFrom("records").selectAll().where("record_id", "=", id).where("owner_type", "=", "user").executeTakeFirst(); return row ? this.toEntity(row) : null; }
 
   async findByIds(userId: string, ids: string[], options: RecordReadOptions = {}) {
     if (!ids.length) return [];
-    const query = (options.transaction ?? this.db).selectFrom("records").selectAll().where("user_id", "=", userId).where("record_id", "in", ids).orderBy("record_id");
+    const query = (options.transaction ?? this.db).selectFrom("records").selectAll().where("owner_type", "=", "user").where("owner_id", "=", userId).where("record_id", "in", ids).orderBy("record_id");
     if (options.lock && !options.transaction) throw new Error("Record locks require a transaction");
     return (await (options.lock ? query.forUpdate() : query).execute()).map(row => this.toEntity(row));
   }
 
   async findByUserId(userId: string, opts: { cursor?: string; limit: number }) {
-    let query = this.db.selectFrom("records").selectAll().where("user_id", "=", userId);
+    let query = this.db.selectFrom("records").selectAll().where("owner_type", "=", "user").where("owner_id", "=", userId);
     if (opts.cursor) {
       const cursor = decodeRecordCursor(opts.cursor);
       query = query.where(eb => eb.or([eb("event_at", "<", cursor.eventAt), eb.and([eb("event_at", "=", cursor.eventAt), eb("record_id", "<", cursor.id!)]) ]));
@@ -48,7 +48,7 @@ export class PostgresRecordRepository implements RecordRepository {
 
   async updateContent(id: string, userId: string, input: { value: SaveRecordContent; expectedVersion: number }): Promise<Record | "not_found" | "conflict" | "invalid_media" | "invalid_content"> {
     return this.db.transaction().execute(async trx => {
-      const previous = await trx.selectFrom("records").selectAll().where("record_id", "=", id).where("user_id", "=", userId).forUpdate().executeTakeFirst();
+      const previous = await trx.selectFrom("records").selectAll().where("record_id", "=", id).where("owner_type", "=", "user").where("owner_id", "=", userId).forUpdate().executeTakeFirst();
       if (!previous) return "not_found";
       if (previous.version !== input.expectedVersion) return "conflict";
       if (previous.status === "processing") return "conflict";
@@ -67,26 +67,26 @@ export class PostgresRecordRepository implements RecordRepository {
 
   async delete(id: string, userId: string, expectedVersion: number): Promise<{record:Record;objectKeys:string[]} | "not_found" | "conflict"> {
     return this.db.transaction().execute(async trx => {
-      const row = await trx.selectFrom("records").selectAll().where("record_id", "=", id).where("user_id", "=", userId).forUpdate().executeTakeFirst();
+      const row = await trx.selectFrom("records").selectAll().where("record_id", "=", id).where("owner_type", "=", "user").where("owner_id", "=", userId).forUpdate().executeTakeFirst();
       if (!row) return "not_found";
       if (row.version !== expectedVersion) return "conflict";
       const record = this.toEntity(row);
       const ids = record.content.blocks.flatMap(block => block.type === "location" ? [] : [block.mediaId]);
       const objectKeys=this.cleanupMedia ? await this.cleanupMedia(userId,ids,trx) : [];
       if(!this.cleanupMedia)for (const mediaId of ids) await this.unlink(trx, userId, mediaId, nowIso());
-      await trx.deleteFrom("records").where("record_id", "=", id).where("user_id", "=", userId).where("version", "=", expectedVersion).execute();
+      await trx.deleteFrom("records").where("record_id", "=", id).where("owner_type", "=", "user").where("owner_id", "=", userId).where("version", "=", expectedVersion).execute();
       return {record,objectKeys};
     });
   }
 
   async claimPostprocess(input: { recordId: string; userId: string; version: number; runId: string }) {
-    const row = await this.db.updateTable("records").set({ status: "processing", task_id: input.runId, updated_at: nowIso() }).where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "in", ["pending", "updated"]).returningAll().executeTakeFirst();
+    const row = await this.db.updateTable("records").set({ status: "processing", task_id: input.runId, updated_at: nowIso() }).where("record_id", "=", input.recordId).where("owner_type", "=", "user").where("owner_id", "=", input.userId).where("version", "=", input.version).where("status", "in", ["pending", "updated"]).returningAll().executeTakeFirst();
     return row ? this.toEntity(row) : null;
   }
 
   async completePostprocess(input: { recordId: string; userId: string; version: number; runId: string; images: Array<{ mediaId: string; description: string }>; audio: Array<{ mediaId: string; transcription?: string; asr: { status: "succeeded" | "failed"; model?: string; emotion?: string; language?: string; completedAt?: string; errorCode?: string } }> }) {
     return this.db.transaction().execute(async trx => {
-      const row = await trx.selectFrom("records").selectAll().where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).executeTakeFirst();
+      const row = await trx.selectFrom("records").selectAll().where("record_id", "=", input.recordId).where("owner_type", "=", "user").where("owner_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).executeTakeFirst();
       if (!row) return null;
       const content = JSON.parse(row.content) as RecordContent;
       const images = new Map(input.images.map(item => [item.mediaId, item.description]));
@@ -103,25 +103,25 @@ export class PostgresRecordRepository implements RecordRepository {
         };
       });
       const now = nowIso();
-      const updated = await trx.updateTable("records").set({ content: JSON.stringify(content), status: "processed", task_id: null, updated_at: now }).where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).returningAll().executeTakeFirst();
+      const updated = await trx.updateTable("records").set({ content: JSON.stringify(content), status: "processed", task_id: null, updated_at: now }).where("record_id", "=", input.recordId).where("owner_type", "=", "user").where("owner_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).returningAll().executeTakeFirst();
       return updated ? this.toEntity(updated) : null;
     });
   }
 
   async releasePostprocess(input: { recordId: string; userId: string; version: number; runId: string }): Promise<void> {
-    await this.db.updateTable("records").set({ status: "pending", task_id: null, updated_at: nowIso() }).where("record_id", "=", input.recordId).where("user_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).execute();
+    await this.db.updateTable("records").set({ status: "pending", task_id: null, updated_at: nowIso() }).where("record_id", "=", input.recordId).where("owner_type", "=", "user").where("owner_id", "=", input.userId).where("version", "=", input.version).where("status", "=", "processing").where("task_id", "=", input.runId).execute();
   }
 
   async writeEmbedding(input: { recordId: string; userId: string; version: number; embedding: number[] }): Promise<boolean> {
     const result = await sql`UPDATE records SET embedding = ${vectorLiteral(input.embedding)}::vector
-      WHERE record_id = ${input.recordId} AND user_id = ${input.userId}
+      WHERE record_id = ${input.recordId} AND owner_type = 'user' AND owner_id = ${input.userId}
         AND version = ${input.version} AND status = 'processed'`.execute(this.db);
     return Number(result.numUpdatedOrDeletedRows) === 1;
   }
 
   async searchByEmbedding(input: { userId: string; embedding: number[]; limit: number }): Promise<Array<{ record: Record; distance: number }>> {
     const rows = await sql<any>`SELECT *, (embedding <-> ${vectorLiteral(input.embedding)}::vector)::float8 AS distance
-      FROM records WHERE user_id = ${input.userId} AND status = 'processed' AND embedding IS NOT NULL
+      FROM records WHERE owner_type = 'user' AND owner_id = ${input.userId} AND status = 'processed' AND embedding IS NOT NULL
       ORDER BY embedding <-> ${vectorLiteral(input.embedding)}::vector LIMIT ${input.limit}`.execute(this.db);
     return rows.rows.map(row => ({ record: this.toEntity(row), distance: Number(row.distance) }));
   }
@@ -154,7 +154,7 @@ export class PostgresRecordRepository implements RecordRepository {
     if (media) await trx.updateTable("media_assets").set({ ext_data: JSON.stringify({ ...ext(media.ext_data), recordId: null }), updated_at: now }).where("media_id", "=", mediaId).execute();
   }
 
-  private toEntity(row: any): Record { return { extData: null, id: row.record_id, userId: row.user_id, source: row.source, content: JSON.parse(row.content), version: row.version, status: row.status, taskId: row.task_id, eventAt: row.event_at, createdAt: row.created_at, updatedAt: row.updated_at }; }
+  private toEntity(row: any): Record { return { extData: null, id: row.record_id, userId: row.owner_id, source: row.source, content: JSON.parse(row.content), version: row.version, status: row.status, taskId: row.task_id, eventAt: row.event_at, createdAt: row.created_at, updatedAt: row.updated_at }; }
 }
 
 function normalizedLocation(location: { name: string; countryCode?: string; country?: string; province?: string; city?: string; district?: string; latitude: number; longitude: number }) {

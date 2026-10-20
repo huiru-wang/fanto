@@ -23,8 +23,8 @@ integration("admin repository reads only user/session-scoped usage, including ad
     await db.insertInto("user_profiles").values({ user_id: a, nickname: "A", signature: "", avatar_media_id: null, cover_media_id: null, version: 1, updated_at: new Date() }).execute();
     const sessionA = randomUUID(), sessionB = randomUUID(), otherUser = randomUUID();
     for (const [id,user_id] of [[sessionA,a],[sessionB,a],[otherUser,b]])
-      await sql`INSERT INTO agent_session.sessions (id,user_id,agent_id,created_at,updated_at,next_seq)
-        VALUES (${id},${user_id},'main',1000,1000,0)`.execute(db);
+      await sql`INSERT INTO agent_session.sessions (id,user_id,agent_id,scope_key,created_at,updated_at,next_seq)
+        VALUES (${id},${user_id},'main',${id},1000,1000,0)`.execute(db);
     const usage = (input: number, output: number) => JSON.stringify({ input, output, cacheRead: 3, cacheWrite: 4,
       totalTokens: input + output + 7, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.005 } });
     for (const [session_id,adjustment,payload] of [[sessionA,false,usage(5,10)],[sessionA,true,usage(7,8)],

@@ -1,4 +1,5 @@
 import { createContextKey, TODO_CONTEXT, type Context, withContextValue } from "@earendil-works/pi-agent-core";
+import type { FantoSettings } from "../../domain/fanto/index.js";
 import type { StopState } from "../harness/stop-state.js";
 import type { Entry } from "@earendil-works/pi-agent-core";
 import { createSlotStore, type SlotStore } from "./internal/slot-store.js";
@@ -9,6 +10,7 @@ type RunContextInput = {
   runId: string;
   agentId?: string;
   userId: string;
+  mainConfig?: FantoSettings | null;
   query: string;
   slots: Record<string, string>;
   sessionId: string;

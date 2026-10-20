@@ -10,15 +10,10 @@ import { projectHistory } from "../../agent/presentation.js";
 
 export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSessionManager, stopTimeoutMs = 20_000): Hono {
   const app = new Hono();
-  app.post("/sessions", async c => {
-    const body = createSessionSchema.safeParse(await c.req.json().catch(() => null));
-    const userId = requireUserId(c.req.raw);
-    const traceId = traceIdSchema.safeParse(c.req.header("x-trace-id"));
-    if (!body.success || !traceId.success) return c.json({ error: "agentId or x-trace-id is invalid" }, 400);
-    const definition = registry.get(body.data.agentId);
-    if (!definition) return c.json({ error: "Agent not found" }, 404);
-    const session = await sessions.create(definition, userId);
-    return c.json({ success: true, result: { sessionId: session.id, agentId: session.agentId, createdAt: new Date().toISOString(), traceId: traceId.data } }, 201);
+  app.post("/sessions", c => c.json({success:false,errorCode:"SESSION_CREATION_DISABLED",errorMsg:"Main sessions are managed by Fanto."},403));
+  app.get("/main-session", async c => {
+    try {return c.json({success:true,result:await sessions.defaultMain(requireUserId(c.req.raw))});}
+    catch {return c.json({success:false,errorCode:"SESSION_UNAVAILABLE"},503);}
   });
 
   app.get("/sessions", async c => {

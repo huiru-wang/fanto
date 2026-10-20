@@ -10,7 +10,7 @@
 
 ## Fanto 主对话
 
-- H5 与 iOS 从主对话左上头像进入 Fanto 设置，支持昵称、简介、头像及四项角色配置。头像选择新图片后拖动/缩放裁切，仅上传小图；文字按版本保存，主对话下一轮读取昵称与角色配置。详见 [Fanto](../domain/fanto.md)。
+- H5 支持默认 Main 和最多 3 个活跃 Fanto：创建可空但固定的身份、角色切换、独立能力与头像配置、归档/恢复和物理删除清理重试；每角色固定 Session、独立草稿和记忆。iOS 仍为原单角色客户端，尚未适配新版接口。详见 [Fanto](../domain/fanto.md) 与 [H5](../clients/h5.md)。
 - Fanto 主对话是一个持久 Session，支持文字 SSE、原生媒体展示、工具活动、必要时的澄清表单；按需使用 Record 检索和 Memory 管理。
 - 主对话支持角色扮演与陪伴交流，工具能力围绕 Record 和 Memory。当前不提供即时、延时或周期 Task，不提供提醒、通用文件交付及个人助理工作流。
 
@@ -23,7 +23,7 @@
 ## 客户端与运营范围
 
 - iOS：SwiftUI，Google/Apple 原生登录、品牌启动页预加载、Record、Fanto 主对话与角色设置；“我的”已接个人资料、头像上传、设备外观偏好与退出登录，正式的多会话管理尚未提供。
-- H5：React/Vite，作为受控测试客户端使用构建时 refresh token 换取 JWT；没有公开的正式登录流程。提供主会话 Session ID 的调试展示，限当前用户。
+- H5：React/Vite 受控测试客户端，使用构建时 refresh token 换取 JWT；无公开正式登录流程。已接入默认 Main 与多角色管理，按固定 Session 展示和恢复对话，支持当前用户 Session ID 调试展示。
 - Server：单 Hono 进程内嵌 Pi Agent、PostgreSQL + pgvector、OSS、内存事件队列；部署依赖 Nginx/PM2。所有受保护 API 使用 Fanto JWT 用户归属校验。
 - 路由和 UI 的已接入不代表当前线上服务已经部署相同版本；实际在线功能需另做生产环境验收。
 

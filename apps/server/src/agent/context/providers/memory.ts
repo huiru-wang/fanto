@@ -7,7 +7,7 @@ const MAX_CONTEXT_BYTES = 12_000;
 const injectedKinds = ["interaction_preferences", "personal_background"] as const;
 type Entry = { id: string; content: string; updatedAt: string };
 
-function memoryContext(memories: AgentMemory[]) {
+export function memoryContext(memories: AgentMemory[]) {
   const sections = {
     interaction_preferences: { entries: [] as Entry[], omitted: 0 },
     personal_background: { entries: [] as Entry[], omitted: 0 },
@@ -57,7 +57,7 @@ export class MemoryProvider {
 }
 
 /** Targeted, at most one embedding lookup for personal continuity cues; never a model rewrite. */
-const relevantKinds = ["important_relationships", "current_focus", "shared_history"] as const;
+const relevantKinds = ["important_relationships", "current_focus"] as const;
 const continuityCue = /记得|记不记|上次|之前|以前|过去|曾经|聊过|说过|约定|答应|共同|一起|我们|咱们|后来|进展|那件事|那天|前几天|最近|还记|继续|我的(朋友|家人|孩子|女儿|儿子|同事|对象)|咱俩|你还|你说|我说|他(呢|现在)|她(呢|现在)/;
 const MAX_QUERY_CHARS = 360;
 const MAX_RELEVANT_MEMORIES = 3;

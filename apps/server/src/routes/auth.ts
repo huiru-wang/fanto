@@ -44,6 +44,9 @@ export function createAuthRoutes(service: AuthService): Hono {
   const limiter = new FixedWindowLimiter();
 
   app.use("*", async (c, next) => {
+    // This router is mounted at /api: wildcard middleware also sees later business routes.
+    // Keep the authentication quota scoped to authentication and account identity operations.
+    if (!/\/auth\/|\/users\/me(?:$|\/(?:identities|reauth)(?:\/|$))/.test(c.req.path)) return next();
     const forwarded = c.req.header("x-forwarded-for")?.split(",")[0]?.trim();
     const remote = forwarded || c.req.header("x-real-ip")?.trim() || "unknown";
     const fingerprint = c.req.header("x-client-fingerprint")?.trim() || "none";
