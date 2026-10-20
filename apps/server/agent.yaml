@@ -2,8 +2,6 @@ version: 1
 
 models:
   - provider: deepseek
-    model: deepseek-v4-pro
-  - provider: deepseek
     model: deepseek-v4-flash
 
 agents:
@@ -17,19 +15,3 @@ agents:
       enabled: true
       reserveTokens: 16384
       keepRecentTokens: 20000
-
-  - id: proposal-agent
-    model_id: deepseek/deepseek-v4-flash
-    description: 基于可信上下文判断值得用户继续的下一步，并创建待确认 Proposal。
-    systemPromptModule: proposal-agent
-    tools: [read, write, edit, bash, record_read, project_read, proposal_create, skill_read]
-    skills: [creative-opportunity]
-    compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 }
-
-  - id: creator-agent
-    model_id: deepseek/deepseek-v4-pro
-    description: 按已确认的 Goal 与授权素材创作、打磨并保存作品，运用审美、艺术、思想和情绪方法论提升质量。
-    systemPromptModule: creator-agent
-    tools: [read, write, edit, bash, record_read, project_read, image_generate, image_review, project_manage, skill_read]
-    skills: [aesthetic-judgment, artistic-thinking, intellectual-depth, emotional-nuance]
-    compaction: { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 }

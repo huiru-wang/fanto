@@ -59,12 +59,12 @@ test("character PostgreSQL singleton, HTTP roundtrip and same-session prompt ref
     const run = (runId: string) => createRunContext({ runId, userId: users[0]!, sessionId: "same-session", query: "你好", slots: {}, recentMessages: [] });
     const firstRun = run("first");
     const first = await prompt.resolve({} as never, firstRun);
-    assert.ok(first.includes("## Character\n\n朋友"));
-    assert.ok(first.includes("## Character Instructions\n\n简洁"));
+    assert.ok(first.includes("### 身份与性格\n朋友"));
+    assert.ok(first.includes("### 互动方式与边界\n简洁"));
     const updated = { character: "导师", scenario: "", instructions: "", exampleDialogues: "" };
     await put(updated);
     assert.equal(await prompt.resolve({} as never, firstRun), first);
-    assert.ok((await prompt.resolve({} as never, run("second"))).includes("## Character\n\n导师"));
+    assert.ok((await prompt.resolve({} as never, run("second"))).includes("### 身份与性格\n导师"));
     assert.deepEqual(await result(await app.request("/api/character", { headers })), updated);
     assert.deepEqual(await service.getLegacyCharacter(users[1]!), DEFAULT_CHARACTER);
     assert.equal((await db.selectFrom("user_fanto_settings").selectAll().where("user_id", "=", users[0]!).execute()).length, 1);

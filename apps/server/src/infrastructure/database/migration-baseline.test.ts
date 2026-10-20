@@ -4,7 +4,7 @@ import test from "node:test";
 import { sql } from "kysely";
 import { createDatabase, runMigrations } from "./database.js";
 
-const migrations = ["create_current_schema_20261019"];
+const migrations = ["create_current_schema_20261019", "extend_memories_shared_history_20261020"];
 const integration = process.env.TEST_DATABASE_URL ? test : test.skip;
 
 integration("reset baseline creates the final schema and replays without recreating objects or losing data", async () => {
@@ -37,7 +37,7 @@ integration("reset baseline creates the final schema and replays without recreat
     const publicTables = (await sql<{ table_name: string }>`SELECT table_name FROM information_schema.tables
       WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name`.execute(db)).rows.map(r => r.table_name);
     assert.deepEqual(publicTables, ["auth_challenges", "kysely_migration", "kysely_migration_lock", "media_assets", "memories",
-      "projects", "proposals", "record_links", "records", "user_fanto_settings", "user_login_identities", "user_profiles", "users"]);
+      "records", "user_fanto_settings", "user_login_identities", "user_profiles", "users"]);
     const agentTables = (await sql<{ table_name: string }>`SELECT table_name FROM information_schema.tables
       WHERE table_schema='agent_session' ORDER BY table_name`.execute(db)).rows.map(r => r.table_name);
     assert.deepEqual(agentTables, ["entries", "sessions", "usage_ledger"]);
@@ -71,10 +71,10 @@ integration("reset baseline creates the final schema and replays without recreat
     assert.equal((await sql`SELECT 1 FROM agent_session.sessions WHERE id=${sessionId}`.execute(db)).rows.length, 1);
 
     // A partially existing current schema is also supported when history is reset.
-    await sql`DROP TABLE projects; DROP INDEX idx_records_user_event`.execute(db);
+    await sql`DROP TABLE auth_challenges; DROP INDEX idx_records_user_event`.execute(db);
     await dropHistory();
     await runMigrations(db);
-    assert.ok((await sql`SELECT 1 FROM projects`.execute(db)).rows.length === 0);
+    assert.ok((await sql`SELECT 1 FROM auth_challenges`.execute(db)).rows.length === 0);
     assert.deepEqual((await schema()).indexes, before.indexes);
     assert.deepEqual(await db.selectFrom("user_fanto_settings").selectAll().execute(), settings);
 

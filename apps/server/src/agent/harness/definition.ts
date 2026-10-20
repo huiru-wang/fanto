@@ -1,5 +1,3 @@
-import { proposalAgentPrompt } from "../prompts/proposal-agent.js";
-import { creatorAgentPrompt } from "../prompts/creator-agent.js";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { parseDocument } from "yaml";
@@ -7,7 +5,7 @@ import { z } from "zod";
 import type { Models } from "@earendil-works/pi-ai";
 import { mainPrompt } from "../prompts/main.js";
 
-const tool = z.enum(["read", "write", "edit", "bash", "record_read", "memory_manage", "present_media", "collect_user_input", "project_read", "proposal_create", "image_generate", "image_review", "project_manage", "skill_read"]);
+const tool = z.enum(["read", "write", "edit", "bash", "record_read", "memory_manage", "present_media", "collect_user_input", "skill_read"]);
 const compaction = z.object({
   enabled: z.boolean(),
   reserveTokens: z.number().int().nonnegative(),
@@ -16,7 +14,7 @@ const compaction = z.object({
 const partialDefinition = z.object({
   description: z.string().max(500).optional(),
   model_id: z.string().min(3).optional(),
-  systemPromptModule: z.enum(["main", "proposal-agent", "creator-agent"]),
+  systemPromptModule: z.enum(["main"]),
   tools: z.array(tool).optional(),
   skills: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)).optional(),
   compaction: compaction.partial().optional(),
@@ -45,9 +43,9 @@ const definitionSchema = z.object({
   compaction,
 }).strict();
 
-export type AgentDefinition = z.infer<typeof definitionSchema> & { revision: string };
+const promptModules = { main: mainPrompt } as const;
 
-const promptModules = { main: mainPrompt, "proposal-agent": proposalAgentPrompt, "creator-agent": creatorAgentPrompt } as const;
+export type AgentDefinition = z.infer<typeof definitionSchema> & { revision: string };
 
 export function readAgentDefinitions(
   path: string,
@@ -93,9 +91,6 @@ export function readAgentDefinitions(
     };
     const definition = definitionSchema.safeParse(merged);
     if (!definition.success) throw new Error(`Invalid agents.yaml agent "${id}": ${definition.error.message}`);
-    if (definition.data.tools.some(t => ["project_read", "proposal_create", "image_generate", "image_review", "project_manage"].includes(t)) && !["proposal-agent", "creator-agent"].includes(id)) throw new Error("Creative tools require proposal-agent or creator-agent");
-    if (id === "proposal-agent" && (definition.data.tools.some(t => !["read", "write", "edit", "bash", "record_read", "project_read", "proposal_create", "skill_read"].includes(t)) || systemPromptModule !== "proposal-agent")) throw new Error("Invalid proposal-agent permissions");
-    if (id === "creator-agent" && (definition.data.tools.some(t => !["read", "write", "edit", "bash", "record_read", "project_read", "image_generate", "image_review", "project_manage", "skill_read"].includes(t)) || systemPromptModule !== "creator-agent")) throw new Error("Invalid creator-agent permissions");
     if (new Set(definition.data.tools).size !== definition.data.tools.length) throw new Error(`Agent "${id}" has duplicate tools`);
     if (new Set(definition.data.skills).size !== definition.data.skills.length) throw new Error(`Agent "${id}" has duplicate skills`);
     for (const skill of definition.data.skills) {
@@ -108,8 +103,5 @@ export function readAgentDefinitions(
     }
     return { ...definition.data, revision: createHash("sha256").update(JSON.stringify(definition.data)).digest("hex") };
   });
-  const proposalSkills = new Set(definitions.find(agent => agent.id === "proposal-agent")?.skills ?? []);
-  const creatorSkills = definitions.find(agent => agent.id === "creator-agent")?.skills ?? [];
-  if (creatorSkills.some(skill => proposalSkills.has(skill))) throw new Error("Proposal and Creator cannot share skills");
   return definitions;
 }

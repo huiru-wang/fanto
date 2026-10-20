@@ -7,11 +7,7 @@ export type ContextMessage = { role: "user" | "assistant"; text: string };
 
 type RunContextInput = {
   runId: string;
-  projectId?: string;
-  proposalId?: string;
   agentId?: string;
-  recordId?: string;
-  recordVersion?: number;
   userId: string;
   query: string;
   slots: Record<string, string>;

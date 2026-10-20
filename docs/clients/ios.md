@@ -2,18 +2,6 @@
 
 目录：`apps/ios/fanto`。当前使用 SwiftUI，最低部署目标为 iOS 26.5。
 
-## 保留的 Project Session 创作模块
-
-当前“脉络”Tab 已隐藏，Project / Proposal 页面代码保留，未作为主导航能力开放。以下描述保留模块的实现约束。
-
-iOS 采用原生 SwiftUI Project 列表与详情：Proposal 接受只返回 `projectId`，随后直接读取 Project 详情，Server 后台自动处理 Creator，无须手动 `/session/start`。
-
-`Project.status` 使用 `queued/running/completed/failed/archived`：queued 表示等待执行，**与 Session 是否存在/绑定无关**。详情优先显示当前有效作品，queued/running 时继续保留上次内容；completed/failed 且有 Session 时可以继续创作，queued/running/archived 不允许发送新消息；只有 completed/failed 能归档。
-
-会话统一按 `sessionId` 读取 `GET /api/agent/sessions/:sessionId/history` 和订阅 `GET /api/agent/sessions/:sessionId/events`（JWT + `URLSession.bytes(for:)`）；继续创作通过统一 `POST /api/agent/stream` 传入当前 sessionId 和 `metadata.projectId`，不发送 agentId，直接消费流式响应。断线后补读 History、不自动重发消息；只读订阅失败不阻止 completed/failed Project 主动发送。Project Session 复用 Main Chat 无气泡消息行、Markdown、媒体和 Tool Presentation，按 toolCallId 更新执行状态，不把工具内部 ID 当成自然语言展示。列表有活动 Project 时短间隔刷新；详情 queued/running 时每约 5 秒刷新，并在 App 进入后台时暂停。
-
-图片在本地生成上传 JPEG 后校验 10 MiB；服务端申请与完成直传同样校验。最终作品媒体由 Project Service 按 objectKey 归属生成独立副本。
-
 ## 根导航
 
 应用使用系统 `TabView`：
@@ -22,7 +10,7 @@ iOS 采用原生 SwiftUI Project 列表与详情：Proposal 接受只返回 `pro
 - Fanto；
 - 我的。
 
-每次启动默认进入记录页。中间 Tab 显示当前 Fanto 昵称和圆形头像，保存后随共享设置更新；仅 Tab 标题在超过 6 个字符时截断，其他位置保留完整昵称。头像复用账号图片缓存并保留原色，未设置时显示品牌头像，加载失败保留当前图标；选中态使用系统 Tab 栏及强调色。脉络入口隐藏，启动不再预加载 Project / Proposal；主界面独立读取用户资料，失败不阻止对话。
+每次启动默认进入记录页。中间 Tab 显示当前 Fanto 昵称和圆形头像，保存后随共享设置更新；仅 Tab 标题在超过 6 个字符时截断，其他位置保留完整昵称。头像复用账号图片缓存并保留原色，未设置时显示品牌头像，加载失败保留当前图标；选中态使用系统 Tab 栏及强调色。主界面独立读取用户资料，失败不阻止对话。
 
 导航返回及确认控件使用语义主前景色，不跟随强调色；保存 / 确认操作使用原生对勾图标并保留无障碍名称；普通尾部工具栏的玻璃背景保持一致，未修改 / 保存中为灰色禁用，合法修改后为语义主前景色可点击。List / Form 以系统 44pt 最小行高作为共同基线，内容随 Dynamic Type 自适应。Fanto 设置与个人信息等 push 页面保持系统 Tab 栏，不在返回动画后再恢复底部栏；主对话只做一次初始消息定位，返回时保持原阅读位置。
 
@@ -46,12 +34,6 @@ iOS 采用原生 SwiftUI Project 列表与详情：Proposal 接受只返回 `pro
 | 删除 Record | `DELETE /api/records/:id`，携带 expectedVersion | 日历 / 时间线长按确认，成功后更新列表与快照 |
 | 新建 Record | 已授权且无草稿地点时获取一次当前位置；媒体上传后调用 `POST /api/records`，再刷新列表 | Client 已接 |
 | 媒体写入 | `POST /api/uploads` 申请凭据，直传后调用 `POST /api/uploads/:mediaId/complete` | Client 已接 |
-| 非归档 Project 列表 | `GET /api/projects`（默认全部非归档）；`status=archived` 获取归档 | Client 已接 |
-| pending Proposal 列表 | `GET /api/proposals?status=pending` | Client 已接 |
-| Project 详情 | `GET /api/projects/:id` | 正文、总数与最多 5 条参考记录 |
-| Proposal 参考 Record | `GET /api/proposals/:id/records?limit=5&cursor=` | Client 已接分页，直接返回完整 Record |
-| Proposal accept / reject | `/api/proposals/:id/accept`、`/reject` | 已接；accept 传 selectedIdeaId，只返回 projectId，直接读取 Project |
-| Project 归档 | `POST /api/projects/:id/archive` | 以详情版本归档 |
 | Fanto 默认长期会话 | `POST /api/agent/sessions` | Client 已接 |
 | Fanto 最近历史 | `GET /api/agent/sessions/:id/history?limit=10` | 已接 iOS 客户端流程 |
 | Fanto 文本流式回复 | `POST /api/agent/stream` | 已接 iOS 客户端流程 |
@@ -95,11 +77,10 @@ Debug 与 Release 均配置 iOS OAuth Client ID、Server OAuth Client ID 和对�
 
 Apple 登录使用系统 `AuthenticationServices`，Xcode target 通过 `fanto/fanto.entitlements` 启用 Sign in with Apple capability；Server 的 `APPLE_ALLOWED_CLIENT_IDS` 必须包含原生 iOS Bundle ID `com.robinverse.fanto`。iOS 将 Server intent nonce 传给 `ASAuthorizationAppleIDRequest`，只提交 Apple `identityToken` 给 Server；不使用 Services ID、网页回调 URI 或 Apple client secret。用户取消系统授权时不展示错误；其余 Apple 授权失败会显示登录失败状态。
 
-认证成功后才创建业务根视图；认证失效时会先清空当前 `FantoStore` 的 Records / Projects 运行态数据，再回到登录页。Agent Session 的 Keychain key 继续包含真实 `user_id + agent_id`，因此不同账号不会复用同一个长期会话。
+认证成功后才创建业务根视图；认证失效时会先清空当前 `FantoStore` 的 Records 运行态数据，再回到登录页。Agent Session 的 Keychain key 继续包含真实 `user_id + agent_id`，因此不同账号不会复用同一个长期会话。
 
 ## Fanto 对话
 
-顶部左侧的 Fanto 头像与昵称是唯一设置入口，右侧不显示设置图标。导航使用系统 Liquid Glass；底部输入框为独立的 Liquid Glass 浮层，与 Tab 导航分离。消息两侧分别显示当前 Fanto 头像与用户系统人物头像，正文不使用消息气泡；Project Session 复用相同消息行并保留品牌头像。减少透明度时输入框切换为不透明语义背景，减少动态效果时取消自动滚动动画。
 
 设置首页仅显示头像、昵称展示和独立昵称设置项，以及角色设定、互动场景、交流规则、示例对话四个单行入口；内容仅在对应二级编辑页显示。iOS 不提供简介编辑、基本资料二级页、角色内容预览或恢复默认头像入口，也不显示头像操作及底部保存提示。首页没有保存按钮；昵称和每个角色字段在对应二级页右上角单独保存。角色 PATCH 的 roleConfig 只包含当前子键，其余角色内容由 Server 合并保留；读取失败可重试。另有独立清除对话记录按钮；清除按钮与退出登录均使用系统中央 Alert 二次确认。清除操作经确认后创建空白会话并仅提交 sessionId，绑定确认后同步重置对话状态、写回设置缓存；失败保留原消息。旧会话仍保留在服务端，客户端不提供历史会话列表，记忆与角色不变；不提供记忆管理入口。角色配置使用有高度上限的多行编辑器，回车插入换行，长文本在框内滚动，键盘工具栏可收起键盘。
 
@@ -107,19 +88,7 @@ Apple 登录使用系统 `AuthenticationServices`，Xcode target 通过 `fanto/f
 
 Fanto 位于根导航中间，当前仅使用一个默认 Fanto 角色，以服务端设置的 sessionId 选择当前会话，fantoId 标识角色且不会随会话改变。顶部只保留头像 / 昵称设置入口，不提供历史会话列表、切换或新建会话按钮，也不请求会话列表。设置页清除会创建并绑定新会话，不删除旧 Session。进入根导航后在后台加载 Fanto Session 与最近 10 条历史，切入 Fanto 时若仍未完成才显示加载态，不阻塞记录首页。首次显示对话时会定位至最新消息；向上滚动至历史顶部时，客户端基于服务端 `cursor / nextCursor` 自动读取更早页，并保持原先顶部消息的阅读位置。当前 sessionId 为空，或服务端明确返回 Session 不存在 / 无权访问时创建并绑定新的 Session；设置页清除也会更新同一字段及共享缓存。
 
-流式回复按 SSE message_start/message_end 划分文本块，并与 Tool Presentation 按事件顺序渲染；只有 done 标记回复完成，连接关闭本身不表示成功。客户端按 SSE 原始字节流保留事件分隔，避免丢失连续的 `delta`；`turn_start`、`message_start` 与可见 Tool Presentation 会被投影为进行中的进度条目，工具结束后更新为成功或失败状态。成功的 `present_media` Tool Result 会暂存至本轮 `done`，再合并进助手消息；历史恢复同样通过服务端 `messages` 投影重建文本、活动、媒体与用户澄清卡片。`collect_user_input` 会在导航区域下方以逐题原生提示呈现，支持单选、多选、文本和“其他”输入；`required: false` 的问题允许跳过。提交结果携带服务端要求的内部 interaction 标记继续同一 Session，并以“已提交表单”的用户卡片显示。旧会话正文中的 `fanto-media://<mediaId>` 图片和链接也会兼容投影为同类媒体。图片和语音分组呈现：图片横向预览请求 `variant=thumbnail`，轻点后全屏分页查看请求 `variant=original`；语音可在会话中播放。消息中只保存稳定的媒体 metadata；图片文件与短期签名地址复用本页“客户端缓存”策略，音频按需读取签名地址。界面覆盖加载、等待、流式生成、停止和失败重试；发送消息无论正常结束、失败或被意外取消，都会将占位消息收敛到明确终态，避免停留在等待状态。空回复也会明确失败并提供重试。同一 Session 未完成回复时不能并发发送。停止通过 Session stop 接口，请求上限 25 秒；202 时已开始工具继续执行，显示“正在结束当前操作”，保持原 SSE 并允许编辑草稿，终态或 History 确认空闲后恢复发送，不等待数据库保存。历史失败保留本地回复，旧历史与停止回调不能覆盖新轮次。收到 `done/stopped/error` 即结束本轮流读取；`stopped` SSE 与 History 的 `state: stopped` 均恢复为已停止消息，尚未输出文本时也保留。助手消息复用 Project 页面共用的原生 Markdown 视图渲染标题、段落与内联 Markdown。
-
-## 脉络 UI
-
-根页面将“脉络”大标题放在内容顶部，隐藏该页系统导航栏；作品详情、提议详情与归档页面保留系统导航栏和返回操作。
-
-Proposal 和 Project 独立展示：待确认创作灵感在列表上方以堆叠卡片展示，非归档作品在下方；卡片按服务端返回顺序浏览，上滑下一张、下滑上一张，不循环，轻点进入提议详情。卡片区域的纵向拖动用于切换，区域外保留页面滚动；序号及上下切换按钮提供等价操作；辅助功能大字号下卡片允许滚动阅读全文，切换使用按钮或 VoiceOver 操作。减少动态效果时用短淡入淡出替代位移和弹簧，刷新保留当前提议，当前提议被移除后选择原位置的下一张（末尾则上一张）；通过单独入口查看 archived 作品。Proposal 允许 1–2 个创意方向及 Tags，用户选择方向后使用「按这个方向创作」，接受返回 projectId 即导航至对应 Project。再次查看已接受提议仅跳转原 Project，不能再次尝试创建或启动 Creator。
-
-Project 列表行使用标题、摘要和轻量状态提示；详情优先展示已有作品，queued/running 时保留上一版的封面及正文，不通过 Session 有无推测创作阶段；没有作品时只显示摘要与“等待创作 / 正在创作”短提示。Session 存在即可查看历史及实时工具/文本过程；completed/failed 时才可以发送新的创作消息、归档，archived 只读。内容变化通过 Project.version 维护，但状态/Session 变化不增长 version，客户端仍应正常刷新 status/sessionId。
-
-iOS 使用原生 SwiftUI ScrollView、NavigationStack、Sheet 与 Toolbar；底部单一主要行动为“继续创作 / 继续聊聊”（仅完成或失败且 Session 存在），其他状态不占用底部固定区域。参考 Record 按现有详情简洁排列。Project 正在执行时详情可见期间低频查询状态，完成后停止；Session SSE 本身不持久化，断线后查询 History。后台进入时停止实时订阅/查询，恢复前台时刷新。
-
-Project 正文使用 Swift Markdown 语法树渲染标题、段落、列表和媒体；HTML 作品使用当前禁用脚本及外部导航的非持久化预览容器。作品媒体从 Project 独立副本读取，不依赖被删除的原 Record 媒体。
+流式回复按 SSE message_start/message_end 划分文本块，并与 Tool Presentation 按事件顺序渲染；只有 done 标记回复完成，连接关闭本身不表示成功。客户端按 SSE 原始字节流保留事件分隔，避免丢失连续的 `delta`；`turn_start`、`message_start` 与可见 Tool Presentation 会被投影为进行中的进度条目，工具结束后更新为成功或失败状态。成功的 `present_media` Tool Result 会暂存至本轮 `done`，再合并进助手消息；历史恢复同样通过服务端 `messages` 投影重建文本、活动、媒体与用户澄清卡片。`collect_user_input` 会在导航区域下方以逐题原生提示呈现，支持单选、多选、文本和“其他”输入；`required: false` 的问题允许跳过。提交结果携带服务端要求的内部 interaction 标记继续同一 Session，并以“已提交表单”的用户卡片显示。旧会话正文中的 `fanto-media://<mediaId>` 图片和链接也会兼容投影为同类媒体。图片和语音分组呈现：图片横向预览请求 `variant=thumbnail`，轻点后全屏分页查看请求 `variant=original`；语音可在会话中播放。消息中只保存稳定的媒体 metadata；图片文件与短期签名地址复用本页“客户端缓存”策略，音频按需读取签名地址。界面覆盖加载、等待、流式生成、停止和失败重试；发送消息无论正常结束、失败或被意外取消，都会将占位消息收敛到明确终态，避免停留在等待状态。空回复也会明确失败并提供重试。同一 Session 未完成回复时不能并发发送。停止通过 Session stop 接口，请求上限 25 秒；202 时已开始工具继续执行，显示“正在结束当前操作”，保持原 SSE 并允许编辑草稿，终态或 History 确认空闲后恢复发送，不等待数据库保存。历史失败保留本地回复，旧历史与停止回调不能覆盖新轮次。收到 `done/stopped/error` 即结束本轮流读取；`stopped` SSE 与 History 的 `state: stopped` 均恢复为已停止消息，尚未输出文本时也保留。助手消息使用共用的原生 Markdown 视图渲染标题、段落与内联 Markdown。
 
 ## Record UI
 
@@ -143,7 +112,6 @@ Record 提供日历与连续时间线两种视图；选择通过设备 UserDefau
 
 SwiftUI Preview 可以使用 `FantoStore.preview` 样例数据。Preview 数据只用于界面开发，不代表运行态 Server 已具备对应自动生成能力。
 
-脉络页可见期间按现有逻辑每五秒刷新待确认建议；每约十五秒仅对列表中 queued/running 的 Project 补读状态。详情 queued/running 时每约五秒刷新，完成/失败即停止状态轮询；没有“等待 Session 创建后主动 start”或“自动重新执行”流程。
 
 Record 保存失败统一提示“保存失败，请重试”，保留草稿及附件上传阶段，仅用户再次点击后继续上传 / complete / 创建。列表小图与原图继续通过同一个 mediaId 的不同 variant 读取；链路见 [Media](../domain/media.md)。
 

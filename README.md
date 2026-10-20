@@ -6,13 +6,13 @@ Fanto 是以**角色扮演与深度陪伴对话**为主线的 AI 产品：通过
 
 ## 仓库组成
 
-- `apps/server`：Hono / TypeScript 服务，内嵌 Pi Agent Runtime、Record/Media/Memory、Proposal/Project 和进程内异步创作。
-- `apps/ios/fanto`：SwiftUI，Google/Apple 登录、Fanto 角色设置与对话、Record 日历与时间线、用户资料与外观偏好；脉络入口暂时隐藏，相关模块保留。
-- `apps/h5`：React/Vite 受控测试客户端，Record、多轮对话、Proposal / Project 及作品预览。
+- `apps/server`：Hono / TypeScript 服务，内嵌 Pi Agent Runtime、Record/Media/Memory和 Record 后置处理。
+- `apps/ios/fanto`：SwiftUI，Google/Apple 登录、Fanto 角色设置与对话、Record 日历与时间线、用户资料与外观偏好。
+- `apps/h5`：React/Vite 受控测试客户端，Record、多轮对话。
 - `apps/admin-web`：仅本地运行的只读管理界面，查询用户、Session 和 Token 用量，不参与部署。
 - `packages/shared`：跨端类型和 Record 相关共享定义。
 
-Agent 会话在单进程内存运行，稳定历史异步尽力保存；数据库保存不阻塞回复，重启可能丢失最近消息。Main Chat 与 Project Chat **共用一套 Agent 多轮协议**：`POST /api/agent/stream`、`GET /api/agent/sessions/:id/history` 和只读 `GET /api/agent/sessions/:id/events`。首次 Creator 创作通过非持久化后台执行队列启动，继续创作使用绑定的 Creator Session；没有 Project 专属聊天 API。
+Main Agent 在单进程内存运行，通过 PostgreSQL Checkpoint 保存历史与 Usage；会话归属按 userId 校验。对话使用 `POST /api/agent/stream` 和 `GET /api/agent/sessions/:id/history`，支持停止、恢复与按 Run 分页。记录异步执行图片理解、音频转写和 Embedding，不触发后台创作。
 
 ## 本地运行
 
@@ -33,10 +33,9 @@ pnpm deploy          # 已配置环境中的应用更新
 pnpm deploy:nginx    # 初次完整发布或 Nginx 配置更新
 ```
 
-创作自动提议/执行由 `CREATIVE_ENABLED=true` 控制；需要有效模型与所选存储的凭据（阿里云 OSS / Cloudflare R2），配置见 [服务端配置](docs/engineering/configuration.md#对象存储选择)。后台内存队列不提供消息持久化或重启恢复，不能视为可靠任务队列。
 
 ## 文档
 
-从 [文档索引](docs/README.md) 开始。重点为 [当前产品范围](docs/product/current-scope.md)、[架构总览](docs/architecture/overview.md)、[创作执行](docs/architecture/creative-runtime.md)、[HTTP API](docs/api/http-api.md)、[本地开发](docs/engineering/local-development.md) 和 [配置](docs/engineering/configuration.md)。
+从 [文档索引](docs/README.md) 开始。重点为 [当前产品范围](docs/product/current-scope.md)、[架构总览](docs/architecture/overview.md)、[HTTP API](docs/api/http-api.md)、[本地开发](docs/engineering/local-development.md) 和 [配置](docs/engineering/configuration.md)。
 
 协作与 AI Coding 规则见 [AGENTS.md](AGENTS.md)，模块约束见对应局部 `AGENTS.md`。

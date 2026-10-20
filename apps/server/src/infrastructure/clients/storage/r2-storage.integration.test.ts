@@ -8,7 +8,7 @@ import { MediaService } from "../../../domain/media/media-service.js";
 import type { PostgresMediaRepository, MediaAsset } from "../../../domain/media/postgres-repository.js";
 import type { Thumbnail } from "../../../domain/media/image-thumbnail.js";
 
-test("real S3 SDK transport completes the unchanged media flow, including thumbnail retry and project copies",async()=>{
+test("real S3 SDK transport completes the unchanged media flow, including thumbnail retry and deletion",async()=>{
  const objects=new Map<string,{data:Buffer;type:string;etag:string;metadata:Record<string,string>}>();let failThumbnail=true,thumbnailAttempts=0;const writes:string[]=[];
  const server=createServer(async(req,res)=>{
   try {
@@ -37,7 +37,7 @@ test("real S3 SDK transport completes the unchanged media flow, including thumbn
  findMedia:async(id:string,userId:string)=>{const row=assets.get(id);return row?.userId===userId?row:null;},
  findMediaByIds:async(ids:string[],userId:string)=>ids.flatMap(id=>{const row=assets.get(id);return row?.userId===userId?[row]:[];}),
  complete:async(id:string,_userId:string,capture:any,thumbnail:Thumbnail)=>{const row=assets.get(id)!;row.status="ready";row.extData={...row.extData,capture,variants:{thumbnail}};return row;},
- createReadyAsset:async(input:any)=>{const row={...input,status:"ready" as const,createdAt:"",updatedAt:""};assets.set(input.mediaId,row);return row;}};
+};
  const media=new MediaService(repo as unknown as PostgresMediaRepository,storage);
  try {
   const data=await sharp({create:{width:1200,height:800,channels:3,background:"blue"}}).png().toBuffer();
@@ -51,9 +51,7 @@ test("real S3 SDK transport completes the unchanged media flow, including thumbn
   const row=assets.get(ticket.mediaId)!;const thumbnail=(row.extData.variants as {thumbnail:Thumbnail}).thumbnail;
   assert.equal((await storage.head(thumbnail.objectKey))!.metadata["source-etag"],(await storage.head(row.objectKey))!.etag);
   assert.equal(await media.readUrl("foreign",ticket.mediaId,"thumbnail"),null);
-  const copied:string[]=[];const mapping=await media.copyFinalReferences("owner","project",[ticket.mediaId],{} as never,copied);assert.equal(copied.length,2);
   await media.deleteRecordObjects([row.objectKey,thumbnail.objectKey]);assert.equal(await storage.head(row.objectKey),null);
-  assert.ok(await media.readUrl("owner",mapping[ticket.mediaId]!,"thumbnail"));assert.equal((await storage.head(copied[1]!))!.contentType,"image/webp");
-  await media.cleanupUncommittedProjectObjects(copied);assert.equal(objects.size,0);await storage.remove("already-missing");
+  assert.equal(objects.size,0);await storage.remove("already-missing");
  }finally{server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}
 });

@@ -15,7 +15,7 @@ integration("stored thumbnails: DB rollback retry, concurrent completion, legacy
  await sql.raw(`CREATE DATABASE "${name}"`).execute(admin);
  const url=new URL(process.env.TEST_DATABASE_URL!);url.pathname="/"+name;
  const db=createDatabase(url.href),storage=new MemoryStorage(),media=MediaService.create(db,storage);
- const records=RecordService.create(db,new RecordPostprocessQueue(),undefined,undefined,undefined,media);
+ const records=RecordService.create(db,new RecordPostprocessQueue(),undefined,undefined,media);
  const userId=randomUUID(),now=new Date();
  try {
   await runMigrations(db);await db.insertInto("users").values({user_id:userId,status:"active",created_at:now,updated_at:now,disabled_at:null}).execute();

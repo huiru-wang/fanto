@@ -1,7 +1,5 @@
 import { AdminRepository, AdminService } from "../domain/admin/index.js";
 import { UserProfileService } from "../domain/users/profile-service.js";
-import { CreativeService } from "../domain/projects/creative-service.js";
-import { CreativeImageClient } from "../infrastructure/clients/image-client.js";
 import { serve } from "@hono/node-server";
 import { loadConfig, loadEnv } from "./config.js";
 import { checkDatabaseHealth, createDatabase, runMigrations } from "../infrastructure/database/database.js";
@@ -10,13 +8,7 @@ import { QwenAudioTranscription } from "../infrastructure/clients/audio-client.j
 import { EmbeddingsClient } from "../infrastructure/clients/embeddings-client.js";
 import { RecordPostprocessQueue } from "../event/record-postprocess-queue.js";
 import { RecordEmbeddingQueue } from "../event/record-embedding-queue.js";
-import { AgentExecutionQueue } from "../event/agent-execution-queue.js";
-import { SessionEventBus } from "../event/session-event-bus.js";
 import { registerRecordEmbeddingListener } from "../listeners/record-embedding.listener.js";
-import { AgentWorker } from "../execution/agent-worker.js";
-import { AgentExecutionListener } from "../execution/agent-execution.listener.js";
-import { ProposalHandler } from "../execution/handlers/proposal.handler.js";
-import { CreatorHandler } from "../execution/handlers/creator.handler.js";
 import { createObjectStorage } from "./create-object-storage.js";
 import { registerRecordPostprocessListener } from "../listeners/record-postprocess.listener.js";
 import { createApp, type ServerServices } from "./app.js";
@@ -28,7 +20,6 @@ import { IdentityProviderRegistry } from "../domain/auth/identity-provider.js";
 import { AuthService } from "../domain/auth/index.js";
 import { RecordRetrievalService, RecordService, type Record } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
-import { ProjectService, ProposalService } from "../domain/projects/index.js";
 import { FantoService } from "../domain/fanto/index.js";
 import { MemoryService } from "../domain/memory/index.js";
 import { createAgentRuntime } from "../agent/agent-runtime.js";
@@ -72,29 +63,16 @@ const retrieval = RecordRetrievalService.create(db, embeddings);
 const memories = MemoryService.create(db, embeddings);
 const fanto = FantoService.create(db, media);
 const queue = new RecordPostprocessQueue();
-const records = RecordService.create(db, queue, retrieval, recordListCache, undefined, media);
-const projects = ProjectService.create(db, records, media, embeddings);
-const proposals = ProposalService.create(db, records, media, embeddings);
-const creative = config.creative.enabled ? new CreativeService(db, records, projects, proposals, media, new CreativeImageClient(config.creative.image), userId => auth.assertActiveUser(userId),
-  new QwenImageUnderstanding(config.dashscope.apiKey, config.dashscope.baseUrl, config.dashscope.visionModel)) : undefined;
-const agent = createAgentRuntime({ db, records, media, memories, fanto, creative, ...config.agent });
+const records = RecordService.create(db, queue, retrieval, recordListCache, media);
+const agent = createAgentRuntime({ db, records, media, memories, fanto, ...config.agent });
 const embeddingQueue=new RecordEmbeddingQueue();
-const agentQueue=new AgentExecutionQueue();
-const events=new SessionEventBus();
-const worker=new AgentWorker(agent.sessions,events);
-const proposalHandler=creative?new ProposalHandler(records,proposals,agent,worker,config.creative.proposalTimeoutMs):undefined;
-const creatorHandler=creative?new CreatorHandler(projects,proposals,agent,worker,config.creative.creatorTimeoutMs):undefined;
-const agentExecution=new AgentExecutionListener(agentQueue,config.agentExecutionConcurrency,proposalHandler,creatorHandler);
-
 registerRecordPostprocessListener(
   queue,records,media,oss,
   new QwenImageUnderstanding(config.dashscope.apiKey,config.dashscope.baseUrl,config.dashscope.visionModel),
   new QwenAudioTranscription(config.dashscope.apiKey,config.dashscope.baseUrl,config.dashscope.asrModel),
-  embeddingQueue,agentQueue
+  embeddingQueue
 );
 registerRecordEmbeddingListener(embeddingQueue,records,retrieval);
-
-if (creative) await projects.normalizeLegacyMedia();
 
 const services: ServerServices = {
   auth,
@@ -103,12 +81,6 @@ const services: ServerServices = {
   userProfile: new UserProfileService(db, media),
   records,
   media,
-  projects,
-  agentQueue,
-  events,
-  agentWorker: worker,
-  proposals,
-  creative,
   agent,
   fanto,
   healthCheck,
@@ -164,7 +136,6 @@ const shutdown = async (signal: string) => {
   await new Promise<void>((resolve, reject) => {
     server.close(error => error ? reject(error) : resolve());
   });
-  await agentExecution.stop();
   await agent.close();
   await db.destroy();
   process.exit(0);

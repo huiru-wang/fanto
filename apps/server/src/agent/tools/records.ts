@@ -30,9 +30,6 @@ function requestContext(context: Context) {
   return {
     userId: metadata.userId,
     sessionId: metadata.sessionId,
-    projectId: metadata.projectId,
-    recordId: metadata.recordId,
-    recordVersion: metadata.recordVersion,
     traceId: metadata.traceId,
     signal: context.abortSignal,
   };

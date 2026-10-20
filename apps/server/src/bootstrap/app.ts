@@ -2,7 +2,6 @@ import type { AdminService } from "../domain/admin/index.js";
 import { createAdminRoutes } from "../routes/admin.js";
 import type { UserProfileService } from "../domain/users/profile-service.js";
 import { createUserProfileRoutes, createUserStatisticsRoutes } from "../routes/user-profile.js";
-import type { CreativeService } from "../domain/projects/creative-service.js";
 import { FantoService } from "../domain/fanto/index.js";
 import { createFantoRoutes } from "../routes/fanto.js";
 import { createCharacterRoutes } from "../routes/character.js";
@@ -15,17 +14,12 @@ import { bearerToken, requireUserId, runWithRequestPrincipal } from "../routes/r
 import { AuthError, type AuthService } from "../domain/auth/index.js";
 import { createAuthRoutes } from "../routes/auth.js";
 import { logAccess, logError } from "../infrastructure/logging/logger.js";
-import { createProjectRoutes, createProposalRoutes } from "../routes/projects.js";
 import { RecordService } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
-import type { ProjectService, ProposalService } from "../domain/projects/index.js";
 import type { AgentRuntime } from "../agent/agent-runtime.js";
 import { createSessionRoutes } from "../routes/agent/sessions.js";
 import { createAgentRoutes } from "../routes/agent/stream.js";
 
-import type { AgentExecutionQueue } from "../event/agent-execution-queue.js";
-import type { SessionEventBus } from "../event/session-event-bus.js";
-import type { AgentWorker } from "../execution/agent-worker.js";
 import { bodyLimit } from "hono/body-limit";
 
 const redact = (value: unknown): unknown => {
@@ -46,15 +40,9 @@ const jsonBody = async (response: Response, path: string) => {
 export type ServerServices = {
   admin?: AdminService;
   adminAccessKey?: string;
-  creative?: CreativeService;
-  agentQueue?: AgentExecutionQueue;
-  events?: SessionEventBus;
-  agentWorker?: AgentWorker;
   auth?: AuthService;
   records: RecordService;
   media: MediaService;
-  projects?: ProjectService;
-  proposals?: ProposalService;
   agent?: AgentRuntime;
   fanto?: FantoService;
   userProfile?: UserProfileService;
@@ -63,13 +51,12 @@ export type ServerServices = {
 
 export function createApp(services: ServerServices) {
   const app = new Hono();
-  const { auth, records: recordService, media: mediaService, projects: projectService } = services;
+  const { auth, records: recordService, media: mediaService } = services;
   app.onError((error, c) => {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });
     return c.json({ success: false, errorCode: "INTERNAL_ERROR", errorMsg: "Internal server error" }, 500);
   });
   app.use("*", cors({ origin: "*", allowHeaders: ["Authorization", "Content-Type", "X-Client-Fingerprint", "X-Trace-Id", "X-Time-Zone", "X-Admin-Key"], allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"] }));
-  app.use("/api/projects/*", bodyLimit({ maxSize: 13 * 1024 * 1024, onError: c => c.json({ success: false, result: null, errorCode: "CONTENT_TOO_LARGE", errorMsg: "Content too large" }, 413) }));
   app.use("/api/*", async (c, next) => {
     const startedAt = performance.now();
     const requestBody = c.req.header("content-type")?.includes("application/json")
@@ -124,12 +111,10 @@ export function createApp(services: ServerServices) {
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));
   if (services.fanto) { app.route("/api/fanto", createFantoRoutes(services.fanto)); app.route("/api/character", createCharacterRoutes(services.fanto)); }
-  if (projectService) app.route("/api", createProjectRoutes(projectService));
-  if (services.proposals) app.route("/api", createProposalRoutes(services.proposals, services.agentQueue));
 
   if (services.agent) {
     app.use("/api/agent/*", bodyLimit({ maxSize: 64 * 1024 }));
-    app.route("/api/agent", createSessionRoutes(services.agent.registry, services.agent.sessions, services.events));
+    app.route("/api/agent", createSessionRoutes(services.agent.registry, services.agent.sessions));
     app.route("/api/agent", createAgentRoutes(services.agent.registry, services.agent.sessions));
   }
   app.get("/api/media/:id/meta", async c => {

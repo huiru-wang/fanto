@@ -13,7 +13,6 @@
 - [系统总览](architecture/overview.md)：当前运行组件、依赖关系与数据边界。
 - [业务 Server](architecture/server.md)：Hono Server 的模块边界、请求与异步处理链路。
 - [Agent Runtime](architecture/agent-runtime.md)：Pi AgentHarness、Session、Workspace 与安全边界。
-- [创作执行](architecture/creative-runtime.md)：Proposal → Creator、Project Session 与媒体归属。
 
 ## 领域
 
@@ -21,13 +20,12 @@
 - [Media](domain/media.md)：上传、OSS、图片理解与音频转写。
 - [Record Retrieval](domain/record-retrieval.md)：Record 索引、检索与派生数据边界。
 - [Memory](domain/memory.md)：用户明确保存的长期记忆、检索与 Agent 使用边界。
-- [Proposal / Project](domain/projects.md)：创意建议、成果、决策事务和 Record 关联。
 
 ## 客户端与接口
 
 - [HTTP API](api/http-api.md)：当前实际注册的 HTTP 接口。
 - [iOS](clients/ios.md)：当前 SwiftUI 客户端页面、真实数据源与未接入能力。
-- [H5](clients/h5.md)：测试客户端、Project / Proposal 与统一会话。
+- [H5](clients/h5.md)：记录测试客户端与 Main 对话。
 
 ## 工程
 

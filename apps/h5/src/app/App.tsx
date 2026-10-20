@@ -5,7 +5,6 @@ import { FantoSettingsPage } from "../fanto/FantoSettingsPage";
 import { AppShell } from "../components/AppShell";
 import { ChatPage } from "../pages/ChatPage";
 import { RecordsPage } from "../pages/RecordsPage";
-import { ProjectsPage } from "../pages/ProjectsPage";
 import { SettingsPage } from "../pages/SettingsPage";
 
 export function App() {
@@ -18,7 +17,6 @@ export function App() {
       <Routes>
         <Route path="/records" element={<RecordsPage />} />
         <Route path="/chat" element={null} />
-        <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/fanto/settings" element={<FantoSettingsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/records" replace />} />

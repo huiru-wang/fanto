@@ -17,12 +17,10 @@ function harnessWithHandlers() {
   return handlers;
 }
 
-test("user input collection and proposal creation terminate the current turn", async () => {
+test("user input collection terminates the current turn", async () => {
   const handlers = harnessWithHandlers();
   const afterTool = handlers.get("after_tool")!;
   assert.deepEqual(await afterTool({ toolName: "collect_user_input", isError: false }), { terminate: true });
   assert.equal(await afterTool({ toolName: "write", isError: false }), undefined);
-  assert.deepEqual(await afterTool({ toolName: "proposal_create", isError: false }), { terminate: true });
-  assert.equal(await afterTool({ toolName: "project_manage", isError: false }), undefined);
-  assert.equal(await afterTool({ toolName: "project_manage", isError: true }), undefined);
+  assert.equal(await afterTool({ toolName: "collect_user_input", isError: true }), undefined);
 });

@@ -45,7 +45,7 @@ async function fixture(timeoutMs?:number, stopTimeoutMs?:number, withTool=false)
     history:async()=>({agentId:"main",entries:await lane.findEntries({order:"newestFirst"},TODO_CONTEXT),hasMore:false,nextCursor:null}),toolsForHistory:()=>[],
   });
   const registry={get:()=>({id:"main"})};
-  const streams=createAgentRoutes(registry as never,manager,timeoutMs),stops=createSessionRoutes(registry as never,manager,undefined,stopTimeoutMs);
+  const streams=createAgentRoutes(registry as never,manager,timeoutMs),stops=createSessionRoutes(registry as never,manager,stopTimeoutMs);
   const principal={userId:"owner",source:"user"} as const;
   const chat=(message:string)=>runWithRequestPrincipal(principal,()=>streams.request("/stream",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:session.id,message})}));
   const stop=()=>runWithRequestPrincipal(principal,()=>stops.request(`/sessions/${session.id}/stop`,{method:"POST"}));

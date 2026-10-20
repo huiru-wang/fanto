@@ -62,47 +62,6 @@ export interface RecordsTable {
   embedding: unknown | null;
 }
 
-export interface ProjectsTable {
-  embedding: string | null;
-  project_id: string;
-  user_id: string;
-  session_id: string | null;
-  title: string;
-  summary: string;
-  cover_media_id: string | null;
-  content: string;
-  goal: unknown;
-  status: "queued" | "running" | "completed" | "failed" | "archived";
-  version: number;
-  created_at: Date;
-  updated_at: Date;
-}
-
-export interface ProposalsTable {
-  proposal_id: string;
-  session_id: string | null;
-  user_id: string;
-  type: "create" | "extend";
-  target_project_id: string | null;
-  title: string;
-  proposed_summary: string | null;
-  content: unknown;
-  status: "pending" | "accepted" | "rejected";
-  result_project_id: string | null;
-  created_at: Date;
-  updated_at: Date;
-  resolved_at: Date | null;
-}
-
-export interface RecordLinksTable {
-  user_id: string;
-  outer_id: string;
-  type: "project" | "proposal";
-  record_id: string;
-  record_event_at: Date;
-  created_at: Date;
-}
-
 export interface MediaAssetsTable {
   id: Generated<number>;
   media_id: string;
@@ -143,9 +102,6 @@ export interface DB {
   user_login_identities: UserLoginIdentitiesTable;
   auth_challenges: AuthChallengesTable;
   records: RecordsTable;
-  projects: ProjectsTable;
-  proposals: ProposalsTable;
-  record_links: RecordLinksTable;
   media_assets: MediaAssetsTable;
   memories: MemoriesTable;
   user_fanto_settings: UserFantoSettingsTable;

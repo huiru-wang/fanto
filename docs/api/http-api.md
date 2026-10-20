@@ -131,7 +131,7 @@ PATCH 支持单项更新；changes 省略的字段保持不变，显式 null 仅
 
 `status` 取值为：`pending`（已保存，等待处理）、`updated`（内容已更新，等待处理）、`processing`（正在进行图片/音频理解）和 `processed`（当前版本处理完成）。音频成功后，audio block 的 `transcription` 保存正文，`asr` 保存状态、模型、情绪 `emotion`、语种 `language` 与完成时间；失败音频写入 `asr.status=failed` 和 `errorCode`，不产生 `transcription`。单个媒体失败不会阻断其他媒体处理；图片失败时对应 block 不含 `description`。Record 完成当前版本的 postprocess 后才更新 Record Retrieval；后续 Embedding / 索引失败不会把已经 `processed` 的 Record 回滚。
 
-`eventAt` 是 Record 的业务发生时间；`createdAt`、`updatedAt` 仅表示服务端保存与变更时间。当前 PostgreSQL 使用完整空库基线加异步 V3 前向迁移；旧迁移元数据按迁移约定归并，旧 SQLite 数据不提供原地升级。
+`eventAt` 是 Record 的业务发生时间；`createdAt`、`updatedAt` 仅表示服务端保存与变更时间。数据库安装及基线重放边界见 [本地开发](../engineering/local-development.md#database-migration)。
 
 Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒体 URL 不嵌入 Record，而是按 `mediaId` 从 Media API 临时获取。
 
@@ -150,40 +150,6 @@ Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒�
 创建上传体：`{ mimeType, bytes, purpose? }`，purpose 默认为 `record`，另支持 `fanto_avatar`、`user_avatar`、`user_cover`。头像仅接受图片，最大 512 KiB；背景图最大2 MiB，complete要求4:3、宽640–1600像素；头像 complete 校验静态方形且边长 128–512；只保存单个对象，original/thumbnail 都读取该对象，`/meta` 不向 Agent 暴露头像或用户背景图。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
 
 `GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Access JWT。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到原始媒体的短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，`variant` 默认为 `original`，图片可请求 `thumbnail`（服务端保存的宽不超过 600、q80、WebP 小图），音频无论 variant 都返回 original；非法 variant 返回 `400 INVALID_INPUT`。读取签名有效期为五分钟，客户端不应持久化，thumbnail / original 应分键缓存，并在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 对客户端上传的图片 / 音频返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`。Task Worker 生成的结果文件由 Server 内部直接上传，不经过 `/api/uploads`，其 `mediaType=file`，meta 额外返回 `bytes / filename`。所有 meta 都不包含 signed URL。
-
-## Proposal / Project
-
-Proposal 的列表/详情保留 `sessionId: string | null`（对应内部提议分析会话）；具有 Session 归属权限的用户可通过通用 History 查看，但不能通过公共执行接口调用内部 Agent。
-
-所有接口按 Access JWT 的 userId 隔离。列表响应为 `{ data, hasMore, nextCursor, pageSize }`，limit 默认 20、最大 100，必须为正整数；Proposal 参考记录默认 5。实体时间为 ISO 8601，空字段明确返回 null。
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| GET | `/api/proposals?type=&status=&targetProjectId=&limit=&cursor=` | type 为 create / extend，status 为 pending / accepted / rejected；默认不过滤 |
-| GET | `/api/proposals/:id` | 提议详情及 referenceRecordCount |
-| GET | `/api/proposals/:id/records?limit=&cursor=` | 完整参考 Record，按 eventAt / recordId 倒序分页 |
-| POST | `/api/proposals/:id/accept` | 请求体 `{ selectedIdeaId?: string }`；同步创建/更新 Project，返回 `{ projectId }`；后台执行状态仅通过 Project 查询 |
-| POST | `/api/proposals/:id/reject` | 返回 `{ proposal }`，同决策幂等 |
-| GET | `/api/projects?status=&limit=&cursor=` | 默认包含 queued/running/completed/failed，可筛选任一状态或 archived；摘要列表不含 content |
-| GET | `/api/projects/:id` | 完整 Project，包含 recordCount / referenceRecords（最近最多 5 条） |
-| PATCH | `/api/projects/:id` | `{ expectedVersion, title?, summary?, goal?, coverMediaId?, content? }`，返回 Project |
-| POST | `/api/projects/:id/archive` | `{ expectedVersion }`，返回 Project；重复归档幂等 |
-
-Project 包含 projectId / userId / sessionId / goal / title / summary / coverMediaId / content / status / version / createdAt / updatedAt。当前公开 Project 详情只返回最近最多五条参考 Record，服务端尚未注册额外的 Project records 分页 Route。Proposal 包含 proposalId / userId / sessionId / type / targetProjectId / title / proposedSummary / content / status / resultProjectId / createdAt / updatedAt / resolvedAt。内容与事务语义以 [Domain](../domain/projects.md) 为准。
-
-PATCH 不接受用户身份、Session ID 或状态字段；缺省字段保留，content 是完整正文。Proposal `content` 为 `{ reason, ideas: [{ id, title, idea, tags, goal }], selectedIdeaId }`，其中 Goal 是 `{ objective, context?, constraints?, successCriteria? }`；最多两个 Idea，`selectedIdeaId` 在用户接受后填入。Goal 由 Proposal 接受写入 Project，也可由 creator-agent 在 `project_manage` 更新。summary 更新需要向量服务成功；创建 Project 只在 Proposal 接受时发生。
-
-## Project Agent Session
-
-Project 与 Session 分别管理：`projects.status` 表示本轮创作是否在排队/执行/成功/失败/归档，不代表 Session 是否存在。Project `sessionId` 单独返回，可能为 null。
-
-| 方法 | 路径 | 作用 |
-| --- | --- | --- |
-| GET | `/api/agent/sessions/:sessionId/history?limit=&cursor=` | 通用 Session 历史，按 Session userId 校验，无 Creator 专属处理 |
-| GET | `/api/agent/sessions/:sessionId/events` | 订阅该 Session 的通用 SSE（不缓存和回放；断线后重拉 History） |
-| POST | `/api/agent/stream` | 统一多轮会话 SSE：传入 `sessionId`、`message`、可选 `metadata.projectId`；从 Session 解析 Agent，Creative Tool 层验证项目权限 |
-
-所有 Agent 都允许公开创建 Session，但 Proposal、Creator 无业务授权时不得执行模型或专用工具。Project 续聊不修改业务状态；Creator 保存非空作品成功可将 failed 恢复 completed。Project 专属消息提交、启动、History、Events 和 Stream 路由已移除；H5/iOS 均已适配通用 Session 协议。
 
 ## 上传图片
 
@@ -204,11 +170,10 @@ X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC
 | POST | `/api/agent/sessions` | `{ agentId? }` | `201`，返回 `sessionId` 与 `agentId` |
 | GET | `/api/agent/sessions?agentId=&limit=&cursor=` | 无请求体 | `200`，当前用户会话列表，游标按更新时间排序 |
 | POST | `/api/agent/sessions/:sessionId/stop` | 无请求体 | `200/202`，返回 `{ sessionId, stopped, stopping }`；202 仅表示停止已接受、仍在结束当前操作，终态后可续聊；无运行时 stopped/stopping 均为 false，非本人会话 403 |
-| POST | `/api/agent/stream` | `{ sessionId, message, metadata?: { projectId?: uuid } }` | `200`，SSE 事件流 |
+| POST | `/api/agent/stream` | `{ sessionId, message }` | `200`，SSE 事件流 |
 | GET | `/api/agent/sessions/:sessionId/history?cursor=&limit=` | 无请求体 | `200`，按完整 Run 分页的倒序历史页，包含 `messages` 投影；`limit` 为 Run 数量，`nextCursor` 为下一页游标 |
-| GET | `/api/agent/sessions/:sessionId/events` | 无请求体 | `200`，只读 SSE 订阅，不发起执行或重放 |
 
-先创建 Session；`stream` 必须使用已有的 `sessionId`。创建 Session 时 `agentId` 可省略（默认 `main`）。Stream 不接受 `agentId`，只从 Session 所有权绑定解析其类型；所有 Agent 都可公开创建 Session，但 Proposal 需要服务端注入可信 Record 才能执行。Creator 的 `metadata.projectId` 需经过当前用户及 Project↔Session 绑定校验，普通续聊不更新 Project 执行状态。`workspace` 不接受客户端路径，服务固定映射至 `data/workspaces/<userId>/<sessionId>`。
+先创建 Session；stream 使用已有 sessionId。创建时 agentId 可省略，默认 main；当前仅注册 main，Stream 从 Session 归属解析身份。请求不接受 projectId / metadata 或客户端工作目录，工作区固定映射至 data/workspaces/<userId>/<sessionId>。
 
 ```sh
 export ACCESS_TOKEN='替换为服务端 ACCESS_TOKEN'

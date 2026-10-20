@@ -48,7 +48,7 @@ export function installHarnessHooks(
     return undefined;
   });
   harness.hooks.on("after_tool", async ({ toolName, isError }) => {
-    if (["collect_user_input", "proposal_create"].includes(toolName) && !isError) return { terminate: true };
+    if (toolName === "collect_user_input" && !isError) return { terminate: true };
     return undefined;
   });
   harness.hooks.on("before_compaction", async () => undefined);

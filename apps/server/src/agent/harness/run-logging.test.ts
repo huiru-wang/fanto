@@ -14,7 +14,7 @@ const read=()=>readFileSync(join(dir,"service.log"),"utf8").trim().split("\n").m
  const match=line.match(/^\[[^\]]+\] \[[^\]]+\] \[([^\]]+)\] (.*?) (\{.*\})$/)!;
  return {event:match[2],...JSON.parse(match[3])};
 });
-const context=()=>createRunContext({userId:"user",sessionId:"session",runId:"run",agentId:"creator-agent",proposalId:"proposal",projectId:"project",query:"private query",slots:{},recentMessages:[]});
+const context=()=>createRunContext({userId:"user",sessionId:"session",runId:"run",agentId:"main",query:"private query",slots:{},recentMessages:[]});
 
 test("watchdog identifies an unfinished tool and stops after run cleanup",t=>{
  t.mock.timers.enable({apis:["Date","setInterval"],now:1000});
@@ -27,7 +27,7 @@ test("watchdog identifies an unfinished tool and stops after run cleanup",t=>{
  const waiting=read().at(-1);
  assert.equal(waiting.event,"waiting");
  assert.equal(waiting.phase,"tool started");
- assert.equal(waiting.proposalId,"proposal");
+ assert.equal(waiting.runId,"run");
  assert.deepEqual(waiting.activeTools,[{toolCallId:"tool-1",toolName:"record_read",durationMs:60_000}]);
  touchRun(data);
  const beforeActivity=read().length;
@@ -52,7 +52,6 @@ test("model request/response logs correlate IDs and redact errors without record
  assert.equal(response.httpStatus,429);
  assert.equal(response.sessionId,"session");
  assert.equal(response.runId,"run");
- assert.equal(response.proposalId,"proposal");
  assert.ok(!response.error.includes("private"));
  assert.equal(typeof response.durationMs,"number");stop();
 });

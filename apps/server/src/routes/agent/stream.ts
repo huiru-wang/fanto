@@ -22,7 +22,7 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
     const traceId = traceIdSchema.safeParse(c.req.header("x-trace-id"));
     const timeZone = resolveTimeZone(c.req.header("x-time-zone")?.trim());
     if (!body.success || !traceId.success) {
-      return c.json({ error: "sessionId, message, metadata, or x-trace-id is invalid" }, 400);
+      return c.json({ error: "sessionId, message, or x-trace-id is invalid" }, 400);
     }
     const runTraceId = traceId.data ?? randomUUID();
     let session;
@@ -57,7 +57,7 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
             session,
             body.data.message,
             controller.signal,
-            { traceId: runTraceId, timeZone, ...body.data.metadata },
+            { traceId: runTraceId, timeZone,  },
             event => deliver(() => writeStreamEvent(stream, event)),
             () => stream.writeSSE({
               event: "start",
@@ -85,7 +85,7 @@ export function createAgentRoutes(registry: AgentRegistry, sessions: AgentSessio
         await deliver(() => stream.writeSSE({ event: "done", data: "{}" }));
       } catch (error) {
         logError("agent-stream", "run failed", {userId, sessionId:session.id, agentId:session.agentId,
-          traceId:runTraceId, projectId:body.data.metadata?.projectId, aborted:controller.signal.aborted || (error instanceof Error && error.name === "AbortError"), error:logSummary(error)});
+          traceId:runTraceId, aborted:controller.signal.aborted || (error instanceof Error && error.name === "AbortError"), error:logSummary(error)});
         if (!stream.aborted) {
           await deliver(() => stream.writeSSE({
             event: error instanceof Error && error.name === "AbortError" ? "stopped" : "error",

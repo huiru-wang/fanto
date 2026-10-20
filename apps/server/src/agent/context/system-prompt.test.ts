@@ -10,10 +10,10 @@ function run() {
 test("one authorized provider resolves multiple semantic prompt slots exactly once per run", async () => {
   let calls = 0;
   const prompt = createSystemPrompt({
-    template:"Goal:\n{{creator_goal}}\nRecords:\n{{creator_records}}\nGoal again: {{creator_goal}}",
-    providers:[{slots:["creator_goal","creator_records"],required:true,async build() {
+    template:"Goal:\n{{test_goal}}\nRecords:\n{{test_records}}\nGoal again: {{test_goal}}",
+    providers:[{slots:["test_goal","test_records"],required:true,async build() {
       calls++;
-      return {creator_goal:"写一本书",creator_records:"record A; record B"};
+      return {test_goal:"写一本书",test_records:"record A; record B"};
     }}],
   });
   const context = run();

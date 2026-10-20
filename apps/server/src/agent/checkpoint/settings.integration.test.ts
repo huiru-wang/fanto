@@ -25,9 +25,9 @@ integration("checkpoint-owned main session selection enforces user ownership and
       user_id, status: "active" as const, created_at: now, updated_at: now, disabled_at: null,
     }))).execute();
     const checkpoint = new CheckpointRepository(db);
-    const mainId = randomUUID(), creatorId = randomUUID();
+    const mainId = randomUUID(), otherAgentId = randomUUID();
     await checkpoint.createSession(mainId, owner, "main");
-    await checkpoint.createSession(creatorId, owner, "creator-agent");
+    await checkpoint.createSession(otherAgentId, owner, "other-agent");
     const fanto = FantoService.create(db, {validateAvatar: async () => false} as never);
     assert.equal((await fanto.getSettings(owner)).sessionId, null);
     const updated = await fanto.updateSettings(owner, {
@@ -39,7 +39,7 @@ integration("checkpoint-owned main session selection enforces user ownership and
       expectedVersion: 0, changes: {sessionId: mainId},
     }), {code: "INVALID_SESSION"});
     await assert.rejects(fanto.updateSettings(owner, {
-      expectedVersion: updated.version, changes: {sessionId: creatorId},
+      expectedVersion: updated.version, changes: {sessionId: otherAgentId},
     }), {code: "INVALID_SESSION"});
     await assert.rejects(fanto.updateSettings(owner, {
       expectedVersion: 0, changes: {sessionId: mainId},

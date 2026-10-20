@@ -4,8 +4,7 @@ import { logError, logInfo, logWarn } from "../../infrastructure/logging/logger.
 const progress = new WeakMap<RunData, { startedAt: number; lastActivityAt: number; phase: string; tools: Map<string, {name: string; startedAt: number}> }>();
 export const runLogDetails = (data: RunData) => ({
   userId:data.userId, agentId:data.agentId, sessionId:data.sessionId, runId:data.runId,
-  recordId:data.recordId, version:data.recordVersion, proposalId:data.proposalId,
-  projectId:data.projectId, traceId:data.traceId,
+  traceId:data.traceId,
 });
 
 export function logRunEvent(data: RunData, event: string, details: Record<string,unknown> = {}, level: "info" | "warn" | "error" = "info") {

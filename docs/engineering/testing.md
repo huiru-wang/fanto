@@ -19,16 +19,17 @@ xcodebuild -project apps/ios/fanto/fanto.xcodeproj -scheme fanto -sdk iphonesimu
 ## 按领域验证
 
 - **数据库**：`migration-baseline.test.ts` 在隔离 PG 中验证唯一重置基线空库建齐、最终 fanto_id / session_id、重复 / 并发执行、删除 Kysely 两张元数据表后重放、当前结构部分缺表 / 索引时重建缺失对象，以及全 Schema 清空后的重建。通过对象 OID、索引 / 约束定义和已有数据验证不重建已有表、不丢失数据；不支持旧结构自动升级。
-- **Record / Media**：按用户、版本、位置字段、五媒体限制、后置 Vision/ASR、独立 EmbeddingQueue、语义检索；真实 OSS PUT/HEAD/URL、删除后的尽力清理以及 Project 最终副本归属；`image-thumbnail.test.ts` 验证 EXIF/WebP/并发上限，`media-service.test.ts` 验证小图失败与 DB 失败后的手动恢复、variant 和用户隔离。H5 `tests/media-upload.test.ts` 验证每个失败阶段不会自动继续请求。
-- **Proposal / Project**：Proposal 1–2 个 Idea、accept 幂等、create/extend 状态、Record 关联、version 乐观并发、媒体复制、旧内容保留和失败状态收敛；测试文件位于 `domain/projects/`、`routes/project-http.test.ts`。
+- **Record / Media**：按用户、版本、位置字段、五媒体限制、后置 Vision/ASR、独立 EmbeddingQueue、语义检索；真实 OSS PUT/HEAD/URL、删除后的尽力清理以及 用户隔离；`image-thumbnail.test.ts` 验证 EXIF/WebP/并发上限，`media-service.test.ts` 验证小图失败与 DB 失败后的手动恢复、variant 和用户隔离。H5 `tests/media-upload.test.ts` 验证每个失败阶段不会自动继续请求。
 - **Agent Checkpoint PG Integration**：用仅供测试的 `TEST_DATABASE_URL`（库名含 test），执行 `pnpm --filter @fanto/server exec tsx --test src/agent/checkpoint/*.integration.test.ts`，验证仅创建当前三表、Entry/Usage 存储、Run 历史分页、冷恢复和主会话权限。测试创建并删除独立的临时数据库，不可使用生产数据库。
 - **取消集成回归**：`routes/agent/cancellation.integration.test.ts` 使用真实 Pi Harness、faux Provider 和 HTTP socket，覆盖各阶段输出阻塞、取消持久化、超时、重复 stop、输出 deadline 与续聊。需要数据库时可单独设置 `TEST_DATABASE_URL` 在独立 PG 库验证；运行时以独立临时库执行，避免与其它集成测试共享生产 Schema。付费模型与浏览器验证仍需单独执行。
 - **Memory**：`agent/context/providers/memory.test.ts` 验证默认两类注入、预算、失败和下一轮刷新；`agent/tools/memory.test.ts` 验证按话题搜索、同条更新和失败语义；`domain/memory/memory.integration.test.ts` 在隔离 PostgreSQL 验证新类型约束、旧内容不转换、CRUD/向量检索、容量和用户隔离。设置 `TEST_DATABASE_URL`（库名含 test，需 CREATEDB）。`MEMORY_SMOKE_TEST=1 pnpm --filter @fanto/server exec tsx --test src/agent/tools/memory.smoke.test.ts` 为付费真实模型验证，使用生产 Main Prompt/Tool/Harness 与隔离的内存工具数据，不能当成生产数据库 E2E。
-- **Agent Session**：History user ownership、Creator 按 projectId+sessionId 绑定 Project 的领域授权、Stream/Events、同一 Session 并发防护、Tool Presentation 隐私投影、取消与超时。可检查 `routes/agent/sessions.test.ts`、`routes/agent/stream.test.ts` 与 `agent/presentation.test.ts`。
-- **异步执行**：`execution/agent-execution.listener.test.ts`、`execution/handlers/proposal-creator.contract.test.ts`；验证 Proposal/Creator 共享并发、创作状态转换、停止/进程中断边界。异步 Queue 不持久化，不能声称自动恢复。
-- **客户端**：H5 typecheck/build；iOS Xcode 模拟器构建与实际页面交互。测试创建记录/位置、Proposal 接受、Project 继续对话（含订阅失败仍可发）、Tool 活动/媒体渲染、异步状态刷新和归档。
+- **Agent Session**：History user ownership、Stream、同一 Session 并发防护、Tool Presentation 隐私投影、取消与超时。可检查 `routes/agent/sessions.test.ts`、`routes/agent/stream.test.ts` 与 `agent/presentation.test.ts`。
+- **客户端**：H5 typecheck/build；iOS Xcode 模拟器构建与实际页面交互。测试创建记录/位置、Tool 活动/媒体渲染、异步状态刷新和归档。
 
-需要真实 DeepSeek/Qwen/OSS 时使用受控的最小 smoke test，明确费用和环境，不能把 Mock 的成功当成真实生成。当前没有默认启用的付费 Creator E2E CI 测试。
+
+## 能力移除回归
+
+capability-scope.test.ts 验证已认证请求无法访问退役业务路由；Agent Definition / Session / Stream 测试验证 Main 注册、旧能力拒绝与 metadata 严格校验。record-postprocess.listener.test.ts 验证 processed 后只投递 Embedding、旧版本不投递、失败释放认领。空库基线只创建保留表，不新增旧表 / 历史文件清理迁移；旧库手动维护。
 
 ## R2 存储验证
 

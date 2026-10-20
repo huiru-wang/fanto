@@ -4,7 +4,6 @@ import type { ImageUnderstanding } from "../infrastructure/clients/image-client.
 import type { ObjectStorage } from "../infrastructure/clients/storage/object-storage.js";
 import type { RecordPostprocessQueue } from "../event/record-postprocess-queue.js";
 import type { RecordEmbeddingQueue } from "../event/record-embedding-queue.js";
-import type { AgentExecutionQueue } from "../event/agent-execution-queue.js";
 import type { MediaService } from "../domain/media/index.js";
 import type { RecordService } from "../domain/records/index.js";
 import { logError, logInfo, logSummary } from "../infrastructure/logging/logger.js";
@@ -17,7 +16,6 @@ export function registerRecordPostprocessListener(
   image: ImageUnderstanding,
   audio: AudioTranscriptionClient,
   embeddingQueue: RecordEmbeddingQueue,
-  agentQueue: AgentExecutionQueue,
 ) {
   queue.on(async task => {
     const startedAt = Date.now();
@@ -95,6 +93,5 @@ export function registerRecordPostprocessListener(
     logInfo("record-postprocess", "completed", {...details, durationMs:Date.now()-startedAt});
 
     embeddingQueue.publish({...task});
-    agentQueue.publish({type:"proposal", ...task});
   });
 }

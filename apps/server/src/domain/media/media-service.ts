@@ -1,5 +1,4 @@
 import sharp from "sharp";
-import { randomUUID } from "node:crypto";
 import { mediaMime, mediaObjectKey, normalizeMimeType } from "./mime.js";
 import { PostgresMediaRepository, type MediaAsset } from "./postgres-repository.js";
 import { generateThumbnail, inspectImage, InvalidImageError, storedThumbnail, thumbnailObjectKey, ThumbnailWork, type MediaVariant } from "./image-thumbnail.js";
@@ -62,78 +61,6 @@ export class MediaService {
       checkDeadline();
       return { capture: original, thumbnail: { version: 1 as const, objectKey, mimeType: "image/webp" as const, bytes, width, height, sourceEtag: source.etag } };
     });
-  }
-  async createGeneratedImage(input: { userId: string; projectId: string; mediaId: string; data: Buffer; width: number; height: number }) {
-    const decoded = await sharp(input.data, { limitInputPixels: 40_000_000 }).metadata();
-    if (decoded.format !== "png" || decoded.width !== input.width || decoded.height !== input.height || input.data.length > 20 * 1024 * 1024) throw new Error("Invalid generated image");
-    const key = `users/${input.userId}/project/${input.projectId}/${input.mediaId}.png`;
-    const createdKeys = [key, thumbnailObjectKey(key)];
-    try {
-      await this.oss.putObject(key, input.data, "image/png");
-      const prepared = await this.prepareImage(key, "image/png", 20 * 1024 * 1024, input.data);
-      const saved = await this.media.createReadyImage({ mediaId: input.mediaId, userId: input.userId, objectKey: key, mimeType: "image/png", bytes: input.data.length, extData: { source: "project", projectId: input.projectId, createdBy: "image_generate", requiresReview: true, capture: prepared.capture, variants: { thumbnail: prepared.thumbnail } } });
-      return metadata(saved);
-    } catch (error) { await this.cleanupUncommittedProjectObjects(createdKeys); throw error; }
-  }
-
-  async copyFinalReferences(userId: string, projectId: string, ids: string[], transaction: Transaction<DB>, createdKeys: string[] = []): Promise<Record<string, string>> {
-    const keys = [...new Set(ids)];
-    const rows = await this.media.findMediaByIds(keys, userId, transaction, true);
-    if (rows.length !== keys.length || rows.some(a => a.status !== "ready" || ["fanto_avatar", "user_avatar", "user_cover"].includes(String(a.extData.purpose)))) throw new Error("MEDIA_NOT_READY");
-    const prefix = `users/${userId}/project/${projectId}/`;
-    const mapping: Record<string, string> = {};
-    for (const source of rows) {
-      if (source.objectKey.startsWith(prefix)) continue;
-      const descriptor = mediaMime(source.mimeType);
-      const ext = descriptor?.extension ?? (source.mimeType === "text/html" ? ".html" : source.mimeType === "text/markdown" ? ".md" : "");
-      if (!ext) throw new Error("MEDIA_NOT_READY");
-      const newId = randomUUID(), key = `${prefix}${newId}${ext}`;
-      const data = await this.oss.getObject(source.objectKey, source.mediaType === "image" ? { maxBytes: 20 * 1024 * 1024 } : undefined);
-      createdKeys.push(key);
-      if (source.mediaType === "image") createdKeys.push(thumbnailObjectKey(key));
-      await this.oss.putObject(key, data, source.mimeType);
-      const prepared = source.mediaType === "image" ? await this.prepareImage(key, source.mimeType, 20 * 1024 * 1024, data) : undefined;
-      await this.media.createReadyAsset({
-        mediaId: newId, userId, objectKey: key, mediaType: source.mediaType,
-        mimeType: source.mimeType, bytes: data.length,
-        extData: { source: "project", projectId, createdBy: "project_copy", originMediaId: source.mediaId, ...(prepared ? { capture: prepared.capture, variants: { thumbnail: prepared.thumbnail } } : source.extData.capture ? { capture: source.extData.capture } : {}) },
-      }, transaction);
-      mapping[source.mediaId] = newId;
-    }
-    return mapping;
-  }
-
-  async cleanupUncommittedProjectObjects(keys: string[]) {
-    await Promise.allSettled(keys.map(key => this.oss.remove(key)));
-  }
-
-  async withGenerationReferences<T>(userId: string, ids: string[], projectId: string, operation: (urls: string[]) => Promise<T>, variant: MediaVariant = "original") {
-    const assets = await this.media.findMediaByIds(ids, userId);
-    if (assets.length !== ids.length || assets.some(a => a.status !== "ready" || ["fanto_avatar", "user_avatar", "user_cover"].includes(String(a.extData.purpose)) || a.mediaType !== "image" || a.bytes > 20 * 1024 * 1024)) throw new Error("SOURCE_MEDIA_UNAVAILABLE");
-    const keys: string[] = [], urls: string[] = [];
-    try {
-      for (const id of ids) {
-        const asset = assets.find(a => a.mediaId === id)!;
-        if (variant === "thumbnail") {
-          const thumbnail = await this.resolveThumbnail(asset);
-          if (!thumbnail || Math.max(thumbnail.width, thumbnail.height) / Math.min(thumbnail.width, thumbnail.height) > 8) throw new Error("SOURCE_MEDIA_UNAVAILABLE");
-          urls.push((await this.oss.signRead(thumbnail.objectKey, 900)).url);
-          continue;
-        }
-        const data = await this.oss.getObject(asset.objectKey, { maxBytes: 20 * 1024 * 1024 });
-        if (data.length > 20 * 1024 * 1024) throw new Error("SOURCE_MEDIA_UNAVAILABLE");
-        const image = sharp(data, { limitInputPixels: 40_000_000, failOn: "warning" }), meta = await image.metadata();
-        if (!["jpeg", "png", "webp"].includes(meta.format ?? "") || !meta.width || !meta.height || Math.max(meta.width, meta.height) / Math.min(meta.width, meta.height) > 8 || (meta.pages ?? 1) > 1) throw new Error("SOURCE_MEDIA_UNAVAILABLE");
-        const width = meta.autoOrient?.width ?? meta.width, height = meta.autoOrient?.height ?? meta.height;
-        const scale = Math.max(384 / Math.min(width, height), Math.min(1, 3072 / Math.max(width, height)));
-        const adapted = await image.rotate().resize({ width: Math.round(width * scale), height: Math.round(height * scale), fit: "inside" }).jpeg({ quality: 92 }).toBuffer();
-        const key = `users/${userId}/project/${projectId}/temp/${randomUUID()}.jpg`;
-        keys.push(key);
-        await this.oss.putObject(key, adapted, "image/jpeg");
-        urls.push((await this.oss.signRead(key, 900)).url);
-      }
-      return await operation(urls);
-    } finally { await Promise.all(keys.map(key => this.oss.remove(key).catch(() => {}))); }
   }
   async createUpload(userId: string, input: { mimeType: string; bytes: number; purpose?: "record" | "fanto_avatar" | "user_avatar" | "user_cover" }) {
     const descriptor = mediaMime(input.mimeType); if (!descriptor || (descriptor.mediaType === "image" && input.bytes > 10 * 1024 * 1024)) return null;

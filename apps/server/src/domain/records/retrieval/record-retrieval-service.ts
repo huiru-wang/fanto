@@ -1,4 +1,3 @@
-import { ProjectService } from "../../projects/index.js";
 import type { Record } from "../record.js";
 import { PostgresRecordRepository } from "../postgres-repository.js";
 import type { RecordRepository } from "../repository.js";
@@ -12,7 +11,7 @@ export class RecordRetrievalService {
   constructor(private readonly records: Pick<RecordRepository, "writeEmbedding" | "searchByEmbedding">, private readonly embeddings: EmbeddingProvider) {}
 
   static create(db: Kysely<DB>, embeddings: EmbeddingProvider): RecordRetrievalService {
-    return new RecordRetrievalService(new PostgresRecordRepository(db, ProjectService.removeRecordReferences), embeddings);
+    return new RecordRetrievalService(new PostgresRecordRepository(db), embeddings);
   }
 
   async replaceRecord(record: Record): Promise<void> {

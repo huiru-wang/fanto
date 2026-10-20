@@ -12,7 +12,7 @@ import { installStopHooks } from "./stop-state.js";
 import { cancelLaneOperation } from "./build-runtime.js";
 import type { HarnessRuntime } from "./build-runtime.js";
 
-for (const [agentId, stopBeforeText] of [["main", false], ["creator-agent", false], ["proposal-agent", false], ["main", true]] as const) {
+for (const [agentId, stopBeforeText] of [["main", false], ["main", false], ["other-agent", false], ["main", true]] as const) {
   test(`${agentId}: stopping ${stopBeforeText ? "before text" : "during streaming"} persists history and accepts another turn`, async () => {
     const repo = new MemorySessionRepo();
     const session = await repo.create({}, TODO_CONTEXT);

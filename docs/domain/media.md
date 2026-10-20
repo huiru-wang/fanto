@@ -1,6 +1,6 @@
 # Media
 
-Media 负责 Record、Project 的图片/音频资产及独立用途的 Fanto / 用户头像。二进制内容存储在站点配置的阿里云 OSS 或 Cloudflare R2，业务元数据保存在 `media_assets`。
+Media 负责 Record 的图片/音频资产及独立用途的 Fanto / 用户头像、背景图。二进制内容存储在站点配置的阿里云 OSS 或 Cloudflare R2，业务元数据保存在 `media_assets`。
 
 ## 支持格式
 
@@ -34,7 +34,7 @@ sequenceDiagram
 
 Server 根据 MIME 决定 media type 和对象后缀。complete 时会验证 OSS 实际对象大小和 MIME；不一致返回 `UPLOAD_MISMATCH`。
 
-Record 用户上传的媒体对象键为 `users/<userId>/record/<YYYY-MM>/<mediaId>.<extension>`。创作图片直接保存至 `users/<userId>/project/<projectId>/`。只有图片正式进入 Project 正文/封面时，才在 Project 保存事务中对外部来源的媒体创建副本。客户端通过 Media URL 接口读取短期 OSS signed URL。Project 正文通过 `fanto-media://<mediaId>` 引用媒体，客户端在渲染时解析为短期签名地址，不持久化 signed URL。Fanto 不提供独立的 Task 文件上传/交付与 Task Artifact 预览。
+Record 媒体对象键为 `users/<userId>/record/<YYYY-MM>/<mediaId>.<extension>`。客户端通过媒体 ID / variant 读取短期对象存储签名 URL，不将签名 URL 持久化为身份；Main 的 fanto-media 引用按相同用户边界解析。
 
 一个图片 mediaId 对应原图和 `<mediaId>.thumbnail-v1.webp` 两个对象；`object_key / mime_type / bytes` 仍表示原图，`ext_data.variants.thumbnail` 保存小图 key、版本、类型、大小、尺寸和源 ETag。生成小图不依赖存储商图片处理接口。图片解码验证声明格式、最多 4000 万像素，自动校正 EXIF 方向，保持比例、不放大、不保留 EXIF，动态图片取首帧；capture 尺寸以实际解码为准。
 
@@ -52,7 +52,7 @@ ready Media 才能关联到 Record。关联后 `ext_data.recordId` 记录归属�
 
 用户头像使用独立的 `users/<userId>/profile/avatar/<mediaId>.<extension>` 路径，绑定到 user_profiles；两类头像不可互换绑定。详见 [Users](users.md)。
 
-头像不能关联 Record、复制为 Project 成果或用作 Agent 图片参考，`/meta` 不暴露头像。只有本人 ready 且未退役/未认领清理的头像可以绑定设置；替换或恢复默认会在同一事务标记旧头像退役。解绑不立即删除 OSS，避免在途读取与提交失败。清理入口、保留时间与并发保护见 [Fanto](fanto.md)。
+头像不能关联 Record或用作 Agent 图片参考，`/meta` 不暴露头像。只有本人 ready 且未退役/未认领清理的头像可以绑定设置；替换或恢复默认会在同一事务标记旧头像退役。解绑不立即删除 OSS，避免在途读取与提交失败。清理入口、保留时间与并发保护见 [Fanto](fanto.md)。
 
 ## 图片理解
 
@@ -84,15 +84,9 @@ Audio block 在 Record postprocess 中调用 ASR。成功后，transcription 与
 
 `present_media` Agent Tool 使用 `/meta` 对模型给出的 mediaId 做用户归属与 ready 校验，并把稳定 metadata 写入原生 Tool Result `details`。短期 signed URL 不写入 Agent Session，真正展示或播放时再由客户端调用 `/url` 获取。缩略图 URL 与原图 URL 必须按 variant 独立缓存；业务 API 不直接暴露永久 OSS URL。
 
-## Project 媒体与创作图片
-
-`image_generate` 以多张用户可访问的 ready 参考图片调用模型，按输入顺序传入已保存 thumbnail 的 15 分钟签名地址，不下载或重新转码原图；缺少小图时复用媒体补生成逻辑，失败中止请求，不回退原图。`image_review` 继续使用原图生成临时适配 JPEG，调用完成后删除临时对象。模型每次只返回单张图片，完成下载/解码后保存到 `users/{userId}/project/{projectId}/{mediaId}.{ext}`，原图和小图均存储成功后注册新的 ready Media，并只给 Agent 返回 mediaId/mimeType/width/height。不使用 Run、预算、图片槽位或独立进度表。
-
-`project_manage` 在最终保存 Project content/coverMediaId 时校验每个媒体归属：原 objectKey 已在当前 Project 前缀下则直接使用，否则复制 OSS 对象、创建新的 mediaId、独立原图与小图和媒体资产，将最终内容中的引用换成新的 ID。同请求重复媒体引用复制一次。仅用于参考、不进入正式作品的 Record 图片无需副本。
-
 ## Record 删除与媒体清理
 
-删除 Record 时锁定其媒体资产，同事务删除 Record 独占媒体的 `media_assets` 并收集原图与小图的 objectKey。Project 最终作品已使用独立 mediaId 和 objectKey，不再阻止原 Record 媒体被删除。聊天历史的原 Record 图片引用也不会阻止删除。
+删除 Record 时锁定其媒体资产，同事务删除 Record 独占媒体的 `media_assets` 并收集原图与小图的 objectKey。聊天历史的原 Record 图片引用也不会阻止删除。
 
 事务提交后 Server 尽力逐个删除 OSS 对象（单对象清理限时）；网络删除失败只记录日志，不存在持久化删除队列、周期扫描或退避重试。HTTP 删除成功只保证业务事务已提交，不保证 OSS 对象必已删除。
 

@@ -7,8 +7,3 @@ export const RECORD_STATUS = {
   PROCESSING: 'processing',
   DIGESTED: 'digested',
 } as const;
-
-export const TOPIC_STATUS = {
-  ACTIVE: 'active',
-  ARCHIVED: 'archived',
-} as const;

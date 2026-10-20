@@ -1,8 +1,4 @@
-import { waitForOutput } from "../../agent/harness/run-output.js";
 import { logInfo, logError, logSummary } from "../../infrastructure/logging/logger.js";
-import type { SessionEventBus } from "../../event/session-event-bus.js";
-import { streamSSE } from "hono/streaming";
-import { writeStreamEvent } from "./stream.js";
 import { Hono } from "hono";
 import type { AgentRegistry } from "../../agent/harness/registry.js";
 import { AgentSessionManager, SessionNotFoundError, SessionOwnershipError, SessionBusyError } from "../../agent/harness/session-manager.js";
@@ -12,7 +8,7 @@ import { requireUserId } from "../request-user.js";
 import { requestAgentStop, isAgentStopping } from "../../agent/harness/run.js";
 import { projectHistory } from "../../agent/presentation.js";
 
-export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSessionManager, events?: SessionEventBus, stopTimeoutMs = 20_000): Hono {
+export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSessionManager, stopTimeoutMs = 20_000): Hono {
   const app = new Hono();
   app.post("/sessions", async c => {
     const body = createSessionSchema.safeParse(await c.req.json().catch(() => null));
@@ -73,30 +69,6 @@ export function createSessionRoutes(registry: AgentRegistry, sessions: AgentSess
     } finally {clearTimeout(timer);}
   });
 
-  app.get("/sessions/:sessionId/events", async c => {
-    const userId=requireUserId(c.req.raw), id=c.req.param("sessionId");
-    if(!events)return c.json({error:"Events unavailable"},503);
-    try{await sessions.assertOwnership(id,userId);}catch(error){return sessionError(c,error);}
-    return streamSSE(c,async stream=>{
-      const connection=new AbortController();
-      stream.onAbort(()=>connection.abort());
-      const deliver=async(write:()=>Promise<void>)=>{
-        const status=await waitForOutput(write,connection.signal);
-        if(status==="timeout")stream.abort();
-      };
-      const unsubscribe=events.subscribe(id,event=>{
-        const write=async()=>{
-          if(event.type==="start")await stream.writeSSE({event:"start",data:JSON.stringify({sessionId:id,agentId:event.agentId})});
-          else if(event.type==="done"||event.type==="stopped"||event.type==="error")await stream.writeSSE({event:event.type,data:JSON.stringify(event.type==="error"?{error:event.message??"Agent run failed"}:{})});
-          else await writeStreamEvent(stream,event);
-        };
-        void deliver(write).catch(()=>stream.abort());
-      });
-      const heartbeat=setInterval(()=>void deliver(async()=>{await stream.write(": ping\n\n");}).catch(()=>stream.abort()),15000);
-      try{await new Promise<void>(resolve=>stream.onAbort(resolve));}
-      finally{clearInterval(heartbeat);unsubscribe();}
-    });
-  });
   app.get("/sessions/:sessionId/history", async c => {
     const params = sessionParamsSchema.safeParse(c.req.param());
     const cursor = cursorSchema.safeParse(c.req.query("cursor"));

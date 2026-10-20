@@ -1,7 +1,7 @@
 import { sql, type Transaction, type Kysely } from "kysely";
 import { randomUUID } from "node:crypto";
 import type { DB } from "../../infrastructure/database/schema.js";
-import type { RecordReadOptions, RecordRepository, RecordSavedHook } from "./repository.js";
+import type { RecordReadOptions, RecordRepository } from "./repository.js";
 import type { Record } from "./record.js";
 import type { AudioContentBlock, ImageContentBlock, RecordContent } from "@fanto/shared";
 import type { SaveRecordContent } from "./content.js";
@@ -13,7 +13,7 @@ const ext = (value: string | null): ExtData => value ? JSON.parse(value) as ExtD
 const vectorLiteral = (embedding: number[]) => JSON.stringify(embedding);
 
 export class PostgresRecordRepository implements RecordRepository {
-  constructor(private db: Kysely<DB>, private readonly cleanupLinks: (userId: string, recordId: string, transaction: Transaction<DB>) => Promise<void>, private readonly onSaved?: RecordSavedHook, private readonly cleanupMedia?: (userId: string, ids: string[], transaction: Transaction<DB>) => Promise<string[]>) {}
+  constructor(private db: Kysely<DB>, private readonly cleanupMedia?: (userId: string, ids: string[], transaction: Transaction<DB>) => Promise<string[]>) {}
 
   async create(input: { userId: string; source?: string; eventAt: string; value: SaveRecordContent }): Promise<Record | "invalid_media" | "invalid_content"> {
     return this.db.transaction().execute(async trx => {
@@ -24,7 +24,6 @@ export class PostgresRecordRepository implements RecordRepository {
       const row = { record_id: randomUUID(), user_id: input.userId, source: input.source ?? "home", content: JSON.stringify({ text: input.value.text, blocks }), version: 1, status: "pending", task_id: null, location_latitude: location?.latitude ?? null, location_longitude: location?.longitude ?? null, event_at: input.eventAt, created_at: now, updated_at: now, embedding: null };
       await trx.insertInto("records").values(row).execute();
       await this.link(trx, input.userId, input.value.media.map(item => item.mediaId), row.record_id);
-      await this.onSaved?.(input.userId, row.record_id, row.version, trx);
       return this.toEntity(row);
     });
   }
@@ -62,7 +61,6 @@ export class PostgresRecordRepository implements RecordRepository {
       const row = await trx.updateTable("records").set({ content: JSON.stringify({ text: input.value.text, blocks }), location_latitude: location?.latitude ?? null, location_longitude: location?.longitude ?? null, version: sql<number>`version + 1`, status: "updated", task_id: null, updated_at: now, embedding: null }).where("record_id", "=", id).returningAll().executeTakeFirstOrThrow();
       await this.link(trx, userId, newIds, id);
       for (const mediaId of oldIds.filter(mediaId => !newIds.includes(mediaId))) await this.unlink(trx, userId, mediaId, now);
-      await this.onSaved?.(userId, row.record_id, row.version, trx);
       return this.toEntity(row);
     });
   }
@@ -73,7 +71,6 @@ export class PostgresRecordRepository implements RecordRepository {
       if (!row) return "not_found";
       if (row.version !== expectedVersion) return "conflict";
       const record = this.toEntity(row);
-      await this.cleanupLinks(userId, id, trx);
       const ids = record.content.blocks.flatMap(block => block.type === "location" ? [] : [block.mediaId]);
       const objectKeys=this.cleanupMedia ? await this.cleanupMedia(userId,ids,trx) : [];
       if(!this.cleanupMedia)for (const mediaId of ids) await this.unlink(trx, userId, mediaId, nowIso());

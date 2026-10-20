@@ -8,10 +8,9 @@ import { RecordPostprocessQueue } from "../../event/record-postprocess-queue.js"
 import { MediaService } from "./index.js";
 import sharp from "sharp";
 import { MemoryStorage } from "./testing/memory-storage.js";
-import { ProjectService, ProposalService } from "../projects/index.js";
 
 const integration = process.env.TEST_DATABASE_URL ? test : test.skip;
-integration("Record deletion commits before one bounded OSS attempt, preserves final Project copy and user isolation", async () => {
+integration("Record deletion commits before one bounded OSS attempt, preserves user isolation", async () => {
   const admin=createDatabase(process.env.TEST_DATABASE_URL!);
   const name="delete_"+randomUUID().replaceAll("-","");
   await sql.raw(`CREATE DATABASE "${name}"`).execute(admin);
@@ -25,9 +24,7 @@ integration("Record deletion commits before one bounded OSS attempt, preserves f
   const remove=oss.remove.bind(oss);
   oss.remove=async(key:string)=>{calls++;if(fail)throw new Error("OSS unavailable");await remove(key);};
   const media=MediaService.create(db,oss as never);
-  const records=RecordService.create(db,new RecordPostprocessQueue(),undefined,undefined,undefined,media);
-  const embed={embed:async()=>Array.from({length:768},(_,i)=>i===0?1:0)};
-  const projects=ProjectService.create(db,records,media,embed),proposals=ProposalService.create(db,records,media,embed);
+  const records=RecordService.create(db,new RecordPostprocessQueue(),undefined,undefined,media);
   const make=async(owner=userId)=>{
     const id=randomUUID(),key=`users/${owner}/${id}.png`;
     await oss.putObject(key,png,"image/png");
@@ -55,21 +52,9 @@ integration("Record deletion commits before one bounded OSS attempt, preserves f
     assert.ok(objects.has(first.key));assert.equal(calls,2);
     fail=false;
     const second=await make();
-    const proposal=await proposals.create(userId,{type:"create",title:"园林",proposedSummary:"园林写真",recordIds:[second.record.id],content:{reason:"旅行",ideas:[{title:"园林画卷",idea:"把这次旅行绘制成一张温暖的记忆海报。",tags:["园林回忆","旅行画卷"],goal:{objective:"一页写真"}}]}});
-    assert.equal(proposal.kind,"ok");
-    const accepted=await proposals.accept(userId,proposal.data.proposalId);
-    assert.equal(accepted.kind,"ok");
-    const projectId=accepted.data.projectId;
-    await db.updateTable("projects").set({status:"running"}).where("project_id","=",projectId).execute();
-    assert.equal((await projects.update(userId,projectId,1,{content:`![园林](fanto-media://${second.id})`,coverMediaId:second.id})).kind,"ok");
     assert.equal((await records.delete(userId,second.record.id,1)).kind,"ok");
     assert.equal(objects.has(second.key),false);
-    const published=await projects.find(userId,projectId);
-    assert.ok(published?.coverMediaId&&published.coverMediaId!==second.id);
-    assert.ok(published.content.includes(published.coverMediaId));
-    const owned=await db.selectFrom("media_assets").selectAll().where("media_id","=",published.coverMediaId).executeTakeFirstOrThrow();
-    assert.ok(owned.object_key.startsWith(`users/${userId}/project/${projectId}/`));
-    assert.ok(objects.has(owned.object_key));
+    assert.equal(await media.readyMetadata(userId,second.id),null);
     assert.ok(objects.has(foreign.key));assert.equal(calls,4);
   }finally{
     await db.destroy();await sql.raw(`DROP DATABASE "${name}" WITH (FORCE)`).execute(admin);await admin.destroy();

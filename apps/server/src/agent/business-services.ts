@@ -1,16 +1,10 @@
 import { type CharacterPrompt } from "../domain/fanto/index.js";
-import type { CreativeService } from "../domain/projects/creative-service.js";
-import type { CreativeContext, ImageInput, ProjectManageInput } from "../domain/projects/creative-model.js";
-import type { CreateProposalInput } from "../domain/projects/index.js";
 import type { MediaService } from "../domain/media/index.js";
 import type { RecordService } from "../domain/records/index.js";
 import type { Memory, MemoryKind, MemorySearchResult, MemoryService } from "../domain/memory/index.js";
 
 export type AgentRequestContext = {
   userId: string;
-  projectId?: string;
-  recordId?: string;
-  recordVersion?: number;
   traceId?: string;
   signal?: AbortSignal;
   sessionId?: string;
@@ -25,12 +19,6 @@ export type AgentMemory = Omit<Memory, "userId">;
 export type AgentMemorySearch = Omit<MemorySearchResult, "userId">;
 
 export type AgentBusinessServices = {
-  creativeContext?(context: AgentRequestContext): ReturnType<CreativeService["context"]>;
-  readProject?(context: AgentRequestContext, input: Parameters<CreativeService["readProject"]>[1]): ReturnType<CreativeService["readProject"]>;
-  createProposal?(context: AgentRequestContext, input: CreateProposalInput): ReturnType<CreativeService["createProposal"]>;
-  generateImage?(context: AgentRequestContext, input: ImageInput): ReturnType<CreativeService["generateImage"]>;
-  reviewImage?(context: AgentRequestContext, input: {mediaId: string; brief: string; referenceMediaIds?: string[]}): ReturnType<CreativeService["reviewImage"]>;
-  manageProject?(context: AgentRequestContext, input: ProjectManageInput): ReturnType<CreativeService["projectManage"]>;
   readRecords(context: AgentRequestContext, input: { recordIds?: string[]; query?: string }): Promise<AgentRecord[]>;
   listRecords(context: AgentRequestContext, input: { limit: number; cursor?: string }): Promise<AgentRecordList>;
   searchRecords(context: AgentRequestContext, input: { query: string; limit: number }): Promise<AgentRecordSearch>;
@@ -52,22 +40,13 @@ async function withRunAbort<T>(context: AgentRequestContext, operation: () => Pr
 
 export function createAgentBusinessServices(services: {
   records: RecordService;
-  creative?: CreativeService;
   media: MediaService;
   memories: MemoryService;
   fanto?: { getConversationSettings(userId: string): Promise<CharacterPrompt & {nickname: string}> };
 }): AgentBusinessServices {
-  const creative = () => { if (!services.creative) throw new Error("CREATIVE_AGENT_DISABLED"); return services.creative; };
   return {
     getFantoConversationSettings: context => { if (!services.fanto) throw new Error("FantoService is not configured"); return withRunAbort(context, () => services.fanto!.getConversationSettings(context.userId)); },
-    creativeContext: context => creative().context(context),
-    readProject: (context, input) => creative().readProject(context, input),
-    createProposal: (context, input) => creative().createProposal(context, input),
-    generateImage: (context, input) => creative().generateImage(context, input),
-    reviewImage: (context, input) => creative().reviewImage(context, input),
-    manageProject: (context, input) => creative().projectManage(context, input),
     async readRecords(context, input) {
-      if (context.recordId || context.projectId) return withRunAbort(context, () => creative().readRecords(context, input));
       const recordIds = input.recordIds
         ?? (await withRunAbort(context, () => services.records.search(context.userId, input.query!, 3))).map(result => result.recordId);
       return withRunAbort(context, () => services.records.findMany(context.userId, recordIds));

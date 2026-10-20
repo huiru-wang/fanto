@@ -1,6 +1,5 @@
 import type { Kysely } from "kysely";
 import type { DB } from "../infrastructure/database/schema.js";
-import type { CreativeService } from "../domain/projects/creative-service.js";
 import { dirname, resolve } from "node:path";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import type { RecordService } from "../domain/records/index.js";
@@ -16,7 +15,6 @@ export type AgentRuntime = { registry: AgentRegistry; sessions: AgentSessionMana
 
 export function createAgentRuntime(input: {
   records: RecordService;
-  creative?: CreativeService;
   media: MediaService;
   memories: MemoryService;
   fanto: FantoService;

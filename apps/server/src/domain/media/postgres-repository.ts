@@ -30,15 +30,6 @@ export class PostgresMediaRepository {
     return asset(row);
   }
 
-  async createReadyAsset(input: { mediaId: string; userId: string; objectKey: string; mediaType: "image" | "audio" | "file"; mimeType: string; bytes: number; extData: Record<string, unknown> }, transaction: Transaction<DB> | Kysely<DB> = this.db) {
-    const now = nowIso();
-    const row = await transaction.insertInto("media_assets").values({ media_id: input.mediaId, user_id: input.userId, object_key: input.objectKey, media_type: input.mediaType, mime_type: input.mimeType, bytes: input.bytes, status: "ready", ext_data: JSON.stringify(input.extData), created_at: now, updated_at: now }).returningAll().executeTakeFirstOrThrow();
-    return asset(row);
-  }
-  async createReadyImage(input: { mediaId: string; userId: string; objectKey: string; mimeType: string; bytes: number; extData: Record<string, unknown> }) {
-    return this.createReadyAsset({ ...input, mediaType: "image" });
-  }
-
   async complete(id: string, userId: string, capture: Record<string, unknown>, thumbnail?: Thumbnail) {
     return this.db.transaction().execute(async trx => {
       const row = await trx.selectFrom("media_assets").selectAll().where("media_id", "=", id).where("user_id", "=", userId).forUpdate().executeTakeFirst();

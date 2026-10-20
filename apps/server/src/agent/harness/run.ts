@@ -11,7 +11,7 @@ import type { Entry } from "@earendil-works/pi-agent-core";
 import type { HarnessRuntime } from "./build-runtime.js";
 
 export type RunSession = { id: string; userId: string; agentId?: string; runtime: HarnessRuntime; checkpoint?: { beginRun(id: string): void; endRun(): void; flush(): Promise<void> } };
-export type RunMetadata = { proposalId?: string; projectId?: string; recordId?: string; recordVersion?: number; traceId?: string; timeZone?: string; };
+export type RunMetadata = { traceId?: string; timeZone?: string; };
 
 type ActiveRun = {controller: AbortController; settled: Promise<void>; finish: () => void; error?: unknown; stop: StopState; data?: RunData};
 const activeRuns = new Map<string, ActiveRun>();
@@ -94,7 +94,6 @@ async function run(
   const startedAt=Date.now();
   const context = withAbortSignal(signal, createRunContext({
     runId:randomUUID(),userId:session.userId,sessionId:session.id,agentId:session.agentId,query,slots:{},recentMessages:[],
-    proposalId:metadata.proposalId,projectId:metadata.projectId,recordId:metadata.recordId,recordVersion:metadata.recordVersion,
     traceId:metadata.traceId,timeZone:metadata.timeZone,stop:active.stop,
   }));
   const data=createRunContext.read(context);

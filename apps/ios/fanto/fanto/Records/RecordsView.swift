@@ -46,7 +46,7 @@ struct RecordsView: View {
                 }
                 Button("取消", role: .cancel) { recordToDelete = nil }
             } message: {
-                Text("删除后无法恢复。仅属于这条记录的照片和音频也会删除，已有脉络成果会保留。")
+                Text("删除后无法恢复。仅属于这条记录的照片和音频也会删除。")
             }
             .alert("删除未完成", isPresented: Binding(
                 get: { store.recordActionError != nil },

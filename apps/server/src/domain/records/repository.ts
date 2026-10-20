@@ -16,5 +16,3 @@ export interface RecordRepository {
   writeEmbedding(input: { recordId: string; userId: string; version: number; embedding: number[] }): Promise<boolean>;
   searchByEmbedding(input: { userId: string; embedding: number[]; limit: number }): Promise<Array<{ record: Record; distance: number }>>;
 }
-
-export type RecordSavedHook = (userId: string, recordId: string, version: number, transaction: Transaction<DB>) => Promise<void>;

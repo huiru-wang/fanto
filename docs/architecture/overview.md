@@ -1,42 +1,23 @@
 # 系统架构总览
 
-## 运行拓扑
-
 ```mermaid
 flowchart LR
-  IOS[iOS / SwiftUI] --> API[Hono Business Server]
-  H5[H5 / React + Vite] --> API
-  API --> PG[(PostgreSQL + pgvector)]
-  API --> STORE[ObjectStorage: Aliyun OSS / Cloudflare R2]
-  API --> AI[DeepSeek / DashScope]
-  API --> AGENT[Embedded Pi Agent Runtime]
-  AGENT --> PG
-  AGENT --> WS[Session Workspaces]
-  API --> Q[In-process Queues / Listeners]
-  Q --> AGENT
+  IOS[iOS / SwiftUI] --> API[Hono Server]
+  H5[H5 / React Vite] --> API
+  API --> PG[(PostgreSQL / pgvector)]
+  API --> OSS[Aliyun OSS / Cloudflare R2]
+  API --> MAIN[Embedded Pi Main Agent]
+  MAIN --> PG
+  API --> Q[Record 后置理解 / Embedding]
 ```
 
-部署时 Server 与 Agent Runtime 在同一 Node.js 进程，H5 由 Nginx 提供静态文件，`/api/*` 转发至 Server。没有独立 Agent HTTP 服务或 Gateway。工具和 Context Provider 通过 `agent/business-services.ts` 访问 Domain Service，不经本机 HTTP 或 Route。
+Server 与 Agent 同进程，没有独立 Gateway。H5 静态资源由 Nginx 提供；受保护请求使用 Fanto JWT。iOS 使用 Google / Apple 原生登录，H5 是受控测试客户端，Admin 仅本地使用独立只读密钥。
 
 ## 事实与派生数据
 
-- PostgreSQL：用户、身份、Records、Media 元数据、Memory、Proposal、Project、Record 关联。
-- pgvector：`records.embedding`（可重建的派生字段）、`memories.embedding`、`projects.embedding`。
-- 对象存储：Record 上传媒体、生成的 Project 媒体；Server 按 `OBJECT_STORAGE_PROVIDER` 使用 Aliyun OSS 或 Cloudflare R2，客户端读取短期签名 URL。
-- Agent Session 在线使用 Pi MemorySessionRepo；通过 Pi 原生 `entry_added/usage/turn_end` Event 将 Entry 和 Usage 同步增量写入 PostgreSQL 的 `agent_session.sessions/entries/usage_ledger`，Run 收尾额外 flush；Session 归属来自 `sessions.user_id/agent_id`，不再读取 Snapshot 或旧 Storage；工作区位于 `AGENT_WORKSPACE_ROOT/<userId>/<sessionId>`。
-- Session transcript 记录 Agent 过程；Project 只存最新 `goal/content/status`，不从 UI 消息反推业务事实。
+- PostgreSQL 保存用户、登录身份、Record、Media 元数据、Memory、Fanto 设置、用户资料与 Agent Checkpoint。
+- pgvector 保存 records.embedding 与 memories.embedding；对象存储保存 Record 媒体、头像和背景图。
+- Main 会话运行在 Pi MemorySessionRepo，Checkpoint 持久化 sessions / entries / usage_ledger；工作目录由 AGENT_WORKSPACE_ROOT 和 userId / sessionId 决定。
+- Record 后置理解与 Embedding 使用非持久化内存队列；不会触发额外后台 Agent。
 
-## 异步与会话
-
-- Record 保存后向非持久化 `RecordPostprocessQueue` 发布消息；图片理解/音频转写成功标记 processed，之后分别向 `RecordEmbeddingQueue` 和 `AgentExecutionQueue` 投递。
-- `AgentExecutionQueue` 统一分发 Proposal 和 Creator，监听器在内存中限制并发；不提供 Task 调度。
-- Creator 首次创作由后台 Handler 执行，用户随后可通过统一 `POST /api/agent/stream` 继续同一 Session；通用 Session History 和只读 Events SSE 用于查看过程。
-- 所有内存队列和 Session 事件 **不持久化、不重放、不跨进程恢复**；重启可能丢失待执行消息。Project 持久状态可能仍为 queued/running，不能声称自动补偿。
-
-详见 [业务 Server](server.md)、[Agent Runtime](agent-runtime.md) 和 [创作执行](creative-runtime.md)。
-
-## 鉴权与运维
-
-受保护路由使用服务端校验的 Fanto JWT `sub` 作为唯一用户边界；iOS 通过 Google / Apple 认证，H5 当前通过受控测试 refresh token 建立会话。Session 历史按用户归属查询，Creator 执行还要校验关联 Project、业务状态和 Session 绑定。
-
-`/health` 实际检查 PostgreSQL，失败返回 503；Server 每 10 秒检查数据库，连续 3 次失败退出交给 PM2 重启。没有独立的 `/ready`。部署、配置和当前客户端范围见 [本地开发](../engineering/local-development.md)、[配置](../engineering/configuration.md)、[当前能力](../product/current-scope.md)。
+会话权限、停止、保存、恢复见 [Agent Runtime](agent-runtime.md)；模块装配见 [Server](server.md)。数据库健康与部署见 [本地开发](../engineering/local-development.md)。旧数据和外部文件不由启动流程自动删除。

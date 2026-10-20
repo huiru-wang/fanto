@@ -7,14 +7,13 @@ import { SessionNotFoundError, SessionOwnershipError } from "../../agent/harness
 import { createRunContext } from "../../agent/context/run-context.js";
 
 const sessionId = randomUUID();
-const projectId = randomUUID();
 
 function route(persisted: Promise<void> = Promise.resolve()) {
   const handlers = new Map<string, (event: any) => Promise<void>>();
   let released = false;
   let observed: ReturnType<typeof createRunContext.read> | undefined;
   const session = {
-    id: sessionId, userId: "owner", agentId: "creator-agent",
+    id: sessionId, userId: "owner", agentId: "main",
     runtime: {
       readRecentMessages: async () => [],
       harness: { events: { on: (name: string, handler: (event: any) => Promise<void>) => { handlers.set(name, handler); return () => handlers.delete(name); } } },
@@ -31,12 +30,12 @@ function route(persisted: Promise<void> = Promise.resolve()) {
     resolveAgentId: async (id: string, userId: string) => {
       if (id !== sessionId) throw new SessionNotFoundError();
       if (userId !== "owner") throw new SessionOwnershipError();
-      return "creator-agent";
+      return "main";
     },
-    acquire: async (definition: { id: string }) => { assert.equal(definition.id, "creator-agent"); return session; },
+    acquire: async (definition: { id: string }) => { assert.equal(definition.id, "main"); return session; },
     reserve: () => () => { released = true; },
   };
-  const registry = { get: (id: string) => id === "creator-agent" ? { id, revision: "v1" } : undefined };
+  const registry = { get: (id: string) => id === "main" ? { id, revision: "v1" } : undefined };
   return { app: createAgentRoutes(registry as never, sessions as never), observed: () => observed, released: () => released };
 }
 
@@ -47,22 +46,21 @@ const request = (app: ReturnType<typeof createAgentRoutes>, userId: string, body
   }),
 );
 
-test("Stream resolves agent identity from owned Session, and forwards only project metadata", async () => {
+test("Stream resolves Main identity from the owned Session", async () => {
   const { app, observed } = route();
-  const response = await request(app, "owner", { sessionId, message: "继续", metadata: { projectId } });
+  const response = await request(app, "owner", { sessionId, message: "继续" });
   assert.equal(response.status, 200);
   const payload = await response.text();
   assert.match(payload, /event: done/);
-  assert.equal(observed()?.projectId, projectId);
-  assert.equal(observed()?.recordId, undefined);
+  assert.equal(observed()?.sessionId, sessionId);
 });
 
-test("Stream rejects client agentId, record authorities and invalid projectId", async () => {
+test("Stream rejects client agentId, record authorities and retired metadata", async () => {
   const { app } = route();
   for (const input of [
     { sessionId, message: "hi", agentId: "main" },
     { sessionId, message: "hi", metadata: { recordId: randomUUID(), recordVersion: 1 } },
-    { sessionId, message: "hi", metadata: { projectId: "bad" } },
+    { sessionId, message: "hi", metadata: { projectId: randomUUID() } },
   ]) assert.equal((await request(app, "owner", input)).status, 400);
 });
 

@@ -1,23 +1,5 @@
 import Foundation
 
-struct ProjectPage {
-    let projects: [Project]
-    let hasMore: Bool
-    let nextCursor: String?
-}
-
-struct ProposalPage {
-    let proposals: [Proposal]
-    let hasMore: Bool
-    let nextCursor: String?
-}
-
-struct ProposalRecordPage {
-    let records: [Record]
-    let hasMore: Bool
-    let nextCursor: String?
-}
-
 struct RecordPage {
     let records: [Record]
     let hasMore: Bool
@@ -75,61 +57,6 @@ struct FantoAPIClient {
     func updateFantoSettings(version: Int, changes: FantoSettingsChanges) async throws -> FantoSettings {
         struct Payload: Encodable { let expectedVersion: Int; let changes: FantoSettingsChanges }
         return try await request(path: "api/fanto/settings", method: "PATCH", body: JSONEncoder().encode(Payload(expectedVersion: version, changes: changes)))
-    }
-
-    func fetchProjects(status: ProjectStatus? = nil, cursor: String? = nil, limit: Int = 100) async throws -> ProjectPage {
-        var components = URLComponents(url: baseURL.appending(path: "api/projects"), resolvingAgainstBaseURL: false)
-        var items = [URLQueryItem(name: "limit", value: String(limit))]
-        if let status { items.append(URLQueryItem(name: "status", value: status.rawValue)) }
-        if let cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }
-        components?.queryItems = items
-        guard let url = components?.url else { throw FantoAPIError.invalidBaseURL }
-        let response: ProjectsPayload = try await request(url: url)
-        return ProjectPage(projects: response.data.map(Project.init), hasMore: response.hasMore, nextCursor: response.nextCursor)
-    }
-
-    func fetchProject(id: String) async throws -> ProjectDetail {
-        let payload: ProjectPayload = try await request(path: "api/projects/\(id)")
-        return ProjectDetail(project: Project(payload), recordCount: payload.recordCount ?? 0, referenceRecords: (payload.referenceRecords ?? []).map(Record.init))
-    }
-
-    func fetchProposals(cursor: String? = nil, limit: Int = 100) async throws -> ProposalPage {
-        var components = URLComponents(url: baseURL.appending(path: "api/proposals"), resolvingAgainstBaseURL: false)
-        var items = [URLQueryItem(name: "status", value: "pending"), URLQueryItem(name: "limit", value: String(limit))]
-        if let cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }
-        components?.queryItems = items
-        guard let url = components?.url else { throw FantoAPIError.invalidBaseURL }
-        let response: ProposalsPayload = try await request(url: url)
-        return ProposalPage(proposals: response.data.map(Proposal.init), hasMore: response.hasMore, nextCursor: response.nextCursor)
-    }
-
-    func fetchProposal(id: String) async throws -> Proposal {
-        Proposal(try await request(path: "api/proposals/\(id)") as ProposalPayload)
-    }
-
-    func fetchProposalRecords(id: String, cursor: String? = nil, limit: Int = 5) async throws -> ProposalRecordPage {
-        var components = URLComponents(url: baseURL.appending(path: "api/proposals/\(id)/records"), resolvingAgainstBaseURL: false)
-        var items = [URLQueryItem(name: "limit", value: String(limit))]
-        if let cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }
-        components?.queryItems = items
-        guard let url = components?.url else { throw FantoAPIError.invalidBaseURL }
-        let response: ProposalRecordsPayload = try await request(url: url)
-        return ProposalRecordPage(records: response.data.map(Record.init), hasMore: response.hasMore, nextCursor: response.nextCursor)
-    }
-
-    func acceptProposal(id: String, selectedIdeaId: String) async throws -> String {
-        let body = try JSONEncoder().encode(AcceptProposalRequest(selectedIdeaId: selectedIdeaId))
-        let response: AcceptedProposalPayload = try await request(path: "api/proposals/\(id)/accept", method: "POST", body: body)
-        return response.projectId
-    }
-
-    func rejectProposal(id: String) async throws {
-        let _: ResolvedProposalPayload = try await request(path: "api/proposals/\(id)/reject", method: "POST")
-    }
-
-    func archiveProject(id: String, expectedVersion: Int) async throws {
-        let body = try JSONEncoder().encode(["expectedVersion": expectedVersion])
-        let _: ProjectPayload = try await request(path: "api/projects/\(id)/archive", method: "POST", body: body)
     }
 
     func fetchRecords(cursor: String? = nil, limit: Int = 30) async throws -> RecordPage {
@@ -211,64 +138,6 @@ private struct APIEnvelope<Result: Decodable>: Decodable {
 
 private struct DeletedRecordPayload: Decodable { let recordId: String }
 private struct APIErrorPayload: Decodable { let errorMsg: String?; let errorCode: String? }
-
-private struct ProjectsPayload: Decodable {
-    let data: [ProjectPayload]
-    let hasMore: Bool
-    let nextCursor: String?
-}
-
-private struct ProjectPayload: Decodable {
-    let projectId: String
-    let sessionId: String?
-    let title: String
-    let summary: String
-    let coverMediaId: String?
-    let content: String?
-    let recordCount: Int?
-    let referenceRecords: [RecordPayload]?
-    let status: ProjectStatus
-    let version: Int
-    let createdAt: Date
-    let updatedAt: Date
-}
-
-private extension Project {
-    init(_ payload: ProjectPayload) {
-        self.init(id: payload.projectId, title: payload.title, summary: payload.summary, sessionID: payload.sessionId, coverMediaID: payload.coverMediaId, content: payload.content ?? "", status: payload.status, version: payload.version, createdAt: payload.createdAt, updatedAt: payload.updatedAt)
-    }
-}
-
-private struct ProposalRecordsPayload: Decodable {
-    let data: [RecordPayload]
-    let hasMore: Bool
-    let nextCursor: String?
-}
-
-private struct ProposalsPayload: Decodable {
-    let data: [ProposalPayload]
-    let hasMore: Bool
-    let nextCursor: String?
-}
-private struct ProposalPayload: Decodable {
-    let proposalId: String
-    let type: ProposalType
-    let targetProjectId: String?
-    let title: String
-    let content: ProposalContent
-    let status: ProposalStatus
-    let resultProjectId: String?
-    let createdAt: Date
-    let referenceRecordCount: Int?
-}
-private extension Proposal {
-    init(_ payload: ProposalPayload) {
-        self.init(id: payload.proposalId, type: payload.type, targetProjectID: payload.targetProjectId, title: payload.title, content: payload.content, status: payload.status, resultProjectID: payload.resultProjectId, createdAt: payload.createdAt, referenceRecordCount: payload.referenceRecordCount)
-    }
-}
-private struct AcceptProposalRequest: Encodable { let selectedIdeaId: String }
-private struct AcceptedProposalPayload: Decodable { let projectId: String }
-private struct ResolvedProposalPayload: Decodable { let proposal: ProposalPayload }
 
 private struct RecordsPayload: Decodable {
     let data: [RecordPayload]

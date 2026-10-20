@@ -23,8 +23,8 @@
 | 注册用户 | 10,000 | 固定规划口径 |
 | MAU | 3,000 | 约 30% |
 | 峰值 DAU | 1,000 | 用于 QPS / 并发估算 |
-| Business 关系库 | **100 GB** | User、Record、Media metadata、Project 等 |
-| Agent Session 数据 | **50 GB** | 对话、Tool Call / Result、Task 等 |
+| Business 关系库 | **100 GB** | User、Record、Media metadata、Memory 等 |
+| Agent Session 数据 | **50 GB** | 对话、Tool Call / Result 等 |
 | 向量容量 | **20 GB** | 768 维，每条 Record 一个向量，保留索引与增长余量 |
 | OSS 对象存储 | **2 TB** | 图片 / 音频为首年主要存储成本 |
 | OSS 可扩容目标 | **5 TB+** | 媒体量增长时直接扩容 |
@@ -46,7 +46,6 @@
 - Record 与 content JSON
 - Media metadata
 - User / Identity
-- Project / Proposal / RecordLink
 - 数据库索引、膨胀与运维余量
 
 如果未来迁移 PostgreSQL，首年不需要按大规模分库分表设计。

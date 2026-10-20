@@ -3,10 +3,8 @@ import Markdown
 
 struct MarkdownContentView: View {
     private let blocks: [MarkdownBlock]
-    private let allowsHTMLPreview: Bool
-    init(markdown: String, leadingTitleToOmit: String?, allowsHTMLPreview: Bool = false) {
+    init(markdown: String, leadingTitleToOmit: String?) {
         blocks = MarkdownBlock.parse(markdown, omittingLeadingTitle: leadingTitleToOmit)
-        self.allowsHTMLPreview = allowsHTMLPreview
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -19,14 +17,10 @@ struct MarkdownContentView: View {
                 case let .paragraph(text):
                     Text(inline(text)).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                 case let .code(language, text):
-                    if language == "html-preview", allowsHTMLPreview {
-                        ProjectHTMLPreview(html: text)
-                    } else {
                         ScrollView(.horizontal) { Text(text).font(.system(.callout, design: .monospaced)).textSelection(.enabled).padding(12) }
                             .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
-                    }
                 case let .images(images):
-                    ProjectImageGallery(images: images)
+                    MarkdownImageGallery(images: images)
                 case let .table(rows):
                     ScrollView(.horizontal) {
                         Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 12) {
@@ -52,14 +46,14 @@ struct MarkdownContentView: View {
     }
 }
 
-struct ProjectMarkdownImage: Identifiable {
+struct MarkdownImage: Identifiable {
     let id: String
     let mediaID: String
     let caption: String
 }
 private struct MarkdownBlock: Identifiable {
     enum Kind {
-        case heading(Int, String), paragraph(String), code(String?, String), images([ProjectMarkdownImage]), table([[String]]), divider
+        case heading(Int, String), paragraph(String), code(String?, String), images([MarkdownImage]), table([[String]]), divider
     }
     let id: Int
     var kind: Kind
@@ -67,14 +61,14 @@ private struct MarkdownBlock: Identifiable {
         var blocks: [MarkdownBlock] = []
         var imageIndex = 0
         func append(_ kind: Kind) { blocks.append(.init(id: blocks.count, kind: kind)) }
-        func image(_ node: Markdown.Image) -> ProjectMarkdownImage? {
+        func image(_ node: Markdown.Image) -> MarkdownImage? {
             guard let source = node.source, source.hasPrefix("fanto-media://") else { return nil }
             let mediaID = String(source.dropFirst("fanto-media://".count))
             guard UUID(uuidString: mediaID) != nil else { return nil }
             imageIndex += 1
             return .init(id: "image-\(imageIndex)", mediaID: mediaID, caption: node.plainText)
         }
-        func images(_ nodes: [ProjectMarkdownImage]) {
+        func images(_ nodes: [MarkdownImage]) {
             if let last = blocks.last, case let .images(previous) = last.kind {
                 blocks[blocks.count - 1].kind = .images(previous + nodes)
             } else { append(.images(nodes)) }
@@ -114,36 +108,36 @@ private struct MarkdownBlock: Identifiable {
     }
 }
 
-private struct ProjectImageGallery: View {
-    let images: [ProjectMarkdownImage]
-    @State private var selection: ProjectMarkdownImage?
+private struct MarkdownImageGallery: View {
+    let images: [MarkdownImage]
+    @State private var selection: MarkdownImage?
     var body: some View {
         LazyVGrid(columns: images.count == 1 ? [GridItem(.flexible())] : [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             ForEach(Array(images.enumerated()), id: \.offset) { index, item in
                 Button { selection = item } label: {
                     VStack(alignment: .leading, spacing: 6) {
-                        ProjectMediaImage(mediaID: item.mediaID, variant: .thumbnail).aspectRatio(images.count == 1 ? 4 / 3 : 1, contentMode: .fit)
+                        MarkdownMediaImage(mediaID: item.mediaID, variant: .thumbnail).aspectRatio(images.count == 1 ? 4 / 3 : 1, contentMode: .fit)
                         if !item.caption.isEmpty { Text(item.caption).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
                     }
                 }.buttonStyle(.plain).accessibilityLabel(item.caption.isEmpty ? "查看第 \(index + 1) 张图片" : item.caption)
             }
         }
         .fullScreenCover(item: $selection) { selected in
-            ProjectImageViewer(images: images, initialID: selected.id)
+            MarkdownImageViewer(images: images, initialID: selected.id)
         }
     }
 }
-private struct ProjectImageViewer: View {
-    let images: [ProjectMarkdownImage]
+private struct MarkdownImageViewer: View {
+    let images: [MarkdownImage]
     @Environment(\.dismiss) private var dismiss
     @State private var selectedID: String
-    init(images: [ProjectMarkdownImage], initialID: String) { self.images = images; _selectedID = State(initialValue: initialID) }
+    init(images: [MarkdownImage], initialID: String) { self.images = images; _selectedID = State(initialValue: initialID) }
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             TabView(selection: $selectedID) {
                 ForEach(Array(images.enumerated()), id: \.offset) { _, item in
-                    ProjectMediaImage(mediaID: item.mediaID, variant: .original).tag(item.id)
+                    MarkdownMediaImage(mediaID: item.mediaID, variant: .original).tag(item.id)
                 }
             }.tabViewStyle(.page)
         }.safeAreaInset(edge: .top) {
@@ -151,7 +145,7 @@ private struct ProjectImageViewer: View {
         }
     }
 }
-struct ProjectMediaImage: View {
+struct MarkdownMediaImage: View {
     let mediaID: String
     let variant: MediaReadVariant
     @State private var url: URL?

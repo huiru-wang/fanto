@@ -1,70 +1,39 @@
 # Business Server
 
-代码入口：`apps/server/src/bootstrap/main.ts`。Hono、Domain、Agent Runtime、异步队列和 Listener 在一个进程中装配。
+入口为 `apps/server/src/bootstrap/main.ts`。Hono、Domain、Main Agent、Record 后置处理和 Embedding 在同一进程中装配。
 
 ## 模块边界
 
-```text
-apps/server/src/
-├── bootstrap/         # 启动、配置、Hono 装配
-├── routes/            # HTTP 校验、鉴权上下文、响应
-│   └── agent/         # Session History / Events / Stream
-├── domain/            # records / media / memory / projects 等领域
-│   ├── projects/      # Proposal、Project、CreativeService
-│   └── admin/         # 独立只读Repository：用户 / Agent Session / Usage 聚合
-├── agent/             # Pi Harness、Session、Tool、Prompt、Skills
-├── event/             # Record / Embedding / Agent Execution 队列与 SessionEventBus
-├── execution/         # AgentWorker、AgentExecutionListener、各业务 Handler
-├── listeners/         # Record postprocess、Record embedding
-├── infrastructure/    # DB、OSS、AI Client、缓存、日志
-└── migrations/        # schema 基线与前向增量
-```
+- bootstrap：配置、数据库、健康检查和服务装配。
+- routes：HTTP 输入、JWT 用户边界与响应；Agent 路由负责 Session / Stream / History / stop。
+- domain：Records、Media、Memory、Fanto、Users、Auth 和只读 Admin。
+- agent：Pi Harness、Session、Tool、Prompt、Context、Checkpoint 与通用 Skills 基础设施。
+- event / listeners：仅 RecordPostprocessQueue、RecordEmbeddingQueue 与监听器。
+- infrastructure / migrations：数据库、对象存储、图片理解、音频转写、日志和基线。
 
-路由只处理输入与响应边界；领域操作交给 Service，Agent Tool 只能通过 `agent/business-services.ts` 访问领域能力。普通业务请求从验证后的 Access JWT `sub` 获取 userId。`/api/admin/*` 不进入普通 JWT 鉴权中间件，仅通过请求头 `X-Admin-Key` 对照 Server 的 `ADMIN_ACCESS_KEY` 强密钥校验（未配置时默认拒绝），并通过独立 `domain/admin` Repository 执行跨用户只读数据库查询，不依赖或修改 `agent/` Runtime 与 Checkpoint 代码。Admin 请求/响应体不写入 Access Log。用户状态与 Record 首页缓存是单进程 TTL 缓存，不具备多实例失效广播。
+路由通过 Service 访问领域；Tool / Context Provider 通过 agent/business-services.ts 调用获准能力。用户来自 JWT sub / Session 归属，不接受模型或客户端替换。Admin 独立通过 X-Admin-Key 校验，只读查询用户、Session 和 Usage。
 
-## 事件链路
+## 记录事件链路
 
 ```mermaid
-flowchart TD
-  R[Record create / update] --> Q[RecordPostprocessQueue]
-  Q --> V[Postprocess Listener: Vision / ASR]
-  V --> P[Record marked processed]
-  P --> E[RecordEmbeddingQueue]
-  P --> A[AgentExecutionQueue]
+flowchart LR
+  R[Record 保存] --> Q[RecordPostprocessQueue]
+  Q --> P[图片理解 / 音频转写]
+  P --> C[版本与 runId 校验后标记 processed]
+  C --> E[RecordEmbeddingQueue]
   E --> I[RecordRetrievalService]
-  A --> L[AgentExecutionListener: concurrency limit]
-  L --> PA[ProposalHandler]
-  L --> CR[CreatorHandler]
 ```
 
-postprocess 按 `userId/recordId/version/runId` 认领与写回；单个图片或音频理解失败不会阻塞其他 block。Record 一旦写入 processed，Embedding 失败仅记录日志，不回滚 Record 或自动重试。Proposal 仅在创作能力启用时由 Listener 投递；无价值记录允许不产生提议。
-
-`AgentExecutionQueue` 的 Listener 持有内存 pending 列表和 active Set，`AGENT_EXECUTION_CONCURRENCY` 控制 Proposal / Creator 的共享并发。无需持久化消息；不是可靠 MQ。队列消息、运行事件、进程中断时尚未完成的工作都没有自动恢复/补投保证。
-
-## Project / Agent 执行
-
-Proposal accept 在事务中确定所选 Idea，创建或更新 Project 为 `queued`，提交后向 AgentExecutionQueue 发布 Creator 消息。CreatorHandler 认领 `queued→running`，创建/复用绑定 Session，执行并将 Project 状态设置为 `completed` 或 `failed`。后续用户消息直接走通用 `/api/agent/stream`，请求 metadata 可包含 projectId；Creator Tool 通过 userId、projectId 和 Session 绑定校验权限。Stream 不更新 Project 状态；失败作品经授权 Creator 保存成功可恢复 completed；不再有 Project 专属 POST 消息路由。更多语义见 [创作执行](creative-runtime.md)。
+postprocess 按 userId / recordId / version / runId 认领及写回，旧请求不能覆盖新版本。单媒体失败不阻塞其他 block；Embedding 失败不回滚 processed，也不自动重试。两条队列都在内存中，不持久化、不自动补投。
 
 ## 数据库与可靠性
 
-Fanto 基本资料与主对话角色统一由 `domain/fanto` 管理，数据与头像生命周期见 [Fanto](../domain/fanto.md)。
+启动执行 Kysely migration 和数据库健康预热后监听。基线仅创建当前用户、记录、媒体、记忆、资料和 Agent Checkpoint 表；已存在对象按名称跳过，不修改旧表定义。部署不自动删除旧表、历史会话、对象存储文件或工作目录；旧表由操作者维护。具体边界见 [本地开发](../engineering/local-development.md#database-migration)。
 
-启动先执行 Kysely migrations、健康预热再监听端口。当前通过 `create_current_schema_20261019.ts` 重置基线一次创建最终业务结构和 Agent Checkpoint 三表；不再自动合并旧历史或升级旧表。已存在对象按名称跳过，重复迁移不删除数据；旧库须由操作者清空业务表、Agent 表与 Kysely 元数据后重建。重放条件和边界见 [本地开发](../engineering/local-development.md#database-migration)。
-
-目前不提供队列消息持久化、自动失败重试、重启执行恢复或跨实例调度协调；任何规模评估应考虑这些真实限制。
+Main 的运行、停止、同步 Checkpoint 和恢复边界以 [Agent Runtime](agent-runtime.md) 为准。
 
 ## 外部调用日志
 
-`LOG_DIR/service.log` 的 `external-call` 记录 OSS（put/get/head/delete）、图片（describe/review/generate/download）和音频转写（transcribe）的调用开始、成功或失败。每次调用用 `callId` 关联开始与结束，结束包含 `outcome` 和 `durationMs`（毫秒）；可用时记录模型、HTTP 状态与安全错误码。成功表示调用返回并通过 Client 结果校验，不记录响应正文。OSS 签名 URL 是本地生成，不产生外部调用日志。R2 同样使用 `service=oss`，另有 `provider=cloudflare-r2` 字段。
+外部调用统一记录开始、结果与耗时：对象存储 put/get/head/delete、图片 describe、音频 transcribe。R2 使用同一存储契约并标注 provider；不记录媒体内容、对象键、签名 URL、凭据或模型原文。
 
-OSS 上传/下载记录 `bytes`；图片 download 记录 `downloadBytes`（供应商返回文件）、`bytes`（转码后 PNG）及 `width/height`，其耗时包含下载、解码和 PNG 转码。图片理解、审核、生成及结果下载统一位于 `infrastructure/clients/image-client.ts`。日志不包含对象键、签名 URL、凭据、Prompt、图片描述或转写文本。业务链路关联仍见 [创作执行日志](creative-runtime.md#日志排查)。
-
-PostgreSQL 复用 Kysely 查询日志，写入 `LOG_DIR/sql.log`：`outcome` 为 succeeded/failed，`cost` 是 SQL 执行耗时（毫秒），失败可含 SQLSTATE/errorName；不记录参数、查询结果或数据库错误正文。该耗时不是连接池排队或事务整体耗时。
-
-```bash
-rg '\[external-call\]' logs/service.log
-# 实时观察 OSS、图片和音频调用
-tail -f logs/service.log | rg --line-buffered '\[external-call\]'
-# PostgreSQL 查询日志
-tail -f logs/sql.log
-```
+PostgreSQL 查询写入 LOG_DIR/sql.log，记录执行耗时、结果与安全错误码，不记录参数、查询结果或数据库错误正文。LOG_DIR/service.log 可按 external-call 过滤；这些耗时不是连接池等待或整个业务事务耗时。

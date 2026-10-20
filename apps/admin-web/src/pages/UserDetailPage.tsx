@@ -54,7 +54,7 @@ export function UserDetailPage() {
         <div className="profile-meta"><span>ID: {user.userId}</span><span>登录方式: {user.providers.join(", ") || "—"}</span><span>注册: {formatDate(user.createdAt)}</span><span>最近登录: {formatDate(user.lastLoginAt)}</span></div></div></div>
       <section className="panel"><div className="panel-header"><div><h2>用户累计 Token</h2><span>全部 Agent Session 已持久化的模型用量</span></div></div>
         {usage ? <UsageStats usage={usage.usage} sessionCount={usage.sessionCount}/> : <p className="muted panel-padding">加载中…</p>}</section>
-      <section className="panel"><div className="panel-header"><div><h2>会话记录</h2><span>包含 main、proposal-agent、creator-agent 等所有 Agent</span></div><span className="count-pill">{sessions.length} 条已加载</span></div>
+      <section className="panel"><div className="panel-header"><div><h2>会话记录</h2><span>查看用户的对话会话</span></div><span className="count-pill">{sessions.length} 条已加载</span></div>
         {sessions.length ? sessions.map(s => <SessionItem key={s.sessionId} session={s} adminKey={adminKey!}/>) : <div className="empty">暂无会话记录</div>}
         {more && <div className="load-more"><button disabled={busy} onClick={() => void nextPage()}>{busy ? "加载中…" : "加载更多会话"}</button></div>}
       </section></>}

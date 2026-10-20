@@ -126,42 +126,8 @@ struct AgentAPIClient {
         )
     }
 
-    func observeSession(sessionID: String, onConnected: @escaping () -> Void, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
-        var request = try await makeRequest(url: baseURL.appending(path: "api/agent/sessions/\(sessionID)/events"), method: "GET")
-        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        let (bytes, response) = try await URLSession.shared.bytes(for: request)
-        guard let http = response as? HTTPURLResponse, (200 ... 299).contains(http.statusCode) else {
-            throw AgentAPIError.invalidResponse
-        }
-        onConnected()
-        var eventName: String?
-        var dataLines: [String] = []
-        var lineBytes: [UInt8] = []
-        func consume(_ line: String) {
-            if line.isEmpty {
-                deliver(eventName: eventName, data: dataLines.joined(separator: "\n"), onEvent: onEvent)
-                eventName = nil
-                dataLines.removeAll(keepingCapacity: true)
-            } else if line.hasPrefix("event:") {
-                eventName = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces)
-            } else if line.hasPrefix("data:") {
-                dataLines.append(String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces))
-            }
-        }
-        for try await byte in bytes {
-            try Task.checkCancellation()
-            if byte == 0x0A {
-                var line = String(decoding: lineBytes, as: UTF8.self)
-                if line.last == "\r" { line.removeLast() }
-                consume(line)
-                lineBytes.removeAll(keepingCapacity: true)
-            } else { lineBytes.append(byte) }
-        }
-        if !lineBytes.isEmpty { consume(String(decoding: lineBytes, as: UTF8.self)) }
-    }
-
-    func stream(sessionID: String, message: String, metadata: StreamMetadata? = nil, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
-        let body = StreamRequest(sessionID: sessionID, message: message, metadata: metadata)
+    func stream(sessionID: String, message: String, onEvent: @escaping (AgentStreamEvent) -> Void) async throws {
+        let body = StreamRequest(sessionID: sessionID, message: message)
         var request = try await makeRequest(path: "api/agent/stream", method: "POST", body: body)
         request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
 
@@ -324,20 +290,13 @@ private struct CreateSessionRequest: Encodable {
     enum CodingKeys: String, CodingKey { case agentID = "agentId" }
 }
 
-struct StreamMetadata: Encodable {
-    let projectID: String?
-
-    enum CodingKeys: String, CodingKey { case projectID = "projectId" }
-}
-
 private struct StreamRequest: Encodable {
     let sessionID: String
     let message: String
-    let metadata: StreamMetadata?
 
     enum CodingKeys: String, CodingKey {
         case sessionID = "sessionId"
-        case message, metadata
+        case message
     }
 }
 

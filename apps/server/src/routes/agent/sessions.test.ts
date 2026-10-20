@@ -4,30 +4,29 @@ import { randomUUID } from "node:crypto";
 import { createSessionRoutes } from "./sessions.js";
 import { runWithRequestPrincipal } from "../request-user.js";
 import { SessionOwnershipError } from "../../agent/harness/session-manager.js";
-import { SessionEventBus } from "../../event/session-event-bus.js";
 
-test("generic Session History reads Creator sessions by ownership without Project lookup",async()=>{
+test("Main Session History enforces ownership",async()=>{
   const id=randomUUID();
   let running = true;
   const sessions={
     isRunning: () => running,
     history:async (requested:string,_cursor:number|undefined,_limit:number,userId:string)=>{
       if(requested!==id||userId!=="owner")throw new SessionOwnershipError();
-      return {agentId:"creator-agent",entries:[],hasMore:false,nextCursor:null};
+      return {agentId:"main",entries:[],hasMore:false,nextCursor:null};
     },
     toolsForHistory:()=>[],
     assertOwnership:async(_requested:string,userId:string)=>{
       if(userId!=="owner")throw new SessionOwnershipError();
     }
   };
-  const registry={get:(id:string)=>id==="creator-agent"?{id}:undefined};
-  const app=createSessionRoutes(registry as never,sessions as never,new SessionEventBus());
+  const registry={get:(id:string)=>id==="main"?{id}:undefined};
+  const app=createSessionRoutes(registry as never,sessions as never);
   const request=(userId:string,path:string)=>runWithRequestPrincipal(
     {userId,source:"user"},()=>app.request(path));
   const allowed=await request("owner",`/sessions/${id}/history?limit=20`);
   assert.equal(allowed.status,200);
   const data=await allowed.json() as any;
-  assert.equal(data.result.agentId,"creator-agent");
+  assert.equal(data.result.agentId,"main");
   assert.deepEqual(data.result.messages,[]);
   assert.equal(data.result.running,true);
   running = false;
@@ -35,20 +34,20 @@ test("generic Session History reads Creator sessions by ownership without Projec
   const forbidden=await request("different",`/sessions/${id}/history`);
   assert.equal(forbidden.status,403);
   const forbiddenEvents=await request("different",`/sessions/${id}/events`);
-  assert.equal(forbiddenEvents.status,403);
+  assert.equal(forbiddenEvents.status,404);
 });
 
 
-test("Session creation allows all registered Agent identities without internal flags", async () => {
+test("Session creation accepts Main and rejects retired Agent identities", async () => {
   const created: string[] = [];
-  const registry = {get:(agentId?:string) => agentId && ["main","proposal-agent","creator-agent"].includes(agentId) ? {id:agentId} : undefined};
+  const registry = {get:(agentId?:string) => agentId && agentId === "main" ? {id:agentId} : undefined};
   const sessions = {create:async (definition:{id:string},userId:string)=>{assert.equal(userId,"owner");created.push(definition.id);return {id:randomUUID(),agentId:definition.id};}};
   const app = createSessionRoutes(registry as never,sessions as never);
   for (const agentId of ["main","proposal-agent","creator-agent"]) {
     const response = await runWithRequestPrincipal({userId:"owner",source:"user"}, () => app.request("/sessions",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({agentId})}));
-    assert.equal(response.status,201);
+    assert.equal(response.status,agentId === "main" ? 201 : 404);
   }
-  assert.deepEqual(created,["main","proposal-agent","creator-agent"]);
+  assert.deepEqual(created,["main"]);
 });
 
 test("stop without an active run is idempotent and does not wait on persistence",async()=>{
