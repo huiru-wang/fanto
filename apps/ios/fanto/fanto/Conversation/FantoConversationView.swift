@@ -10,7 +10,6 @@ struct FantoConversationView: View {
     @Bindable var store: ConversationStore
     @State private var hasLeftHistoryTop = false
     @State private var didPositionInitialHistory = false
-    @State private var showSessionHistory = false
 
     var body: some View {
         NavigationStack {
@@ -40,49 +39,6 @@ struct FantoConversationView: View {
                         }
                     }
                     .accessibilityLabel("Fanto，查看角色设定")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showSessionHistory = true
-                    } label: {
-                        Image(systemName: "clock.arrow.circlepath")
-                    }
-                    .disabled(!store.isReady || store.isResponding)
-                    .accessibilityLabel("历史对话")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await store.newConversation() }
-                    } label: {
-                        Image(systemName: "square.and.pencil")
-                    }
-                    .disabled(!store.isReady || store.isResponding)
-                    .accessibilityLabel("新对话")
-                }
-            }
-            .sheet(isPresented: $showSessionHistory) {
-                NavigationStack {
-                    List {
-                        if let error = store.sessionListError { Text(error).foregroundStyle(.secondary) }
-                        ForEach(store.knownSessions) { item in
-                            Button {
-                                Task {
-                                    await store.switchSession(item.sessionId)
-                                    if store.sessionListError == nil { showSessionHistory = false }
-                                }
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.title ?? "对话 · " + String(item.updatedAt.prefix(10)))
-                                    Text(item.updatedAt).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }
-                        }
-                    }
-                    .navigationTitle("历史对话")
-                    .toolbar { ToolbarItem(placement: .topBarTrailing) {
-                        Button("关闭") { showSessionHistory = false }
-                    } }
-                    .task { await store.loadSessions() }
                 }
             }
             .environment(\.fantoProfile, currentProfile)

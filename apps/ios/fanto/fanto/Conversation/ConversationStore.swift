@@ -13,8 +13,6 @@ enum ConversationLoadState: Equatable {
 final class ConversationStore {
     var messages: [ConversationMessage] = []
     var draft = ""
-    var knownSessions: [AgentSessionSummary] = []
-    var sessionListError: String?
     var loadState: ConversationLoadState = .idle
     var scrollAnchorID: String?
     private(set) var hasMoreHistory = false
@@ -99,8 +97,6 @@ final class ConversationStore {
         sessionID = nil
         pendingClearSessionID = nil
         isClearingHistory = false
-        knownSessions = []
-        sessionListError = nil
         activeAssistantMessageID = nil
         activePrompt = nil
         textBlockOpen = false
@@ -262,45 +258,6 @@ final class ConversationStore {
         activePrompt = nil
         draft = prompt
         send()
-    }
-
-    func loadSessions() async {
-        do {
-            knownSessions = try await client.fetchSessions()
-            sessionListError = nil
-        } catch {
-            sessionListError = userVisibleError(for: error)
-        }
-    }
-
-    func switchSession(_ id: String) async {
-        guard isReady, !isResponding, sessionID != id else { return }
-        do {
-            let page = try await client.fetchHistory(sessionID: id)
-            try await selectMainSession(id)
-            sessionID = id
-            messages = project(page.messages)
-            hasMoreHistory = page.hasMore
-            historyNextCursor = page.nextCursor
-            scrollAnchorID = messages.last?.id
-            if page.running { recoverConversation() }
-            sessionListError = nil
-        } catch {
-            sessionListError = userVisibleError(for: error)
-        }
-    }
-
-    func newConversation() async {
-        guard isReady, !isResponding else { return }
-        loadState = .loading
-        do {
-            try await createSession()
-            scrollAnchorID = nil
-            loadState = .ready
-        } catch {
-            // Keep the previous conversation usable when the settings write fails.
-            loadState = .ready
-        }
     }
 
     func clearHistory(profile: FantoSettingsStore) async throws {

@@ -168,12 +168,6 @@ export async function createAgentSession(): Promise<string> {
   return result.sessionId;
 }
 
-export type AgentSessionSummary = { sessionId: string; agentId: string; title: string | null; createdAt: string; updatedAt: string };
-export async function listAgentSessions(cursor?: string): Promise<{ data: AgentSessionSummary[]; hasMore: boolean; nextCursor: string | null }> {
-  const suffix = cursor ? `&cursor=${encodeURIComponent(cursor)}` : "";
-  return requestJson(`/api/agent/sessions?agentId=main&limit=50${suffix}`, { headers: agentHeaders() });
-}
-
 export async function stopAgentSession(sessionId: string): Promise<{ stopping: boolean }> {
   return requestJson(`/api/agent/sessions/${encodeURIComponent(sessionId)}/stop`, {method:"POST",headers:agentHeaders(),signal:AbortSignal.timeout(25_000)});
 }

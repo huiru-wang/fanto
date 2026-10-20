@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useFanto } from "../fanto/FantoContext";
 import { FantoAvatar } from "../fanto/FantoAvatar";
-import { ArrowUp, MessageCircleMore, History, Plus, RotateCcw, Sparkles, Square } from "lucide-react";
+import { ArrowUp, MessageCircleMore, RotateCcw, Sparkles, Square } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   createAgentSession,
@@ -10,8 +10,6 @@ import {
   streamAgentMessage,
   stopAgentSession,
   fetchAgentSnapshot,
-  listAgentSessions,
-  type AgentSessionSummary,
   type AgentHistoryMessage,
   type AgentMessageBlock,
   type PresentedUserInputRequest,
@@ -118,8 +116,6 @@ export function ChatPage({ active = true }: { active?: boolean }) {
   const loadingEarlierRef = useRef(false);
   const [draft, setDraft] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [sessions, setSessions] = useState<AgentSessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [stopping, setStopping] = useState(false);
   const [responding, setResponding] = useState(false);
@@ -167,31 +163,6 @@ export function ChatPage({ active = true }: { active?: boolean }) {
     setHistoryCursor(null);
     return id;
   }, [selectMainSession]);
-
-  const openHistory = async () => {
-    try {
-      const page = await listAgentSessions();
-      setSessions(page.data);
-      setHistoryOpen(true);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "读取历史会话失败"); }
-  };
-  const switchSession = async (id: string) => {
-    if (responding || stopping || recovering || id === sessionId) { setHistoryOpen(false); return; }
-    setLoading(true);
-    try {
-      const snapshot = await fetchAgentSnapshot(id);
-      await selectMainSession(id);
-      conversationRevision.current++;
-      setSessionId(id);
-      setMessages(snapshot.messages.map(message => ({...message,state: message.state ?? "complete"})));
-      setHasMoreHistory(snapshot.hasMore);
-      setHistoryCursor(snapshot.nextCursor);
-      setRecovering(snapshot.running);
-      setHistoryOpen(false);
-      setError(null);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "切换会话失败"); }
-    finally { setLoading(false); }
-  };
 
   const loadEarlierHistory = async () => {
     const element = scrollRef.current;
@@ -303,21 +274,6 @@ export function ChatPage({ active = true }: { active?: boolean }) {
       document.removeEventListener("visibilitychange", reconcile);
     };
   }, [loading, sessionId]);
-
-  const newConversation = async () => {
-    if (stopping || recovering) return;
-    if (responding) abortRef.current?.abort();
-    setResponding(false);
-    setLoading(true);
-    setError(null);
-    try {
-      await createFreshSession();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "没有创建成功");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const sendMessage = async (wireText: string, visibleText: string, clarificationInteractionId?: string) => {
     if (!wireText.trim() || !sessionId || responding || stopping || recovering) return;
@@ -501,24 +457,9 @@ export function ChatPage({ active = true }: { active?: boolean }) {
           <FantoAvatar size={40}/>
           <div><strong>{fantoSettings?.nickname ?? "Fanto"}</strong><span>{fantoSettings?.description || "基于你的记录继续聊"}</span></div>
         </button>
-        <button className="secondary-button compact" onClick={() => void openHistory()} disabled={loading || responding || stopping || recovering}>
-          <History size={16} /><span>历史对话</span>
-        </button>
-        <button className="secondary-button compact" onClick={() => void newConversation()} disabled={loading || responding || stopping || recovering}>
-          <Plus size={16} /><span>新对话</span>
-        </button>
       </header>
 
       <div className="chat-debug"><DebugId label="sessionId" value={sessionId} /></div>
-      {historyOpen && <div className="chat-session-history" role="dialog" aria-label="历史对话">
-        <div className="chat-session-history-header"><strong>历史对话</strong><button onClick={() => setHistoryOpen(false)}>关闭</button></div>
-        {sessions.map(item => <button key={item.sessionId} className="secondary-button" onClick={() => void switchSession(item.sessionId)}>
-          {item.title || new Date(item.updatedAt).toLocaleString()}{item.sessionId === sessionId ? " · 当前" : ""}
-        </button>)}
-        {sessions.length === 0 && <p>暂无历史对话</p>}
-      </div>}
-
-
       <div className="chat-scroll" ref={scrollRef} onScroll={() => void loadEarlierHistory()}>
         <div className="chat-content">
           {loadingEarlier && <div className="chat-history-loading">正在加载更早对话…</div>}

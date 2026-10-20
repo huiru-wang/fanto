@@ -19,6 +19,7 @@
 - Project 保存当前标题、摘要、Goal、完整图文 Markdown 或安全静态 HTML、封面、参考 Record 和长期 Creator Session。状态：queued、running、completed、failed、archived。
 - Creator 可基于用户授权参考图片生成单张图（可多次独立调用），通过 project_manage 更新最终作品；只有引用进入最终正文/封面的外部素材才复制为 Project OSS 独立资产，避免源 Record 删除破坏成果。
 - H5 已接入 Project 展示、状态刷新、归档及同一 Creator Session 的继续创作；iOS 对应模块保留但入口隐藏。会话采用通用 History、Agent Stream 和 Tool Presentation；首次异步创作可以只读订阅 Session Events。SSE 是实时可视化而不是历史真相，断连后通过 History 恢复。
+- Fanto 主对话延续设置中的当前 Session；iOS / H5 不提供历史会话列表、手动切换或新建对话入口。首次建立 / 失效恢复和设置中的清除仍可创建并绑定 Session，当前 Session 的消息恢复与向上分页保持可用。
 - 当前不是通用视频制作器、自动长期跟进引擎或 3D 编辑器；创作能力受模型、授权素材、Markdown/静态 HTML 输出和现有工具边界约束。
 
 ## Fanto 主对话

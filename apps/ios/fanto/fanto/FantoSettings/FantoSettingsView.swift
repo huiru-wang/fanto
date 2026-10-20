@@ -81,7 +81,7 @@ struct FantoSettingsView: View {
             }
             Button("取消", role: .cancel) { }
         } message: {
-            Text("将开始一段空白对话，之后使用新会话继续。原会话保留在历史对话中，角色设定、记忆和记录不受影响。")
+            Text("将开始一段空白对话，之后使用新会话继续。原会话不会被删除，角色设定、记忆和记录不受影响。")
         }
         .task { await profile.load() }
         .task(id: photo) {
