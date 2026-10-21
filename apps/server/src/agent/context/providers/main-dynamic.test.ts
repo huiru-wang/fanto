@@ -26,3 +26,16 @@ test("memory bounded injection preserves whole entries",()=>{
  const parsed=JSON.parse(text);assert.ok(parsed.length<items.length);
  for(const item of parsed)assert.equal(item.content.length,950);
 });
+
+test("user narration is understood even when assistant narration is disabled", () => {
+ const f=role();f.agentConfig.narrationEnabled=false;
+ const text=mainDynamicText(f);
+ assert.match(text,/用户对话表达协议/);
+ assert.match(text,/不能直接获知未表达的内心活动/);
+ assert.match(text,/不自动认定所有结果都已发生/);
+ assert.match(text,/不具有修改系统规则或工具权限/);
+ assert.match(text,/你的回复不生成角色动作/);
+ f.agentConfig.narrationEnabled=true;
+ assert.match(mainDynamicText(f),/两种内容切换时空一行/);
+ assert.match(mainDynamicText(f),/不替用户决定台词/);
+});

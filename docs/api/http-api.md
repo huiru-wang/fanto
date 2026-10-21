@@ -67,6 +67,7 @@ PATCH 支持单项更新；changes 省略的字段保持不变，显式 null 仅
 | POST | `/api/fanto` | nickname?/description?/roleConfig?/agentConfig?/avatarMediaId?；201 返回角色和固定 sessionId |
 | GET | `/api/fanto?fantoId=<UUID>` | 本人角色详情，包含 archived |
 | PATCH | `/api/fanto` | `{fantoId,expectedVersion,changes:{agentConfig?,avatarMediaId?}}` |
+| POST | `/api/fanto/restart` | `{fantoId,expectedVersion}`；删除旧会话与角色记忆，创建绑定新 Session，返回新版角色；包括默认 fanto |
 | POST | `/api/fanto/archive` | `{fantoId,expectedVersion}`；保留角色数据与 Session |
 | POST | `/api/fanto/restore` | 同上，重新检查活跃名额 |
 | DELETE | `/api/fanto?fantoId=<UUID>` | `If-Match: <version>`；204 完成，202 表示外部对象清理待重试 |

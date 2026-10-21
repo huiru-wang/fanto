@@ -6,6 +6,7 @@ import {createServer} from "node:net";
 import { Migrator, sql } from "kysely";
 import { createDatabase, runMigrations } from "./database.js";
 import { up as legacyBaseline } from "../../migrations/001_create_current_schema.js";
+import { up as previouslyPublishedUpgrade } from "../../migrations/002_fanto_scoped_memory.js";
 import { FantoService } from "../../domain/fanto/fanto-service.js";
 import { MemoryService } from "../../domain/memory/memory-service.js";
 
@@ -42,7 +43,7 @@ async function bootRealServer(databaseUrl:string) {
 }
 
 /** Emulate an already-deployed database with the *old* Kysely migration record. */
-test("upgrade preserves legacy sessions and memories, supports new Fanto Sessions and restarts", {
+test("upgrade discards legacy memories, preserves historical sessions and starts new Fanto", {
   skip: !process.env.TEST_DATABASE_URL,
 }, async () => {
   const url = new URL(process.env.TEST_DATABASE_URL!);
@@ -94,12 +95,13 @@ test("upgrade preserves legacy sessions and memories, supports new Fanto Session
     await runMigrations(db);
     await runMigrations(db); // A server restart must not replay the upgrade.
     const records = (await sql<{name:string}>`SELECT name FROM kysely_migration ORDER BY name`.execute(db)).rows;
-    assert.deepEqual(records.map(row=>row.name),["001_create_current_schema","002_fanto_scoped_memory"]);
+    assert.deepEqual(records.map(row=>row.name),["001_create_current_schema","002_fanto_scoped_memory","003_drop_legacy_memories"]);
     assert.equal((await sql`SELECT 1 FROM agent_session.sessions WHERE id=${oldSession} AND scope_key='default'`.execute(db)).rows.length,1);
     assert.equal((await sql`SELECT 1 FROM agent_session.entries WHERE session_id=${oldSession} AND id='historical-entry'`.execute(db)).rows.length,1);
-    const archive = (await sql<{owner_type:string;content:string}>`SELECT owner_type,content FROM memories_legacy_002 ORDER BY owner_type`.execute(db)).rows;
-    assert.equal(archive.length,2);
-    assert.deepEqual(archive.map(row=>row.owner_type),["fanto","user"]);
+    const legacy=(await sql<{relation:string|null}>`
+      SELECT to_regclass('public.memories_legacy_002')::text AS relation
+    `.execute(db)).rows[0];
+    assert.equal(legacy?.relation,null,"upgrade must remove old user and character memories");
     assert.equal((await sql`SELECT 1 FROM memories`.execute(db)).rows.length,0);
     await assert.rejects(sql`INSERT INTO agent_session.sessions(id,created_at,next_seq,user_id,agent_id,scope_key,updated_at)
       VALUES(${randomUUID()},${ms},0,${userId},'main','default',${ms})`.execute(db));
@@ -107,7 +109,7 @@ test("upgrade preserves legacy sessions and memories, supports new Fanto Session
 
     // Existing duplicates survive, while future duplicate inserts are blocked
     // even on a database where the partial unique index cannot be built.
-    assert.equal((await sql`SELECT count(*)::int AS count FROM user_fantos WHERE user_id=${dirtyUser}`.execute(db)).rows[0]?.count,2);
+    assert.equal((await sql<{count:number}>`SELECT count(*)::int AS count FROM user_fantos WHERE user_id=${dirtyUser}`.execute(db)).rows[0]?.count,2);
     await assert.rejects(sql`INSERT INTO user_fantos(fanto_id,user_id,nickname)
       VALUES(${randomUUID()}::uuid,${dirtyUser},'ALICE')`.execute(db));
     const service = FantoService.create(db,{validateAvatar:async()=>true} as never);
@@ -121,8 +123,46 @@ test("upgrade preserves legacy sessions and memories, supports new Fanto Session
     await memories.create(defaultSession.scopeKey,{content:"我知道霄汉的名字。"});
     assert.equal((await memories.list(defaultSession.scopeKey)).length,1);
     assert.equal((await memories.list(fantoId)).length,0);
-    assert.equal((await sql`SELECT count(*)::int AS count FROM memories_legacy_002`.execute(db)).rows[0]?.count,2);
+    assert.equal((await sql<{count:number}>`SELECT count(*)::int AS count FROM memories`.execute(db)).rows[0]?.count,1,
+      "newly written Fanto memory remains available after deleting legacy data");
     if(process.env.MIGRATION_BOOT_SMOKE==="1") await bootRealServer(url.href);
+  } finally {
+    await db.destroy();
+    await sql.raw("DROP DATABASE " + dbName + " WITH (FORCE)").execute(admin);
+    await admin.destroy();
+  }
+});
+
+/** A database already at 002 must be cleaned without touching new Fanto memory. */
+test("003 removes an existing memory archive but keeps current Fanto memories", {
+  skip: !process.env.TEST_DATABASE_URL,
+}, async () => {
+  const url = new URL(process.env.TEST_DATABASE_URL!);
+  if (!/test/i.test(url.pathname)) throw Error("Dedicated test database required");
+  const admin = createDatabase(url.href);
+  const dbName = "fanto_cleanup_test_" + randomUUID().replaceAll("-", "");
+  await sql.raw("CREATE DATABASE " + dbName).execute(admin);
+  url.pathname = "/" + dbName;
+  const db = createDatabase(url.href);
+  try {
+    const old = new Migrator({ db, provider: {getMigrations:async()=>({
+      "001_create_current_schema":{up:legacyBaseline,down:async()=>{}},
+      "002_fanto_scoped_memory":{up:previouslyPublishedUpgrade,down:async()=>{}},
+    })} });
+    const applied=await old.migrateToLatest();
+    if (applied.error) throw applied.error;
+    const fantoId=randomUUID(), memoryId=randomUUID(), now=new Date();
+    const vector=JSON.stringify(Array(768).fill(0));
+    await sql`INSERT INTO public.memories_legacy_002(memory_id,owner_type,owner_id,kind,content,embedding,created_at,updated_at)
+      VALUES(${randomUUID()}::uuid,'user','some-user','personal_background','must be removed',${vector}::vector,${now},${now})`.execute(db);
+    await sql`INSERT INTO public.memories(memory_id,fanto_id,content,embedding,created_at,updated_at)
+      VALUES(${memoryId}::uuid,${fantoId}::uuid,'must be preserved',${vector}::vector,${now},${now})`.execute(db);
+    await runMigrations(db);
+    await runMigrations(db);
+    assert.equal((await sql<{present:boolean}>`SELECT to_regclass('public.memories_legacy_002') IS NOT NULL AS present`.execute(db)).rows[0]?.present,false);
+    assert.equal((await sql<{content:string}>`SELECT content FROM public.memories WHERE memory_id=${memoryId}::uuid`.execute(db)).rows[0]?.content,"must be preserved");
+    assert.deepEqual((await sql<{name:string}>`SELECT name FROM kysely_migration ORDER BY name`.execute(db)).rows.map(row=>row.name),
+      ["001_create_current_schema","002_fanto_scoped_memory","003_drop_legacy_memories"]);
   } finally {
     await db.destroy();
     await sql.raw("DROP DATABASE " + dbName + " WITH (FORCE)").execute(admin);

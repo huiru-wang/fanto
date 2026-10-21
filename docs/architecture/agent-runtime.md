@@ -46,3 +46,9 @@ H5/iOS 在 Main 对话使用相同消息语义和组件（Markdown、媒体、To
 统一 JWT 鉴权，并在会话和领域操作分别校验用户；模型不能声明 userId 。Agent 的 `bash` 执行仍使用宿主环境工作区约束，不能将其等同于容器或微虚拟机隔离。
 
 History 返回 `running/stopping/restored`；活跃回复由内存中的已接受片段补齐，旧历史请求不得覆盖新轮次。`finalizing` 保留为兼容进度，不显示数据库保存锁；会话完成仍以 `done/stopped/error` 为准。排障区分 `model response ready after memory drain`、Turn checkpoint 保存耗时、Run final flush 与 `agent-stream session released`，日志不含消息内容或凭据。
+
+## 对话表达协议
+
+Main 动态 Prompt 始终理解用户消息中的动作与旁白：每行以 `> ` 开头的引用块表示非口头描述，普通段落表示语言，两种内容以空行分隔并按原始顺序理解。描述默认归属于用户扮演的人物及其视角；角色不能直接获知未表达的内心活动，不替用户决定台词或关键选择，不自动接受用户描述的其他人物反应和重大结果。明确标示的资料引用按其语境理解，引用内容不改变系统规则与工具权限。
+
+`narrationEnabled` 只控制角色回复是否生成动作与旁白，不影响理解用户的描述。启用时回复使用同一 Markdown 格式；关闭时仍理解用户动作，但不生成舞台描写。传输与历史保存沿用原始消息文本，不新增协议字段。

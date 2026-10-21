@@ -1,11 +1,11 @@
 import { useNavigate } from "react-router-dom";
+import { getFanto, restartFanto } from "../api/fanto";
 import { useFanto } from "../fanto/FantoContext";
 import { FantoAvatar } from "../fanto/FantoAvatar";
-import { ArrowUp, MessageCircleMore, RotateCcw, Sparkles, Square } from "lucide-react";
+import { ArrowUp, SquarePen, RotateCcw, Sparkles, Square } from "lucide-react";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   encodeUserInputResponse,
-  fetchAgentHistory,
   streamAgentMessage,
   stopAgentSession,
   fetchAgentSnapshot,
@@ -13,8 +13,9 @@ import {
   type AgentMessageBlock,
   type PresentedUserInputRequest,
 } from "../api/agent";
-import { DebugId } from "../components/DebugId";
 import { ApiError } from "../api/http";
+import { NarrativeComposer } from "../components/NarrativeComposer";
+import { parseDraft, restoreDraft, serializeDraft } from "../components/narrative-draft";
 import { ChatMarkdown } from "../components/ChatMarkdown";
 import { MediaPresentation } from "../components/MediaPresentation";
 import { UserClarificationCard } from "../components/UserClarificationCard";
@@ -81,9 +82,7 @@ function MessageBlock({
   onSubmitInput: (request: PresentedUserInputRequest, visibleText: string) => void;
 }) {
   if (block.type === "text") {
-    return role === "assistant"
-      ? <div className="message-text-block"><ChatMarkdown text={block.content} /></div>
-      : <p className="message-text-block">{block.content}</p>;
+    return <div className="message-text-block"><ChatMarkdown text={block.content} /></div>;
   }
   if (block.type === "user_input_response") return <UserClarificationCard content={block.content} />;
   if (block.type === "activity") {
@@ -110,17 +109,36 @@ export function ChatPage({ active = true }: { active?: boolean }) {
   const navigate = useNavigate();
   const profile = useFanto();
   const { settings: fantoSettings, sessionId, refresh: refreshRoles } = profile;
+  const activeRoles = profile.roles.filter(role => role.status === "active")
+    .sort((a, b) => Number(b.fantoId === profile.selectedId) - Number(a.fantoId === profile.selectedId));
+  const extraRoleCount = Math.max(0, activeRoles.length - 2);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
   const [historyCursor, setHistoryCursor] = useState<number | null>(null);
   const [loadingEarlier, setLoadingEarlier] = useState(false);
   const loadingEarlierRef = useRef(false);
-  const [draft, setDraft] = useState(() => {
-    try { return sessionId ? sessionStorage.getItem(`fanto.chat-draft.${sessionId}`) ?? "" : ""; } catch { return ""; }
+  const [draftParts, setDraftParts] = useState(() => {
+    try { return restoreDraft(sessionId ? sessionStorage.getItem(`fanto.chat-draft.${sessionId}`) ?? "" : ""); }
+    catch { return parseDraft(""); }
+  });
+  const draft = serializeDraft(draftParts);
+  const setDraft = (value: string | ((current: string) => string)) => setDraftParts(current => {
+    const text = serializeDraft(current);
+    const next = typeof value === "function" ? value(text) : value;
+    return next === text ? current : parseDraft(next);
   });
   useEffect(() => {
-    try { if (sessionId) sessionStorage.setItem(`fanto.chat-draft.${sessionId}`, draft); } catch { /* Draft remains in memory. */ }
-  }, [draft, sessionId]);
+    try { if (sessionId) sessionStorage.setItem(`fanto.chat-draft.${sessionId}`, JSON.stringify({ version: 1, parts: draftParts })); }
+    catch { /* Draft remains in memory. */ }
+  }, [draftParts, sessionId]);
+  const [showRestart, setShowRestart] = useState(false);
+  const restartDialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (showRestart) restartDialogRef.current?.showModal();
+    else restartDialogRef.current?.close();
+  }, [showRestart]);
+  const [restarting, setRestarting] = useState(false);
+  const restartInFlight = useRef(false);
   const [loading, setLoading] = useState(true);
   const [stopping, setStopping] = useState(false);
   const [responding, setResponding] = useState(false);
@@ -131,6 +149,8 @@ export function ChatPage({ active = true }: { active?: boolean }) {
   const conversationRevision = useRef(0);
   const [recovering, setRecovering] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const previousScrollTop = useRef(0);
+  const touchStartY = useRef<number | null>(null);
 
   const isNearEnd = useCallback(() => {
     const element = scrollRef.current;
@@ -147,7 +167,7 @@ export function ChatPage({ active = true }: { active?: boolean }) {
 
   const loadEarlierHistory = async () => {
     const element = scrollRef.current;
-    if (!element || element.scrollTop > 96 || !sessionId || !hasMoreHistory ||
+    if (!element || element.scrollTop > 16 || !sessionId || !hasMoreHistory ||
       historyCursor === null || loadingEarlierRef.current || loading || recovering || responding) return;
     loadingEarlierRef.current = true;
     setLoadingEarlier(true);
@@ -245,7 +265,7 @@ export function ChatPage({ active = true }: { active?: boolean }) {
   }, [loading, sessionId]);
 
   const sendMessage = async (wireText: string, visibleText: string, clarificationInteractionId?: string) => {
-    if (!wireText.trim() || !sessionId || loading || responding || stopping || recovering) return;
+    if (!wireText.trim() || !sessionId || loading || responding || stopping || recovering || restartInFlight.current) return;
     const userMessage: ChatMessage = {
       id: localId(),
       role: "user",
@@ -376,7 +396,7 @@ export function ChatPage({ active = true }: { active?: boolean }) {
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || !sessionId || loading || responding || stopping || recovering) return;
+    if (!text || !sessionId || loading || responding || stopping || recovering || restartInFlight.current) return;
     setDraft("");
     await sendMessage(text, text);
   };
@@ -416,32 +436,86 @@ export function ChatPage({ active = true }: { active?: boolean }) {
     } finally { if (!waitingForTool) { stoppingRef.current=false;setStopping(false); } }
     // History is supplementary; sending resumes when the in-memory turn has finished.
     try {
-      const history=await fetchAgentHistory(sessionId);
-      if (conversationRevision.current===revision && !abortRef.current)
-        setMessages(history.map(message=>({...message,state:message.state ?? "complete"})));
+      const snapshot=await fetchAgentSnapshot(sessionId);
+      if (conversationRevision.current===revision && !abortRef.current) {
+        setMessages(snapshot.messages.map(message=>({...message,state:message.state ?? "complete"})));
+        setHasMoreHistory(snapshot.hasMore);
+        setHistoryCursor(snapshot.nextCursor);
+      }
     } catch { /* Keep the visible partial reply; history can be retried on refresh. */ }
+  };
+
+  const restart = async () => {
+    if (!fantoSettings || restartInFlight.current || responding || recovering || stopping || loading) return;
+    restartInFlight.current = true; setRestarting(true); setError(null);
+    try {
+      const value = await restartFanto(fantoSettings.fantoId, fantoSettings.version);
+      try { sessionStorage.removeItem(`fanto.chat-draft.${sessionId}`); } catch { /* The old Session will never be reused. */ }
+      profile.accept(value);
+    } catch (cause) {
+      // Never repeat a destructive POST after an unknown result.
+      try {
+        const current = await getFanto(fantoSettings.fantoId);
+        profile.accept(current);
+        if (current.sessionId !== sessionId) {
+          try { sessionStorage.removeItem(`fanto.chat-draft.${sessionId}`); } catch { /* Best effort local draft cleanup. */ }
+          return;
+        }
+      } catch { /* Keep current conversation visible until status can be checked. */ }
+      setError(cause instanceof ApiError && cause.code === "FANTO_BUSY" ? "角色正在回复，请在回复结束后重新开始。"
+        : cause instanceof ApiError && cause.code === "VERSION_CONFLICT" ? "角色状态已更新，请核对后重新操作。"
+        : "暂时无法确认是否已重新开始，请刷新页面核对后再操作。");
+    } finally { restartInFlight.current = false; setRestarting(false); }
   };
 
   return (
     <div className="chat-page">
       <header className="chat-header">
-        <button type="button" className="chat-title fanto-chat-title" onClick={() => navigate(fantoSettings ? `/fantos/${fantoSettings.fantoId}` : "/fantos")} aria-label="打开当前角色配置">
-          <FantoAvatar size={40} avatarMediaId={fantoSettings?.avatarMediaId ?? null} label={fantoLabel(fantoSettings)}/>
-          <div><strong>{fantoLabel(fantoSettings)}</strong><span>{fantoSettings?.description || (fantoSettings ? "独立对话与记忆" : "基于你的记录继续聊")}</span></div>
+        <button type="button" className="chat-title fanto-chat-title glass-capsule" onClick={() => navigate(fantoSettings ? `/fantos/${fantoSettings.fantoId}` : "/fantos")} aria-label="查看当前角色详情" disabled={restarting}>
+          <FantoAvatar size={36} avatarMediaId={fantoSettings?.avatarMediaId ?? null} label={fantoLabel(fantoSettings)} />
+          <strong>{fantoLabel(fantoSettings)}</strong>
         </button>
-        <div className="fanto-chat-controls">
-          <label className="sr-only" htmlFor="chat-role">切换对话角色</label>
-          <select id="chat-role" value={profile.selectedId ?? ""} disabled={!profile.selectedId || profile.loading} onChange={event => profile.select(event.target.value)}>
-            {profile.roles.filter(role => role.status === "active").map(role => <option key={role.fantoId} value={role.fantoId}>{fantoLabel(role)}</option>)}
-          </select>
-          <button className="secondary-button" onClick={() => navigate("/fantos")}>管理角色</button>
+        <div className="chat-header-actions">
+          <button className="glass-capsule role-avatar-navigation" disabled={restarting}
+            aria-label={`选择角色，共 ${activeRoles.length} 个角色`} title="选择角色" onClick={() => navigate("/fantos")}>
+            <span className="role-avatar-stack" aria-hidden="true">
+              {activeRoles.length ? activeRoles.slice(0, 2).map(role => <FantoAvatar key={role.fantoId} size={32}
+                avatarMediaId={role.avatarMediaId} label={fantoLabel(role)} />) : <FantoAvatar size={32} avatarMediaId={null} />}
+            </span>
+            {extraRoleCount > 0 && <span className="role-avatar-count" aria-hidden="true">+{extraRoleCount}</span>}
+          </button>
+          <button className="glass-capsule icon-capsule" disabled={restarting || loading || !sessionId || responding || stopping || recovering}
+            aria-label="重新开始对话" title="重新开始对话" aria-busy={restarting} onClick={() => setShowRestart(true)}><SquarePen size={20} strokeWidth={1.8} /></button>
         </div>
       </header>
 
-      <div className="chat-debug"><DebugId label="sessionId" value={sessionId} /></div>
-      <div className="chat-scroll" ref={scrollRef} onScroll={() => void loadEarlierHistory()}>
+      <dialog ref={restartDialogRef} className="restart-dialog" aria-labelledby="restart-title" aria-describedby="restart-description"
+        onCancel={() => setShowRestart(false)}>
+        <h2 id="restart-title">重新开始对话？</h2>
+        <p id="restart-description">将永久清除与「{fantoLabel(fantoSettings)}」的聊天记录和该角色的长期记忆，角色设定保持不变。此操作无法撤销。</p>
+        <div className="restart-dialog-actions">
+          <button className="secondary-button" autoFocus onClick={() => setShowRestart(false)}>取消</button>
+          <button className="danger-button" onClick={() => { setShowRestart(false); void restart(); }}>清除并重新开始</button>
+        </div>
+      </dialog>
+
+      <div className="chat-scroll" ref={scrollRef}
+        onScroll={event => {
+          const top = event.currentTarget.scrollTop;
+          const upward = top < previousScrollTop.current;
+          previousScrollTop.current = top;
+          if (upward && top <= 16) void loadEarlierHistory();
+        }}
+        onWheel={event => { if (event.deltaY < 0) void loadEarlierHistory(); }}
+        onTouchStart={event => { touchStartY.current = event.touches[0]?.clientY ?? null; }}
+        onTouchMove={event => {
+          const y = event.touches[0]?.clientY;
+          if (y !== undefined && touchStartY.current !== null && y > touchStartY.current) void loadEarlierHistory();
+          touchStartY.current = y ?? null;
+        }}
+        onTouchEnd={() => { touchStartY.current = null; }}>
         <div className="chat-content">
-          {loadingEarlier && <div className="chat-history-loading">正在加载更早对话…</div>}
+          {loadingEarlier && <div className="chat-history-loading" role="status" aria-label="正在加载更早对话"><span className="large-loader" aria-hidden="true" /></div>}
           {loading || profile.loading && !sessionId ? (
             <div className="empty-state chat-loading"><span className="large-loader" /><p>正在恢复对话…</p></div>
           ) : (error || profile.error) && messages.length === 0 ? (
@@ -452,14 +526,9 @@ export function ChatPage({ active = true }: { active?: boolean }) {
             </div>
           ) : messages.length === 0 ? (
             <div className="chat-welcome">
-              <div className="welcome-mark"><MessageCircleMore size={28} /></div>
-              <p className="eyebrow">Fanto</p>
-              <h1>{fantoSettings ? `与${fantoLabel(fantoSettings)}开始对话。` : "从现在想说的事情开始。"}</h1>
-              <p>{fantoSettings?.nickname === "fanto" ? "这是你的默认 Fanto，拥有独立的对话与长期记忆。" : "这段对话与记忆属于当前角色，其他角色无法读取。"}</p>
-              <div className="prompt-suggestions">
-                <button onClick={() => setDraft(fantoSettings && !fantoSettings.agentConfig.recordReadEnabled ? "今天想和你聊聊。" : "最近我都记录了什么？")}>{fantoSettings && !fantoSettings.agentConfig.recordReadEnabled ? "今天想和你聊聊。" : "最近我都记录了什么？"}</button>
-                <button onClick={() => setDraft("帮我回顾一下最近反复在想的事情。")}>最近反复在想什么？</button>
-              </div>
+              <FantoAvatar size={72} avatarMediaId={fantoSettings?.avatarMediaId ?? null} label={fantoLabel(fantoSettings)} />
+              <h1>{fantoLabel(fantoSettings)}</h1>
+              <p>想说什么，都可以从这里开始。</p>
             </div>
           ) : (
             <div className="message-list">
@@ -479,30 +548,18 @@ export function ChatPage({ active = true }: { active?: boolean }) {
       </div>
 
       <div className="chat-composer-wrap">
-        <div className="chat-composer">
-          <textarea
-            value={draft}
-            onChange={event => setDraft(event.target.value)}
-            rows={1}
-            placeholder={`和${fantoLabel(fantoSettings)}聊聊`}
-            disabled={loading || !sessionId}
-            onKeyDown={event => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                void send();
-              }
-            }}
-          />
+        <NarrativeComposer parts={draftParts} onChange={setDraftParts} disabled={loading || restarting || !sessionId}
+            placeholder={`和${fantoLabel(fantoSettings)}聊聊`} onSend={() => { if (!responding) void send(); }}>
           <button
             className={`chat-send ${responding ? "stop" : ""}`}
-            disabled={recovering || stopping || (!responding && (!draft.trim() || !sessionId || loading))}
+            disabled={restarting || recovering || stopping || (!responding && (!draft.trim() || !sessionId || loading))}
             onClick={responding ? () => void stop() : () => void send()}
             aria-label={stopping ? "正在停止" : responding ? "停止生成" : "发送消息"}
           >
             {responding ? <Square size={15} fill="currentColor" /> : <ArrowUp size={19} />}
           </button>
-        </div>
-        <span className="chat-disclaimer">{stopping ? "正在结束当前操作，你可以先输入下一条消息…" : recovering ? "正在恢复对话，完成后可继续发送…" : recoveryNotice ?? "测试环境 · Fanto 可能会出错，请以原始记录为准"}</span>
+        </NarrativeComposer>
+        {(stopping || recovering || recoveryNotice) && <span role="status" className="chat-disclaimer">{stopping ? "正在结束当前操作，你可以先输入下一条消息…" : recovering ? "正在恢复对话，完成后可继续发送…" : recoveryNotice}</span>}
       </div>
     </div>
   );

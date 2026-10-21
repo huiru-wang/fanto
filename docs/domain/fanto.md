@@ -24,8 +24,10 @@ Fanto 创建与幂等初始化使用同一个用户行事务锁串行；PostgreS
 
 `agent_session.sessions` 以 `(user_id, agent_id='main', scope_key)` 唯一，**所有角色包括默认角色，scope_key 均为 fantoId UUID**，没有 `default` 特殊分支。`GET /api/agent/main-session` 幂等返回默认角色固定 Session。创建普通角色时也初始化固定 Session；`POST /api/agent/sessions` 禁止任意创建。旧 scope_key=default Session **不迁移、不重绑定**，也不会合并历史数据。
 
+所有 active Fanto（包括默认角色）可通过 `POST /api/fanto/restart` 重新开始对话：按用户锁与 expectedVersion 校验，拒绝运行中角色；排空旧 checkpoint 后，在同一事务删除旧 entries/usage/session 和该角色 memories，创建 scope_key=fantoId 的新 Session 并递增角色版本。角色设定、头像、Records 与其他角色不变；失败回滚，不自动重试。
+
 普通 Fanto 可归档、恢复或物理删除。变更与 Run 预留使用同一用户行锁，活跃 Run 修改返回 `FANTO_BUSY`。删除前释放会话/checkpoint，事务显式删除 entries/usage/sessions、该 fanto_id 的 Memories/Records 和角色，再排队清理不再使用的媒体；失败可重试。默认 fanto 永远不可归档或删除。仅单进程运行门禁，多实例需分布式租约。
 
 ## Schema
 
-`user_fantos` 新建角色要求 nickname 非空且账户内唯一；历史空昵称记录保留，由迁移中的触发器保证新写入规则。`memories` 仅通过 `fanto_id` 归属，取消 kind / User Owner。`001_create_current_schema.ts` 是旧 Schema 历史快照，`002_fanto_scoped_memory.ts` 是增量升级：归档旧记忆、整理角色配置、新 Session 只准绑定 fantoId；**不迁移旧角色对话或记忆内容**。见 [Database Migration](../engineering/local-development.md#database-migration)。
+`user_fantos` 新建角色要求 nickname 非空且账户内唯一；历史空昵称记录保留，由迁移中的触发器保证新写入规则。`memories` 仅通过 `fanto_id` 归属，取消 kind / User Owner。`001_create_current_schema.ts` 是旧 Schema 历史快照，`002_fanto_scoped_memory.ts` 升级记忆模型和角色配置，`003_drop_legacy_memories.ts` **彻底删除旧 User/Fanto Memory 归档表**，而新的 `memories` 表只关联 fantoId；**不迁移旧角色对话或记忆内容**。见 [Database Migration](../engineering/local-development.md#database-migration)。

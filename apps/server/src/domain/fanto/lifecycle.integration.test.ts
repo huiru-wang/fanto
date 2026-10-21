@@ -19,10 +19,12 @@ test("role lifecycle gates runs, drains checkpoints, preserves owners and retrie
     await runMigrations(db);
     const user=randomUUID(),other=randomUUID(),now=new Date();
     await db.insertInto("users").values([user,other].map(user_id=>({user_id,status:"active" as const,created_at:now,updated_at:now,disabled_at:null}))).execute();
+    let closeFails=false;
     let fail=true;const removed:string[]=[],running=new Set<string>(),closed:string[]=[];
     const media=MediaService.create(db,{remove:async(key:string)=>{if(fail)throw Error("storage offline");removed.push(key);}} as never);
     const service=FantoService.create(db,media);
     service.bindSessions({isRunning:id=>running.has(id),release:async id=>{
+      if(closeFails)throw Error("checkpoint unavailable");
       // Simulate the final asynchronous checkpoint being drained before parent deletion.
       await sql`INSERT INTO agent_session.entries(session_id,id,seq,type,timestamp,payload)
         VALUES(${id},'last',0,'custom',0,'{}'::jsonb)`.execute(db);
@@ -85,5 +87,33 @@ test("role lifecycle gates runs, drains checkpoints, preserves owners and retrie
     await assert.rejects(service.reserveRun(user,a.sessionId,()=>()=>{}),{code:"NOT_FOUND"});
     const checkpoint=new CheckpointRepository(db);
     await assert.rejects(checkpoint.persist(a.sessionId,[{kind:"entry",runId:null,entry:{id:"late",parentId:null,type:"custom",customType:"late",data:{},timestamp:0} as never}]),/not found/);
+    // Restart is role-scoped, drains checkpoints, and replaces rather than reuses the Session.
+    await assert.rejects(service.restart(other,{fantoId:b.fantoId,expectedVersion:b.version}),{code:"NOT_FOUND"});
+    running.add(b.sessionId);
+    await assert.rejects(service.restart(user,{fantoId:b.fantoId,expectedVersion:b.version}),{code:"FANTO_BUSY"});
+    running.delete(b.sessionId);
+    closeFails=true;
+    await assert.rejects(service.restart(user,{fantoId:b.fantoId,expectedVersion:b.version}),/checkpoint unavailable/);
+    assert.equal((await service.get(user,b.fantoId)).sessionId,b.sessionId);
+    assert.equal((await memories.list(b.fantoId)).length,1);
+    closeFails=false;
+    const restarted=await service.restart(user,{fantoId:b.fantoId,expectedVersion:b.version});
+    assert.notEqual(restarted.sessionId,b.sessionId);
+    assert.equal(restarted.version,b.version+1);
+    assert.deepEqual(restarted.roleConfig,b.roleConfig);
+    assert.deepEqual(restarted.agentConfig,b.agentConfig);
+    assert.equal((await memories.list(b.fantoId)).length,0);
+    assert.equal((await memories.list(main.scopeKey)).length,1);
+    assert.equal((await sql`SELECT 1 FROM agent_session.sessions WHERE id=${b.sessionId}`.execute(db)).rows.length,0);
+    assert.equal((await sql`SELECT 1 FROM agent_session.entries WHERE session_id=${b.sessionId}`.execute(db)).rows.length,0);
+    await assert.rejects(service.reserveRun(user,b.sessionId,()=>()=>{}),{code:"NOT_FOUND"});
+    await assert.rejects(service.restart(user,{fantoId:b.fantoId,expectedVersion:b.version}),{code:"VERSION_CONFLICT"});
+    assert.equal((await service.get(user,b.fantoId)).sessionId,restarted.sessionId);
+    const defaultRole=await service.get(user,main.scopeKey);
+    const newDefault=await service.restart(user,{fantoId:defaultRole.fantoId,expectedVersion:defaultRole.version});
+    assert.equal((await service.defaultSession(user)).sessionId,newDefault.sessionId);
+    assert.notEqual(newDefault.sessionId,main.sessionId);
+    assert.equal((await memories.list(main.scopeKey)).length,0);
+    assert.equal((await sql`SELECT 1 FROM records WHERE record_id=${userRecord}`.execute(db)).rows.length,1);
   }finally{await db.destroy();await sql.raw("DROP DATABASE "+name+" WITH (FORCE)").execute(admin);await admin.destroy();}
 });

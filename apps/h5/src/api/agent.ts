@@ -170,7 +170,7 @@ export async function stopAgentSession(sessionId: string): Promise<{ stopping: b
 
 export async function fetchAgentSnapshot(sessionId: string, cursor?: number): Promise<HistoryResult> {
   const paging = cursor === undefined ? "" : `&cursor=${cursor}`;
-  return requestJson<HistoryResult>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/history?limit=50${paging}`, { headers: agentHeaders() });
+  return requestJson<HistoryResult>(`/api/agent/sessions/${encodeURIComponent(sessionId)}/history?limit=10${paging}`, { headers: agentHeaders() });
 }
 
 export async function fetchAgentHistory(sessionId: string): Promise<AgentHistoryMessage[]> {

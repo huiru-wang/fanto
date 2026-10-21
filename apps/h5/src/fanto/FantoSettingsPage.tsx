@@ -5,8 +5,7 @@ import { createFanto, emptyFanto, getFanto, patchFanto, type CreateFanto, type F
 import { FantoAvatar } from "./FantoAvatar";
 import { useFanto } from "./FantoContext";
 import { AvatarCropper } from "./AvatarCropper";
-import { AgentConfigFields } from "./AgentConfigFields";
-import { configChanges, nicknameError, rebaseConfig } from "./settings-state";
+import { nicknameError } from "./settings-state";
 
 const fields: [keyof RoleConfig, string, string][] = [
   ["character", "角色设定", "人物身份、性格、习惯与语言气质；也可以留空"],
@@ -19,7 +18,7 @@ export function FantoSettingsPage({ creating = false }: { creating?: boolean }) 
   const profile = useFanto();
   const role = profile.roles.find(item => item.fantoId === fantoId);
   if (!creating && !role) return <section className="fanto-settings-page">
-    <h1>角色设置</h1><p role="status">{profile.loading ? "正在读取角色…" : profile.error || "角色不存在或已被删除。"}</p>
+    <h1>角色详情</h1><p role="status">{profile.loading ? "正在读取角色…" : profile.error || "角色不存在或已被删除。"}</p>
     <Link to="/fantos">返回角色列表</Link>
     {profile.error && <button onClick={() => void profile.refresh()}>重试</button>}
   </section>;
@@ -38,8 +37,7 @@ function FantoEditor({ role }: { role: FantoSettings | null }) {
   const archived = base?.status === "archived";
   const systemDefault = base?.nickname === "fanto";
   const nameError = creating ? nicknameError(draft.nickname, profile.roles) : null;
-  const dirty = !created && (base ? Object.keys(configChanges(base.agentConfig, draft.agentConfig)).length > 0
-    : JSON.stringify(draft) !== JSON.stringify(emptyFanto()));
+  const dirty = !created && !base && JSON.stringify(draft) !== JSON.stringify(emptyFanto());
   const blocker = useBlocker(({ currentLocation, nextLocation }) =>
     !created && (dirty || busy || file !== null) && currentLocation.pathname !== nextLocation.pathname);
   useEffect(() => {
@@ -56,36 +54,18 @@ function FantoEditor({ role }: { role: FantoSettings | null }) {
   useEffect(() => { if (created && base) { profile.select(base.fantoId); navigate("/chat"); } }, [created, base, profile.select, navigate]);
 
   const apply = (value: FantoSettings) => { setBase(value); profile.accept(value); };
-  const reconcile = async (cause: unknown) => {
-    if (!base) return;
-    try {
-      const remote = await getFanto(base.fantoId);
-      const rebased = rebaseConfig(base.agentConfig, draft.agentConfig, remote.agentConfig);
-      apply(remote); setDraft(old => ({ ...old, agentConfig: rebased.draft }));
-      setNotice(cause instanceof ApiError && cause.code === "FANTO_BUSY" ? "角色正在回复，请等当前对话结束后再保存。"
-        : "已读取最新配置，你的修改已保留。请核对后再次保存。");
-    } catch { setNotice("保存未确认，修改仍保留，请检查网络后重试。"); }
-  };
   const save = async () => {
-    if (saving.current || systemDefault || (creating && nameError)) return;
+    if (saving.current || base || creationUncertain || nameError || profile.roles.filter(item => item.status === "active").length >= 3) return;
     saving.current = true; setBusy(true); setNotice("");
     try {
-      if (base) {
-        const value = await patchFanto(base.fantoId, base.version, configChanges(base.agentConfig, draft.agentConfig));
-        apply(value); setDraft(old => ({ ...old, agentConfig: value.agentConfig })); setNotice("已保存，下一轮对话生效。");
-      } else {
-        const value = await createFanto({ ...draft, nickname: draft.nickname.trim() });
-        apply(value); setCreated(true);
-      }
+      const value = await createFanto({ ...draft, nickname: draft.nickname.trim() });
+      apply(value); setCreated(true);
     } catch (cause) {
-      if (base) await reconcile(cause);
-      else {
-        setCreationUncertain(!(cause instanceof ApiError) || cause.status >= 500);
-        setNotice(cause instanceof ApiError && cause.code === "FANTO_LIMIT_REACHED" ? "最多使用 3 个活跃角色（含默认 fanto），请先归档一个角色。"
+      setCreationUncertain(!(cause instanceof ApiError) || cause.status >= 500);
+      setNotice(cause instanceof ApiError && cause.code === "FANTO_LIMIT_REACHED" ? "最多使用 3 个活跃角色（含默认 fanto），请先归档一个角色。"
         : cause instanceof ApiError && cause.code === "FANTO_NAME_TAKEN" ? "角色名称已存在（名称不区分大小写），请使用其他名称。"
         : cause instanceof ApiError && cause.code === "INVALID_INPUT" ? "角色名称必填，请检查内容后重试。"
         : "创建未确认。为避免重复创建，请先返回角色列表刷新核对，再决定是否重试。");
-      }
     } finally { saving.current = false; setBusy(false); }
   };
   const commitAvatar = async (id: string | null) => {
@@ -105,13 +85,12 @@ function FantoEditor({ role }: { role: FantoSettings | null }) {
     } finally { saving.current = false; setBusy(false); }
   };
   return <>
+    {/* §2.1: avatar and identity first, role text second; creation is the only primary action. */}
     <section className="fanto-settings-page" inert={!!file}>
-      <header><Link to="/fantos">返回</Link><h1>{creating ? "创建角色" : "角色设置"}</h1>
-        <button className="provider-action" disabled={busy || creationUncertain || archived || systemDefault || (creating && !!nameError) || (!creating && !dirty) || (creating && profile.roles.filter(item => item.status === "active").length >= 3)}
-          onClick={() => void save()}>{busy ? "保存中…" : creating ? "创建角色" : "保存配置"}</button>
+      <header><Link className="glass-capsule" to={creating ? "/fantos" : "/chat"}>返回</Link><h1>{creating ? "创建角色" : "角色详情"}</h1>
+        {creating && <button className="provider-action" disabled={busy || creationUncertain || !!nameError || profile.roles.filter(item => item.status === "active").length >= 3}
+          onClick={() => void save()}>{busy ? "创建中…" : "创建"}</button>}
       </header>
-      <p className="fanto-settings-note">{creating ? "角色名称必填且不可重复；创建后身份固定，能力和头像可继续调整。" : systemDefault ? "系统默认 Fanto 的身份和能力固定，不可归档或删除。可以调整头像。" : "身份已固定。需要不同的人物设定时，请创建一个新角色。"}</p>
-      {archived && <p role="status">这个角色已归档。恢复后可以继续配置和对话。</p>}
       <div className="fanto-settings-identity">
         <button className="avatar-picker" type="button" aria-label="选择角色头像" disabled={busy || archived} onClick={() => input.current?.click()}>
           <FantoAvatar size={88} avatarMediaId={draft.avatarMediaId ?? null} label={draft.nickname || "未命名角色"} />
@@ -127,15 +106,13 @@ function FantoEditor({ role }: { role: FantoSettings | null }) {
         aria-invalid={!!nameError} aria-describedby={nameError ? "fanto-name-error" : undefined} />
         {nameError && <small id="fanto-name-error" role="status">{nameError}</small>}
       </label>
-      <label className="settings-field">简介<textarea maxLength={300} rows={3} value={draft.description} readOnly={!creating} disabled={busy}
-        onChange={event => setDraft({ ...draft, description: event.target.value })} placeholder="可留空" /></label>
       {fields.map(([key, title, placeholder]) => <label className="settings-field" key={key}>{title}
         <textarea rows={key === "exampleDialogues" ? 6 : 4} maxLength={16000} value={draft.roleConfig[key]}
           readOnly={!creating} disabled={busy} placeholder={placeholder}
           onChange={event => setDraft({ ...draft, roleConfig: { ...draft.roleConfig, [key]: event.target.value } })} />
       </label>)}
-      <AgentConfigFields value={draft.agentConfig} disabled={busy || archived || systemDefault}
-        onChange={agentConfig => setDraft(old => ({ ...old, agentConfig }))} />
+      <p className="fanto-settings-note">{creating ? "创建后角色设定固定。长期记忆、动作与旁白默认开启。" : systemDefault ? "系统默认角色。点击头像可更换形象。" : "身份已固定。需要不同的人物设定时，请创建一个新角色。"}</p>
+      {archived && <p role="status">这个角色已归档。恢复后可以继续对话。</p>}
       {notice && <p role="status" className="fanto-notice">{notice}</p>}
     </section>
     {file && <AvatarCropper file={file} onCancel={() => setFile(null)} onSave={commitAvatar} />}

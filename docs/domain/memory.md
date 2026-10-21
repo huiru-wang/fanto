@@ -16,4 +16,4 @@ MainDynamicProvider 在当前角色启用时每次 Run 读取它的最多 50 条
 
 `memories` 包含 `memory_id UUID`、`fanto_id UUID`、`content`、768 维 `embedding`、created/updated timestamp。不存 `kind`/`owner_type`/`owner_id`。每个 Fanto 最多 50 条，单条 trim 后 1–1000 字符。create/update/search 调用现有 Embedding Provider，list 不生成向量；search 以 `fanto_id` 限定。写入在数据库事务里通过 Fanto advisory lock 检查上限。
 
-当前基线只为新数据库建表，不自动升级旧 Memory 或搬迁旧 User Memory。关闭开关不是删除；删除可删除的自定义 Fanto 时会显式清除本角色记忆。其他角色与 User Records 不受影响。
+旧结构经 002 升级后由 `003_drop_legacy_memories.ts` 删除全部旧 User/Fanto Memory，**不搬迁旧记忆**；新 `memories` 不受该清理影响。关闭长期记忆开关不会删除新记忆；删除可删除的自定义 Fanto 时会显式清除该角色的新记忆。其他角色与 User Records 不受影响。

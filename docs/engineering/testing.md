@@ -18,7 +18,7 @@ xcodebuild -project apps/ios/fanto/fanto.xcodeproj -scheme fanto -sdk iphonesimu
 
 ## 按领域验证
 
-- **数据库**：migration-baseline.test.ts 在隔离子库验证 001→002 空库建表、重复运行和无 FK；migration-upgrade.test.ts 使用旧迁移名字与旧 Schema 演练升级，检查历史会话/记忆归档、角色设置兼容及默认 Session 幂等。仅测试隔离库，不代表实际业务数据库已升级。
+- **数据库**：migration-baseline.test.ts 在隔离子库验证 001→002 空库建表、重复运行和无 FK；migration-upgrade.test.ts 使用旧迁移名字与旧 Schema 演练升级，检查旧会话保留、旧 Memory 完全删除、角色设置兼容及默认 Session 幂等；另覆盖已执行 002 的数据库执行 003 后，新 Fanto Memory 不受影响。仅测试隔离库，不代表实际业务数据库已升级。
 - **Record / Media**：按用户、版本、位置字段、五媒体限制、后置 Vision/ASR、独立 EmbeddingQueue、语义检索；真实 OSS PUT/HEAD/URL、删除后的尽力清理以及 用户隔离；`image-thumbnail.test.ts` 验证 EXIF/WebP/并发上限，`media-service.test.ts` 验证小图失败与 DB 失败后的手动恢复、variant 和用户隔离。H5 `tests/media-upload.test.ts` 验证每个失败阶段不会自动继续请求。
 - **Agent Checkpoint PG Integration**：用仅供测试的 `TEST_DATABASE_URL`（库名含 test），执行 `pnpm --filter @fanto/server exec tsx --test src/agent/checkpoint/*.integration.test.ts`，验证仅创建当前三表、Entry/Usage 存储、Run 历史分页、冷恢复和主会话权限。测试创建并删除独立的临时数据库，不可使用生产数据库。
 - **取消集成回归**：`routes/agent/cancellation.integration.test.ts` 使用真实 Pi Harness、faux Provider 和 HTTP socket，覆盖各阶段输出阻塞、取消持久化、超时、重复 stop、输出 deadline 与续聊。需要数据库时可单独设置 `TEST_DATABASE_URL` 在独立 PG 库验证；运行时以独立临时库执行，避免与其它集成测试共享生产 Schema。付费模型与浏览器验证仍需单独执行。

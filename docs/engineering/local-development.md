@@ -79,7 +79,8 @@ Server 通过 Kysely 维护 PostgreSQL Schema。`src/bootstrap/main.ts` 在服�
 当前两条迁移：
 
 - `001_create_current_schema.ts`：固化改造前的历史业务表、旧 User/Fanto Memory、`scope_key='default'` 会话基线。它只是版本 001 的历史快照，不等于最终 Schema。
-- `002_fanto_scoped_memory.ts`：增量升级为独立 Fanto 长期记忆。将旧 `memories` **重命名为 `memories_legacy_002`，原内容保留但不再供 Agent 读取**；创建只有 `fanto_id` 的新 `memories`；清除旧角色配置中的 `userMemoryEnabled`，全部角色配置统一 `fantoMemoryEnabled=true` 并增加版本号；新建 Session 必须提供 UUID `scope_key`，旧 `default` Session 和 Entry 原封不动保留；默认角色在注册或默认会话首次获取时由应用幂等创建，**不会批量将旧 Session/记忆归属改为默认角色**。
+- `002_fanto_scoped_memory.ts`：历史上已发布的增量升级，临时将旧记忆表命名为 `memories_legacy_002`，同时创建只包含 `fanto_id` 的新 `memories`，移除角色旧配置 `userMemoryEnabled`、统一开启 `fantoMemoryEnabled`，新建 Session 要求 UUID 作用域。此迁移保持不变以兼容已执行 002 的数据库。
+- `003_drop_legacy_memories.ts`：**直接删除 `memories_legacy_002` 表及其中所有旧 User/Fanto Memory**，不再保留归档。新 `memories` 不受影响。旧 `default` Session 和 Entry 仍原样保留；不会把历史记忆或会话重绑定到默认角色。
 
 原先已执行的 migration 名为 `create_current_schema_20261019`。新版 `runMigrations()` 启动时，仅在 Kysely 迁移元数据表中将该历史记录安全重命名为 `001_create_current_schema`，然后执行 002；这只修改迁移记录的**名称**，不重跑基线或更改原用户数据。空库则正常先执行 001、再执行 002。重复运行不会重复操作或覆盖数据。
 
@@ -93,7 +94,7 @@ pnpm db:migrate
 # 若只需要本地演练，用含有 test 的独立数据库配置 TEST_DATABASE_URL 运行迁移集成测试。
 ```
 
-**注意：**旧 `scope_key='default'` 会话保留作历史数据但不再能作为新版活跃对话；旧 User/Fanto Memory 归档表不会被自动恢复为新的角色记忆。迁移不会自动删除旧记录或新建全体用户的默认角色（新用户注册和已有用户初始化时会创建）。删除 Kysely 迁移元数据并重放 001 不是受支持的升级流程，因为已升级后的结构与历史基线不相同；如需重建应使用独立空库。
+**注意：**旧 `scope_key='default'` 会话保留作历史数据但不再能作为新版活跃对话；旧 User/Fanto Memory 会由 003 **永久删除**，不会转换为角色记忆；但旧 Session 和 Entry 不会被删除或重新绑定。迁移不会批量新建全体用户的默认角色（新用户注册和已有用户初始化时会创建）。删除 Kysely 迁移元数据并重放 001 不是受支持的升级流程，因为已升级后的结构与历史基线不相同；如需重建应使用独立空库。
 
 ## 常用命令
 

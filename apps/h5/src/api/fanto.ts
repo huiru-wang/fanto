@@ -39,7 +39,7 @@ export type SettingsChanges = {
 };
 export const emptyFanto = (): CreateFanto => ({
   nickname: "", description: "", roleConfig: { character: "", scenario: "", instructions: "", exampleDialogues: "" },
-  agentConfig: { recordReadEnabled: false, fantoMemoryEnabled: true, narrationEnabled: false },
+  agentConfig: { recordReadEnabled: false, fantoMemoryEnabled: true, narrationEnabled: true },
 });
 export const listFantos = (signal?: AbortSignal) => requestJson<FantoSettings[]>("/api/fantos?includeArchived=true", { signal });
 export const getFanto = (id: string) => requestJson<FantoSettings>(`/api/fanto?fantoId=${encodeURIComponent(id)}`);
@@ -52,3 +52,6 @@ export const deleteFanto = (fantoId: string, expectedVersion: number) =>
   requestJson<{ fantoId: string; deletionState: "pending" } | null>(`/api/fanto?fantoId=${encodeURIComponent(fantoId)}`, {
     method: "DELETE", headers: { "If-Match": String(expectedVersion) },
   });
+
+export const restartFanto = (fantoId: string, expectedVersion: number) =>
+  requestJson<FantoSettings>("/api/fanto/restart", { method: "POST", body: JSON.stringify({ fantoId, expectedVersion }) });

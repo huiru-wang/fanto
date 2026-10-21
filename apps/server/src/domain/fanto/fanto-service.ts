@@ -76,6 +76,35 @@ export class FantoService {
   });
   return this.get(userId,parsed.fantoId);
  }
+ /** Replace the role's sole bound Session atomically, after draining its old checkpoint. */
+ async restart(userId:string,input:unknown):Promise<FantoSettings>{
+  const parsed=fantoActionSchema.parse(input);
+  if(this.busy.has(parsed.fantoId))throw new FantoError("FANTO_BUSY",409);
+  this.busy.add(parsed.fantoId);
+  try{
+   await this.db.transaction().execute(async trx=>{
+    await trx.selectFrom("users").select("user_id").where("user_id","=",userId).forUpdate().executeTakeFirstOrThrow();
+    const row=await trx.selectFrom("user_fantos").selectAll().where("user_id","=",userId).where("fanto_id","=",parsed.fantoId).forUpdate().executeTakeFirst();
+    if(!row)throw new FantoError("NOT_FOUND",404);
+    if(row.status!=="active")throw new FantoError("INVALID_STATE",409);
+    if(row.version!==parsed.expectedVersion)throw new FantoError("VERSION_CONFLICT",409);
+    const oldId=await this.repo.sessionId(trx,userId,parsed.fantoId);
+    if(oldId){
+     if(this.isSessionRunning(oldId))throw new FantoError("FANTO_BUSY",409);
+     await this.closeSession(oldId);
+     await sql`DELETE FROM agent_session.usage_ledger WHERE session_id=${oldId}`.execute(trx);
+     await sql`DELETE FROM agent_session.entries WHERE session_id=${oldId}`.execute(trx);
+     await sql`DELETE FROM agent_session.sessions WHERE id=${oldId} AND user_id=${userId}`.execute(trx);
+    }
+    await trx.deleteFrom("memories").where("fanto_id","=",parsed.fantoId).execute();
+    const stamp=Date.now();
+    await sql`INSERT INTO agent_session.sessions(id,user_id,agent_id,scope_key,created_at,updated_at,next_seq)
+     VALUES(${randomUUID()},${userId},'main',${parsed.fantoId},${stamp},${stamp},0)`.execute(trx);
+    await trx.updateTable("user_fantos").set({version:row.version+1,updated_at:new Date()}).where("fanto_id","=",parsed.fantoId).where("user_id","=",userId).execute();
+   });
+   return await this.get(userId,parsed.fantoId);
+  }finally{this.busy.delete(parsed.fantoId);}
+ }
  async setArchive(userId:string,input:unknown,archived:boolean):Promise<FantoSettings>{
   const parsed=fantoActionSchema.parse(input);
   const scope=parsed.fantoId;
