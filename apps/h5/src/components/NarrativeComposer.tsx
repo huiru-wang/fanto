@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, type ReactNode } from "react";
+import { LiquidGlassLayer } from "./LiquidGlass";
 import { TextQuote } from "lucide-react";
 import { finishNarration, insertNarration, type DraftPart } from "./narrative-draft";
 
@@ -39,9 +40,10 @@ export function NarrativeComposer({ parts, onChange, disabled, placeholder, onSe
   };
   return <div className="narrative-composer-container">
     <div className="narrative-toolbar">
-      <button type="button" className="narrative-mode" disabled={disabled} onClick={add}><TextQuote size={16} />动作与旁白</button>
+      <button type="button" className="narrative-mode liquid-glass-surface" disabled={disabled} onClick={add}><LiquidGlassLayer /><TextQuote size={16} /><span>动作与旁白</span></button>
     </div>
-    <div className="chat-composer">
+    <div className="chat-composer liquid-glass-surface">
+    <LiquidGlassLayer />
     <div className="narrative-editor">
     <div className="narrative-fields">
       {parts.map(part => <div key={part.id} className={`narrative-part ${part.kind}`}>
@@ -71,8 +73,13 @@ export function NarrativeComposer({ parts, onChange, disabled, placeholder, onSe
             if (event.nativeEvent.isComposing || event.keyCode === 229) return;
             if (event.key === "Enter" && part.kind === "narration") { event.preventDefault(); finish(part, event.currentTarget); }
             else if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onSend(); }
-            else if (event.key === "Backspace" && !part.text && parts.length > 1) {
+            else if (event.key === "Backspace" && !part.text && (parts.length > 1 || part.kind === "narration")) {
               event.preventDefault();
+              if (parts.length === 1) {
+                pendingFocus.current = { id: part.id };
+                onChange([{ ...part, kind: "speech" }]);
+                return;
+              }
               const index = parts.findIndex(item => item.id === part.id);
               const previous = parts[index - 1];
               const next = parts[index + 1];

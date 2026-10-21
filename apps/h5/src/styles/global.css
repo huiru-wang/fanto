@@ -2580,3 +2580,29 @@ input:focus-visible {
 .role-avatar-stack .fanto-profile-avatar + .fanto-profile-avatar { margin-left: -10px; }
 .role-avatar-count { position: absolute; top: -4px; right: -4px; display: grid; place-items: center; min-width: 22px; height: 22px; padding: 0 4px; border: 2px solid var(--surface-solid); border-radius: var(--radius-pill); color: var(--surface-solid); background: var(--accent); font-size: 10px; font-weight: 600; line-height: 1; }
 .fanto-chat-title { max-width: calc(100% - 152px); }
+
+/* Liquid glass: floating controls sample the scrolling messages beneath them.
+   §6.1 top-lit edges; §3.6 separate avatar silhouettes without a shared pill. */
+.chat-page { position: relative; display: block; overflow: hidden; --composer-height: 140px; }
+.chat-scroll { position: absolute; inset: 0; height: 100%; }
+.chat-header { position: absolute; inset: 0 0 auto; z-index: 6; pointer-events: none; }
+.chat-header > * { pointer-events: auto; }
+.chat-content { padding-top: calc(104px + env(safe-area-inset-top)); padding-bottom: calc(var(--composer-height) + 24px); }
+.chat-composer-wrap { position: absolute; inset: auto 0 0; pointer-events: none; }
+.chat-composer-wrap .narrative-composer-container, .chat-composer-wrap .chat-disclaimer { pointer-events: auto; }
+.liquid-glass-definitions { position: absolute; width: 0; height: 0; pointer-events: none; }
+.liquid-glass-surface { position: relative; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none; border: 0; box-shadow: 0 4px 18px rgba(35,34,31,.08); }
+.liquid-glass-surface > :not(.liquid-glass-layer) { position: relative; z-index: 1; }
+.liquid-glass-layer { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; box-shadow: inset 0 1px 1px rgba(255,255,255,.95), inset 0 -1px 1px rgba(35,34,31,.14), inset 1px 0 1px rgba(255,255,255,.65); }
+.liquid-glass-layer::after { content: ""; position: absolute; inset: 0; border-radius: inherit; border: 1px solid rgba(255,255,255,.5); background: linear-gradient(145deg,rgba(255,255,255,.22),rgba(255,255,255,.04) 45%,rgba(255,255,255,.12)); }
+.liquid-glass-warp { position: absolute; inset: 0; border-radius: inherit; background: rgba(255,255,255,.08); backdrop-filter: blur(5px) saturate(150%); -webkit-backdrop-filter: blur(5px) saturate(150%); filter: url(#fanto-glass-refraction); }
+.narrative-mode { padding-inline: 12px; }
+.narrative-part.narration { background: rgba(35,34,31,.06); }
+.role-avatar-navigation { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 2px 0; border: 0; border-radius: var(--radius-pill); background: transparent; cursor: pointer; color: var(--text); }
+.role-avatar-navigation:disabled { opacity: .45; cursor: default; }
+.role-avatar-stack .fanto-profile-avatar { border: 1px solid rgba(255,255,255,.8); box-shadow: 0 2px 6px rgba(35,34,31,.12); }
+.role-avatar-stack .fanto-profile-avatar + .fanto-profile-avatar { margin-left: -12px; }
+.role-avatar-count { top: -2px; right: -5px; border-width: 1px; }
+.fanto-chat-title { max-width: calc(100% - 148px); }
+.glass-capsule:focus-visible, .narrative-mode:focus-visible, .role-avatar-navigation:focus-visible { outline: 2px solid var(--muted); outline-offset: 4px; }
+@supports (-moz-appearance: none) { .liquid-glass-warp { filter: none; } }

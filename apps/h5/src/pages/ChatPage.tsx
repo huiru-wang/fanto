@@ -3,7 +3,7 @@ import { getFanto, restartFanto } from "../api/fanto";
 import { useFanto } from "../fanto/FantoContext";
 import { FantoAvatar } from "../fanto/FantoAvatar";
 import { ArrowUp, SquarePen, RotateCcw, Sparkles, Square } from "lucide-react";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   encodeUserInputResponse,
   streamAgentMessage,
@@ -14,6 +14,7 @@ import {
   type PresentedUserInputRequest,
 } from "../api/agent";
 import { ApiError } from "../api/http";
+import { LiquidGlassFilters, LiquidGlassLayer } from "../components/LiquidGlass";
 import { NarrativeComposer } from "../components/NarrativeComposer";
 import { parseDraft, restoreDraft, serializeDraft } from "../components/narrative-draft";
 import { ChatMarkdown } from "../components/ChatMarkdown";
@@ -149,6 +150,21 @@ export function ChatPage({ active = true }: { active?: boolean }) {
   const conversationRevision = useRef(0);
   const [recovering, setRecovering] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const composer = composerRef.current;
+    const page = pageRef.current;
+    if (!composer || !page) return;
+    const observer = new ResizeObserver(() => {
+      const scroll = scrollRef.current;
+      const nearEnd = scroll && scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 120;
+      page.style.setProperty("--composer-height", `${composer.getBoundingClientRect().height}px`);
+      if (nearEnd && scroll) scroll.scrollTop = scroll.scrollHeight;
+    });
+    observer.observe(composer);
+    return () => observer.disconnect();
+  }, []);
   const previousScrollTop = useRef(0);
   const touchStartY = useRef<number | null>(null);
 
@@ -469,23 +485,25 @@ export function ChatPage({ active = true }: { active?: boolean }) {
   };
 
   return (
-    <div className="chat-page">
+    <div className="chat-page" ref={pageRef}>
+      <LiquidGlassFilters />
       <header className="chat-header">
-        <button type="button" className="chat-title fanto-chat-title glass-capsule" onClick={() => navigate(fantoSettings ? `/fantos/${fantoSettings.fantoId}` : "/fantos")} aria-label="查看当前角色详情" disabled={restarting}>
+        <button type="button" className="chat-title fanto-chat-title glass-capsule liquid-glass-surface" onClick={() => navigate(fantoSettings ? `/fantos/${fantoSettings.fantoId}` : "/fantos")} aria-label="查看当前角色详情" disabled={restarting}>
+          <LiquidGlassLayer />
           <FantoAvatar size={36} avatarMediaId={fantoSettings?.avatarMediaId ?? null} label={fantoLabel(fantoSettings)} />
           <strong>{fantoLabel(fantoSettings)}</strong>
         </button>
         <div className="chat-header-actions">
-          <button className="glass-capsule role-avatar-navigation" disabled={restarting}
+          <button className="role-avatar-navigation" disabled={restarting}
             aria-label={`选择角色，共 ${activeRoles.length} 个角色`} title="选择角色" onClick={() => navigate("/fantos")}>
             <span className="role-avatar-stack" aria-hidden="true">
-              {activeRoles.length ? activeRoles.slice(0, 2).map(role => <FantoAvatar key={role.fantoId} size={32}
-                avatarMediaId={role.avatarMediaId} label={fantoLabel(role)} />) : <FantoAvatar size={32} avatarMediaId={null} />}
+              {activeRoles.length ? activeRoles.slice(0, 2).map(role => <FantoAvatar key={role.fantoId} size={44}
+                avatarMediaId={role.avatarMediaId} label={fantoLabel(role)} />) : <FantoAvatar size={44} avatarMediaId={null} />}
             </span>
             {extraRoleCount > 0 && <span className="role-avatar-count" aria-hidden="true">+{extraRoleCount}</span>}
           </button>
-          <button className="glass-capsule icon-capsule" disabled={restarting || loading || !sessionId || responding || stopping || recovering}
-            aria-label="重新开始对话" title="重新开始对话" aria-busy={restarting} onClick={() => setShowRestart(true)}><SquarePen size={20} strokeWidth={1.8} /></button>
+          <button className="glass-capsule liquid-glass-surface icon-capsule" disabled={restarting || loading || !sessionId || responding || stopping || recovering}
+            aria-label="重新开始对话" title="重新开始对话" aria-busy={restarting} onClick={() => setShowRestart(true)}><LiquidGlassLayer /><SquarePen size={20} strokeWidth={1.8} /></button>
         </div>
       </header>
 
@@ -547,7 +565,7 @@ export function ChatPage({ active = true }: { active?: boolean }) {
         </div>
       </div>
 
-      <div className="chat-composer-wrap">
+      <div className="chat-composer-wrap" ref={composerRef}>
         <NarrativeComposer parts={draftParts} onChange={setDraftParts} disabled={loading || restarting || !sessionId}
             placeholder={`和${fantoLabel(fantoSettings)}聊聊`} onSend={() => { if (!responding) void send(); }}>
           <button
