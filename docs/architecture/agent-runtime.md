@@ -8,7 +8,7 @@
 
 | Agent | 运行方式 | 职责 |
 | --- | --- | --- |
-| `main` | 客户端请求驱动 Stream | 用户长期对话、Record / Memory 与澄清 |
+| `main` | 客户端请求驱动 Stream | 角色扮演对话、角色独立记忆与按需 Record 读取 |
 
 当前仅配置 main，静态 Tool 为 record_read、fanto_memory_manage、present_media；根据每个 Fanto 的开关动态激活。通用工具 / SkillLoader 保留为基础设施，只有显式配置且通过校验的能力才会加载；Main 未开放文件与 bash 工具。
 
@@ -19,6 +19,8 @@ Tool 和 Context Provider 通过 `agent/business-services.ts` 调用领域 Servi
 `harness/run.ts` 统一创建 Run Context，包含 userId、sessionId、runId、query、最近消息、traceId 与 timeZone。`harness/build-runtime.ts` 在一个 Run 内解析 Prompt 引用的 Provider 插槽，按需获取 Context；不是每个模型 turn 都重复查询。
 
 - Main：预留 Run 后，从可信 Session 的 scope_key/fantoId 经 FantoService 解析唯一的 active Fanto（包括系统默认角色）；每 Run 解析一次角色设置，存入 Run Context，再切换 lane.activeTools。MainDynamicProvider 构建条件 Persona、角色独立记忆、Record 指南和 Narration，空角色字段不填充。唯一长期记忆通过角色自身 fantoId 隔离，无 User Memory。最近 Record 不再自动注入，Record 只按需使用工具查询。配置 PATCH 在运行中返回 FANTO_BUSY，避免一轮内配置分歧。角色变化不参与 Agent revision，不需重启。权限与生命周期见 [Fanto](../domain/fanto.md)。
+- Main Core Prompt 仅服务于角色扮演：动态角色的名称、身份、世界起点、交流要求与示例决定扮演对象，强调角色自主性、自然叙事、视角受限和既有剧情的因果连续性。示例并非历史；初始角色设定也不代表后续状态不可改变。尚无独立世界状态树及状态增量管理能力。
+- `current_time` 是外部现实时间参考，不是强制的故事时钟；架空世界的相对时间根据设定和已发生剧情理解，只有明确现实同步或询问现实时间时才使用系统日期。
 - `transform_context` 只修改模型请求视图，不更改 Session 持久 transcript。
 
 长期 Memory 的策略、Agent 读写政策、默认上下文与检索边界统一见 [Memory](../domain/memory.md)；不将 Record embedding 误称为 Memory。

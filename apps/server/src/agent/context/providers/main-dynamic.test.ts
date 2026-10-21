@@ -39,3 +39,33 @@ test("user narration is understood even when assistant narration is disabled", (
  assert.match(mainDynamicText(f),/两种内容切换时空一行/);
  assert.match(mainDynamicText(f),/不替用户决定台词/);
 });
+
+test("roleplay dynamic context keeps character identity distinct, setting open and examples non-canonical", () => {
+ const f=role();
+ f.nickname="沈知晚";
+ f.roleConfig.character="镜花楼的歌舞艺人，有独立收入，不想被拯救。";
+ f.roleConfig.scenario="浦泽是一座架空港口城市，故事时间不与现实同步。";
+ f.roleConfig.instructions="说话节制，带着一点锋芒。";
+ f.roleConfig.exampleDialogues="用户：你好。角色：今晚演出结束了。";
+ const text=mainDynamicText(f);
+ assert.match(text,/当前角色名称（不是用户姓名）\n沈知晚/);
+ assert.match(text,/世界设定与初始情境\n浦泽/);
+ assert.match(text,/角色演绎与交流要求\n说话节制/);
+ assert.match(text,/示例对话（学习风格，不是已经发生的故事）/);
+ assert.match(text,/未配置的部分保持开放/);
+ assert.match(text,/戏外设定讨论与假设讨论不要误作角色已经经历的事实/);
+ assert.doesNotMatch(text,/强制按照现实时间/);
+});
+
+test("narration changes only response formatting, not roleplay interpretation", () => {
+ const f=role();f.agentConfig.fantoMemoryEnabled=false;
+ f.agentConfig.narrationEnabled=false;
+ const withoutNarration=mainDynamicText(f);
+ assert.match(withoutNarration,/用户对话表达协议/);
+ assert.match(withoutNarration,/你的回复不生成角色动作/);
+ f.agentConfig.narrationEnabled=true;
+ const withNarration=mainDynamicText(f);
+ assert.match(withNarration,/两种内容切换时空一行/);
+ assert.match(withNarration,/不成为全知旁白/);
+ assert.doesNotMatch(withNarration,/你的回复不生成角色动作/);
+});

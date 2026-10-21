@@ -19,7 +19,7 @@ usage() {
 Usage: deploy/manual/deploy.sh [--pull] [--nginx] [--maintenance]
 
 Deploy Fanto production release:
-  0. optionally fast-forward origin/main and reload the updated deploy script
+  0. optionally fast-forward the current branch from origin and reload the updated deploy script
   1. validate production config
   2. install dependencies
   3. build H5
@@ -30,7 +30,7 @@ Deploy Fanto production release:
   8. verify health checks
 
 Options:
-  --pull    pull origin/main first (requires clean main branch)
+  --pull    fast-forward origin/<current-branch> first (requires a clean, attached branch)
   --maintenance  stop the old Server before schema migrations
   --nginx   replace /etc/nginx/nginx.conf with Fanto SSL config
 EOF
@@ -53,10 +53,10 @@ fail() {
 
 if [[ "$PULL_LATEST" == "1" ]]; then
   command -v git >/dev/null 2>&1 || fail "missing required command: git"
-  [[ "$(git -C "$ROOT" branch --show-current)" == "main" ]] || fail "--pull requires the main branch"
+  current_branch="$(git -C "$ROOT" symbolic-ref --quiet --short HEAD)" || fail "--pull requires a checked-out branch (detached HEAD is not supported)"
   [[ -z "$(git -C "$ROOT" status --porcelain)" ]] || fail "--pull requires a clean working tree; commit or stash local changes first"
-  echo "[PULL] Updating from origin/main"
-  git -C "$ROOT" pull --ff-only origin main
+  echo "[PULL] Updating from origin/$current_branch"
+  git -C "$ROOT" pull --ff-only origin "$current_branch"
   echo "[PULL] Deploying commit $(git -C "$ROOT" rev-parse --short HEAD)"
 
   # Run the newly fetched script too; remove --pull to avoid pulling recursively.

@@ -46,10 +46,22 @@ test("original single-slot providers and optional fallback remain compatible", a
   assert.equal(await prompt.resolve({} as never,run()),"Fanto / （无）");
 });
 
-test("main prompt keeps persona, base memory, related memory and plain spoken Markdown contract", async () => {
+test("main prompt resolves only dynamic role context and external time slots", async () => {
   const { mainPrompt } = await import("../prompts/main.js");
   const slots = [...mainPrompt.matchAll(/\{\{([a-z][a-z0-9_]*)\}\}/g)].map(match => match[1]);
   assert.deepEqual(slots, ["dynamic_main","current_time"]);
   assert.doesNotMatch(mainPrompt, /recent_records|memory_manage/);
   assert.doesNotMatch(mainPrompt, /fantoCore/);
+});
+
+test("main prompt prioritizes roleplay, character agency and narrative time instead of life coaching", async () => {
+  const { mainPrompt } = await import("../prompts/main.js");
+  assert.match(mainPrompt,/角色扮演核心/);
+  assert.match(mainPrompt,/角色身份与自主性/);
+  assert.match(mainPrompt,/叙事与互动/);
+  assert.match(mainPrompt,/世界连续性与视角/);
+  assert.match(mainPrompt,/故事时间与现实时间/);
+  assert.match(mainPrompt,/外部现实时间参考（不是故事时间）/);
+  assert.match(mainPrompt,/用户明确提出角色扮演之外的设定讨论/);
+  assert.doesNotMatch(mainPrompt,/苏格拉底式|服务于用户的人生|必须以 Dynamic Context/);
 });

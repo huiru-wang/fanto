@@ -62,7 +62,7 @@ pnpm build:h5
 
 生产部署统一使用 `pnpm deploy`。脚本会校验 Server `.env`、`DEEPSEEK_API_KEY` 和 Agent 配置文件，安装依赖、预构建 H5、使用 Server 的 `.env` 执行 PostgreSQL migration、重启 Server（包括内嵌 Agent Runtime）、发布 H5，并检查 `3000` 的 `/health`。服务器首次完整启动或 Nginx 配置发生变化时使用一条命令 `pnpm deploy:nginx`；它会在同一流程中覆盖 `/etc/nginx/nginx.conf`、校验并 reload Nginx，再检查本机 HTTPS `/health`。H5 默认发布到 `/var/www/fanto-h5`，可用 `H5_DEPLOY_DIR` 覆盖。底层 `start.sh` / `stop.sh` / `restart.sh` 仍保留用于单服务运维。
 
-部署默认使用当前本地代码，不拉取远端。使用 `pnpm run deploy --pull` 可先执行 `git pull --ff-only origin main`，再使用更新后的部署脚本继续执行；要求当前为 `main` 且工作区干净，拉取失败立即停止。可组合为 `pnpm run deploy --pull --nginx --maintenance`。本地修改不会被自动覆盖，分叉历史不会自动合并。
+部署默认使用**执行部署命令的机器上当前检出的分支代码**，不拉取远端。使用 `pnpm run deploy --pull` 时，脚本会识别该机器当前检出的 Git 分支并执行 `git pull --ff-only origin <当前分支>`，随后使用拉取后的部署脚本继续执行；要求处于正常分支（不支持 detached HEAD）、工作区干净且 `origin` 存在对应远端分支，失败立即停止。可组合为 `pnpm run deploy --pull --nginx --maintenance`。例如希望从 `feat/roleplay-world-state` 部署，应先在**部署服务器**检出该分支，而不是依赖开发机当前分支。未提交的本地修改不会被自动覆盖，分叉历史不会自动合并。
 
 健康检查失败后默认间隔 5 秒重试，最多检查 60 次，单次请求超时 2 秒，总等待约 5–7 分钟；成功立即继续部署。可通过部署命令的环境变量 `FANTO_HEALTH_RETRIES` 和 `FANTO_HEALTH_INTERVAL_SECONDS` 调整次数与间隔。
 
