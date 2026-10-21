@@ -426,13 +426,12 @@ export function ChatPage({ active = true }: { active?: boolean }) {
     <div className="chat-page">
       <header className="chat-header">
         <button type="button" className="chat-title fanto-chat-title" onClick={() => navigate(fantoSettings ? `/fantos/${fantoSettings.fantoId}` : "/fantos")} aria-label="打开当前角色配置">
-          <FantoAvatar size={40}/>
+          <FantoAvatar size={40} avatarMediaId={fantoSettings?.avatarMediaId ?? null} label={fantoLabel(fantoSettings)}/>
           <div><strong>{fantoLabel(fantoSettings)}</strong><span>{fantoSettings?.description || (fantoSettings ? "独立对话与记忆" : "基于你的记录继续聊")}</span></div>
         </button>
         <div className="fanto-chat-controls">
           <label className="sr-only" htmlFor="chat-role">切换对话角色</label>
-          <select id="chat-role" value={profile.selectedId ?? "default"} onChange={event => profile.select(event.target.value === "default" ? null : event.target.value)}>
-            <option value="default">默认 Main</option>
+          <select id="chat-role" value={profile.selectedId ?? ""} disabled={!profile.selectedId || profile.loading} onChange={event => profile.select(event.target.value)}>
             {profile.roles.filter(role => role.status === "active").map(role => <option key={role.fantoId} value={role.fantoId}>{fantoLabel(role)}</option>)}
           </select>
           <button className="secondary-button" onClick={() => navigate("/fantos")}>管理角色</button>
@@ -456,7 +455,7 @@ export function ChatPage({ active = true }: { active?: boolean }) {
               <div className="welcome-mark"><MessageCircleMore size={28} /></div>
               <p className="eyebrow">Fanto</p>
               <h1>{fantoSettings ? `与${fantoLabel(fantoSettings)}开始对话。` : "从现在想说的事情开始。"}</h1>
-              <p>{fantoSettings ? "这段对话与记忆属于当前角色，你可以在角色配置中调整授权。" : "默认 Main 可以按需回想你的记录，管理你的个人长期记忆。"}</p>
+              <p>{fantoSettings?.nickname === "fanto" ? "这是你的默认 Fanto，拥有独立的对话与长期记忆。" : "这段对话与记忆属于当前角色，其他角色无法读取。"}</p>
               <div className="prompt-suggestions">
                 <button onClick={() => setDraft(fantoSettings && !fantoSettings.agentConfig.recordReadEnabled ? "今天想和你聊聊。" : "最近我都记录了什么？")}>{fantoSettings && !fantoSettings.agentConfig.recordReadEnabled ? "今天想和你聊聊。" : "最近我都记录了什么？"}</button>
                 <button onClick={() => setDraft("帮我回顾一下最近反复在想的事情。")}>最近反复在想什么？</button>

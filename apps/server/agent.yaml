@@ -9,7 +9,7 @@ agents:
     model_id: deepseek/deepseek-v4-flash
     description: Fanto 面向用户的长期记忆对话 Agent
     systemPromptModule: main
-    tools: [record_read, user_memory_manage, present_media]
+    tools: [record_read, fanto_memory_manage, present_media]
     skills: []
     compaction:
       enabled: true

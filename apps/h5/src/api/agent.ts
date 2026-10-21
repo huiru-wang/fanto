@@ -158,9 +158,10 @@ function extractToolPresentation(value: unknown): ToolPresentation {
   };
 }
 
-export async function getDefaultMainSession(signal?: AbortSignal): Promise<string> {
-  const result = await requestJson<{ sessionId: string }>("/api/agent/main-session", { headers: agentHeaders(), signal });
-  return result.sessionId;
+export type DefaultFantoSession = { sessionId: string; agentId: "main"; scopeKey: string };
+
+export async function getDefaultMainSession(signal?: AbortSignal): Promise<DefaultFantoSession> {
+  return requestJson<DefaultFantoSession>("/api/agent/main-session", { headers: agentHeaders(), signal });
 }
 
 export async function stopAgentSession(sessionId: string): Promise<{ stopping: boolean }> {

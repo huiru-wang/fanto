@@ -6,10 +6,13 @@ import {sql} from "kysely";
 import {FantoService} from "./fanto-service.js";
 import {fantoCreateSchema,fantoPatchSchema} from "./model.js";
 
-test("role fields may all be empty, but identity is not patchable",()=>{
- assert.equal(fantoCreateSchema.safeParse({}).success,true);
- assert.equal(fantoCreateSchema.safeParse({roleConfig:{character:"",scenario:""}}).success,true);
- assert.equal(fantoPatchSchema.safeParse({fantoId:randomUUID(),expectedVersion:1,changes:{agentConfig:{userMemoryEnabled:true}}}).success,true);
+test("nickname is required, role fields can be empty, and identity is not patchable",()=>{
+ assert.equal(fantoCreateSchema.safeParse({}).success,false);
+ assert.equal(fantoCreateSchema.safeParse({nickname:""}).success,false);
+ assert.equal(fantoCreateSchema.safeParse({nickname:"  "}).success,false);
+ assert.equal(fantoCreateSchema.parse({nickname:"  A "}).nickname,"A");
+ assert.equal(fantoCreateSchema.safeParse({nickname:"A",roleConfig:{character:"",scenario:""}}).success,true);
+ assert.equal(fantoPatchSchema.safeParse({fantoId:randomUUID(),expectedVersion:1,changes:{agentConfig:{fantoMemoryEnabled:true}}}).success,true);
  for(const field of ["nickname","roleConfig","sessionId","status","deleted"]){
    assert.equal(fantoPatchSchema.safeParse({fantoId:randomUUID(),expectedVersion:1,changes:{[field]:"wrong"}}).success,false);
  }
@@ -25,12 +28,12 @@ test("multi-character lifecycle creates at most three active, archives, restores
   const service=FantoService.create(db,{validateAvatar:async()=>true,queueFantoDeletion:async()=>{},finishFantoDeletion:async()=>true} as never);
   const main=await service.defaultSession(owner);
   assert.equal((await service.defaultSession(owner)).sessionId,main.sessionId);
-  const attempts=await Promise.allSettled(Array.from({length:4},()=>service.create(owner,{})));
+  const attempts=await Promise.allSettled(["A","B","C"].map(nickname=>service.create(owner,{nickname})));
   const roles=attempts.flatMap(result=>result.status==="fulfilled"?[result.value]:[]);
-  assert.equal(roles.length,3);
+  assert.equal(roles.length,2);
   assert.equal(attempts.filter(result=>result.status==="rejected").length,1);
-  assert.equal(new Set(roles.map(r=>r.sessionId)).size,3);
-  await assert.rejects(service.create(owner,{}),{code:"FANTO_LIMIT_REACHED"});
+  assert.equal(new Set(roles.map(r=>r.sessionId)).size,2);
+  await assert.rejects(service.create(owner,{nickname:"D"}),{code:"FANTO_LIMIT_REACHED"});
   assert.equal((await service.getForSession(owner,roles[0]!.sessionId))?.fantoId,roles[0]!.fantoId);
   await assert.rejects(service.get(other,roles[0]!.fantoId),{code:"NOT_FOUND"});
   const archived=await service.setArchive(owner,{fantoId:roles[0]!.fantoId,expectedVersion:roles[0]!.version},true);

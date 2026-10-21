@@ -1,28 +1,19 @@
-# Memory
+# Fanto 独立长期记忆
 
-Memory 与原始 Record、聊天历史独立，SQL 始终以完整 `(owner_type,owner_id)` 隔离。没有 Memory HTTP API；Tool 不接受 userId、fantoId 或 owner 参数，实际 Owner 从可信用户与 Session 解析。
+长期 Memory 与 Record/聊天历史独立。系统仅有角色长期记忆：每条 `memories` 归属一个 `fanto_id`，不再存在 User Memory、Owner 多态或 Memory Kind 分类。默认 `fanto` 角色也有自己的 fantoId 和独立记忆。
 
-## 类型和权限
+## 权限与工具
 
-| Owner | kind | 工具 |
-| --- | --- | --- |
-| user | personal_background、important_relationships、current_focus、interaction_preferences | user_memory_manage |
-| fanto | shared_history、relationship_state、ongoing_threads、personal_experiences | fanto_memory_manage |
+每个角色的 `fantoMemoryEnabled` 默认为 true；关闭时不能调用 `fanto_memory_manage`、不读取旧记忆、不注入记忆策略，已有记忆保留以便重新启用。工具只有 list/search/create/update/delete，参数不包含 userId/fantoId/owner/kind。Tool 和 Domain 都只使用可信 Run Context 的 `userId + sessionId` 找到 active 角色并检查授权，不接受模型替换身份；角色之间不共享记忆。
 
-数据库 CHECK 与 MemoryService 均拒绝跨 Owner 类型的 kind。默认 Main 可 list/search/create/update/delete User Memory，无 Fanto Memory。角色始终可读写自身 Fanto Memory；仅 userMemoryEnabled=true 时开放 User Memory 的 list/search，模型 Schema 也仅暴露这两个动作，业务边界独立拒绝伪造写入。一个角色不能读取其他角色的记忆。
+MainDynamicProvider 在当前角色启用时每次 Run 读取它的最多 50 条记忆，按更新时间读取；序列化最大 12,000 UTF-8 字节，省略超预算的完整条目；不向其他角色查询。用户 Record 读取受独立 `recordReadEnabled` 控制。
 
-默认 Main 的用户记忆政策由 `fanto-core.ts` 导出的条件段注入：仅保存用户明确表达、对未来有用的事实，写前检索/对照并更新已有条目，不保存临时情绪、假设、第三方文本或虚构剧情。敏感内容需明确保存意愿；凭据不保存。角色虚构经历保存在自己的 shared_history 并与现实资料区分。工具成功后才能声称保存。
+## 记忆内容与策略
 
-## 上下文
+`fantoMemoryGuidance` 在启用时注入 Prompt。Content 以角色自己的**第一人称**表达，以已确认信息为依据，包括用户在当前角色关系中提供的姓名、共同经历、关系改变和后续约定。明确提供姓名或要求记住姓名应在本轮保存，不是只口头答应。保存前检查当前上下文或搜索已存事实；重复不写、信息补充或纠正更新同一 memoryId。不能把角色设定示例、想象或无证据推断当作真实共同经历；敏感信息遵循明确保存意愿，凭据不保存。只有工具真正成功才声称已记住。
 
-MainDynamicProvider 每 Run 依据同一配置启用对应 Scope。User Memory 仅默认注入个人背景与相处偏好，最多读取 50 条，序列化预算 12,000 UTF-8 字节、整条选择，omitted 表示省略数。重要关系和近期关注由模型按需搜索。Fanto Memory 独立读取当前角色最多 50 条，同样限 12,000 字节。未授权的 Scope 不执行查询。
+## 存储容量
 
-Provider 不查询最近 Record，也不自动执行向量预检索。读取异常中止该 Run，不能误报为没有记忆；没有逐消息后台提取。Prompt 本轮固定，写工具成功结果在本轮可直接使用，下轮重新读取。
+`memories` 包含 `memory_id UUID`、`fanto_id UUID`、`content`、768 维 `embedding`、created/updated timestamp。不存 `kind`/`owner_type`/`owner_id`。每个 Fanto 最多 50 条，单条 trim 后 1–1000 字符。create/update/search 调用现有 Embedding Provider，list 不生成向量；search 以 `fanto_id` 限定。写入在数据库事务里通过 Fanto advisory lock 检查上限。
 
-## 存储和容量
-
-`memories` 保存 UUID、owner_type、owner_id、kind、content、768 维 embedding 与时间。list 不生成向量；create/update/search 调用既有 Embedding Provider，检索在 PostgreSQL 中同时过滤 Owner 与 kind。updatedAt 是保存时间，不代表事件发生时间。
-
-每 Owner 最多 50 条，User interaction_preferences 最多 20 条，每条 trim 后 1–1000 字符。Repository 使用 Owner advisory transaction lock 在实际写入时检查容量，防止并发创建或转换 kind 突破上限。
-
-新基线不兼容旧 profile/goal/guidance 或旧 shared_history 的归属，不自动搬迁/转换实际数据。删除角色显式删除其 Owner 记忆，其他 Owner 保留；没有 SQL cascade。见 [Fanto 生命周期](fanto.md) 和 [测试](../engineering/testing.md)。
+当前基线只为新数据库建表，不自动升级旧 Memory 或搬迁旧 User Memory。关闭开关不是删除；删除可删除的自定义 Fanto 时会显式清除本角色记忆。其他角色与 User Records 不受影响。

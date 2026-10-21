@@ -69,6 +69,7 @@ async function createMigrationProvider(): Promise<MigrationProvider> {
   for (const file of files.sort()) {
     if (!file.endsWith(".ts") && !file.endsWith(".js")) continue;
     const key = file.replace(/\.(ts|js)$/, "");
+    if (!/^\d{3}_[a-z0-9_]+$/.test(key)) throw new Error(`Invalid migration filename: ${file}; expected NNN_description.ts`);
     const mod = await import(pathToFileURL(resolve(dir, file)).href);
     migrations[key] = mod;
   }
@@ -76,7 +77,37 @@ async function createMigrationProvider(): Promise<MigrationProvider> {
   return { getMigrations: async () => migrations };
 }
 
+const OLD_BASELINE = "create_current_schema_20261019";
+const NUMBERED_BASELINE = "001_create_current_schema";
+
+/**
+ * Kysely sorts migrations by filename. The old unnumbered baseline sorts after
+ * all numbered files and would make a legitimate upgrade appear corrupt.
+ * Rename ONLY its Kysely bookkeeping record, never historical user data.
+ */
+async function normalizeLegacyMigrationRecord(db: Kysely<DB>) {
+  await db.transaction().execute(async trx => {
+    const exists = await sql<{present:boolean}>`
+      SELECT to_regclass('public.kysely_migration') IS NOT NULL AS present
+    `.execute(trx);
+    if (!exists.rows[0]?.present) return;
+    const recorded = await sql<{name:string}>`
+      SELECT name FROM kysely_migration
+      WHERE name IN (${OLD_BASELINE}, ${NUMBERED_BASELINE})
+      FOR UPDATE
+    `.execute(trx);
+    const names = recorded.rows.map(row => row.name);
+    if (!names.includes(OLD_BASELINE)) return;
+    if (names.includes(NUMBERED_BASELINE)) {
+      throw new Error("Conflicting legacy and numbered migration records; manual inspection required");
+    }
+    await sql`UPDATE kysely_migration SET name=${NUMBERED_BASELINE} WHERE name=${OLD_BASELINE}`.execute(trx);
+    logInfo("database", "Legacy migration name normalized", { from: OLD_BASELINE, to: NUMBERED_BASELINE });
+  });
+}
+
 export async function runMigrations(kyselyDb: Kysely<DB>) {
+  await normalizeLegacyMigrationRecord(kyselyDb);
   const provider = await createMigrationProvider();
 
   const migrator = new Migrator({ db: kyselyDb, provider });

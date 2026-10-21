@@ -56,7 +56,7 @@ export class AgentSessionManager {
     const id = randomUUID();
     const session = await this.repository.create({ id }, TODO_CONTEXT);
     try {
-      await this.repository.checkpoints.createSession(id, userId, definition.id);
+      await this.repository.checkpoints.createSession(id, userId, definition.id, id);
       const managed = await this.createManaged(session, id, userId, definition);
       this.sessions.set(id, managed);
       await this.checkpoint(id);

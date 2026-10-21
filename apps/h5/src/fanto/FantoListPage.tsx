@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Archive, ArrowRight, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Archive, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { deleteFanto, getFanto, setFantoArchived, type FantoSettings } from "../api/fanto";
 import { ApiError } from "../api/http";
 import { useFanto, type PendingDeletion } from "./FantoContext";
@@ -13,9 +13,9 @@ export function FantoListPage() {
   const working = useRef(false);
   const active = profile.roles.filter(role => role.status === "active");
   const archived = profile.roles.filter(role => role.status === "archived");
-  const openChat = (id: string | null) => { profile.select(id); navigate("/chat"); };
+  const openChat = (id: string) => { profile.select(id); navigate("/chat"); };
   const action = async (role: FantoSettings, kind: "archive" | "restore" | "delete") => {
-    if (working.current) return;
+    if (working.current || role.nickname === "fanto") return;
     if (kind === "delete" && !window.confirm(`彻底删除「${fantoLabel(role)}」？角色对话、独立记忆和专属媒体将被删除，无法恢复。你的个人记录和其他角色会保留。`)) return;
     if (kind === "archive" && !window.confirm(`归档「${fantoLabel(role)}」？对话和记忆会保留，恢复后可继续。`)) return;
     working.current = true; setBusy(role.fantoId); setNotice("");
@@ -68,14 +68,11 @@ export function FantoListPage() {
       <button className="secondary-button" disabled={profile.loading || !!busy} onClick={() => void profile.refresh()}><RotateCcw size={16} />刷新</button>
     </header>
     {(profile.error || notice) && <p role="status" className="fanto-notice">{notice || profile.error}</p>}
-    <button className="fanto-main-card" onClick={() => openChat(null)} disabled={profile.loading || !profile.sessionId}>
-      <FantoAvatar avatarMediaId={null} label="默认 Main" size={48} /><span><strong>默认 Main</strong><small>通用助理，可读取你的记录并管理个人记忆；不占角色名额。</small></span><ArrowRight size={20} />
-    </button>
     <div className="fanto-section-heading"><h2>使用中 <small>{active.length} / 3</small></h2>
       <Link className={`secondary-button ${active.length >= 3 || profile.loading ? "is-disabled" : ""}`} aria-disabled={active.length >= 3 || profile.loading}
         tabIndex={active.length >= 3 || profile.loading ? -1 : undefined} to="/fantos/new"><Plus size={16} />创建角色</Link>
     </div>
-    {profile.loading && !profile.roles.length ? <p role="status">正在读取角色…</p> : !active.length && <p className="fanto-empty">还没有使用中的角色。可以先与默认 Main 聊聊，或创建第一个角色。</p>}
+    {profile.loading && !profile.roles.length ? <p role="status">正在读取角色…</p> : !active.length && <p className="fanto-empty">还没有使用中的角色，请刷新后重试。</p>}
     <div className="fanto-role-grid">{active.map(role => <RoleCard key={role.fantoId} role={role} busy={!!busy}
       onChat={() => openChat(role.fantoId)} onAction={kind => void action(role, kind)} />)}</div>
     {archived.length > 0 && <><div className="fanto-section-heading"><h2>已归档 <small>{archived.length}</small></h2><span>对话和记忆仍保留</span></div>
@@ -98,15 +95,15 @@ function RoleCard({ role, busy, restoreDisabled, onChat, onAction }: {
   return <article className={`fanto-role-card ${archived ? "archived" : ""}`}>
     <div className="fanto-role-identity"><FantoAvatar size={56} avatarMediaId={role.avatarMediaId} label={fantoLabel(role)} />
       <div><h3>{fantoLabel(role)}</h3><p>{role.description || "还没有简介"}</p></div></div>
-    <div className="fanto-role-tags"><span>独立角色记忆</span>{role.agentConfig.recordReadEnabled && <span>可读记录</span>}
-      {role.agentConfig.userMemoryEnabled && <span>可读个人记忆</span>}{role.agentConfig.narrationEnabled && <span>动作旁白</span>}</div>
+    <div className="fanto-role-tags"><span>{role.agentConfig.fantoMemoryEnabled ? "长期记忆已开启" : "长期记忆已关闭"}</span>{role.agentConfig.recordReadEnabled && <span>可读记录</span>}
+      {role.agentConfig.narrationEnabled && <span>动作旁白</span>}</div>
     <div className="fanto-role-actions">
       {!archived && <button className="provider-action" disabled={busy} onClick={onChat}>开始聊天</button>}
-      <Link to={`/fantos/${role.fantoId}`} className="secondary-button">{archived ? "查看设定" : "角色配置"}</Link>
-      <button className="icon-button" disabled={busy || (archived && restoreDisabled)} onClick={() => onAction(archived ? "restore" : "archive")}
-        title={archived && restoreDisabled ? "最多 3 个活跃角色，请先归档一个" : archived ? "恢复角色" : "归档角色"} aria-label={archived ? "恢复角色" : "归档角色"}>
-        {archived ? <RotateCcw size={18} /> : <Archive size={18} />}</button>
-      <button className="icon-button fanto-delete" disabled={busy} aria-label="彻底删除角色" onClick={() => onAction("delete")}><Trash2 size={18} /></button>
+      <Link to={`/fantos/${role.fantoId}`} className="secondary-button">{role.nickname === "fanto" ? "默认角色" : archived ? "查看设定" : "角色配置"}</Link>
+      {role.nickname!=="fanto" && <button className="icon-button" disabled={busy || (archived && restoreDisabled)} onClick={() => onAction(archived ? "restore" : "archive")}
+        title={archived && restoreDisabled ? "最多 3 个活跃角色（含默认 fanto），请先归档一个" : archived ? "恢复角色" : "归档角色"} aria-label={archived ? "恢复角色" : "归档角色"}>
+        {archived ? <RotateCcw size={18} /> : <Archive size={18} />}</button>}
+      {role.nickname!=="fanto" && <button className="icon-button fanto-delete" disabled={busy} aria-label="彻底删除角色" onClick={() => onAction("delete")}><Trash2 size={18} /></button>}
     </div>
   </article>;
 }

@@ -6,7 +6,6 @@ import {createDatabase,runMigrations} from "../../infrastructure/database/databa
 import {FantoService} from "./fanto-service.js";
 import {MediaService} from "../media/media-service.js";
 import {MemoryService} from "../memory/memory-service.js";
-import {fantoOwner} from "../memory/model.js";
 import {createApp} from "../../bootstrap/app.js";
 import {CheckpointRepository} from "../../agent/checkpoint/postgres-repository.js";
 
@@ -30,9 +29,9 @@ test("role lifecycle gates runs, drains checkpoints, preserves owners and retrie
       closed.push(id);
     }});
     const main=await service.defaultSession(user);
-    const a=await service.create(user,{roleConfig:{character:null},agentConfig:{narrationEnabled:true}});
-    const b=await service.create(user,{});
-    let changed=await service.patch(user,{fantoId:a.fantoId,expectedVersion:1,changes:{agentConfig:{userMemoryEnabled:true}}});
+    const a=await service.create(user,{nickname:"A",roleConfig:{character:null},agentConfig:{narrationEnabled:true}});
+    const b=await service.create(user,{nickname:"B"});
+    let changed=await service.patch(user,{fantoId:a.fantoId,expectedVersion:1,changes:{agentConfig:{fantoMemoryEnabled:false}}});
     assert.equal(changed.agentConfig.narrationEnabled,true);
     await assert.rejects(service.patch(user,{fantoId:a.fantoId,expectedVersion:1,changes:{agentConfig:{recordReadEnabled:true}}}),{code:"VERSION_CONFLICT"});
     let entered!:()=>void,proceed!:()=>void;
@@ -55,9 +54,9 @@ test("role lifecycle gates runs, drains checkpoints, preserves owners and retrie
     assert.equal(changed.sessionId,a.sessionId);
     await assert.rejects(service.reserveRun(other,a.sessionId,()=>()=>{}),{code:"NOT_FOUND"});
     const memories=MemoryService.create(db,{embed:async()=>Array(768).fill(0)});
-    await memories.create(user,{kind:"current_focus",content:"user fact"});
-    await memories.create(fantoOwner(a.fantoId),{kind:"shared_history",content:"role A fact"});
-    await memories.create(fantoOwner(b.fantoId),{kind:"shared_history",content:"role B fact"});
+    await memories.create(main.scopeKey,{content:"default Fanto fact"});
+    await memories.create(a.fantoId,{content:"role A fact"});
+    await memories.create(b.fantoId,{content:"role B fact"});
     const avatar=randomUUID(),record=randomUUID(),userRecord=randomUUID(),stamp=now.toISOString();
     await db.insertInto("media_assets").values({media_id:avatar,user_id:user,object_key:"role-avatar",media_type:"image",mime_type:"image/png",bytes:100,status:"ready",ext_data:JSON.stringify({purpose:"fanto_avatar"}),created_at:stamp,updated_at:stamp}).execute();
     changed=await service.patch(user,{fantoId:a.fantoId,expectedVersion:changed.version,changes:{avatarMediaId:avatar}});
@@ -71,9 +70,9 @@ test("role lifecycle gates runs, drains checkpoints, preserves owners and retrie
     assert.equal((await request()).status,202);
     assert.deepEqual(closed,[a.sessionId]);
     await assert.rejects(service.get(user,a.fantoId),{code:"NOT_FOUND"});
-    assert.equal((await memories.list(fantoOwner(a.fantoId))).length,0);
-    assert.equal((await memories.list(fantoOwner(b.fantoId))).length,1);
-    assert.equal((await memories.list(user)).length,1);
+    assert.equal((await memories.list(a.fantoId)).length,0);
+    assert.equal((await memories.list(b.fantoId)).length,1);
+    assert.equal((await memories.list(main.scopeKey)).length,1);
     assert.equal((await sql`SELECT 1 FROM records WHERE record_id=${userRecord}`.execute(db)).rows.length,1);
     assert.equal((await sql`SELECT 1 FROM records WHERE record_id=${record}`.execute(db)).rows.length,0);
     assert.equal((await sql`SELECT 1 FROM agent_session.entries WHERE session_id=${a.sessionId}`.execute(db)).rows.length,0);

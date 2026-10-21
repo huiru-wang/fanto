@@ -7,12 +7,12 @@ export const roleSchema=z.object({
   instructions:z.string().max(16000).nullish().transform(value=>value??""),exampleDialogues:z.string().max(16000).nullish().transform(value=>value??"")
 }).strict();
 export const agentConfigSchema=z.object({
-  recordReadEnabled:z.boolean().default(false),userMemoryEnabled:z.boolean().default(false),narrationEnabled:z.boolean().default(false)
+  recordReadEnabled:z.boolean().default(false),fantoMemoryEnabled:z.boolean().default(true),narrationEnabled:z.boolean().default(false)
 }).strict();
 export type FantoAgentConfig=z.infer<typeof agentConfigSchema>;
 export const defaultAgentConfig=():FantoAgentConfig=>agentConfigSchema.parse({});
 export const fantoCreateSchema=z.object({
-  nickname:z.string().max(30).nullish().transform(value=>value??""),description:z.string().max(300).nullish().transform(value=>value??""),
+  nickname:z.string().trim().min(1).max(30),description:z.string().max(300).nullish().transform(value=>value??""),
   avatarMediaId:z.string().min(1).max(200).nullable().default(null),
   roleConfig:roleSchema.nullish().transform(value=>value??emptyRole()),agentConfig:agentConfigSchema.default({})
 }).strict();
@@ -31,7 +31,7 @@ export const defaultSettings=()=>({fantoId:null,nickname:"",description:"",avata
 export type SettingsChanges=z.infer<typeof fantoPatchSchema>["changes"];
 export const settingsPatchSchema=fantoPatchSchema;
 export class FantoError extends Error {
- constructor(readonly code:"NOT_FOUND"|"VERSION_CONFLICT"|"INVALID_AVATAR"|"FANTO_LIMIT_REACHED"|"FANTO_BUSY"|"INVALID_STATE",readonly status:404|409|422){
+ constructor(readonly code:"NOT_FOUND"|"VERSION_CONFLICT"|"INVALID_AVATAR"|"FANTO_LIMIT_REACHED"|"FANTO_BUSY"|"INVALID_STATE"|"FANTO_NAME_TAKEN"|"FANTO_DEFAULT_PROTECTED",readonly status:404|409|422){
  super(code);
  }
 }

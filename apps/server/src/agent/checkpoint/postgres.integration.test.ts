@@ -38,7 +38,7 @@ integration("V2 checkpoint commits Entries and Usage, paginates by Run and resto
       assert.ok(hasColumn("sessions",required), required);
     const repository = new CheckpointRepository(db);
     const sessionId = randomUUID(), runA = randomUUID(), runB = randomUUID();
-    await repository.createSession(sessionId, "owner", "main");
+    await repository.createSession(sessionId, "owner", "main", sessionId);
     const session = await memory.create({ id: sessionId }, TODO_CONTEXT);
     const branch = await session.createBranch("main", null, TODO_CONTEXT);
     await branch.appendMessage({ role: "user", content: "first", timestamp: Date.now() }, TODO_CONTEXT);

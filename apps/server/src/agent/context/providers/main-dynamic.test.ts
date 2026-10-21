@@ -1,38 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {MainDynamicProvider,mainDynamicText} from "./main-dynamic.js";
+import {MainDynamicProvider,mainDynamicText,boundedFantoMemory} from "./main-dynamic.js";
 import {createRunContext} from "../run-context.js";
 import {emptyRole,defaultAgentConfig,type FantoSettings} from "../../../domain/fanto/model.js";
-
-const role=():FantoSettings=>({fantoId:"role",userId:"owner",sessionId:"session",nickname:"",description:"",
-  avatarMediaId:null,roleConfig:emptyRole(),agentConfig:defaultAgentConfig(),status:"active",archivedAt:null,
-  version:1,createdAt:"now",updatedAt:"now"});
-
-test("dynamic persona omits empty slots; tool and narration guidance follows capabilities",()=>{
-  const f=role(),text=mainDynamicText(f);
-  assert.doesNotMatch(text,/## 角色名称|## 身份与性格|## 世界与关系|## 交流方式|## 示例|record_read|user_memory_manage|（无）/);
-  assert.match(text,/fanto_memory_manage/);
-  assert.match(text,/不生成角色动作/);
-  f.roleConfig.character="某角色";f.agentConfig.narrationEnabled=true;f.agentConfig.recordReadEnabled=true;
-  assert.match(mainDynamicText(f),/某角色/);assert.match(mainDynamicText(f),/record_read/);
-  assert.match(mainDynamicText(f),/Markdown 引用块/);
-  assert.doesNotMatch(mainDynamicText(null),/fanto_memory_manage|## 角色名称/);
-  assert.match(mainDynamicText(null),/user_memory_manage/);
+const role=():FantoSettings=>({fantoId:"role",userId:"owner",sessionId:"session",nickname:"fanto",description:"",avatarMediaId:null,roleConfig:emptyRole(),agentConfig:defaultAgentConfig(),status:"active",archivedAt:null,version:1,createdAt:"now",updatedAt:"now"});
+test("role prompt includes memory policy only when enabled",()=>{
+ const f=role();let text=mainDynamicText(f);
+ assert.match(text,/fanto_memory_manage|第一人称|名字/);
+ assert.doesNotMatch(text,/user_memory_manage|User Memory/);
+ f.agentConfig.fantoMemoryEnabled=false;text=mainDynamicText(f);
+ assert.doesNotMatch(text,/fanto_memory_manage|我的长期记忆/);
+ f.agentConfig.narrationEnabled=true;assert.match(mainDynamicText(f),/Markdown 引用块/);
 });
-
-test("providers read only authorized scopes, omit unrelated user categories and bound memory bytes",async()=>{
-  const calls:string[]=[],f=role();
-  const provider=new MainDynamicProvider({listMemories:async(_ctx:any,_input:any,scope:string)=>{
-    calls.push(scope);return [
-      {memoryId:"secret",kind:"important_relationships",content:"不应默认注入的关系"},
-      {memoryId:"base",kind:scope==="user"?"personal_background":"shared_history",content:"界".repeat(1000)},
-      ...Array.from({length:49},()=>({kind:scope==="user"?"personal_background":"shared_history",content:"界".repeat(1000)}))
-    ] as any;
-  }} as never);
-  const context=()=>createRunContext({runId:"r",userId:"owner",sessionId:"session",query:"q",mainConfig:f,slots:{},recentMessages:[]});
-  await provider.build(context());assert.deepEqual(calls,["fanto"]);
-  calls.length=0;f.agentConfig.userMemoryEnabled=true;
-  const result=await provider.build(context());assert.deepEqual(calls,["user","fanto"]);
-  // Fanto scope fixture's unrelated category is not used to assert user filtering.
-  assert.ok(Buffer.byteLength(result.content)<27000);
+test("role context reads only its own memory when enabled",async()=>{
+ const calls:string[]=[],f=role();
+ const provider=new MainDynamicProvider({listMemories:async(ctx:any)=>{calls.push(ctx.sessionId);return [{memoryId:"m",content:"我认识霄汉",createdAt:"now",updatedAt:"now"}];}} as never);
+ const context=()=>createRunContext({runId:"r",userId:"owner",sessionId:"session",query:"hello",mainConfig:f,slots:{},recentMessages:[]});
+ assert.match((await provider.build(context())).content,/我认识霄汉/);assert.deepEqual(calls,["session"]);
+ f.agentConfig.fantoMemoryEnabled=false;
+ assert.doesNotMatch((await provider.build(context())).content,/我认识霄汉/);assert.deepEqual(calls,["session"]);
+});
+test("memory bounded injection preserves whole entries",()=>{
+ const items=Array.from({length:49},(_,i)=>({memoryId:`m${i}`,content:"界".repeat(950),createdAt:"now",updatedAt:"now"}));
+ const text=boundedFantoMemory(items);assert.ok(Buffer.byteLength(text,"utf8")<=12000);
+ const parsed=JSON.parse(text);assert.ok(parsed.length<items.length);
+ for(const item of parsed)assert.equal(item.content.length,950);
 });

@@ -58,7 +58,7 @@ test("profile writes isolate accounts, reject role avatars, enforce versions and
     await assert.rejects(service.update(owner, {expectedVersion: current.version, changes: {avatarMediaId: cover}}), {code: "INVALID_AVATAR"});
     current = await service.update(owner, {expectedVersion: current.version, changes: {coverMediaId: cover}});
     assert.equal(current.coverMediaId, cover);
-    await assert.rejects(fanto.create(owner, {avatarMediaId: id}), {code: "INVALID_AVATAR"});
+    await assert.rejects(fanto.create(owner, {nickname: "role-avatar-test", avatarMediaId: id}), {code: "INVALID_AVATAR"});
     await assert.rejects(service.update(owner, {expectedVersion: current.version - 1, changes: {nickname: "stale"}}), {code: "VERSION_CONFLICT"});
     await media.cleanupAvatars(db, true);
     assert.ok(await db.selectFrom("media_assets").select("media_id").where("media_id", "=", id).executeTakeFirst());

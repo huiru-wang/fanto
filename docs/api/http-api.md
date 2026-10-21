@@ -71,7 +71,7 @@ PATCH 支持单项更新；changes 省略的字段保持不变，显式 null 仅
 | POST | `/api/fanto/restore` | 同上，重新检查活跃名额 |
 | DELETE | `/api/fanto?fantoId=<UUID>` | `If-Match: <version>`；204 完成，202 表示外部对象清理待重试 |
 
-角色响应包含 fantoId、userId、nickname、description、avatarMediaId、roleConfig、agentConfig、status、archivedAt、sessionId、version、createdAt、updatedAt。最多 3 个 active；归档不占名额。nickname 最长 30、description 最长 300，roleConfig 的 character/scenario/instructions/exampleDialogues 各最长 16000，可省略、null 或空串，统一存空串；身份创建后不可 PATCH。agentConfig 的 recordReadEnabled/userMemoryEnabled/narrationEnabled 默认 false，PATCH 合并子键。userMemoryEnabled 仅读 User Memory，角色不获写权限。头像只能绑定本人 ready 的 fanto_avatar，null 清除。
+角色响应包含 fantoId、userId、nickname、description、avatarMediaId、roleConfig、agentConfig、status、archivedAt、sessionId、version、createdAt、updatedAt。最多 3 个 active；归档不占名额。nickname 创建必填，trim 后 1–30 字符且在同一用户下大小写不敏感唯一（含归档角色）；description 最长 300，roleConfig 的 character/scenario/instructions/exampleDialogues 最长 16000 且允许空。身份创建后不可 PATCH。agentConfig 的 recordReadEnabled/narrationEnabled 默认 false，fantoMemoryEnabled 默认 true；PATCH 合并子键。默认昵称 fanto 为系统保留，不可修改其配置、归档或删除。头像只能绑定本人 ready 的 fanto_avatar，null 清除。
 
 版本不符返回 409 VERSION_CONFLICT；名额已满为 409 FANTO_LIMIT_REACHED；运行中修改配置、归档、删除为 409 FANTO_BUSY；非法状态为 409 INVALID_STATE；头像无效为 422 INVALID_AVATAR；输入未知键、空 changes/agentConfig 或非法 UUID 返回 400；跨用户和不存在统一 404 NOT_FOUND。
 
@@ -170,7 +170,7 @@ Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒�
 
 ## Agent Runtime
 
-Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 在线运行使用内存，在 Pi `turn_end`/`run_end` 后将完整 Entry/Usage 增量同步保存到 PostgreSQL `agent_session.sessions/entries/usage_ledger`；存储边界见 [Agent Runtime](../architecture/agent-runtime.md#session)。当前 main 每 Run 从可信 Session 的 scope_key 解析默认 Main 或 active Fanto，动态选择工具及 Prompt。默认 Main 使用 record_read、user_memory_manage、present_media，角色始终可用 fanto_memory_manage 和 present_media，其他工具按 agentConfig 开启；角色的 User Memory 工具仅读。MainDynamicProvider 只注入授权记忆、非空角色段与当前日期，不自动查询最近 Record。Tool、Provider 通过 business-services 调用领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
+Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 在线运行使用内存，在 Pi `turn_end`/`run_end` 后将完整 Entry/Usage 增量同步保存到 PostgreSQL `agent_session.sessions/entries/usage_ledger`；存储边界见 [Agent Runtime](../architecture/agent-runtime.md#session)。当前 main 每 Run 从可信 Session 的 scope_key=fantoId 解析 active Fanto（包括系统默认角色），动态选择工具及 Prompt。Tool 为 record_read、fanto_memory_manage、present_media；长期记忆工具仅在 fantoMemoryEnabled=true 时可用，不存在 User Memory 工具。MainDynamicProvider 只注入当前角色获准记忆、非空角色段与当前日期，不自动查询最近 Record。Tool、Provider 通过 business-services 调用领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
 
 ```text
 Authorization: Bearer <ACCESS_TOKEN>
@@ -187,7 +187,7 @@ X-Time-Zone: <可选 IANA 时区，如 Asia/Shanghai；缺失或无效时为 UTC
 | POST | `/api/agent/stream` | `{ sessionId, message }` | `200`，SSE 事件流 |
 | GET | `/api/agent/sessions/:sessionId/history?cursor=&limit=` | 无请求体 | `200`，按完整 Run 分页的倒序历史页，包含 `messages` 投影；`limit` 为 Run 数量，`nextCursor` 为下一页游标 |
 
-默认 Main 先 GET /api/agent/main-session；角色通过 POST /api/fanto 获得固定 sessionId。Stream 从 Session 归属解析身份并验证角色 active；归档禁止新 Run，History/Stop 仍按所有权校验。当前仅注册 main。请求不接受 projectId / metadata 或客户端工作目录，工作区固定映射至 data/workspaces/<userId>/<sessionId>。
+默认 fanto 先 GET /api/agent/main-session 幂等获取固定 Session；其他角色通过 POST /api/fanto 获得固定 sessionId。Stream 从 Session 归属解析身份并验证角色 active；归档禁止新 Run，History/Stop 仍按所有权校验。当前仅注册 main。请求不接受 projectId / metadata 或客户端工作目录，工作区固定映射至 data/workspaces/<userId>/<sessionId>。
 
 ```sh
 export ACCESS_TOKEN='替换为服务端 ACCESS_TOKEN'

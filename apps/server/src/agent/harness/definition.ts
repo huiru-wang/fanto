@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { Models } from "@earendil-works/pi-ai";
 import { mainPrompt } from "../prompts/main.js";
 
-const tool = z.enum(["read", "write", "edit", "bash", "record_read", "user_memory_manage", "fanto_memory_manage", "present_media", "collect_user_input", "skill_read"]);
+const tool = z.enum(["read", "write", "edit", "bash", "record_read", "fanto_memory_manage", "present_media", "collect_user_input", "skill_read"]);
 const compaction = z.object({
   enabled: z.boolean(),
   reserveTokens: z.number().int().nonnegative(),

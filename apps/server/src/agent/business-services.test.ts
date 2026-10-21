@@ -1,7 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createAgentBusinessServices } from "./business-services.js";
+import {createAgentBusinessServices} from "./business-services.js";
 import {defaultAgentConfig,emptyRole,type FantoSettings} from "../domain/fanto/model.js";
+
+test("business memory is always scoped to the Fanto of the trusted user+session",async()=>{
+ const role=(fantoId:string):FantoSettings=>({fantoId,userId:"owner",sessionId:"s",nickname:fantoId,description:"",avatarMediaId:null,
+ roleConfig:emptyRole(),agentConfig:defaultAgentConfig(),status:"active",archivedAt:null,version:1,createdAt:"now",updatedAt:"now"});
+ let current:FantoSettings|null=role("one");const reads:string[]=[],writes:string[]=[];
+ const services=createAgentBusinessServices({
+  fanto:{getForSession:async(userId:string)=>{if(userId!=="owner")throw Error("NOT_FOUND");return current;},defaultSession:async()=>({sessionId:"s",scopeKey:"one",agentId:"main"})} as never,
+  records:{list:async()=>({data:[]}),search:async()=>[],findMany:async()=>[]} as never,
+  media:{readyRecordMetadata:async()=>({mediaId:"m"})} as never,
+  memories:{list:async(id:string)=>{reads.push(id);return [];},create:async(id:string,input:{content:string})=>{writes.push(id);return {fantoId:id,memoryId:"m",...input,createdAt:"now",updatedAt:"now"};}} as never,
+ });
+ const ctx={userId:"owner",sessionId:"s"};
+ await services.listMemories(ctx);assert.deepEqual(reads,["one"]);
+ await services.createMemory(ctx,{content:"我记住了一个称呼"});assert.deepEqual(writes,["one"]);
+ current=role("two");await services.listMemories(ctx);assert.equal(reads.at(-1),"two");
+ current.agentConfig.fantoMemoryEnabled=false;
+ await assert.rejects(services.listMemories(ctx),/NOT_AUTHORIZED/);
+ await assert.rejects(services.createMemory(ctx,{content:"不能写"}),/NOT_AUTHORIZED/);
+ await assert.rejects(services.listMemories({userId:"other",sessionId:"s"}),/NOT_FOUND/);
+ current=null;await assert.rejects(services.listMemories(ctx),/FANTO_REQUIRED/);
+});
 
 test("Agent business services forward only the Run user to domain services", async () => {
   const calls: Array<{ method: string; userId: string }> = [];
@@ -25,29 +46,4 @@ test("Agent business services forward only the Run user to domain services", asy
     { method: "search", userId: "user-from-run" },
     { method: "media", userId: "user-from-run" },
   ]);
-});
-
-test("business boundary denies disabled capabilities and binds Fanto memory to the owned Session",async()=>{
-  let current:FantoSettings|null={fantoId:"one",userId:"owner",sessionId:"s",nickname:"",description:"",avatarMediaId:null,
-    roleConfig:emptyRole(),agentConfig:defaultAgentConfig(),status:"active",archivedAt:null,version:1,createdAt:"now",updatedAt:"now"};
-  const owners:unknown[]=[],writes:unknown[]=[];
-  const services=createAgentBusinessServices({
-    fanto:{getForSession:async(userId:string)=>{if(userId!=="owner")throw Error("NOT_FOUND");return current;}} as never,
-    records:{list:async()=>({data:[]}),search:async()=>[],findMany:async()=>[]} as never,
-    media:{readyRecordMetadata:async()=>({mediaId:"m"})} as never,
-    memories:{list:async(owner:unknown)=>{owners.push(owner);return [];},create:async(owner:unknown)=>{writes.push(owner);return {};} } as never,
-  });
-  const ctx={userId:"owner",sessionId:"s"};
-  for(const read of [()=>services.readRecords(ctx,{recordIds:["r"]}),()=>services.listRecords(ctx,{limit:1}),
-    ()=>services.searchRecords(ctx,{query:"q",limit:1}),()=>services.getMediaMetadata(ctx,"m")])await assert.rejects(read(),/NOT_AUTHORIZED/);
-  await assert.rejects(services.listMemories(ctx),/NOT_AUTHORIZED/);
-  await services.listMemories(ctx,{},"fanto");assert.deepEqual(owners.pop(),{ownerType:"fanto",ownerId:"one"});
-  current.agentConfig.userMemoryEnabled=true;
-  await services.listMemories(ctx);assert.deepEqual(owners.pop(),{ownerType:"user",ownerId:"owner"});
-  await assert.rejects(services.createMemory(ctx,{kind:"current_focus",content:"x"}),/NOT_AUTHORIZED/);assert.equal(writes.length,0);
-  current={...current,fantoId:"two"};await services.listMemories(ctx,{},"fanto");assert.deepEqual(owners.pop(),{ownerType:"fanto",ownerId:"two"});
-  await assert.rejects(services.listMemories({userId:"other",sessionId:"s"},{},"fanto"),/NOT_FOUND/);
-  current=null;
-  await assert.rejects(services.listMemories(ctx,{},"fanto"),/FANTO_REQUIRED/);
-  await services.createMemory(ctx,{kind:"current_focus",content:"x"});assert.deepEqual(writes.pop(),{ownerType:"user",ownerId:"owner"});
 });

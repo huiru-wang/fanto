@@ -15,7 +15,7 @@ export type StoredSession = {
 export class CheckpointRepository {
   constructor(private readonly db: Kysely<DB>) {}
 
-  async createSession(id: string, userId: string, agentId: string, scopeKey = "default"): Promise<void> {
+  async createSession(id: string, userId: string, agentId: string, scopeKey: string): Promise<void> {
     const now = Date.now();
     await sql`INSERT INTO agent_session.sessions
       (id, created_at, next_seq, user_id, agent_id, scope_key, updated_at)

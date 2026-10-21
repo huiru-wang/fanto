@@ -38,7 +38,8 @@ export function loadEnv(path = ".env") {
       if (eq === -1) continue;
       const key = trimmed.slice(0, eq).trim();
       const val = trimmed.slice(eq + 1).trim();
-      process.env[key] = val;
+      // Explicit environment variables (deployment, isolated test DB) take precedence.
+      if (process.env[key] === undefined) process.env[key] = val;
     }
   } catch {
     /* .env 不存在则跳过 */

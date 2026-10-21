@@ -6,7 +6,6 @@ import { createContextProviders, createSystemPrompt, createTransformContext } fr
 import type { ContextMessage } from "../context/run-context.js";
 import type { AgentBusinessServices } from "../business-services.js";
 import type { SkillLoader } from "../skills/loader.js";
-import {createUserMemoryTool} from "../tools/memory.js";
 import { createTools } from "../tools/index.js";
 import type { FantoTool } from "../tools/types.js";
 import { installStopHooks } from "./stop-state.js";
@@ -35,7 +34,7 @@ export async function buildRuntime(session: Session, definition: AgentDefinition
   const model = dependencies.models.getModel(definition.provider, definition.model);
   if (!model) throw new Error("Unknown model: " + definition.provider + "/" + definition.model);
   const loadedSkills = dependencies.skills.load(definition.skills);
-  const available = definition.id === "main" ? [...new Set([...definition.tools, "fanto_memory_manage" as const])] : definition.tools;
+  const available = definition.tools;
   const tools = createTools(available, workspace, dependencies.fanto, dependencies.skills, definition.skills);
   const skillIndex = formatSkillIndex(loadedSkills);
   const systemPrompt = createSystemPrompt({
@@ -62,11 +61,9 @@ export async function buildRuntime(session: Session, definition: AgentDefinition
         const run=createRunContext.read(context);
         const main=await dependencies.fanto.getFantoConversationSettings({userId:run.userId,sessionId:run.sessionId,signal:context.abortSignal});
         run.mainConfig=main;
-        const active=main
-          ? ["present_media","fanto_memory_manage",...(main.agentConfig.recordReadEnabled?["record_read"]:[]),...(main.agentConfig.userMemoryEnabled?["user_memory_manage"]:[])]
-          : ["record_read","user_memory_manage","present_media"];
-        await harness.setTools(tools.map(tool=>tool.name === "user_memory_manage" ? createUserMemoryTool(dependencies.fanto,!!main) : tool),context);
-        await lane.setActiveTools(main ? active.filter(name=>available.includes(name as typeof available[number])) : definition.tools.filter(name=>name!=="fanto_memory_manage"),context);
+        if(!main)throw new Error("FANTO_REQUIRED");
+        const active=["present_media",...(main.agentConfig.fantoMemoryEnabled?["fanto_memory_manage"]:[]),...(main.agentConfig.recordReadEnabled?["record_read"]:[])];
+        await lane.setActiveTools(active.filter(name=>available.includes(name as typeof available[number])),context);
         await clearInterruptedOperation(lane, context);
         context.abortSignal?.throwIfAborted();
         return await lane.prompt(query, undefined, context);

@@ -5,7 +5,7 @@ export async function createAgentCheckpointSchema(db: Kysely<any>): Promise<void
   await sql`CREATE SCHEMA IF NOT EXISTS agent_session`.execute(db);
   await sql`CREATE TABLE IF NOT EXISTS agent_session.sessions (
     id TEXT PRIMARY KEY, created_at BIGINT NOT NULL, next_seq BIGINT NOT NULL,
-    user_id TEXT NOT NULL, agent_id TEXT NOT NULL, scope_key TEXT NOT NULL DEFAULT 'default' CHECK(scope_key='default' OR scope_key ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'), title TEXT,
+    user_id TEXT NOT NULL, agent_id TEXT NOT NULL, scope_key TEXT NOT NULL CHECK(scope_key ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'), title TEXT,
     tip_entry_id TEXT, updated_at BIGINT NOT NULL
   )`.execute(db);
   await sql`CREATE INDEX IF NOT EXISTS checkpoint_sessions_user

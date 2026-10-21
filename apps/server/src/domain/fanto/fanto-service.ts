@@ -3,6 +3,7 @@ import {sql,type Kysely} from "kysely";
 import type {DB} from "../../infrastructure/database/schema.js";
 import type {MediaService} from "../media/index.js";
 import {PostgresFantoRepository,MAX_ACTIVE_FANTOS} from "./postgres-repository.js";
+import {ensureDefaultFanto} from "./default-fanto.js";
 import {agentConfigSchema,defaultAgentConfig,fantoActionSchema,fantoCreateSchema,fantoPatchSchema,FantoError,type FantoSettings} from "./model.js";
 
 export class FantoService {
@@ -18,7 +19,7 @@ export class FantoService {
   this.isSessionRunning=id=>handlers.isRunning(id);
   this.closeSession=id=>handlers.release(id);
  }
- async list(userId:string,includeArchived=false){return this.repo.list(userId,includeArchived);}
+ async list(userId:string,includeArchived=false){await this.defaultSession(userId);return this.repo.list(userId,includeArchived);}
  async get(userId:string,fantoId:string){const f=await this.repo.find(userId,fantoId);if(!f)throw new FantoError("NOT_FOUND",404);return f;}
  async getForSession(userId:string,sessionId:string){return this.repo.findBySession(userId,sessionId);}
  /** Reservation and lifecycle changes serialize on the same user row (single runtime process). */
@@ -35,19 +36,17 @@ export class FantoService {
  }
  async defaultSession(userId:string){
   return this.db.transaction().execute(async trx=>{
-    await trx.selectFrom("users").select("user_id").where("user_id","=",userId).forUpdate().executeTakeFirstOrThrow();
-    let id=await this.repo.sessionId(trx,userId,"default");
-    if(!id){id=randomUUID();const now=Date.now();
-      await sql`INSERT INTO agent_session.sessions(id,user_id,agent_id,scope_key,created_at,updated_at,next_seq)
-        VALUES(${id},${userId},'main','default',${now},${now},0)`.execute(trx);
-    }
-    return {sessionId:id,agentId:"main",scopeKey:"default"};
+   await trx.selectFrom("users").select("user_id").where("user_id","=",userId).forUpdate().executeTakeFirstOrThrow();
+   return ensureDefaultFanto(trx,userId);
   });
  }
  async create(userId:string,input:unknown):Promise<FantoSettings>{
   const parsed=fantoCreateSchema.parse(input);
   const id=await this.db.transaction().execute(async trx=>{
     await trx.selectFrom("users").select("user_id").where("user_id","=",userId).forUpdate().executeTakeFirstOrThrow();
+    await ensureDefaultFanto(trx,userId);
+    const existing=await trx.selectFrom("user_fantos").select("fanto_id").where("user_id","=",userId).where(sql`lower(nickname)`,"=",parsed.nickname.toLowerCase()).executeTakeFirst();
+    if(existing||parsed.nickname.toLowerCase()==="fanto")throw new FantoError("FANTO_NAME_TAKEN",409);
     const n=await trx.selectFrom("user_fantos").select(({fn})=>fn.count<number>("fanto_id").as("n")).where("user_id","=",userId).where("status","=","active").executeTakeFirstOrThrow();
     if(Number(n.n)>=MAX_ACTIVE_FANTOS)throw new FantoError("FANTO_LIMIT_REACHED",409);
     if(parsed.avatarMediaId&&!await this.media.validateAvatar(userId,parsed.avatarMediaId,trx))throw new FantoError("INVALID_AVATAR",422);
@@ -65,6 +64,7 @@ export class FantoService {
     await trx.selectFrom("users").select("user_id").where("user_id","=",userId).forUpdate().executeTakeFirstOrThrow();
     const row=await trx.selectFrom("user_fantos").selectAll().where("user_id","=",userId).where("fanto_id","=",parsed.fantoId).forUpdate().executeTakeFirst();
     if(!row)throw new FantoError("NOT_FOUND",404);
+    if(row.nickname==="fanto"&&parsed.changes.agentConfig)throw new FantoError("FANTO_DEFAULT_PROTECTED",409);
     if(row.status!=="active")throw new FantoError("INVALID_STATE",409);
     if(row.version!==parsed.expectedVersion)throw new FantoError("VERSION_CONFLICT",409);
     const session=await this.repo.sessionId(trx,userId,parsed.fantoId);
@@ -84,6 +84,7 @@ export class FantoService {
    await trx.selectFrom("users").select("user_id").where("user_id","=",userId).forUpdate().executeTakeFirstOrThrow();
    const row=await trx.selectFrom("user_fantos").selectAll().where("fanto_id","=",scope).where("user_id","=",userId).forUpdate().executeTakeFirst();
    if(!row)throw new FantoError("NOT_FOUND",404);
+   if(row.nickname==="fanto")throw new FantoError("FANTO_DEFAULT_PROTECTED",409);
    if(row.version!==parsed.expectedVersion)throw new FantoError("VERSION_CONFLICT",409);
    if(row.status!==(archived?"active":"archived"))throw new FantoError("INVALID_STATE",409);
    const session=await this.repo.sessionId(trx,userId,scope);
@@ -112,6 +113,7 @@ export class FantoService {
      if(pending.rows.length)return;
      throw new FantoError("NOT_FOUND",404);
     }
+    if(row.nickname==="fanto")throw new FantoError("FANTO_DEFAULT_PROTECTED",409);
     if(row.version!==parsed.expectedVersion)throw new FantoError("VERSION_CONFLICT",409);
     const ids=await sql<{id:string}>`SELECT id FROM agent_session.sessions WHERE user_id=${userId} AND agent_id='main' AND scope_key=${parsed.fantoId}`.execute(trx);
     for(const {id} of ids.rows){
@@ -123,7 +125,7 @@ export class FantoService {
       await sql`DELETE FROM agent_session.sessions WHERE id=${id}`.execute(trx);
     }
     await this.media.queueFantoDeletion(trx,userId,parsed.fantoId,row.avatar_media_id);
-    await trx.deleteFrom("memories").where("owner_type","=","fanto").where("owner_id","=",parsed.fantoId).execute();
+    await trx.deleteFrom("memories").where("fanto_id","=",parsed.fantoId).execute();
     await trx.deleteFrom("records").where("owner_type","=","fanto").where("owner_id","=",parsed.fantoId).execute();
     await trx.deleteFrom("user_fantos").where("fanto_id","=",parsed.fantoId).where("user_id","=",userId).execute();
    });

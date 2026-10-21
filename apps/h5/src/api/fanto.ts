@@ -8,7 +8,7 @@ export type RoleConfig = {
 };
 export type AgentConfig = {
   recordReadEnabled: boolean;
-  userMemoryEnabled: boolean;
+  fantoMemoryEnabled: boolean;
   narrationEnabled: boolean;
 };
 export type FantoSettings = {
@@ -39,7 +39,7 @@ export type SettingsChanges = {
 };
 export const emptyFanto = (): CreateFanto => ({
   nickname: "", description: "", roleConfig: { character: "", scenario: "", instructions: "", exampleDialogues: "" },
-  agentConfig: { recordReadEnabled: false, userMemoryEnabled: false, narrationEnabled: false },
+  agentConfig: { recordReadEnabled: false, fantoMemoryEnabled: true, narrationEnabled: false },
 });
 export const listFantos = (signal?: AbortSignal) => requestJson<FantoSettings[]>("/api/fantos?includeArchived=true", { signal });
 export const getFanto = (id: string) => requestJson<FantoSettings>(`/api/fanto?fantoId=${encodeURIComponent(id)}`);

@@ -20,7 +20,6 @@ export class PostgresFantoRepository {
   const owner=await sql<{scope_key:string}>`SELECT scope_key FROM agent_session.sessions WHERE id=${sessionId} AND user_id=${userId} AND agent_id='main'`.execute(this.db);
   const scope=owner.rows[0]?.scope_key;
   if(!scope)throw new FantoError("NOT_FOUND",404);
-  if(scope==="default")return null;
   const result=await this.find(userId,scope);
   if(!result || result.status!=="active")throw new FantoError("INVALID_STATE",409);
   return result;

@@ -22,8 +22,27 @@ export function mergeFanto(roles: FantoSettings[], incoming: FantoSettings): Fan
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.fantoId.localeCompare(a.fantoId));
 }
 
-export function usableSelection(selectedId: string | null, roles: FantoSettings[]): string | null {
-  return roles.some(role => role.fantoId === selectedId && role.status === "active") ? selectedId : null;
+/** The default Session must belong to the same active, named default Fanto returned by the Server. */
+export function matchingDefaultFanto(roles: FantoSettings[], main: { agentId: string; scopeKey: string; sessionId: string }, userId: string): FantoSettings | null {
+  if (main.agentId !== "main") return null;
+  return roles.find(role => role.userId === userId && role.fantoId === main.scopeKey
+    && role.nickname === "fanto" && role.status === "active" && role.sessionId === main.sessionId) ?? null;
 }
 
-export const fantoLabel = (role: Pick<FantoSettings, "nickname"> | null) => role ? role.nickname.trim() || "未命名角色" : "默认 Main";
+/** Missing, archived and legacy "default" selections resolve to the real default Fanto ID. */
+export function usableSelection(selectedId: string | null | undefined, roles: FantoSettings[], defaultId: string | null): string | null {
+  if (selectedId && roles.some(role => role.fantoId === selectedId && role.status === "active")) return selectedId;
+  return roles.some(role => role.fantoId === defaultId && role.status === "active") ? defaultId : null;
+}
+
+/** Mirrors the Server's nickname rules; the database remains authoritative. */
+export function nicknameError(name: string, roles: FantoSettings[]): string | null {
+  const value = name.trim();
+  if (!value) return "请输入角色名称";
+  if (value.length > 30) return "角色名称不能超过 30 个字符";
+  if (value.toLowerCase() === "fanto" || roles.some(role => role.nickname.toLowerCase() === value.toLowerCase()))
+    return "角色名称已存在，请使用其他名称";
+  return null;
+}
+
+export const fantoLabel = (role: Pick<FantoSettings, "nickname"> | null) => role ? role.nickname.trim() || "未命名角色" : "fanto";

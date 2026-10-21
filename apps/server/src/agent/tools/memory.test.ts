@@ -1,59 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentBusinessServices, AgentMemory } from "../business-services.js";
-import { createRunContext } from "../context/run-context.js";
-import { createFantoMemoryTool, createMemoryManageTool,createUserMemoryTool } from "./memory.js";
-
-const context = () => createRunContext({ runId: "run", userId: "owner", sessionId: "session", sourceMessageId: "message", query: "hi", slots: {}, recentMessages: [] });
-const row: AgentMemory = { memoryId: "memory", kind: "current_focus", content: "求职，已进入终面", createdAt: "2026-10-17", updatedAt: "2026-10-17" };
-
-test("topic search and progression updates carry trusted user identity and return the saved value", async () => {
-  const calls: string[] = [];
-  const client = {
-    async searchMemories(request, input) {
-      assert.equal(request.userId, "owner"); assert.equal(request.sourceMessageId, "message");
-      assert.deepEqual(input, { query: "求职面试进展", limit: 5 }); calls.push("search");
-      return [{ ...row, distance: 0.1 }];
-    },
-    async updateMemory(request, id, input) {
-      assert.equal(request.userId, "owner"); assert.equal(id, row.memoryId);
-      assert.deepEqual(input, { kind: "current_focus", content: "求职已获得 Offer，尚未决定是否接受" }); calls.push("update");
-      return { ...row, ...input };
-    },
-  } satisfies Partial<AgentBusinessServices>;
-  const tool = createMemoryManageTool(client as AgentBusinessServices);
-  const invoke = (params: Parameters<typeof tool.execute>[1]) => tool.execute("call", params, () => {}, {} as never, {} as never, context());
-  const found = await invoke({ action: "search", query: " 求职面试进展 " });
-  assert.equal((found.details as any)?.action, "search");
-  const updated = await invoke({ action: "update", memoryId: "memory", kind: "current_focus", content: "求职已获得 Offer，尚未决定是否接受" });
-  assert.equal((updated.details as any)?.action, "update");
-  assert.match(JSON.stringify(updated.details), /尚未决定/);
-  assert.deepEqual(calls, ["search", "update"]);
-  await assert.rejects(invoke({ action: "search", query: "q", content: "unexpected" }), /does not accept content/);
+import type {AgentBusinessServices,AgentMemory} from "../business-services.js";
+import {createRunContext} from "../context/run-context.js";
+import {createFantoMemoryTool} from "./memory.js";
+const context=()=>createRunContext({runId:"run",userId:"owner",sessionId:"session",sourceMessageId:"message",query:"hi",slots:{},recentMessages:[]});
+const row:AgentMemory={memoryId:"memory",content:"我认识霄汉",createdAt:"2026-10-17",updatedAt:"2026-10-17"};
+test("single memory tool searches, creates and updates without kind or owner inputs",async()=>{
+ const calls:string[]=[];
+ const client={
+  async searchMemories(request,input){assert.equal(request.userId,"owner");assert.equal(request.sourceMessageId,"message");assert.deepEqual(input,{query:"霄汉",limit:5});calls.push("search");return [{...row,distance:0.1}];},
+  async createMemory(_request,input){assert.deepEqual(input,{content:"我遇见了霄汉"});calls.push("create");return {...row,...input};},
+  async updateMemory(_request,id,input){assert.equal(id,"memory");assert.deepEqual(input,{content:"我与霄汉已经熟悉"});calls.push("update");return {...row,...input};},
+ } satisfies Partial<AgentBusinessServices>;
+ const tool=createFantoMemoryTool(client as AgentBusinessServices);
+ const invoke=(params:Parameters<typeof tool.execute>[1])=>tool.execute("call",params,()=>{},{} as never,{} as never,context());
+ await invoke({action:"search",query:" 霄汉 "});
+ await invoke({action:"create",content:"我遇见了霄汉"});
+ const updated=await invoke({action:"update",memoryId:"memory",content:"我与霄汉已经熟悉"});
+ assert.match(JSON.stringify(updated.details),/已经熟悉/);
+ assert.deepEqual(calls,["search","create","update"]);
+ await assert.rejects(invoke({action:"create",kind:"shared_history",content:"不允许类型"}),/does not accept kind/);
+ await assert.rejects(invoke({action:"create",ownerId:"foreign",content:"不允许越权"}),/does not accept ownerId/);
+ assert.doesNotMatch(JSON.stringify(tool.parameters),/"kind"|"ownerId"|"userId"/);
 });
-
-test("read-only UserMemoryTool exposes only read actions and rejects forged writes and kinds",async()=>{
-  const tool=createUserMemoryTool({} as AgentBusinessServices,true);
-  const schema=JSON.stringify(tool.parameters);
-  assert.doesNotMatch(schema,/"const":"create"|shared_history|ownerId|userId|fantoId/);
-  await assert.rejects(tool.execute("call",{action:"create",kind:"current_focus",content:"x"},()=>{},{} as never,{} as never,context()),/READ_ONLY/);
-  await assert.rejects(tool.execute("call",{action:"list",kind:"shared_history"},()=>{},{} as never,{} as never,context()),/not allowed/);
-});
-
-test("failed writes propagate failure instead of returning a successful memory result", async () => {
-  const tool = createMemoryManageTool({ createMemory: async () => { throw Error("embedding unavailable"); } } as unknown as AgentBusinessServices);
-  await assert.rejects(tool.execute("call", { action: "create", kind: "personal_background", content: "用户住北京" }, () => {}, {} as never, {} as never, context()), /embedding unavailable/);
-});
-
-test("shared_history kind is accepted by memory tool and preserves fictional context", async () => {
-  const tool = createFantoMemoryTool({ createMemory: async (request: Parameters<AgentBusinessServices["createMemory"]>[0], input: Parameters<AgentBusinessServices["createMemory"]>[1]) => {
-    assert.equal(request.userId, "owner");
-    assert.equal(input.kind, "shared_history");
-    assert.match(input.content, /虚构剧情/);
-    return { ...row, ...input };
-  } } as unknown as AgentBusinessServices);
-  const response = await tool.execute("call", {
-    action: "create", kind: "shared_history", content: "虚构剧情：两人在海边约好明天再来"
-  }, () => {}, {} as never, {} as never, context());
-  assert.equal((response.details as any)?.action, "create");
+test("failed writes are propagated",async()=>{
+ const tool=createFantoMemoryTool({createMemory:async()=>{throw Error("embedding unavailable");}} as unknown as AgentBusinessServices);
+ await assert.rejects(tool.execute("call",{action:"create",content:"我认识霄汉"},()=>{},{} as never,{} as never,context()),/embedding unavailable/);
 });

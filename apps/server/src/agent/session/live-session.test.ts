@@ -74,7 +74,9 @@ const makeDefinition = (provider: string, model: string, tools: AgentDefinition[
 });
 const principal = { userId: "owner", source: "user" } as const;
 function fixture(checkpoints: MemoryCheckpoint, fanto: Partial<AgentBusinessServices> = {}, tools: AgentDefinition["tools"] = []) {
-  fanto={getFantoConversationSettings:async()=>null,reserveMainRun:async(_ctx,reserve)=>await reserve(),...fanto} as AgentBusinessServices;
+  const defaultRole:FantoSettings={fantoId:"default-role",userId:"owner",sessionId:"session",nickname:"fanto",description:"",avatarMediaId:null,
+    roleConfig:emptyRole(),agentConfig:{...defaultAgentConfig(),recordReadEnabled:true,fantoMemoryEnabled:false},status:"active",archivedAt:null,version:1,createdAt:"now",updatedAt:"now"};
+  fanto={getFantoConversationSettings:async()=>defaultRole,listMemories:async()=>[],reserveMainRun:async(_ctx,reserve)=>await reserve(),...fanto} as AgentBusinessServices;
   const workspace = mkdtempSync(join(tmpdir(), "fanto-v2-"));
   const faux = fauxProvider({ tokensPerSecond: 100000, tokenSize: { min: 1, max: 1 } });
   const models = createModels(); models.setProvider(faux.provider);
@@ -176,24 +178,19 @@ test("Pi SDK runs remain isolated by Session owner", async () => {
   } finally { await f.close(); }
 });
 
-test("cached Pi Harness switches Main and Fanto memory tool schemas per run",async()=>{
-  let current:FantoSettings|null=null;const calls:string[]=[];
-  const f=fixture(new MemoryCheckpoint(),{
-    getFantoConversationSettings:async()=>current,
-    listMemories:async(_ctx,_input,scope)=>{calls.push(scope!);return [];},
-  },["record_read","user_memory_manage","present_media"]);
-  try{
-    const s=await f.manager.create(f.definition,"owner");
-    f.faux.setResponses([fauxAssistantMessage(fauxToolCall("user_memory_manage",{action:"list"})),fauxAssistantMessage("default")]);
-    assert.match(await (await f.chat(s.id,"remember")).text(),/event: done/);
-    current={fantoId:"role",userId:"owner",sessionId:s.id,nickname:"",description:"",avatarMediaId:null,
-      roleConfig:emptyRole(),agentConfig:defaultAgentConfig(),status:"active",archivedAt:null,version:1,createdAt:"now",updatedAt:"now"};
-    f.faux.setResponses([fauxAssistantMessage(fauxToolCall("fanto_memory_manage",{action:"list"})),fauxAssistantMessage("role")]);
-    assert.match(await (await f.chat(s.id,"remember role")).text(),/event: done/);
-    current.agentConfig.userMemoryEnabled=true;
-    f.faux.setResponses([fauxAssistantMessage(fauxToolCall("user_memory_manage",{action:"list"})),fauxAssistantMessage("read only")]);
-    assert.match(await (await f.chat(s.id,"read user")).text(),/event: done/);
-    assert.deepEqual(calls,["user","fanto","user"]);
-    assert.equal(await f.manager.acquire(f.definition,s.id,"owner"),s);
-  }finally{await f.close();}
+test("cached Pi Harness enables and disables role memory tool per run",async()=>{
+ const role:FantoSettings={fantoId:"role",userId:"owner",sessionId:"s",nickname:"role",description:"",avatarMediaId:null,
+ roleConfig:emptyRole(),agentConfig:defaultAgentConfig(),status:"active",archivedAt:null,version:1,createdAt:"now",updatedAt:"now"};
+ const calls:string[]=[];
+ const f=fixture(new MemoryCheckpoint(),{getFantoConversationSettings:async()=>role,
+  listMemories:async()=>{calls.push("list");return [];}},["record_read","fanto_memory_manage","present_media"]);
+ try{
+  const s=await f.manager.create(f.definition,"owner");
+  f.faux.setResponses([fauxAssistantMessage(fauxToolCall("fanto_memory_manage",{action:"list"})),fauxAssistantMessage("remembered")]);
+  assert.match(await (await f.chat(s.id,"remember role")).text(),/event: done/);
+  role.agentConfig.fantoMemoryEnabled=false;
+  f.faux.setResponses([fauxAssistantMessage("not remembering")]);
+  assert.match(await (await f.chat(s.id,"do not remember")).text(),/event: done/);
+  assert.deepEqual(calls,["list"]);
+ }finally{await f.close();}
 });

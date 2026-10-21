@@ -1,8 +1,7 @@
 import { sql, type Kysely } from "kysely";
-import { createAgentCheckpointSchema } from "../infrastructure/database/agent-schema.js";
 
-/** Single fresh-database baseline: all current business and checkpoint tables, without foreign keys.
- * Replaying creates missing objects without altering existing tables or deleting data.
+/** Historical baseline (schema before Fanto-only memory), frozen in 001.
+ * Do not change this migration: evolve the schema using numbered later migrations.
  */
 export async function up(db: Kysely<any>) {
   await sql`
@@ -51,7 +50,34 @@ export async function up(db: Kysely<any>) {
     CREATE INDEX IF NOT EXISTS user_profile_avatar_reference ON user_profiles(avatar_media_id) WHERE avatar_media_id IS NOT NULL;
     CREATE INDEX IF NOT EXISTS user_profile_cover_reference ON user_profiles(cover_media_id) WHERE cover_media_id IS NOT NULL;
   `.execute(db);
-  await createAgentCheckpointSchema(db);
+  await sql`CREATE SCHEMA IF NOT EXISTS agent_session`.execute(db);
+  await sql`CREATE TABLE IF NOT EXISTS agent_session.sessions (
+    id TEXT PRIMARY KEY, created_at BIGINT NOT NULL, next_seq BIGINT NOT NULL,
+    user_id TEXT NOT NULL, agent_id TEXT NOT NULL,
+    scope_key TEXT NOT NULL DEFAULT 'default'
+      CHECK (scope_key='default' OR scope_key ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'),
+    title TEXT, tip_entry_id TEXT, updated_at BIGINT NOT NULL
+  )`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS checkpoint_sessions_user
+    ON agent_session.sessions(user_id, agent_id, updated_at DESC, id DESC)`.execute(db);
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS checkpoint_main_scope
+    ON agent_session.sessions(user_id, agent_id, scope_key) WHERE agent_id='main'`.execute(db);
+  await sql`CREATE TABLE IF NOT EXISTS agent_session.entries (
+    session_id TEXT NOT NULL, id TEXT NOT NULL, parent_id TEXT, seq BIGINT NOT NULL,
+    type TEXT NOT NULL, custom_type TEXT, timestamp BIGINT NOT NULL, payload JSONB NOT NULL,
+    run_id TEXT, PRIMARY KEY(session_id,id)
+  )`.execute(db);
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS checkpoint_entries_seq
+    ON agent_session.entries(session_id,seq)`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS checkpoint_entries_run
+    ON agent_session.entries(session_id,run_id,seq) WHERE run_id IS NOT NULL`.execute(db);
+  await sql`CREATE TABLE IF NOT EXISTS agent_session.usage_ledger (
+    session_id TEXT NOT NULL, id TEXT NOT NULL, seq BIGINT NOT NULL, entry_id TEXT,
+    adjustment BOOLEAN NOT NULL, usage JSONB NOT NULL, details JSONB, run_id TEXT,
+    created_at BIGINT, provider TEXT, model TEXT, PRIMARY KEY(session_id,id)
+  )`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS ix_usage_seq
+    ON agent_session.usage_ledger(session_id,seq)`.execute(db);
 }
 
 export async function down(_db: Kysely<any>) { /* Forward only. */ }

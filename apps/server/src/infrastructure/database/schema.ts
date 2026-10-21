@@ -79,9 +79,7 @@ export interface MediaAssetsTable {
 
 export interface MemoriesTable {
   memory_id: string;
-  owner_type: "user" | "fanto";
-  owner_id: string;
-  kind: "personal_background" | "important_relationships" | "current_focus" | "interaction_preferences" | "shared_history" | "relationship_state" | "ongoing_threads" | "personal_experiences";
+  fanto_id: string;
   content: string;
   embedding: unknown;
   created_at: Date;

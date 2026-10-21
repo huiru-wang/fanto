@@ -4,6 +4,7 @@ import type { DB } from "../../infrastructure/database/schema.js";
 import type { JwtTokenService } from "../../infrastructure/auth/jwt-token-service.js";
 import type { VerifiedAccessToken } from "../../infrastructure/auth/jwt-token-service.js";
 import { AuthError } from "./errors.js";
+import {ensureDefaultFanto} from "../fanto/default-fanto.js";
 import type { ChallengePurpose, IdentityProviderName, StoredAuthChallenge, VerifiedIdentity } from "./identity-provider.js";
 import { IdentityProviderRegistry } from "./identity-provider.js";
 
@@ -86,6 +87,7 @@ export class AuthService {
           updated_at: timestamp,
           disabled_at: null,
         }).execute();
+        await ensureDefaultFanto(trx,id);
         await trx.insertInto("user_login_identities").values({
           identity_id: randomUUID(),
           user_id: id,
@@ -165,6 +167,7 @@ export class AuthService {
         updated_at: timestamp,
         disabled_at: null,
       }).execute();
+      await ensureDefaultFanto(trx,id);
       await trx.insertInto("user_login_identities").values({
         identity_id: randomUUID(),
         user_id: id,

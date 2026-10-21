@@ -16,9 +16,9 @@ test("checkpoint sessions preserve default and role scope identity",{skip:!proce
   await db.insertInto("users").values({user_id:user,status:"active",created_at:now,updated_at:now,disabled_at:null}).execute();
   const service=FantoService.create(db,{validateAvatar:async()=>true} as never);
   const baseline=await service.defaultSession(user);
-  const role=await service.create(user,{});
+  const role=await service.create(user,{nickname:"second"});
   const repo=new CheckpointRepository(db);
-  assert.equal((await repo.getSession(baseline.sessionId,user))?.scopeKey,"default");
+  assert.equal((await repo.getSession(baseline.sessionId,user))?.scopeKey,baseline.scopeKey);
   assert.equal((await repo.getSession(role.sessionId,user))?.scopeKey,role.fantoId);
   assert.notEqual(baseline.sessionId,role.sessionId);
   assert.equal((await repo.getSession(role.sessionId,"unknown")),undefined);

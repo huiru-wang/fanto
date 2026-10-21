@@ -84,10 +84,11 @@ integration("verified identity contacts persist through authentication, registra
     assert.ok(!JSON.stringify(me).includes("new@example.com"));
     assert.ok(!JSON.stringify(me).includes("+8613800138000"));
 
-    const beforeReplay = await db.selectFrom("user_login_identities").selectAll().orderBy("identity_id").execute();
-    await sql`DROP TABLE kysely_migration, kysely_migration_lock`.execute(db);
+    const beforeRestart = await db.selectFrom("user_login_identities").selectAll().orderBy("identity_id").execute();
+    // Schema upgrades are forward-only. A restart must retain migration bookkeeping,
+    // not replay the historical baseline against already upgraded tables.
     await runMigrations(db); await runMigrations(db);
-    assert.deepEqual(await db.selectFrom("user_login_identities").selectAll().orderBy("identity_id").execute(), beforeReplay);
+    assert.deepEqual(await db.selectFrom("user_login_identities").selectAll().orderBy("identity_id").execute(), beforeRestart);
 
 
   } finally {

@@ -6,11 +6,11 @@
 
 - Record 支持文本、图片、音频、发生时间和结构化地点（地点名称、行政区、经纬度）。服务端保存原始 block，异步补充图片描述与音频转写；每条 Record 一个可派生的 pgvector 索引。内容更新/删除按 version 校验。
 - H5 可创建文字/图片/音频记录、录音、浏览时间线和搜索记录。iOS 支持日历/连续时间线、文字与最多五张图片创建、已授权位置地图预览/地点搜索/地图选点、按账号本地创建草稿恢复、Record 删除、图片全屏与音频播放；iOS 创建页尚无录音入口。
-- Memory 分个人背景、重要关系、近期关注、相处偏好；Main Agent 可判断保存明确且持续有用的用户自述，补充、纠错与递进更新原条目。个人背景与相处偏好默认注入，其余按话题检索。没有逐消息后台提取或整理；规则见 [Memory](../domain/memory.md)。
+- Memory 仅属于单个 Fanto，采用角色第一人称、无 kind 分类；根据 `fantoMemoryEnabled` 决定本轮是否加载和自主管理长期记忆。不同角色互不可见，不存在 User Memory；规则见 [Memory](../domain/memory.md)。
 
 ## Fanto 主对话
 
-- H5 支持默认 Main 和最多 3 个活跃 Fanto：创建可空但固定的身份、角色切换、独立能力与头像配置、归档/恢复和物理删除清理重试；每角色固定 Session、独立草稿和记忆。iOS 仍为原单角色客户端，尚未适配新版接口。详见 [Fanto](../domain/fanto.md) 与 [H5](../clients/h5.md)。
+- H5 支持最多 3 个活跃 Fanto（含不可删除/归档的系统默认 `fanto`）：创建必须填写且不能重复的昵称、固定的身份、角色切换、独立能力与头像配置、归档/恢复和物理删除清理重试；每角色固定 Session、独立草稿和记忆。iOS 仍为原单角色客户端，尚未适配新版接口。详见 [Fanto](../domain/fanto.md) 与 [H5](../clients/h5.md)。
 - Fanto 主对话是一个持久 Session，支持文字 SSE、原生媒体展示、工具活动、必要时的澄清表单；按需使用 Record 检索和 Memory 管理。
 - 主对话支持角色扮演与陪伴交流，工具能力围绕 Record 和 Memory。当前不提供即时、延时或周期 Task，不提供提醒、通用文件交付及个人助理工作流。
 
@@ -23,7 +23,7 @@
 ## 客户端与运营范围
 
 - iOS：SwiftUI，Google/Apple 原生登录、品牌启动页预加载、Record、Fanto 主对话与角色设置；“我的”已接个人资料、头像上传、设备外观偏好与退出登录，正式的多会话管理尚未提供。
-- H5：React/Vite 受控测试客户端，使用构建时 refresh token 换取 JWT；无公开正式登录流程。已接入默认 Main 与多角色管理，按固定 Session 展示和恢复对话，支持当前用户 Session ID 调试展示。
+- H5：React/Vite 受控测试客户端，使用构建时 refresh token 换取 JWT；无公开正式登录流程。已接入系统默认 Fanto 与多角色管理，按固定 Session 展示和恢复对话，支持当前用户 Session ID 调试展示。
 - Server：单 Hono 进程内嵌 Pi Agent、PostgreSQL + pgvector、OSS、内存事件队列；部署依赖 Nginx/PM2。所有受保护 API 使用 Fanto JWT 用户归属校验。
 - 路由和 UI 的已接入不代表当前线上服务已经部署相同版本；实际在线功能需另做生产环境验收。
 
