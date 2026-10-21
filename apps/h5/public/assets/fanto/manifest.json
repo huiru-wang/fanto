@@ -1,5 +1,5 @@
 {
-  "avatar": "/assets/fanto/avatar/fanto-avatar-512.png",
+  "avatar": "/assets/fanto/avatar/fanto-avatar.webp",
   "states": {
     "idle": "/assets/fanto/states/idle.png",
     "thinking": "/assets/fanto/states/thinking.png",

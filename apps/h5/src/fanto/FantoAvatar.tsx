@@ -21,7 +21,7 @@ export function FantoAvatar({ size = 36, avatarMediaId, label }: {
     return () => { active = false; };
   }, [id]);
   return <span className="fanto-profile-avatar" style={{ width: size, height: size }}>
-    <img alt={name || "未命名角色"} src={!failed && source && source.id === id ? source.url : "/assets/fanto/avatar/fanto-avatar-512.png"}
+    <img alt={name || "未命名角色"} src={!failed && source && source.id === id ? source.url : "/assets/fanto/avatar/fanto-avatar.webp"}
       onError={() => { if (source) setFailed(true); }} />
   </span>;
 }
