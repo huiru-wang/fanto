@@ -1,4 +1,4 @@
-import { authorizedFetch } from "../auth/test-session";
+import { authorizedFetch } from "../auth/session-fetch";
 
 export class ApiError extends Error {
   constructor(

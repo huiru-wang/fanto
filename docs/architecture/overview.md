@@ -11,7 +11,7 @@ flowchart LR
   API --> Q[Record 后置理解 / Embedding]
 ```
 
-Server 与 Agent 同进程，没有独立 Gateway。H5 通过角色 API 管理多角色，以 default Main 或角色固定 Session 隔离聊天；静态资源由 Nginx 提供；受保护请求使用 Fanto JWT。iOS 使用 Google / Apple 原生登录，H5 是受控测试客户端，Admin 仅本地使用独立只读密钥。
+Server 与 Agent 同进程，没有独立 Gateway。H5 通过角色 API 管理多角色，以 default Main 或角色固定 Session 隔离聊天；静态资源由 Nginx 提供；受保护请求使用统一 `auth_sessions` Session（H5 HttpOnly Cookie、iOS Keychain Bearer）。iOS 使用 Google / Apple 原生登录，H5 使用 Google GIS 正式登录，Admin 仅本地使用独立只读密钥。
 
 ## 事实与派生数据
 
@@ -21,3 +21,7 @@ Server 与 Agent 同进程，没有独立 Gateway。H5 通过角色 API 管理�
 - Record 后置理解与 Embedding 使用非持久化内存队列；不会触发额外后台 Agent。
 
 会话权限、停止、保存、恢复见 [Agent Runtime](agent-runtime.md)；模块装配见 [Server](server.md)。数据库健康与部署见 [本地开发](../engineering/local-development.md)。旧数据和外部文件不由启动流程自动删除。
+
+## 全平台认证切换（2026-10-22）
+
+Fanto 身份层已设计为 Server 单表 `auth_sessions` 不透明随机 Token；H5 Cookie 与原生 Bearer 共用校验和撤销。Agent 会话仍独立于身份会话。

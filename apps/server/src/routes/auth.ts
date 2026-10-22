@@ -1,19 +1,18 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { AuthError, type AuthService, type ChallengePurpose, type IdentityProviderName } from "../domain/auth/index.js";
-import { requireUserId } from "./request-user.js";
+import { bearerToken, requireUserId } from "./request-user.js";
 
 const providerSchema = z.enum(["google", "apple", "phone"]);
 const publicIntentSchema = z.object({
-  purpose: z.enum(["authenticate", "register", "login"]),
-  provider: providerSchema,
+  purpose: z.literal("authenticate"),
+  provider: z.enum(["google", "apple"]),
 }).strict();
 const identityIntentSchema = z.object({ provider: providerSchema }).strict();
 const proofSchema = z.object({
   intentId: z.string().uuid(),
   proof: z.record(z.string(), z.unknown()),
 }).strict();
-const refreshSchema = z.object({ refreshToken: z.string().min(1) }).strict();
 const unlinkSchema = z.object({
   reauth: z.object({
     intentId: z.string().uuid(),
@@ -66,44 +65,20 @@ export function createAuthRoutes(service: AuthService): Hono {
     }
   });
 
-  app.post("/auth/registrations", async c => {
+  app.post("/auth/native/authentications", async c => {
     const body = proofSchema.safeParse(await c.req.json().catch(() => null));
     if (!body.success) return c.json(fail(new AuthError(400, "INVALID_INPUT", "Invalid request")), 400);
     try {
-      return c.json(ok(await service.register(body.data.intentId, body.data.proof)), 201);
-    } catch (cause) {
-      return authFailure(c, cause);
-    }
+      c.header("Cache-Control", "no-store");
+      return c.json(ok(await service.authenticate(body.data.intentId, body.data.proof, "native")));
+    } catch (cause) { return authFailure(c, cause); }
   });
 
-  app.post("/auth/logins", async c => {
-    const body = proofSchema.safeParse(await c.req.json().catch(() => null));
-    if (!body.success) return c.json(fail(new AuthError(400, "INVALID_INPUT", "Invalid request")), 400);
-    try {
-      return c.json(ok(await service.login(body.data.intentId, body.data.proof)));
-    } catch (cause) {
-      return authFailure(c, cause);
-    }
-  });
-
-  app.post("/auth/authentications", async c => {
-    const body = proofSchema.safeParse(await c.req.json().catch(() => null));
-    if (!body.success) return c.json(fail(new AuthError(400, "INVALID_INPUT", "Invalid request")), 400);
-    try {
-      return c.json(ok(await service.authenticate(body.data.intentId, body.data.proof)));
-    } catch (cause) {
-      return authFailure(c, cause);
-    }
-  });
-
-  app.post("/auth/tokens/refresh", async c => {
-    const body = refreshSchema.safeParse(await c.req.json().catch(() => null));
-    if (!body.success) return c.json(fail(new AuthError(400, "INVALID_INPUT", "Invalid request")), 400);
-    try {
-      return c.json(ok(await service.refresh(body.data.refreshToken)));
-    } catch (cause) {
-      return authFailure(c, cause);
-    }
+  app.post("/auth/native/logout", async c => {
+    const token = bearerToken(c.req.raw);
+    if (!token) return c.json(fail(new AuthError(401, "UNAUTHENTICATED", "Missing session token")), 401);
+    try { await service.sessions.revoke(token, "native"); return c.body(null, 204); }
+    catch (cause) { return authFailure(c, cause); }
   });
 
   app.get("/users/me", async c => {

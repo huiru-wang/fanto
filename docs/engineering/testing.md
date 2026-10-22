@@ -80,3 +80,7 @@ R2_SMOKE_TEST=1 pnpm --filter @fanto/server exec tsx --test src/infrastructure/c
 ## H5 多角色
 
 H5 的 typecheck/test/build 验证客户端代码与配置；fanto-settings.test.ts 覆盖角色级版本、配置子键、独立远端变更合并、归档/删除回退 Main。浏览器联调使用真实测试账号及服务端/数据库验证创建、配置持久化、切换、固定 Session、3 active、归档恢复与物理删除；流式显示可使用模拟 SSE，不能将其报告为付费模型真实调用。详情见 H5 文档。
+
+## 全平台认证切换（2026-10-22）
+
+认证回归：`auth-session-service.test.ts`、`routes/auth.test.ts` 与 Google/Apple Provider 测试；需专用 `TEST_DATABASE_URL` 的 PG 集成测试、H5 HTTPS/GIS 和 iOS Keychain 真机验收。单进程撤销按普通串行路径保障，跨实例与极端并发未覆盖。

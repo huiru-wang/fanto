@@ -98,14 +98,16 @@ agent_config_path() {
 
 for key in \
   DATABASE_URL \
-  AUTH_JWT_ACTIVE_KID \
-  AUTH_JWT_PRIVATE_KEY \
-  AUTH_JWT_PUBLIC_KEYS \
+  AUTH_WEB_ORIGIN \
   GOOGLE_ALLOWED_CLIENT_IDS \
   APPLE_ALLOWED_CLIENT_IDS \
   DEEPSEEK_API_KEY; do
   require_env_key "$SERVER_ENV" "$key"
 done
+
+# Refuse a broken H5 release: the public Google Web Client ID must be configured.
+[[ -f "$ROOT/apps/h5/.env" ]] || fail "missing H5 production env: apps/h5/.env"
+require_env_key "$ROOT/apps/h5/.env" "VITE_GOOGLE_CLIENT_ID"
 
 AGENT_CONFIG="$(agent_config_path)"
 [[ -f "$AGENT_CONFIG" ]] || fail "missing Agent config: $AGENT_CONFIG"

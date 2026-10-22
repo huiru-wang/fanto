@@ -3,13 +3,13 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import { sql } from "kysely";
 import { createDatabase, runMigrations } from "../../infrastructure/database/database.js";
-import type { JwtTokenService } from "../../infrastructure/auth/jwt-token-service.js";
+import { AuthSessionService } from "./auth-session-service.js";
 import { AuthService } from "./auth-service.js";
 import { IdentityProviderRegistry, type IdentityProvider, type IdentityProviderName, type VerifiedIdentity } from "./identity-provider.js";
 
 const integration = process.env.TEST_DATABASE_URL ? test : test.skip;
 
-integration("verified identity contacts persist through authentication, registration, login and rebinding without leaking in responses", async () => {
+integration("verified identity contacts persist through authentication and rebinding without leaking in responses", async () => {
   if (!/test/i.test(new URL(process.env.TEST_DATABASE_URL!).pathname)) throw new Error("Dedicated test database required");
   const admin = createDatabase(process.env.TEST_DATABASE_URL!);
   const name = `identity_test_${randomUUID().replaceAll("-", "")}`;
@@ -26,8 +26,8 @@ integration("verified identity contacts persist through authentication, registra
     const name = key as IdentityProviderName;
     return { name, createChallenge: () => ({ public: {} }), verify: async () => verified[name] } satisfies IdentityProvider;
   }));
-  const tokens = { issuePair: async () => ({ accessToken: "test-only", refreshToken: "test-only" }) } as unknown as JwtTokenService;
-  const service = new AuthService(db, providers, tokens, { getOrLoad: async (_key, loader) => loader(), delete: () => {} });
+  const sessions = new AuthSessionService(db);
+  const service = new AuthService(db, providers, sessions, { getOrLoad: async (_key, loader) => loader(), delete: () => {} });
   const intent = async (purpose: "authenticate" | "register" | "login" | "bind" | "reauth", provider: IdentityProviderName, userId?: string) =>
     (await service.createIntent(purpose, provider, userId)).intentId;
   const identity = (provider: IdentityProviderName, subject = verified[provider].subject) =>
@@ -43,19 +43,12 @@ integration("verified identity contacts persist through authentication, registra
     assert.equal((await identity("google")).identity_id, original.identity_id);
     assert.equal((await identity("google")).contact_value, "new@example.com");
 
-    verified.google = { provider: "google", subject: "google-owner" };
-    await service.login(await intent("login", "google"), {});
-    verified.google.contactValue = null;
-    await service.authenticate(await intent("authenticate", "google"), {});
-    assert.equal((await identity("google")).contact_value, "new@example.com");
-    assert.equal((await identity("google")).display_hint, "n***@example.com");
-
-    // Explicit registration works without email; a later verified login backfills it.
+    // Authentication is also registration: unknown provider sub creates a user.
     verified.google = { provider: "google", subject: "google-other" };
-    const other = (await service.register(await intent("register", "google"), {})).user.userId;
+    const other = (await service.authenticate(await intent("authenticate", "google"), {})).user.userId;
     assert.equal((await identity("google")).contact_value, null);
     verified.google.contactValue = "new@example.com";
-    await service.login(await intent("login", "google"), {});
+    await service.authenticate(await intent("authenticate", "google"), {});
     assert.equal((await identity("google")).contact_value, "new@example.com");
     assert.notEqual(other, owner, "Equal email addresses must not merge identities");
     verified.google = { provider: "google", subject: "google-owner" };

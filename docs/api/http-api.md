@@ -6,7 +6,7 @@
 { "success": true, "result": {}, "errorCode": null, "errorMsg": null }
 ```
 
-除健康检查、第三方认证 intent、第三方认证、兼容的注册/登录接口、Refresh 和独立密钥保护的 `/api/admin/*` 外，所有 API 都要求 `Authorization: Bearer <access token>`。Access Token 有效期 30 分钟；Refresh Token 有效期 30 天并采用滑动续期。用户身份只来自服务端验证后的 JWT `sub`。
+除健康检查、Google/Apple 认证入口、当前 Session 登出和独立密钥保护的 `/api/admin/*` 外，所有 API 都要求有效的服务端 Session：H5 使用 `__Host-fanto-session` HttpOnly Cookie，iOS 原生使用 `Authorization: Bearer <sessionToken>`。Session Token 是不可解码的随机串，数据库仅存 SHA-256 Hash；7 天不活跃过期、30 天绝对上限，不签发 JWT 或 Refresh Token。用户身份仅来自统一 Session 验证。
 
 ## Admin（只读）
 
@@ -28,38 +28,35 @@
 
 ## 认证
 
+Server 直接切换到统一 Session，没有旧 JWT 接口及兼容逻辑。**每台设备每次登录生成独立 Token**，同一用户可以有多个有效 Session。
+
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/auth/intents` | 为 Google 或 Apple 认证创建一次性 challenge |
-| POST | `/api/auth/authentications` | 用第三方 proof 登录；新身份会自动创建 Fanto 用户 |
-| POST | `/api/auth/registrations` | 使用 Google proof 创建 Fanto 用户 |
-| POST | `/api/auth/logins` | 使用 Google proof 登录已有 Fanto 用户 |
-| POST | `/api/auth/tokens/refresh` | 用 refresh token 换取新的 access / refresh token 对 |
+| POST | `/api/auth/intents` | iOS Google/Apple 原生 intent，`purpose=authenticate`、provider=google/apple，返回 nonce |
+| POST | `/api/auth/native/authentications` | 原生提交 `{intentId,proof:{idToken}}`，返回 `{user,sessionToken,idleExpiresAt,absoluteExpiresAt}` |
+| POST | `/api/auth/native/logout` | Bearer 定位当前 Session、PG 撤销与缓存删除，幂等 204 |
+| POST | `/api/auth/web/intents` | Web Google intent，验证 Origin 和 Web JSON 请求标记 |
+| POST | `/api/auth/web/authentications` | Web 提交 Google proof，JSON 只包含 `user`，Session 通过 `Set-Cookie` 返回 |
+| POST | `/api/auth/web/redirect` | Google GIS Safari form callback：Google 双提交 CSRF + 绑定 intent/nonce，成功 303 `/chat` |
+| POST | `/api/auth/web/logout` | HttpOnly Cookie 定位当前 Session、PG 撤销与缓存删除，清 Cookie，幂等 204 |
+| GET | `/api/users/me` | 有效 Web Cookie 或原生 Bearer 恢复已认证用户及登录身份 |
 
-创建 intent：
+Google/Apple ID Token 的签名、issuer、audience、expiry、sub、nonce 必须经 Server 校验；身份绑定依据 `(provider, sub)`，不得通过相同邮箱合并用户。认证 challenge 一次性消费，新用户同一事务内创建默认 Fanto 和 Session。Session 在 Server 端采用 `auth_sessions` 单表和单进程最长 24h 缓存，登出删除对应缓存。Cookie 仅接受 web Session，Bearer 仅接受 native Session；请求不能自行设定 client_type。Web Cookie 状态变更统一核对精确 `AUTH_WEB_ORIGIN`、JSON 与 `X-Fanto-Web: 1`（GIS redirect 独立校验）。
 
-```json
-{ "purpose": "authenticate", "provider": "google" }
-```
-
-客户端登录应创建 `purpose=authenticate` 的 intent，`provider` 可为 `google` 或 `apple`。成功响应的 `result` 包含 `intentId`、`provider`、`expiresAt` 和 `challenge.nonce`；iOS 将 nonce 传给对应的原生身份 SDK，随后以 `{ "intentId": "...", "proof": { "idToken": "..." } }` 调用 `/api/auth/authentications`。Server 验证 provider token 的签名、issuer、audience、expiry、sub 和 nonce，在同一事务中按 `(provider, sub)` 登录已有用户或创建新用户，再签发 Fanto JWT。第三方 ID token 不可用于其他业务接口。`register` 与 `login` purpose 以及对应 endpoints 仍保留给兼容调用方，但 iOS 不使用它们。
-
-认证成功结果为 `{ user, accessToken, accessTokenExpiresAt, refreshToken, refreshTokenExpiresAt }`，其中 `user` 为 `{ userId, status }`。Access Token 有效期 30 分钟，Refresh Token 有效期 30 天。常见认证错误包括：`IDENTITY_NOT_REGISTERED`、`IDENTITY_ALREADY_REGISTERED`、`CHALLENGE_INVALID`、`INVALID_PROVIDER_PROOF`、`USER_DISABLED`、`REFRESH_TOKEN_INVALID` 和 `RATE_LIMITED`。
-
-已认证用户接口：`GET /api/users/me` 返回当前用户和有效登录身份；`POST /api/users/me/identities/intents` 创建绑定身份所需 challenge，`POST /api/users/me/identities` 完成绑定；`POST /api/users/me/reauth/intents` 创建解除身份前的验证 challenge；`DELETE /api/users/me/identities/:identityId` 携带 reauth proof 后解除非最后一个身份。iOS 当前不展示账号管理界面，因此不调用这些接口。
+旧 `/api/auth/authentications`、`/api/auth/registrations`、`/api/auth/logins`、`/api/auth/tokens/refresh` 已彻底删除，旧版 iOS 必须升级并重新登录。身份绑定仍使用 `POST /api/users/me/identities/intents`、`POST /api/users/me/identities`；重新认证与解除绑定仍使用 `/api/users/me/reauth/intents` 与 `DELETE /api/users/me/identities/:identityId`。
 
 ## 用户个人资料
 
 PATCH 支持单项更新；changes 省略的字段保持不变，显式 null 仅用于清除媒体引用。iOS 头像 / 背景图上传后立即单项绑定，昵称 / 签名在独立编辑页保存。
 
-- `GET /api/users/me/statistics?timeZone=Asia%2FShanghai`：返回 `{ companionDays, recordCount, intimacy, intimacyIsPlaceholder, asOf }`，仅统计 JWT 当前用户。timeZone 为有效 IANA 时区，省略默认 UTC，非法时区返回400。相伴天数按注册日至统计日的当地日历日期差加1，最少1；recordCount 是当前所有未删除 Record 总数，包含待处理 / 处理失败的记录，不是分页条数；亲密度固定12，intimacyIsPlaceholder=true，未实现业务计算。asOf 为本次统计时间。
+- `GET /api/users/me/statistics?timeZone=Asia%2FShanghai`：返回 `{ companionDays, recordCount, intimacy, intimacyIsPlaceholder, asOf }`，仅统计 Session 当前用户。timeZone 为有效 IANA 时区，省略默认 UTC，非法时区返回400。相伴天数按注册日至统计日的当地日历日期差加1，最少1；recordCount 是当前所有未删除 Record 总数，包含待处理 / 处理失败的记录，不是分页条数；亲密度固定12，intimacyIsPlaceholder=true，未实现业务计算。asOf 为本次统计时间。
 - `GET /api/users/me/profile`：返回 `{ nickname, signature, avatarMediaId, coverMediaId, version, joinedAt }`，joinedAt 为账号创建时间。未保存时昵称“你”、空签名 / 空头像、version=0。
 - `PATCH /api/users/me/profile`：`{ expectedVersion, changes: { nickname?, signature?, avatarMediaId?, coverMediaId? } }`，至少一个变更字段；昵称去除首尾空白后1–30个 Unicode 字符，签名最多40个，均为单行且不含控制 / 格式字符。null 头像 / 背景图恢复默认。背景图只接受本人 ready 的 user_cover，错误用途返回 `422 INVALID_COVER`。版本不符为 `409 VERSION_CONFLICT`，无权或非法用途头像为 `422 INVALID_AVATAR`，输入错误为400。
 - 返回提交后的完整资料。与 Fanto Settings 分开，不改变角色 Prompt。user_avatar 仅可绑定本人 ready、未退役 / 未认领清理的小图，不接受 record / fanto_avatar。媒体用途、数据生命周期见 [Users](../domain/users.md)。
 
 ## Fanto 设置
 
-身份固定来自 JWT。多角色 API 属于本轮 Server breaking change，H5 已适配，iOS 尚未适配。
+身份固定来自服务端认证 Session。多角色 API 属于本轮 Server breaking change，H5 已适配，iOS 尚未适配。
 
 | 方法 | 路径 | 请求与结果 |
 | --- | --- | --- |
@@ -107,7 +104,7 @@ DELETE 202 的 result 为 `{fantoId,deletionState:'pending'}`，角色和数据�
 
 - `query` trim 后不能为空；
 - `limit` 默认 10，范围 1–20；
-- 当前用户只来自验证后的 Access JWT `sub`，请求体不能传 `userId`；
+- 当前用户只来自验证后的 有效 Session，请求体不能传 `userId`；
 - 搜索通过 Record Retrieval 在当前用户范围内执行 pgvector 查询；
 - 返回 `{ data: [{ recordId, eventAt, preview, distance }] }`；
 - `distance` 是 pgvector 原始向量距离，仅用于检索相关性判断，不代表已经校准的产品置信度或概率。
@@ -163,7 +160,7 @@ Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒�
 
 创建上传体：`{ mimeType, bytes, purpose? }`，purpose 默认为 `record`，另支持 `fanto_avatar`、`user_avatar`、`user_cover`。头像仅接受图片，最大 512 KiB；背景图最大2 MiB，complete要求4:3、宽640–1600像素；头像 complete 校验静态方形且边长 128–512；只保存单个对象，original/thumbnail 都读取该对象，`/meta` 不向 Agent 暴露头像或用户背景图。不接受客户端 `fileName` 或 `mediaType`；服务端只允许 `audio/mp4`、`audio/mpeg`、`audio/wav`、`image/jpeg`、`image/png`、`image/webp`，并由 MIME 推导媒体类型和 OSS 对象后缀。客户端 PUT 签名 URL 时必须携带相同的规范 MIME `Content-Type`。complete 体可选 `{ capture: { width?, height?, durationMs? } }`。
 
-`GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Access JWT。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到原始媒体的短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，`variant` 默认为 `original`，图片可请求 `thumbnail`（服务端保存的宽不超过 600、q80、WebP 小图），音频无论 variant 都返回 original；非法 variant 返回 `400 INVALID_INPUT`。读取签名有效期为五分钟，客户端不应持久化，thumbnail / original 应分键缓存，并在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 对客户端上传的图片 / 音频返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`。Task Worker 生成的结果文件由 Server 内部直接上传，不经过 `/api/uploads`，其 `mediaType=file`，meta 额外返回 `bytes / filename`。所有 meta 都不包含 signed URL。
+`GET /api/media/:mediaId`、`GET /api/media/:mediaId/url` 与 `GET /api/media/:mediaId/meta` 都必须携带 Session Token。不存在、未完成或不属于当前用户的媒体统一返回 `404 NOT_FOUND`；`/:id` 成功时返回 302 到原始媒体的短期 OSS 签名地址；`/:id/url` 返回 `{ url, expiresAt }` JSON，`variant` 默认为 `original`，图片可请求 `thumbnail`（服务端保存的宽不超过 600、q80、WebP 小图），音频无论 variant 都返回 original；非法 variant 返回 `400 INVALID_INPUT`。读取签名有效期为五分钟，客户端不应持久化，thumbnail / original 应分键缓存，并在读取失败后重新获取；该接口的响应体不会写入 access log。`/:id/meta` 对客户端上传的图片 / 音频返回 `{ mediaId, mediaType, mimeType, width?, height?, durationMs? }`。Task Worker 生成的结果文件由 Server 内部直接上传，不经过 `/api/uploads`，其 `mediaType=file`，meta 额外返回 `bytes / filename`。所有 meta 都不包含 signed URL。
 
 ## 上传图片
 
@@ -171,7 +168,7 @@ Record response 以 `content.blocks` 作为唯一媒体展示数据来源；媒�
 
 ## Agent Runtime
 
-Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 在线运行使用内存，在 Pi `turn_end`/`run_end` 后将完整 Entry/Usage 增量同步保存到 PostgreSQL `agent_session.sessions/entries/usage_ledger`；存储边界见 [Agent Runtime](../architecture/agent-runtime.md#session)。当前 main 每 Run 从可信 Session 的 scope_key=fantoId 解析 active Fanto（包括系统默认角色），动态选择工具及 Prompt。Tool 为 record_read、fanto_memory_manage、present_media；长期记忆工具仅在 fantoMemoryEnabled=true 时可用，不存在 User Memory 工具。MainDynamicProvider 只注入当前角色获准记忆、非空角色段与当前日期，不自动查询最近 Record。Tool、Provider 通过 business-services 调用领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 Access JWT `sub`，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求 Access JWT：
+Agent Runtime 内嵌在 Business Server，使用同一地址 `http://127.0.0.1:3000` 与统一鉴权。定义读取 `apps/server/agent.yaml`，Prompt 由 `apps/server/src/agent/prompts/` 的 TypeScript 模块提供；Session 在线运行使用内存，在 Pi `turn_end`/`run_end` 后将完整 Entry/Usage 增量同步保存到 PostgreSQL `agent_session.sessions/entries/usage_ledger`；存储边界见 [Agent Runtime](../architecture/agent-runtime.md#session)。当前 main 每 Run 从可信 Session 的 scope_key=fantoId 解析 active Fanto（包括系统默认角色），动态选择工具及 Prompt。Tool 为 record_read、fanto_memory_manage、present_media；长期记忆工具仅在 fantoMemoryEnabled=true 时可用，不存在 User Memory 工具。MainDynamicProvider 只注入当前角色获准记忆、非空角色段与当前日期，不自动查询最近 Record。Tool、Provider 通过 business-services 调用领域 Service。Tool schema 不接受 `userId`，实际用户身份来自统一验证的 有效 Session，并作为 Run Context 的唯一用户入口。除 `GET /health` 外，Agent HTTP 接口统一要求有效 Web Cookie 或 Native Bearer Session：
 
 ```text
 Authorization: Bearer <ACCESS_TOKEN>
@@ -234,3 +231,16 @@ curl -N http://127.0.0.1:3000/api/agent/stream \
 ### 会话 History 的运行状态
 
 History 的 result 增加 `running/stopping/restored` 布尔值：running 包含内存运行及在途工具收尾，stopping 表示用户已请求停止，restored 表示当前会话从保存历史冷恢复（最近消息可能缺失）。状态是瞬时快照，不是发送预留。在线历史优先读取内存及活跃部分回复，不等待数据库保存；所有字段均在归属校验成功后返回。`finalizing` 只是兼容进度，不代表数据库保存锁。
+
+## 单 Session 认证 API（2026-10-22）
+
+- `POST /api/auth/intents`：原生创建 Google/Apple nonce intent。
+- `POST /api/auth/native/authentications`：原生验证 `{intentId, proof:{idToken}}`，返回 `{user,sessionToken,idleExpiresAt,absoluteExpiresAt}`。
+- `POST /api/auth/native/logout`：Bearer 当前 Session 服务器撤销，204 幂等。
+- `POST /api/auth/web/intents`：Web Google intent，使用严格同源 JSON 请求。
+- `POST /api/auth/web/authentications`：验证 Google ID Token，JSON 只返回 user，HttpOnly Secure `__Host-fanto-session` Cookie。
+- `POST /api/auth/web/redirect`：Safari GIS form 回调，检查 Google 双提交 CSRF 与同浏览器 intent nonce 关联，成功 303 至 `/chat`。
+- `POST /api/auth/web/logout`：撤销 Cookie Session，清 Cookie，204。
+- `GET /api/users/me`：Cookie Web Session 或 Native Bearer 同一验证服务。
+
+旧 `/api/auth/authentications`、`/api/auth/registrations`、`/api/auth/logins`、`/api/auth/tokens/refresh` 不再可用。所有 Cookie 的非安全方法要求精确 `Origin === AUTH_WEB_ORIGIN`、JSON 和 `X-Fanto-Web: 1`，禁止任意站点 CORS credentials；Web redirect 使用独立 CSRF 防护。

@@ -8,8 +8,8 @@
 | --- | --- |
 | `PORT` / `HOST` | HTTP 监听，默认 3000 / 0.0.0.0 |
 | `DATABASE_URL` | PostgreSQL 连接串，业务数据和 Agent 稳定历史快照共用；兼容标准 PostgreSQL 厂商。生产连接需 TLS，Supabase Pooler 可用 `sslmode=require&uselibpqcompat=true` |
-| `AUTH_JWT_ACTIVE_KID` / `AUTH_JWT_PRIVATE_KEY` / `AUTH_JWT_PUBLIC_KEYS` | EdDSA 签名 Key ID、私钥和公钥映射 |
-| `AUTH_JWT_ISSUER` | 默认 fanto |
+| `AUTH_WEB_ORIGIN` | H5 可信精确 HTTPS Origin，如 `https://fanto.robinverse.me`；本地可设置 `https://localhost:5173` |
+| `AUTH_SESSION_IDLE_TTL_SECONDS` / `AUTH_SESSION_MAX_TTL_SECONDS` | 统一 Session 空闲 7 天、绝对 30 天（默认 604800 / 2592000 秒） |
 | `GOOGLE_ALLOWED_CLIENT_IDS` / `APPLE_ALLOWED_CLIENT_IDS` | 允许的 OAuth audience / iOS Bundle ID |
 | `DEEPSEEK_API_KEY` | Agent YAML 里 DeepSeek 模型所需凭据 |
 | `DASHSCOPE_API_KEY` / `DASHSCOPE_BASE_URL` | 向量、图片理解和音频转写所需凭据/兼容地址 |
@@ -68,12 +68,16 @@ CORS 的客户端上传头仍只有原有的 Content-Type；不存在额外 chec
 
 agent.yaml 通过 systemPromptModule 指向 Main Prompt，当前只配置 main。Tool / Skill / compaction 受白名单与配置校验约束，修改定义或 Prompt 后重启 Server。
 
-## H5 测试模式
+## H5 Google 配置
 
-`apps/h5/.env` 的 `VITE_H5_TEST_AUTH=true`、`VITE_H5_TEST_REFRESH_TOKEN` 仅供受控测试；H5 调用 `/api/auth/tokens/refresh` 换取 Access JWT 并用于业务/Agent API。Refresh token 会进入客户端构建产物，**不得作为正式面向公众的登录方案或接触生产特权资源**。不要把真实 Token、私钥、OSS Key 或 Authorization 提交到仓库。
+`apps/h5/.env` 中只配置公开的 `VITE_GOOGLE_CLIENT_ID`（Google Web OAuth Client ID），且须加入 Server `GOOGLE_ALLOWED_CLIENT_IDS`；同时在 Google Cloud 正确设置 H5 生产和 localhost 的授权来源，并校验 Audience/发布状态。无前端构建时测试 JWT/Refresh，不能向 H5 暴露服务端密钥。`apps/h5/.env` 只留本地，切勿提交真实密钥。
 
 ## 日志耗时
 
 日志写入 `LOG_DIR`，标准启动目录下默认是仓库 `logs/`。`access.log` 的 `cost` 单位为毫秒，记录 API 中间件从读取请求体到响应就绪的耗时，不包含日志响应体提取、客户端网络传输或 SSE 完整流生命周期。
 
 `sql.log` 通过统一 Kysely 数据库入口记录成功/失败 SQL 模板与 `cost`（毫秒）；耗时覆盖连接上的 query 执行，不包含等待连接池，也不等于整个业务事务耗时。SQL 参数、结果、原始数据库错误内容不写入日志，字符串字面量和注释被过滤；失败保留 SQLSTATE errorCode。该入口覆盖业务与 Agent Session SQL，直接绕过 Kysely 的 pg 调用不覆盖。
+
+## 新认证参数（2026-10-22）
+
+Server：`AUTH_WEB_ORIGIN`（严格 Web 来源）、`AUTH_SESSION_IDLE_TTL_SECONDS=604800`、`AUTH_SESSION_MAX_TTL_SECONDS=2592000`、`GOOGLE_ALLOWED_CLIENT_IDS`（含 Web/iOS audience）、`APPLE_ALLOWED_CLIENT_IDS`。不再读取任何 `AUTH_JWT_*`；H5 只使用公开 `VITE_GOOGLE_CLIENT_ID`。单实例部署热点缓存最长 24h；部署多实例前必须切换分布式可靠失效或每次请求查数据库。

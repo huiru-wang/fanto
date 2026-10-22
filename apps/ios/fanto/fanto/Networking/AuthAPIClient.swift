@@ -32,7 +32,7 @@ nonisolated struct AuthAPIClient {
 
     private func authenticate(intentID: String, idToken: String) async throws -> AuthResult {
         try await post(
-            path: "api/auth/authentications",
+            path: "api/auth/native/authentications",
             body: ProofRequest(
                 intentId: intentID,
                 proof: ProviderProof(idToken: idToken)
@@ -40,8 +40,34 @@ nonisolated struct AuthAPIClient {
         )
     }
 
-    func refresh(_ refreshToken: String) async throws -> AuthResult {
-        try await post(path: "api/auth/tokens/refresh", body: RefreshRequest(refreshToken: refreshToken))
+    func me(token: String) async throws -> AuthUser {
+        var request = URLRequest(url: baseURL.appending(path: "api/users/me"), cachePolicy: .reloadIgnoringLocalCacheData)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { throw AuthenticationError.server("服务返回异常。") }
+            if http.statusCode == 401 { throw AuthenticationError.expired }
+            if http.statusCode == 403 { throw AuthenticationError.accountUnavailable }
+            guard (200...299).contains(http.statusCode) else { throw AuthenticationError.server("无法恢复登录状态。") }
+            let envelope = try JSONDecoder().decode(AuthEnvelope<AuthUser>.self, from: data)
+            guard envelope.success, let user = envelope.result else { throw AuthenticationError.server("无法恢复登录状态。") }
+            return user
+        } catch let error as AuthenticationError { throw error }
+        catch is URLError { throw AuthenticationError.network }
+        catch { throw AuthenticationError.server("服务返回的数据无法识别。") }
+    }
+
+    func logout(token: String) async throws {
+        var request = URLRequest(url: baseURL.appending(path: "api/auth/native/logout"))
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 204 else {
+                throw AuthenticationError.server("服务端退出失败，请重试。")
+            }
+        } catch let error as AuthenticationError { throw error }
+        catch is URLError { throw AuthenticationError.network }
     }
 
     private func post<Response: Decodable, Body: Encodable>(path: String, body: Body) async throws -> Response {
@@ -69,7 +95,7 @@ nonisolated struct AuthAPIClient {
     private func map(code: String?, message: String?, status: Int) -> AuthenticationError {
         switch code {
         case "USER_DISABLED": .accountUnavailable
-        case "REFRESH_TOKEN_INVALID", "UNAUTHENTICATED": .expired
+        case "UNAUTHENTICATED": .expired
         default: .server(message ?? "登录失败（\(status)）。")
         }
     }
@@ -95,4 +121,3 @@ private struct ProofRequest: Encodable {
     let intentId: String
     let proof: ProviderProof
 }
-private struct RefreshRequest: Encodable { let refreshToken: String }

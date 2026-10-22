@@ -54,7 +54,7 @@ pnpm dev:h5
 
 H5 开发服务器会把 `/api/*`（包括 `/api/agent/*`）代理到 `127.0.0.1:3000`。图片和音频上传仍走 Server 返回的 OSS 签名 URL，由浏览器直接 PUT；用于 H5 的 OSS Bucket CORS 需要允许当前 H5 Origin、`PUT` 方法和 `Content-Type` Header。生产构建：
 
-线上 H5 测试认证使用 `apps/h5/.env` 中的 `VITE_H5_TEST_AUTH=true` 与 `VITE_H5_TEST_REFRESH_TOKEN`；可从 `apps/h5/.env.example` 复制模板。该 refresh token 必须由 Server 为 active 测试用户签发，且不得提交到 Git。
+H5 正式 Google 登录：从 `apps/h5/.env.example` 复制到 `apps/h5/.env`，填写 Google Web OAuth Client ID。Server `.env` 要配置一致的 `GOOGLE_ALLOWED_CLIENT_IDS` 以及精确 `AUTH_WEB_ORIGIN`；本地使用 HTTPS `https://localhost:5173` 并让浏览器信任 `.cert` 证书（见下方本地 Google 登录章节）。不使用构建时 Refresh Token。
 
 ```bash
 pnpm build:h5
@@ -109,3 +109,14 @@ pnpm db:migrate
 不要直接清空实际数据库。经操作者批准准备新空库、运行 `pnpm db:migrate` 并验证后，再单独安排服务切换；部署脚本不负责数据重置。Fanto Session 由 scope_key 映射，不在角色表保存 session_id。数据结构见 [Fanto](../domain/fanto.md)。
 
 部署脚本可使用 `bash deploy/manual/deploy.sh --maintenance`（需要更新 Nginx 时追加 `--nginx`），在构建后先停止旧进程，再迁移并启动新版本。该模式不负责入口摘流、等待活跃会话排空或自动清库。
+
+## H5 本地 Google 登录 / HTTPS
+
+H5 Google GIS + `__Host-` Cookie 必须通过 HTTPS 测试。第一次运行在 `apps/h5/` 执行：
+
+```bash
+mkdir -p .cert
+openssl req -x509 -newkey rsa:2048 -nodes -days 365 -keyout .cert/localhost-key.pem -out .cert/localhost.pem -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost"
+```
+
+浏览器需信任本地证书；H5 dev 用 `https://localhost:5173`。Server 本地 `.env` 设置 `AUTH_WEB_ORIGIN=https://localhost:5173`，并将 `VITE_GOOGLE_CLIENT_ID` 指向 Google Cloud 中启用 `https://localhost:5173` JavaScript 来源的 Web OAuth Client ID；Server `GOOGLE_ALLOWED_CLIENT_IDS` 必须包含该 Web Client ID 和原生客户端 audience。不要在 H5 放 Client Secret。测试需使用独立的 `TEST_DATABASE_URL`。

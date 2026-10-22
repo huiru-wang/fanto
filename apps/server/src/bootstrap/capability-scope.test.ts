@@ -4,7 +4,7 @@ import { createApp } from "./app.js";
 
 test("authenticated requests cannot access retired business or background subscription routes", async () => {
   const app = createApp({ records: {} as never, media: {} as never, auth: {
-    verifyAccess: async () => ({ userId: "owner" }), assertActiveUser: async () => ({}),
+    sessions: { verify: async () => ({ userId: "owner" }) }, assertActiveUser: async () => ({}),
   } as never });
   for (const [method, path] of [
     ["GET", "/api/projects"], ["GET", "/api/proposals"],

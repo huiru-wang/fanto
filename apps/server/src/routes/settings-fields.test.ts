@@ -6,7 +6,7 @@ import { defaultSettings, type SettingsChanges } from "../domain/fanto/model.js"
 import type { UserProfileService } from "../domain/users/profile-service.js";
 import type { MediaService } from "../domain/media/index.js";
 
-const auth = { verifyAccess: async (userId: string) => ({ userId }), assertActiveUser: async () => {} } as never;
+const auth = { sessions: { verify: async (userId: string) => ({ userId }) }, assertActiveUser: async () => {} } as never;
 const headers = { Authorization: "Bearer owner", "Content-Type": "application/json" };
 
 test("profile PATCH forwards only the selected field, including an explicit cover reset", async () => {

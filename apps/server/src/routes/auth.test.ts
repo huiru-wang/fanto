@@ -1,54 +1,54 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {Hono} from "hono";
 import { createAuthRoutes } from "./auth.js";
+import { createWebAuthRoutes } from "./auth-web.js";
 import type { AuthService } from "../domain/auth/auth-service.js";
+const proof = { intentId: "550e8400-e29b-41d4-a716-446655440000", proof: { idToken: "google-token" } };
+const headers = { "Content-Type": "application/json" };
+const web = { ...headers, "Origin": "https://fanto.example", "X-Fanto-Web": "1" };
+const calls: string[] = [];
+const auth = {
+  createIntent: async (...args: unknown[]) => { calls.push("intent:" + String(args[3] ?? "native")); return { intentId: proof.intentId }; },
+  authenticate: async (_intent: string, _proof: unknown, transport: string) => {
+    calls.push("authenticate:" + transport);
+    return { user: { userId: "usr1", status: "active" }, sessionToken: "session-secret", idleExpiresAt: "", absoluteExpiresAt: "" };
+  },
+  sessions: { revoke: async (_token: string, transport: string) => { calls.push("logout:" + transport); } },
+} as unknown as AuthService;
 
-test("auth routes use provider-neutral contracts", async () => {
-  const calls: Array<{ method: string; args: unknown[] }> = [];
-  const service = {
-    createIntent: async (...args: unknown[]) => {
-      calls.push({ method: "createIntent", args });
-      return { intentId: "550e8400-e29b-41d4-a716-446655440000", provider: "google", expiresAt: "2026-09-27T00:00:00.000Z", challenge: { nonce: "nonce" } };
-    },
-    register: async (...args: unknown[]) => { calls.push({ method: "register", args }); return {}; },
-    login: async (...args: unknown[]) => { calls.push({ method: "login", args }); return {}; },
-    authenticate: async (...args: unknown[]) => { calls.push({ method: "authenticate", args }); return {}; },
-    refresh: async () => ({}),
-  } as unknown as AuthService;
-  const app = createAuthRoutes(service);
-  const intent = await app.request("/auth/intents", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ purpose: "login", provider: "google" }) });
-  assert.equal(intent.status, 200);
-  assert.deepEqual(calls[0], { method: "createIntent", args: ["login", "google"] });
-  const proof = { intentId: "550e8400-e29b-41d4-a716-446655440000", proof: { idToken: "google-token" } };
-  const login = await app.request("/auth/logins", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(proof) });
-  assert.equal(login.status, 200);
-  assert.deepEqual(calls[1], { method: "login", args: [proof.intentId, proof.proof] });
-  const authentication = await app.request("/auth/authentications", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(proof) });
-  assert.equal(authentication.status, 200);
-  assert.deepEqual(calls[2], { method: "authenticate", args: [proof.intentId, proof.proof] });
-  const legacy = await app.request("/auth/logins/google", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(proof) });
-  assert.equal(legacy.status, 404);
-});
-
-test("unsupported provider is rejected before service invocation", async () => {
-  const service = { createIntent: async () => { throw new Error("should not be called"); } } as unknown as AuthService;
-  const app = createAuthRoutes(service);
-  const response = await app.request("/auth/intents", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ purpose: "login", provider: "github" }) });
-  assert.equal(response.status, 400);
-  const body = await response.json() as { errorCode: string };
-  assert.equal(body.errorCode, "INVALID_INPUT");
-});
-
-
-test("mounted auth quota does not count or block normal multi-role requests",async()=>{
-  const app=new Hono();
-  app.route("/api",createAuthRoutes({createIntent:async()=>({intentId:"test"})} as never));
-  app.get("/api/fantos",c=>c.json({success:true,result:[]}));
-  for(let i=0;i<65;i++)assert.equal((await app.request("/api/fantos")).status,200);
-  for(let i=0;i<61;i++){
-    const response=await app.request("/api/auth/intents",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({purpose:"login",provider:"google"})});
-    assert.equal(response.status,i<60?200:429);
+test("Native only issues one opaque Session Token; legacy JWT endpoints are gone", async () => {
+  const app = createAuthRoutes(auth);
+  const response = await app.request("/auth/native/authentications", { method: "POST", headers, body: JSON.stringify(proof) });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json() as any).result.sessionToken, "session-secret");
+  for (const path of ["/auth/authentications", "/auth/logins", "/auth/registrations", "/auth/tokens/refresh"]) {
+    assert.equal((await app.request(path, { method: "POST", headers, body: JSON.stringify(proof) })).status, 404);
   }
-  assert.equal((await app.request("/api/fantos")).status,200,"auth quota exhaustion must not block role management");
+  const logout = await app.request("/auth/native/logout", { method: "POST", headers: { Authorization: "Bearer session-secret" } });
+  assert.equal(logout.status, 204);
+  assert.ok(calls.includes("logout:native"));
+});
+
+test("Web session is delivered only as secure HttpOnly Cookie with origin protection", async () => {
+  const app = createWebAuthRoutes(auth, "https://fanto.example");
+  assert.equal((await app.request("/authentications", { method: "POST", headers, body: JSON.stringify(proof) })).status, 403);
+  const response = await app.request("/authentications", { method: "POST", headers: web, body: JSON.stringify(proof) });
+  assert.equal(response.status, 200);
+  const payload = await response.json() as any;
+  assert.equal(payload.result.sessionToken, undefined);
+  assert.match(response.headers.get("Set-Cookie") ?? "", /__Host-fanto-session=session-secret; Path=\/; Max-Age=2592000; Secure; HttpOnly; SameSite=Lax/);
+  assert.equal((await app.request("/logout", { method: "POST", headers: { ...web, Cookie: "__Host-fanto-session=session-secret" }, body: "{}" })).status, 204);
+  assert.ok(calls.includes("logout:web"));
+});
+
+test("Google redirect checks browser-bound intent and double-submit CSRF before delivering Cookie", async () => {
+  const app = createWebAuthRoutes(auth, "https://fanto.example");
+  const post = (cookie: string) => app.request("/redirect", { method: "POST", headers: {
+    "Content-Type": "application/x-www-form-urlencoded", Cookie: cookie,
+  }, body: new URLSearchParams({ g_csrf_token: "check-token", credential: "google-token" }).toString() });
+  assert.equal((await post(`__Host-fanto-google-intent=${proof.intentId}`)).status, 403);
+  const response = await post(`__Host-fanto-google-intent=${proof.intentId}; g_csrf_token=check-token`);
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.get("location"), "/chat");
+  assert.match(response.headers.get("set-cookie") ?? "", /__Host-fanto-session=session-secret/);
 });

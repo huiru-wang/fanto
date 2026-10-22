@@ -13,7 +13,7 @@ import { createObjectStorage } from "./create-object-storage.js";
 import { registerRecordPostprocessListener } from "../listeners/record-postprocess.listener.js";
 import { createApp, type ServerServices } from "./app.js";
 import { logError, logInfo } from "../infrastructure/logging/logger.js";
-import { JwtTokenService } from "../infrastructure/auth/jwt-token-service.js";
+import { AuthSessionService } from "../domain/auth/auth-session-service.js";
 import { GoogleIdentityProvider } from "../infrastructure/auth/providers/google-identity-provider.js";
 import { AppleIdentityProvider } from "../infrastructure/auth/providers/apple-identity-provider.js";
 import { IdentityProviderRegistry } from "../domain/auth/identity-provider.js";
@@ -38,7 +38,7 @@ await runMigrations(db);
 await checkDatabaseHealth(db, HEALTH_CHECK_TIMEOUT_MS);
 const healthCheck = () => checkDatabaseHealth(db, HEALTH_CHECK_TIMEOUT_MS);
 
-const authTokens = await JwtTokenService.create(config.auth);
+const sessions = new AuthSessionService(db, config.auth.idleTtlSeconds * 1000, config.auth.maxTtlSeconds * 1000);
 const identityProviders = new IdentityProviderRegistry([
   new GoogleIdentityProvider(config.auth.googleAllowedClientIds),
   new AppleIdentityProvider(config.auth.appleAllowedClientIds),
@@ -47,7 +47,7 @@ const userStatusCache = new TtlCache<string, { user_id: string; status: "active"
   ttlMs: CACHE_TTL_MS,
   maxEntries: 20_000,
 });
-const auth = new AuthService(db, identityProviders, authTokens, userStatusCache);
+const auth = new AuthService(db, identityProviders, sessions, userStatusCache);
 const recordListCache = new TtlCache<string, { records: Record[]; hasMoreAfterTopTen: boolean }>({
   ttlMs: CACHE_TTL_MS,
   maxEntries: 2_000,
@@ -77,6 +77,7 @@ registerRecordEmbeddingListener(embeddingQueue,records,retrieval);
 
 const services: ServerServices = {
   auth,
+  authWebOrigin: config.auth.webOrigin,
   admin: new AdminService(new AdminRepository(db)),
   adminAccessKey: config.adminAccessKey,
   userProfile: new UserProfileService(db, media),
@@ -128,10 +129,19 @@ const healthMonitor = setInterval(() => {
 }, HEALTH_CHECK_INTERVAL_MS);
 healthMonitor.unref();
 
+const cleanupSessions = () => sessions.cleanupExpired().catch(cause => {
+  const error = cause instanceof Error ? cause : new Error(String(cause));
+  logError("auth", "Session cleanup failed", { error: error.message });
+});
+void cleanupSessions();
+const sessionCleanupMonitor = setInterval(() => void cleanupSessions(), 12 * 60 * 60 * 1000);
+sessionCleanupMonitor.unref();
+
 const shutdown = async (signal: string) => {
   if (shuttingDown) return;
   shuttingDown = true;
   clearInterval(healthMonitor);
+  clearInterval(sessionCleanupMonitor);
   logInfo("main", "Shutting down", { signal });
 
   await new Promise<void>((resolve, reject) => {

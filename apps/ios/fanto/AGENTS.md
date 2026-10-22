@@ -9,7 +9,7 @@
 - 优先使用系统导航、Sheet、语义颜色与原生交互，不用自定义覆盖层替代系统组件。
 - 运行态数据应以 Server API 为准；Preview 可以使用样例数据，但不能把 Preview / 本地样例包装成已经接入的真实能力。
 - “新建记录”可选择记录发生的日期与时间；打开后仅在已授权且无草稿地点时尝试一次前台定位，显示原生地图预览，地点与行政信息按钮位于右下角。未授权仅显示单行添加地点，二级页主动请求才询问系统权限，拒绝后通过居中 Alert 引导设置。用户可移除定位建议，或通过搜索结果、地图选点与当前位置编辑地点。当前位置与地图选点共用 MapKit 地址映射，同时读取新版地址与旧版结构化行政字段，始终保留原始选中坐标；地址未识别时保留地点并提示重新选点。编辑地图底部“当前位置”按钮重新定位，地图其他区域仍支持选点。地点保留本体、国家、省/州、城市、区和坐标；地点卡紧接正文与图片，展示地点本体和行政区。创建页只支持文字与最多 5 张图片，不提供录音入口。媒体上传后创建 Server Record，并以最新列表刷新本地 Store；缓存不能替代服务端事实来源。
-- API Client 使用 HTTPS 公网域名；正式运行态身份统一来自 Fanto access JWT，不再允许客户端通过 `x-user-id` 或固定测试 token 指定用户。
+- API Client 使用 HTTPS 公网域名；正式运行态身份统一来自 Keychain 单个不透明 Session Token + Native Bearer，不再允许客户端通过 `x-user-id` 或固定测试 token 指定用户。
 - Google 登录依赖 `Supporting/Info-*.plist` 中的 iOS Client ID、Server Client ID 与 reversed URL scheme；占位值只能用于未配置构建，真机登录前必须替换。
 - Apple 登录依赖 `fanto/fanto.entitlements` 中的 Sign in with Apple capability；Server 的 `APPLE_ALLOWED_CLIENT_IDS` 必须包含 iOS Bundle ID。
 - 认证恢复与本地快照准备共用同一个稳定的品牌启动页，不重复创建或播放入场动画。本地资料与 Record 快照恢复后即进入根导航，Records、Fanto 最近会话与资料查询在主界面后台执行；网络读取失败不能阻塞进入主界面，页面自行呈现既有失败与重试状态。

@@ -105,7 +105,20 @@ export interface UserProfilesTable {
   user_id: string; nickname: string; signature: string; avatar_media_id: string | null; cover_media_id: string | null; version: number; updated_at: Date;
 }
 
+export interface AuthSessionsTable {
+  session_id: string;
+  token_hash: string;
+  user_id: string;
+  client_type: "web" | "native";
+  created_at: Date;
+  last_seen_at: Date;
+  idle_expires_at: Date;
+  absolute_expires_at: Date;
+  revoked_at: Date | null;
+}
+
 export interface DB {
+  auth_sessions: AuthSessionsTable;
   user_profiles: UserProfilesTable;
   users: UsersTable;
   user_login_identities: UserLoginIdentitiesTable;

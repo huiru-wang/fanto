@@ -4,7 +4,7 @@ import { createApp } from "../bootstrap/app.js";
 import { FantoError, type FantoService } from "../domain/fanto/index.js";
 const id="a1111111-1111-4111-8111-111111111111";
 const headers={Authorization:"Bearer test","Content-Type":"application/json"};
-const make=(restart:unknown)=>createApp({auth:{verifyAccess:async()=>({userId:"owner"}),assertActiveUser:async()=>{}} as never,
+const make=(restart:unknown)=>createApp({auth:{sessions: { verify:async()=>({userId:"owner"}) },assertActiveUser:async()=>{}} as never,
  fanto:{restart} as FantoService,records:{} as never,media:{} as never});
 test("restart validates input and uses authenticated owner, never client supplied identity",async()=>{
  const calls:unknown[]=[];

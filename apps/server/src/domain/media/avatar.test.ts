@@ -44,7 +44,7 @@ test("profile cover validates aspect ratio and signs one isolated image", async 
   const service = new MediaService(repo as unknown as PostgresMediaRepository, storage);
   const image = await sharp({create: {width: 1600, height: 1200, channels: 3, background: "cyan"}}).jpeg().toBuffer();
   const app = createApp({records: {} as never, media: service,
-    auth: {verifyAccess: async (userId: string) => ({userId}), assertActiveUser: async () => {}} as never});
+    auth: {sessions: { verify: async (userId: string) => ({userId}) }, assertActiveUser: async () => {}} as never});
   const headers = {Authorization: "Bearer owner", "Content-Type": "application/json"};
   const uploadResponse = await app.request("/api/uploads", {method: "POST", headers,
     body: JSON.stringify({purpose: "user_cover", mimeType: "image/jpeg", bytes: image.length})});

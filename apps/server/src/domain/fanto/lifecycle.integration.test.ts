@@ -66,7 +66,7 @@ test("role lifecycle gates runs, drains checkpoints, preserves owners and retrie
       await sql`INSERT INTO records(record_id,owner_type,owner_id,source,content,version,status,event_at,created_at,updated_at)
         VALUES(${recordId},${ownerType},${ownerId},'test','{"text":"x","blocks":[]}',1,'processed',${stamp},${stamp},${stamp})`.execute(db);
     }
-    const app=createApp({auth:{verifyAccess:async()=>({userId:user}),assertActiveUser:async()=>{}} as never,
+    const app=createApp({auth:{sessions: { verify:async()=>({userId:user}) },assertActiveUser:async()=>{}} as never,
       fanto:service,records:{} as never,media});
     const request=()=>app.request(`/api/fanto?fantoId=${a.fantoId}`,{method:"DELETE",headers:{Authorization:"Bearer test","If-Match":String(changed.version)}});
     assert.equal((await request()).status,202);

@@ -41,7 +41,7 @@ struct UserAccountView: View {
             }
             Button("取消", role: .cancel) { }
         } message: {
-            Text("退出会清除本机登录凭据和当前账号缓存，服务端资料会保留。")
+            Text("退出会撤销本次设备登录并清除本机凭据。其他设备和服务端资料会保留。")
         }
         .task { await load() }
     }

@@ -81,7 +81,7 @@ struct RecordWriteAPIClient {
         request.timeoutInterval = timeout
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let token = try await AuthSession.shared.accessToken()
+        let token = try await AuthSession.shared.sessionToken()
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.httpBody = try JSONEncoder().encode(body)
 
@@ -91,6 +91,7 @@ struct RecordWriteAPIClient {
         }
 
         let decoded = try JSONDecoder().decode(WriteAPIEnvelope<Response>.self, from: data)
+        if http.statusCode == 401 { await AuthSession.shared.invalidate(); throw AuthenticationError.expired }
         guard (200 ... 299).contains(http.statusCode), decoded.success else {
             throw RecordWriteAPIError.api(decoded.errorMsg ?? "服务暂时不可用。", decoded.errorCode)
         }

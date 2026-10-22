@@ -23,8 +23,12 @@
 ## 客户端与运营范围
 
 - iOS：SwiftUI，Google/Apple 原生登录、品牌启动页预加载、Record、Fanto 主对话与角色设置；“我的”已接个人资料、头像上传、设备外观偏好与退出登录，正式的多会话管理尚未提供。
-- H5：React/Vite 受控测试客户端，使用构建时 refresh token 换取 JWT；无公开正式登录流程。已接入系统默认 Fanto 与多角色管理，按固定 Session 展示和恢复对话，支持当前用户 Session ID 调试展示。
-- Server：单 Hono 进程内嵌 Pi Agent、PostgreSQL + pgvector、OSS、内存事件队列；部署依赖 Nginx/PM2。所有受保护 API 使用 Fanto JWT 用户归属校验。
+- H5：React/Vite，正式 Google GIS 登录、HttpOnly Cookie Session、品牌启动页；系统默认 Fanto 与多角色管理，按固定 Agent Session 展示和恢复对话。真实 OAuth 需要生产 Google Web Client ID 与 Safari 验收。
+- Server：单 Hono 进程内嵌 Pi Agent、PostgreSQL + pgvector、OSS、内存事件队列；部署依赖 Nginx/PM2。所有受保护 API 使用单表 `auth_sessions` 用户归属校验（Web Cookie / Native Bearer）。
 - 路由和 UI 的已接入不代表当前线上服务已经部署相同版本；实际在线功能需另做生产环境验收。
 
 详情见 [iOS](../clients/ios.md)、[H5](../clients/h5.md)、[Agent Runtime](../architecture/agent-runtime.md)。
+
+## 全平台认证切换（2026-10-22）
+
+H5 官方 Google 登录、品牌启动页，iOS Google/Apple 原生单 Session 登录；Server 单表认证，无旧 JWT 兼容。H5 Safari Redirect 需真实移动环境验收。

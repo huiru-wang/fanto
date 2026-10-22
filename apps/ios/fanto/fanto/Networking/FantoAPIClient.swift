@@ -101,10 +101,11 @@ struct FantoAPIClient {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        let token = try await AuthSession.shared.accessToken()
+        let token = try await AuthSession.shared.sessionToken()
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw FantoAPIError.invalidResponse }
+        if http.statusCode == 401 { await AuthSession.shared.invalidate(); throw AuthenticationError.expired }
         guard (200 ... 299).contains(http.statusCode) else {
             let failure = try? decoder.decode(APIErrorPayload.self, from: data)
             throw FantoAPIError.server(failure?.errorMsg ?? "服务暂时不可用。", code: failure?.errorCode)

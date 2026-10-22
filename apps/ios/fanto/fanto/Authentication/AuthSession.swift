@@ -6,98 +6,55 @@ extension Notification.Name {
 
 actor AuthSession {
     static let shared = AuthSession()
-
     private let store = AuthCredentialStore()
-    private var generation = 0
     private var cached: StoredAuthSession?
-    private var refreshTask: Task<StoredAuthSession, Error>?
+    private var signingOut = false
 
     func restore() async throws -> AuthUser? {
         guard let session = try store.load() else { return nil }
         cached = session
-        if session.refreshTokenExpiresAt <= .now {
-            try store.clear()
-            cached = nil
+        guard session.absoluteExpiresAt > .now else {
+            try store.clear(); cached = nil
             throw AuthenticationError.expired
         }
-        if session.accessTokenExpiresAt > Date.now.addingTimeInterval(60) {
-            return session.user
-        }
-        return try await refresh().user
-    }
-
-    func signOut() throws {
-        try store.clear()
-        generation += 1
-        refreshTask?.cancel()
-        refreshTask = nil
-        cached = nil
-    }
-
-    func install(_ result: AuthResult) throws -> AuthUser {
-        let session = try Self.session(from: result)
-        generation += 1
-        refreshTask?.cancel()
-        refreshTask = nil
-        try store.save(session)
-        cached = session
-        return session.user
-    }
-
-    func accessToken() async throws -> String {
-        if cached == nil { cached = try store.load() }
-        guard let session = cached else { throw AuthenticationError.expired }
-        if session.accessTokenExpiresAt > Date.now.addingTimeInterval(60) { return session.accessToken }
-        return try await refresh().accessToken
-    }
-
-    func forceRefresh() async throws -> String {
-        try await refresh().accessToken
-    }
-
-    private func refresh() async throws -> StoredAuthSession {
-        if let refreshTask { return try await refreshTask.value }
-        if cached == nil { cached = try store.load() }
-        guard let current = cached, current.refreshTokenExpiresAt > .now else {
-            try? store.clear()
-            cached = nil
-            throw AuthenticationError.expired
-        }
-
-        let requestGeneration = generation
-        let task = Task<StoredAuthSession, Error> {
-            let result = try await AuthAPIClient.shared.refresh(current.refreshToken)
-            return try Self.session(from: result)
-        }
-        refreshTask = task
-        defer { if generation == requestGeneration { refreshTask = nil } }
-        do {
-            let updated = try await task.value
-            guard generation == requestGeneration else { throw CancellationError() }
-            try store.save(updated)
-            cached = updated
-            return updated
-        } catch {
-            if generation == requestGeneration, let authError = error as? AuthenticationError, authError == .expired || authError == .accountUnavailable {
-                try? store.clear()
-                cached = nil
-                NotificationCenter.default.post(name: .fantoAuthSessionInvalidated, object: nil)
-            }
+        do { return try await AuthAPIClient.shared.me(token: session.sessionToken) }
+        catch let error as AuthenticationError {
+            if error == .expired || error == .accountUnavailable { invalidate() }
             throw error
         }
     }
 
-    private static func session(from result: AuthResult) throws -> StoredAuthSession {
-        guard let accessExpiry = parse(result.accessTokenExpiresAt), let refreshExpiry = parse(result.refreshTokenExpiresAt) else {
+    func signOut() async throws {
+        signingOut = true
+        guard let token = try store.load()?.sessionToken else { try store.clear(); cached = nil; signingOut = false; return }
+        try await AuthAPIClient.shared.logout(token: token)
+        try store.clear()
+        cached = nil
+        signingOut = false
+    }
+
+    func install(_ result: AuthResult) throws -> AuthUser {
+        guard let expires = Self.parse(result.absoluteExpiresAt), expires > .now else {
             throw AuthenticationError.server("登录凭证时间格式无效。")
         }
-        return StoredAuthSession(
-            user: result.user,
-            accessToken: result.accessToken,
-            accessTokenExpiresAt: accessExpiry,
-            refreshToken: result.refreshToken,
-            refreshTokenExpiresAt: refreshExpiry
-        )
+        let session = StoredAuthSession(user: result.user, sessionToken: result.sessionToken, absoluteExpiresAt: expires)
+        try store.save(session)
+        cached = session
+        signingOut = false
+        return result.user
+    }
+
+    func sessionToken() throws -> String {
+        if signingOut { throw AuthenticationError.server("退出登录尚未完成，请重试。") }
+        if cached == nil { cached = try store.load() }
+        guard let session = cached, session.absoluteExpiresAt > .now else { throw AuthenticationError.expired }
+        return session.sessionToken
+    }
+
+    func invalidate() {
+        try? store.clear()
+        cached = nil
+        NotificationCenter.default.post(name: .fantoAuthSessionInvalidated, object: nil)
     }
 
     private static func parse(_ value: String) -> Date? {

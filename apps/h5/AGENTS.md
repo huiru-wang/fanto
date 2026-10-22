@@ -2,7 +2,7 @@
 
 适用于 apps/h5，先阅读 docs/clients/h5.md、docs/domain/fanto.md 和 docs/api/http-api.md。
 
-- H5 是受控测试客户端，身份来自已验证 JWT；不在源码或提交中放测试 refresh token、私钥或数据库凭据。
+- H5 是支持 Google GIS 正式登录的 Web 客户端，身份来自 Google GIS 登录后的 HttpOnly Cookie Session；禁止构建时测试 JWT/Refresh Token，不在源码或提交中放私钥或数据库凭据。
 - FantoProvider 管理角色列表、选中 FantoId 及默认 Fanto 固定 Session。每个 Fanto 使用服务端固定 sessionId，禁止调用通用创建 Session 或 PATCH 重绑定旧指针；仅经确认的角色 restart 接口可替换固定 Session 并清理旧会话与角色记忆。
 - 身份字段仅在创建时编辑，nickname 必填且同用户唯一；创建后身份只读。H5 详情不展示对话能力，PATCH 仅用于独立头像更新；新建默认开启长期记忆与动作旁白。记忆仅属于对应 Fanto，fantoMemoryEnabled 控制独立长期记忆。系统默认 fanto 不可改配置、归档或删除。
 - ChatPage 按 sessionId 设置 React key，切换时清理旧 SSE/恢复/分页操作；草稿按 Session 隔离，选择与待清理删除按用户隔离保存在 sessionStorage。旧异步响应不得覆盖新角色或复活已删除角色。

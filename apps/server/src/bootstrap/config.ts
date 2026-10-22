@@ -14,14 +14,9 @@ export type AppConfig = {
   port: number;
   host: string;
   auth: {
-    privateKeyPem: string;
-    publicKeys: Record<string, string>;
-    activeKid: string;
-    issuer: string;
-    accessAudiences: string[];
-    refreshAudience: string;
-    accessTtlSeconds: number;
-    refreshTtlSeconds: number;
+    webOrigin: string;
+    idleTtlSeconds: number;
+    maxTtlSeconds: number;
     googleAllowedClientIds: string[];
     appleAllowedClientIds: string[];
   };
@@ -57,10 +52,6 @@ export function loadConfig(): AppConfig {
     : resolve(projectRoot, fallback);
   const storage = loadObjectStorageConfig();
 
-  const activeKid = required("AUTH_JWT_ACTIVE_KID");
-  const privateKeyPem = normalizePem(required("AUTH_JWT_PRIVATE_KEY"));
-  const publicKeys = parsePublicKeys(required("AUTH_JWT_PUBLIC_KEYS"));
-  if (!publicKeys[activeKid]) throw new Error("AUTH_JWT_PUBLIC_KEYS must contain AUTH_JWT_ACTIVE_KID");
   const googleAllowedClientIds = required("GOOGLE_ALLOWED_CLIENT_IDS").split(",").map(value => value.trim()).filter(Boolean);
   if (googleAllowedClientIds.length === 0) throw new Error("GOOGLE_ALLOWED_CLIENT_IDS is required");
   const appleAllowedClientIds = required("APPLE_ALLOWED_CLIENT_IDS").split(",").map(value => value.trim()).filter(Boolean);
@@ -72,14 +63,9 @@ export function loadConfig(): AppConfig {
     port: parseInt(process.env.PORT ?? "3000", 10),
     host: process.env.HOST ?? "0.0.0.0",
     auth: {
-      privateKeyPem,
-      publicKeys,
-      activeKid,
-      issuer: process.env.AUTH_JWT_ISSUER?.trim() || "fanto",
-      accessAudiences: ["fanto-api", "fanto-agent"],
-      refreshAudience: "fanto-refresh",
-      accessTtlSeconds: 30 * 60,
-      refreshTtlSeconds: 30 * 24 * 60 * 60,
+      webOrigin: required("AUTH_WEB_ORIGIN"),
+      idleTtlSeconds: Number(process.env.AUTH_SESSION_IDLE_TTL_SECONDS ?? 604800),
+      maxTtlSeconds: Number(process.env.AUTH_SESSION_MAX_TTL_SECONDS ?? 2592000),
       googleAllowedClientIds,
       appleAllowedClientIds,
     },
@@ -104,23 +90,4 @@ function required(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(name + " is required");
   return value;
-}
-
-function normalizePem(value: string): string {
-  return value.replace(/\\n/g, "\n");
-}
-
-function parsePublicKeys(value: string): Record<string, string> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(value);
-  } catch {
-    throw new Error("AUTH_JWT_PUBLIC_KEYS must be a JSON object");
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("AUTH_JWT_PUBLIC_KEYS must be a JSON object");
-  const entries = Object.entries(parsed as Record<string, unknown>);
-  if (entries.length === 0 || entries.some(([kid, pem]) => !kid || typeof pem !== "string" || !pem.trim())) {
-    throw new Error("AUTH_JWT_PUBLIC_KEYS contains invalid key material");
-  }
-  return Object.fromEntries(entries.map(([kid, pem]) => [kid, normalizePem(String(pem))]));
 }

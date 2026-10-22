@@ -133,6 +133,7 @@ struct AgentAPIClient {
 
         let (bytes, response) = try await URLSession.shared.bytes(for: request)
         guard let http = response as? HTTPURLResponse else { throw AgentAPIError.invalidResponse }
+        if http.statusCode == 401 { await AuthSession.shared.invalidate(); throw AuthenticationError.expired }
         guard (200 ... 299).contains(http.statusCode) else { throw AgentAPIError.httpStatus(http.statusCode) }
 
         var eventName: String?
@@ -249,6 +250,7 @@ struct AgentAPIClient {
     private func decodeResponse<Response: Decodable>(from request: URLRequest) async throws -> Response {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw AgentAPIError.invalidResponse }
+        if http.statusCode == 401 { await AuthSession.shared.invalidate(); throw AuthenticationError.expired }
         guard (200 ... 299).contains(http.statusCode) else { throw AgentAPIError.httpStatus(http.statusCode) }
         let envelope = try JSONDecoder().decode(AgentEnvelope<Response>.self, from: data)
         guard envelope.success, let result = envelope.result else {
@@ -264,7 +266,7 @@ struct AgentAPIClient {
     private func makeRequest(url: URL, method: String) async throws -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method
-        let token = try await AuthSession.shared.accessToken()
+        let token = try await AuthSession.shared.sessionToken()
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue(UUID().uuidString, forHTTPHeaderField: "X-Trace-Id")
         return request

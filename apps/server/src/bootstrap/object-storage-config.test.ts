@@ -23,7 +23,7 @@ test("R2 accepts official account/jurisdiction S3 endpoints and rejects public o
 test("full startup configuration keeps only selected storage settings",()=>{
  const previous=process.env;
  try {
-  process.env={...previous,...r2,DATABASE_URL:"postgresql://test-only",AUTH_JWT_ACTIVE_KID:"test-only",AUTH_JWT_PRIVATE_KEY:"test-only",AUTH_JWT_PUBLIC_KEYS:JSON.stringify({"test-only":"test-only"}),GOOGLE_ALLOWED_CLIENT_IDS:"test-only",APPLE_ALLOWED_CLIENT_IDS:"test-only",DEEPSEEK_API_KEY:"test-only",DASHSCOPE_EMBEDDING_DIMENSION:"768",DASHSCOPE_BASE_URL:"https://example.com",OSS_BUCKET:"",OSS_ACCESS_KEY_ID:"",OSS_ACCESS_KEY_SECRET:""};
+  process.env={...previous,...r2,DATABASE_URL:"postgresql://test-only",AUTH_WEB_ORIGIN:"https://fanto.example",GOOGLE_ALLOWED_CLIENT_IDS:"test-only",APPLE_ALLOWED_CLIENT_IDS:"test-only",DEEPSEEK_API_KEY:"test-only",DASHSCOPE_EMBEDDING_DIMENSION:"768",DASHSCOPE_BASE_URL:"https://example.com",OSS_BUCKET:"",OSS_ACCESS_KEY_ID:"",OSS_ACCESS_KEY_SECRET:""};
   const config=loadConfig();assert.equal(config.objectStorageProvider,"cloudflare-r2");assert.equal("oss" in config,false);assert.ok(createObjectStorage(config) instanceof R2Storage);
   process.env={...process.env,...aliyun,OBJECT_STORAGE_PROVIDER:"aliyun-oss",OSS_ENDPOINT:"",R2_ENDPOINT:"invalid"};
   const oss=loadConfig();assert.equal(oss.objectStorageProvider,"aliyun-oss");assert.equal("r2" in oss,false);

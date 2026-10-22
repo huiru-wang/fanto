@@ -13,6 +13,7 @@ import { createUploadRoutes } from "../routes/media.js";
 import { bearerToken, requireUserId, runWithRequestPrincipal } from "../routes/request-user.js";
 import { AuthError, type AuthService } from "../domain/auth/index.js";
 import { createAuthRoutes } from "../routes/auth.js";
+import { createWebAuthRoutes, webCookie } from "../routes/auth-web.js";
 import { logAccess, logError } from "../infrastructure/logging/logger.js";
 import { RecordService } from "../domain/records/index.js";
 import { MediaService } from "../domain/media/index.js";
@@ -41,6 +42,7 @@ export type ServerServices = {
   admin?: AdminService;
   adminAccessKey?: string;
   auth?: AuthService;
+  authWebOrigin?: string;
   records: RecordService;
   media: MediaService;
   agent?: AgentRuntime;
@@ -56,7 +58,10 @@ export function createApp(services: ServerServices) {
     logError("http", "Unhandled request error", { method: c.req.method, path: c.req.path, error: error.message });
     return c.json({ success: false, errorCode: "INTERNAL_ERROR", errorMsg: "Internal server error" }, 500);
   });
-  app.use("*", cors({ origin: "*", allowHeaders: ["Authorization", "Content-Type", "X-Client-Fingerprint", "X-Trace-Id", "X-Time-Zone", "X-Admin-Key"], allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"] }));
+  // Credentialed web requests are same-origin only. Cross-origin credential exposure is forbidden.
+  app.use("*", cors({ origin: origin => origin === services.authWebOrigin ? origin : "", credentials: false,
+    allowHeaders: ["Authorization", "Content-Type", "X-Fanto-Web", "X-Client-Fingerprint", "X-Trace-Id", "X-Time-Zone", "X-Admin-Key"],
+    allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"] }));
   app.use("/api/*", async (c, next) => {
     const startedAt = performance.now();
     const requestBody = c.req.header("content-type")?.includes("application/json")
@@ -70,20 +75,29 @@ export function createApp(services: ServerServices) {
     if (c.req.method === "OPTIONS") return next();
     const publicAuth = new Set([
       "/api/auth/intents",
-      "/api/auth/authentications",
-      "/api/auth/registrations",
-      "/api/auth/logins",
-      "/api/auth/tokens/refresh",
+      "/api/auth/native/authentications",
+      "/api/auth/native/logout",
+      "/api/auth/web/intents",
+      "/api/auth/web/authentications",
+      "/api/auth/web/logout",
+      "/api/auth/web/redirect",
     ]);
-    // Admin uses its own configured secret, never the user JWT flow.
+    // Admin uses its own configured secret, never the user Session flow.
     if (c.req.path === "/api/admin" || c.req.path.startsWith("/api/admin/")) return next();
     if (publicAuth.has(c.req.path)) return next();
     if (!auth) return c.json({ success: false, result: null, errorCode: "UNAUTHENTICATED", errorMsg: "Authentication is not configured" }, 401);
-    const token = bearerToken(c.req.raw);
-    if (!token) return c.json({ success: false, result: null, errorCode: "UNAUTHENTICATED", errorMsg: "Missing access token" }, 401);
+    const bearer = bearerToken(c.req.raw);
+    const hasAuthorization = !!c.req.header("Authorization");
+    const cookie = hasAuthorization ? null : webCookie(c.req.raw);
+    const token = bearer ?? cookie;
+    if (!token) return c.json({ success: false, result: null, errorCode: "UNAUTHENTICATED", errorMsg: "Missing session token" }, 401);
+    if (cookie && !["GET", "HEAD", "OPTIONS"].includes(c.req.method) && (
+        c.req.header("Origin") !== services.authWebOrigin || c.req.header("X-Fanto-Web") !== "1" ||
+        !c.req.header("content-type")?.toLowerCase().startsWith("application/json"))) {
+      return c.json({ success: false, result: null, errorCode: "INVALID_ORIGIN", errorMsg: "Invalid web request origin" }, 403);
+    }
     try {
-      const principal = await auth.verifyAccess(token, "fanto-api");
-      await auth.assertActiveUser(principal.userId);
+      const principal = await auth.sessions.verify(token, bearer ? "native" : "web", userId => auth.assertActiveUser(userId));
       await runWithRequestPrincipal({ userId: principal.userId, source: "user" }, next);
     } catch (cause) {
       if (cause instanceof AuthError) {
@@ -106,7 +120,10 @@ export function createApp(services: ServerServices) {
     app.route("/api/users/me/profile", createUserProfileRoutes(services.userProfile));
     app.route("/api/users/me/statistics", createUserStatisticsRoutes(services.userProfile));
   }
-  if (auth) app.route("/api", createAuthRoutes(auth));
+  if (auth) {
+    app.route("/api", createAuthRoutes(auth));
+    if (services.authWebOrigin) app.route("/api/auth/web", createWebAuthRoutes(auth, services.authWebOrigin));
+  }
   if (services.admin) app.route("/api/admin", createAdminRoutes(services.admin, services.adminAccessKey));
   app.route("/api/uploads", createUploadRoutes(mediaService));
   app.route("/api/records", createRecordRoutes(recordService));

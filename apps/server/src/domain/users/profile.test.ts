@@ -18,7 +18,7 @@ test("profile accepts only single-line bounded fields and redacts account data",
 });
 test("profile route authenticates before accessing the service", async () => {
   const service = {get: async (id: string) => ({nickname: id}), update: async (id: string) => ({nickname: id})};
-  const app = createApp({userProfile: service as unknown as UserProfileService, records: {} as never, media: {} as never, auth: {verifyAccess: async (userId: string) => ({userId}), assertActiveUser: async () => {}} as never});
+  const app = createApp({userProfile: service as unknown as UserProfileService, records: {} as never, media: {} as never, auth: {sessions: { verify: async (userId: string) => ({userId}) }, assertActiveUser: async () => {}} as never});
   assert.equal((await app.request("/api/users/me/profile")).status, 401);
   const response = await app.request("/api/users/me/profile", {headers: {Authorization: "Bearer owner"}});
   assert.equal((await response.json() as any).result.nickname, "owner");

@@ -16,14 +16,14 @@ test("companion days count local calendar dates, include registration day and ha
   assert.equal(companionDaysSince(new Date("2026-03-07T17:00:00Z"), new Date("2026-03-09T16:00:00Z"), "America/New_York"), 3);
 });
 
-test("statistics HTTP requires JWT and uses the authenticated identity with validated time zone", async () => {
+test("statistics HTTP requires Session authentication and uses the authenticated identity with validated time zone", async () => {
   const calls: string[][] = [];
   const result = { companionDays: 2, recordCount: 64, intimacy: 12, intimacyIsPlaceholder: true, asOf: now.toISOString() };
   const service = { getStatistics: async (userId: string, timeZone: string) => {
     calls.push([userId, timeZone]); return result;
   } } as unknown as UserProfileService;
   const app = createApp({ userProfile: service, records: {} as never, media: {} as never,
-    auth: { verifyAccess: async (userId: string) => ({userId}), assertActiveUser: async () => {} } as never });
+    auth: { sessions: { verify: async (userId: string) => ({userId}) }, assertActiveUser: async () => {} } as never });
   assert.equal((await app.request("/api/users/me/statistics")).status, 401);
   const headers = { Authorization: "Bearer owner" };
   const response = await app.request("/api/users/me/statistics?timeZone=Asia%2FShanghai&userId=other", {headers});

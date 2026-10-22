@@ -45,7 +45,7 @@ H5/iOS 在 Main 对话使用相同消息语义和组件（Markdown、媒体、To
 
 ## 安全边界
 
-统一 JWT 鉴权，并在会话和领域操作分别校验用户；模型不能声明 userId 。Agent 的 `bash` 执行仍使用宿主环境工作区约束，不能将其等同于容器或微虚拟机隔离。
+统一 Auth Session 鉴权，并在会话和领域操作分别校验用户；模型不能声明 userId 。Agent 的 `bash` 执行仍使用宿主环境工作区约束，不能将其等同于容器或微虚拟机隔离。
 
 History 返回 `running/stopping/restored`；活跃回复由内存中的已接受片段补齐，旧历史请求不得覆盖新轮次。`finalizing` 保留为兼容进度，不显示数据库保存锁；会话完成仍以 `done/stopped/error` 为准。排障区分 `model response ready after memory drain`、Turn checkpoint 保存耗时、Run final flush 与 `agent-stream session released`，日志不含消息内容或凭据。
 

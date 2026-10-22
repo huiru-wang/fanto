@@ -16,6 +16,11 @@ struct AuthenticationGateView: View {
                       preparedUserID == user.userId, let userProfile, let fantoProfile {
                 AppRootView(conversationStore: conversationStore, userProfile: userProfile, fantoProfile: fantoProfile)
                     .id(user.userId)
+            } else if case .restoring = auth.state, auth.error == .network {
+                ZStack {
+                    StartupExperienceView()
+                    VStack { Spacer(); Text("网络连接失败，登录状态尚未验证"); Button("重试") { Task { await auth.restore() } }; Spacer().frame(height: 64) }
+                }
             } else {
                 // Keep the same view identity through authentication and local restoration.
                 StartupExperienceView()

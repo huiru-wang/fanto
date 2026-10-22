@@ -1,4 +1,4 @@
-import { authorizedFetch } from "../auth/test-session";
+import { authorizedFetch } from "../auth/session-fetch";
 import { ApiError, requestJson } from "./http";
 
 export type PresentedMedia = {

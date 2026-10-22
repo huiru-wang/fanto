@@ -19,7 +19,12 @@ nonisolated struct AuthCredentialStore {
         guard status == errSecSuccess, let data = result as? Data else {
             throw AuthenticationError.server("无法读取登录状态。")
         }
-        return try JSONDecoder().decode(StoredAuthSession.self, from: data)
+        // Old JWT pair is intentionally incompatible. Remove it and require a fresh provider login.
+        guard let session = try? JSONDecoder().decode(StoredAuthSession.self, from: data) else {
+            try clear()
+            return nil
+        }
+        return session
     }
 
     func save(_ session: StoredAuthSession) throws {

@@ -7,10 +7,9 @@ nonisolated struct AuthUser: Codable, Equatable, Sendable {
 
 nonisolated struct AuthResult: Decodable, Sendable {
     let user: AuthUser
-    let accessToken: String
-    let accessTokenExpiresAt: String
-    let refreshToken: String
-    let refreshTokenExpiresAt: String
+    let sessionToken: String
+    let idleExpiresAt: String
+    let absoluteExpiresAt: String
 }
 
 nonisolated struct AuthIntent: Decodable, Sendable {
@@ -28,10 +27,8 @@ nonisolated struct AuthIntent: Decodable, Sendable {
 
 nonisolated struct StoredAuthSession: Codable, Sendable {
     let user: AuthUser
-    let accessToken: String
-    let accessTokenExpiresAt: Date
-    let refreshToken: String
-    let refreshTokenExpiresAt: Date
+    let sessionToken: String
+    let absoluteExpiresAt: Date
 }
 
 nonisolated enum AuthenticationError: LocalizedError, Equatable, Sendable {

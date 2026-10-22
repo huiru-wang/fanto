@@ -1,8 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Kysely, Transaction } from "kysely";
 import type { DB } from "../../infrastructure/database/schema.js";
-import type { JwtTokenService } from "../../infrastructure/auth/jwt-token-service.js";
-import type { VerifiedAccessToken } from "../../infrastructure/auth/jwt-token-service.js";
+import { AuthSessionService, type SessionTransport } from "./auth-session-service.js";
 import { AuthError } from "./errors.js";
 import {ensureDefaultFanto} from "../fanto/default-fanto.js";
 import type { ChallengePurpose, IdentityProviderName, StoredAuthChallenge, VerifiedIdentity } from "./identity-provider.js";
@@ -32,11 +31,11 @@ export class AuthService {
   constructor(
     private readonly db: Kysely<DB>,
     private readonly providers: IdentityProviderRegistry,
-    private readonly tokens: JwtTokenService,
+    readonly sessions: AuthSessionService,
     private readonly userStatusCache: UserStatusCache,
   ) {}
 
-  async createIntent(purpose: ChallengePurpose, providerName: IdentityProviderName, userId?: string) {
+  async createIntent(purpose: ChallengePurpose, providerName: IdentityProviderName, userId?: string, delivery: SessionTransport = "native") {
     const provider = this.providers.get(providerName);
     const providerChallenge = await provider.createChallenge();
     const challengeId = randomUUID();
@@ -51,7 +50,7 @@ export class AuthService {
       nonce_hash: providerChallenge.stored?.nonceHash ?? null,
       state_hash: providerChallenge.stored?.stateHash ?? null,
       verification_hash: providerChallenge.stored?.verificationHash ?? null,
-      context: providerChallenge.stored?.context ?? {},
+      context: { ...(providerChallenge.stored?.context as Record<string, unknown> ?? {}), delivery },
       expires_at: expiresAt,
       consumed_at: null,
       created_at: createdAt,
@@ -64,80 +63,13 @@ export class AuthService {
     };
   }
 
-  async register(intentId: string, proofInput: unknown) {
-    const initial = await this.readChallenge(intentId, "register");
-    const identity = await this.verifyIdentity(proofInput, initial);
-    let userId: string;
-    try {
-      userId = await this.db.transaction().execute(async trx => {
-        const challenge = await this.lockChallenge(trx, intentId, "register");
-        this.assertVerifiedMatchesChallenge(identity, challenge);
-        const existing = await trx.selectFrom("user_login_identities")
-          .select("identity_id")
-          .where("provider", "=", identity.provider)
-          .where("provider_subject", "=", identity.subject)
-          .executeTakeFirst();
-        if (existing) throw new AuthError(409, "IDENTITY_ALREADY_REGISTERED", "Identity is already registered");
-        const id = randomUUID();
-        const timestamp = now();
-        await trx.insertInto("users").values({
-          user_id: id,
-          status: "active",
-          created_at: timestamp,
-          updated_at: timestamp,
-          disabled_at: null,
-        }).execute();
-        await ensureDefaultFanto(trx,id);
-        await trx.insertInto("user_login_identities").values({
-          identity_id: randomUUID(),
-          user_id: id,
-          provider: identity.provider,
-          provider_subject: identity.subject,
-          ...identityMetadata(identity),
-          verified_at: timestamp,
-          last_used_at: timestamp,
-          revoked_at: null,
-          created_at: timestamp,
-        }).execute();
-        await this.consumeChallenge(trx, intentId);
-        return id;
-      });
-    } catch (cause) {
-      if (uniqueViolation(cause)) throw new AuthError(409, "IDENTITY_ALREADY_REGISTERED", "Identity is already registered");
-      throw cause;
-    }
-    return this.authResult(userId);
-  }
-
-  async login(intentId: string, proofInput: unknown) {
-    const initial = await this.readChallenge(intentId, "login");
-    const verifiedIdentity = await this.verifyIdentity(proofInput, initial);
-    const userId = await this.db.transaction().execute(async trx => {
-      const challenge = await this.lockChallenge(trx, intentId, "login");
-      this.assertVerifiedMatchesChallenge(verifiedIdentity, challenge);
-      const identity = await trx.selectFrom("user_login_identities")
-        .select(["user_id", "identity_id"])
-        .where("provider", "=", verifiedIdentity.provider)
-        .where("provider_subject", "=", verifiedIdentity.subject)
-        .where("revoked_at", "is", null)
-        .executeTakeFirst();
-      if (!identity) throw new AuthError(404, "IDENTITY_NOT_REGISTERED", "Identity is not registered");
-      await this.assertActiveUserIn(trx, identity.user_id);
-      await trx.updateTable("user_login_identities")
-        .set({ last_used_at: now(), ...identityMetadata(verifiedIdentity) })
-        .where("identity_id", "=", identity.identity_id)
-        .execute();
-      await this.consumeChallenge(trx, intentId);
-      return identity.user_id;
-    });
-    return this.authResult(userId);
-  }
-
-  async authenticate(intentId: string, proofInput: unknown) {
+  async authenticate(intentId: string, proofInput: unknown, delivery: SessionTransport = "native") {
     const initial = await this.readChallenge(intentId, "authenticate");
+    this.assertDelivery(initial, delivery);
     const verifiedIdentity = await this.verifyIdentity(proofInput, initial);
-    const userId = await this.db.transaction().execute(async trx => {
+    const result = await this.db.transaction().execute(async trx => {
       const challenge = await this.lockChallenge(trx, intentId, "authenticate");
+      this.assertDelivery(challenge, delivery);
       this.assertVerifiedMatchesChallenge(verifiedIdentity, challenge);
       const existing = await trx.selectFrom("user_login_identities")
         .select(["identity_id", "user_id", "revoked_at"])
@@ -154,7 +86,7 @@ export class AuthService {
           .where("identity_id", "=", existing.identity_id)
           .execute();
         await this.consumeChallenge(trx, intentId);
-        return existing.user_id;
+        return this.authResult(trx, existing.user_id, delivery);
       }
 
       if (existing) throw new AuthError(404, "IDENTITY_NOT_REGISTERED", "Identity is not registered");
@@ -180,19 +112,15 @@ export class AuthService {
         created_at: timestamp,
       }).execute();
       await this.consumeChallenge(trx, intentId);
-      return id;
+      return this.authResult(trx, id, delivery);
     });
-    return this.authResult(userId);
+    return result;
   }
 
-  async refresh(refreshToken: string) {
-    const verified = await this.tokens.verifyRefresh(refreshToken);
-    await this.assertActiveUser(verified.userId);
-    return this.authResult(verified.userId);
-  }
-
-  verifyAccess(token: string, audience = "fanto-api"): Promise<VerifiedAccessToken> {
-    return this.tokens.verifyAccess(token, audience);
+  private assertDelivery(challenge: StoredAuthChallenge, expected: SessionTransport) {
+    if ((challenge.context as { delivery?: string } | null)?.delivery !== expected) {
+      throw new AuthError(400, "CHALLENGE_INVALID", "Authentication channel does not match challenge");
+    }
   }
 
   async bindIdentity(userId: string, intentId: string, proofInput: unknown) {
@@ -306,7 +234,7 @@ export class AuthService {
       await this.db.selectFrom("users")
         .select(["user_id", "status"])
         .where("user_id", "=", userId)
-        .executeTakeFirst() ?? null,
+        .executeTakeFirst().catch(() => { throw new AuthError(503, "AUTH_UNAVAILABLE", "Authentication temporarily unavailable"); }) ?? null,
     );
     if (!user) throw new AuthError(401, "UNAUTHENTICATED", "User does not exist");
     if (user.status !== "active") throw new AuthError(403, "USER_DISABLED", "User is disabled");
@@ -317,10 +245,10 @@ export class AuthService {
     this.userStatusCache.delete(userId);
   }
 
-  private async authResult(userId: string) {
-    const user = await this.assertActiveUser(userId);
-    const pair = await this.tokens.issuePair(userId);
-    return { user: { userId, status: user.status }, ...pair };
+  private async authResult(trx: Transaction<DB>, userId: string, delivery: SessionTransport) {
+    const user = await this.assertActiveUserIn(trx, userId);
+    const session = await this.sessions.create(trx, userId, delivery);
+    return { user: { userId, status: user.status }, ...session };
   }
 
   private async verifyIdentity(proofInput: unknown, challenge: StoredAuthChallenge): Promise<VerifiedIdentity> {

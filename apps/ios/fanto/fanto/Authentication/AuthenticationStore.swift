@@ -23,9 +23,11 @@ final class AuthenticationStore {
         do {
             if let user = try await AuthSession.shared.restore() { state = .signedIn(user) }
             else { state = .signedOut }
+        } catch let authError as AuthenticationError {
+            if authError == .network { didRestore = false; error = authError; state = .restoring }
+            else { state = .signedOut; error = authError == .expired ? nil : authError }
         } catch {
-            state = .signedOut
-            self.error = nil
+            didRestore = false; self.error = .network; state = .restoring
         }
     }
 

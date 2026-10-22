@@ -26,7 +26,7 @@
 
 ## 当前页面与数据来源
 
-下表中的“已接”表示客户端代码已实现对应 API 调用，不表示当前公网部署一定可调用。iOS 运行态业务请求统一携带 Fanto access JWT，用户身份只由服务端验证后的 `sub` 决定。
+下表中的“已接”表示客户端代码已实现对应 API 调用，不表示当前公网部署一定可调用。iOS 运行态业务请求统一携带 `Authorization: Bearer <sessionToken>`，用户身份只由服务端 `auth_sessions` 验证结果决定。
 
 | 能力 | 数据来源 | 当前状态 |
 | --- | --- | --- |
@@ -38,8 +38,8 @@
 | Fanto 最近历史 | `GET /api/agent/sessions/:id/history?limit=10` | 已接 iOS 客户端流程 |
 | Fanto 文本流式回复 | `POST /api/agent/stream` | 已接 iOS 客户端流程 |
 | 用户个人资料 | `GET/PATCH /api/users/me/profile`、purpose=user_avatar 的 Media 上传 | 读取、版本化保存与头像裁切已接 |
-| 用户统计 | `GET /api/users/me/statistics`，JWT 当前账号与设备时区 | 天数 / 总记录数已接，亲密度为占位值 |
-| 账号与登录 | `GET /api/users/me`，Keychain 本机退出 | 身份展示、退出已接 |
+| 用户统计 | `GET /api/users/me/statistics`，当前 Session 对应账号与设备时区 | 天数 / 总记录数已接，亲密度为占位值 |
+| 账号与登录 | `GET /api/users/me`，`POST /api/auth/native/logout` 服务端撤销后清 Keychain | 身份展示、退出已接 |
 | Fanto 设置 | `GET/PATCH /api/fanto/settings`、purpose=fanto_avatar 的 Media 上传 | 已接基本资料、头像裁切和四项角色配置，版本冲突显式处理 |
 
 Record 首批读取 30 条，客户端据此生成日历标记和两种视图；服务端返回 `nextCursor`，连续时间线在滚动到底部时基于 cursor 自动读取并追加更早记录。追加页会按 Record ID 去重并按事件时间倒序排列；追加失败保留已显示记录并在底部提供重试。当前账号最近 200 条已读取 Record 会以受 iOS 文件保护的数据快照保存在 Application Support；认证后的启动过程先恢复该快照，再以服务端首屏结果覆盖。新增与每次成功分页后都会更新快照；认证失效或账号切换时清除该账号快照。记录携带服务端 version；旧快照缺少版本时先读取最新 Record 再删除。删除成功或服务端已不存在时移除本地数据并保存快照，已删除 ID 不允许被进行中的分页请求重新加入；版本冲突刷新列表并要求重新确认。
@@ -59,13 +59,12 @@ Fanto / 用户头像、用户背景图、记录和对话图片共用 `MediaImage
 
 App 启动后先进入认证 Gate：
 
-- Keychain 中存在仍有效的 Fanto access token 时，认证恢复与本地缓存准备共用同一个品牌启动页，使用 Fanto IP、`Pieces become something.` 和随系统外观变化的渐变背景，不重复淡入或缩放。本地资料、图片与 Record 快照恢复后即进入主界面，最新 Record、资料与 Fanto 最近会话在后台读取；网络请求不阻塞进入主界面，对应页面保留既有失败与重试状态；
-- access token 临近过期时，使用 Keychain 中的 refresh token 调用 `POST /api/auth/tokens/refresh`，成功后原子替换整对 token；
-- refresh token 过期、无效或用户被禁用时清理本地认证状态并回到登录页；
-- access / refresh token 均保存在 Keychain，业务 token 不写入 `UserDefaults`；
-- “我的 → 账号与登录”读取当前账号的登录方式并提供退出；退出清除 Keychain 凭据、账号记录快照、资料与图片缓存及会话运行态，保留服务端资料。认证失效同样回到登录页。
+- Keychain 仅保存服务端单个不透明 Session Token 和最少必要用户元数据；旧双 JWT Keychain 数据直接清除并要求重新登录。
+- 冷启动从 Keychain 取 Token，再以 Bearer `GET /api/users/me` 在线验证身份；验证通过才恢复登录状态与账号缓存、进入应用。网络错误进入可重试启动状态，不擅自删除 Token；401 明确认证失效时清理 Keychain 并回到登录页。
+- 请求始终使用同一个 Session Token，不再以客户端日期判断 Access JWT 过期或调用 Refresh。服务器 7 天空闲/30 天绝对过期时需要重新认证。
+- “我的 → 账号与登录”读取当前账号登录方式；退出先调用 `/api/auth/native/logout` 在 Server 撤销当前 Session，成功后清 Keychain 与当前账号缓存。撤销失败保留 Token、停止新请求并提供重试，不能伪装为服务端登出成功。
 
-认证 Gate 直接展示包含 Fanto IP 与 “Pieces become something.” 的登录页，提供 Google 与 Apple 的原生继续按钮。完整链路为：iOS 请求 `/api/auth/intents`（`purpose=authenticate, provider=google|apple`）获得一次性 challenge nonce，再将 nonce 传给对应的原生身份 SDK，并通过 `/api/auth/authentications` 的通用 `proof` 字段把 ID token 发送给 Fanto Server；Server 验证签名、audience、expiry 与 nonce 后，按 `(provider, sub)` 登录已有用户或原子创建新用户，随后签发 Fanto access / refresh JWT。认证成功后进入“记录”Tab；客户端不展示也不判断注册状态。
+认证 Gate 展示 Fanto 品牌登录页，提供 Google 与 Apple 原生继续按钮。完整链路：iOS 请求 `/api/auth/intents`（`purpose=authenticate, provider=google|apple`）获得一次性 nonce，将 nonce 交给对应原生身份 SDK，再使用 `/api/auth/native/authentications` 提交 `{intentId,proof:{idToken}}`。Server 校验提供方签名、audience、expiry、nonce、sub，在一次事务内按 `(provider,sub)` 登录或创建用户，返回 `sessionToken`；iOS 存入 Keychain 后进入应用。旧版双 JWT iOS 与新 Server 不兼容，必须升级并重新登录。
 
 Google 配置位于 `Supporting/Info-Debug.plist` 与 `Supporting/Info-Release.plist`：
 
@@ -104,7 +103,7 @@ Record 提供日历与连续时间线两种视图；选择通过设备 UserDefau
 
 ## 网络边界
 
-`FantoAPIClient` 与 `AgentAPIClient` 当前都指向 `https://fanto.robinverse.me`。所有受保护 Server API 和 Agent API 都使用 `Authorization: Bearer <Fanto access JWT>`；iOS 不再发送 `x-user-id`，也不再内置 Agent 静态 token。Agent Session persistence 仅使用当前已认证 `user_id` 作为 Keychain namespace 的一部分。
+`FantoAPIClient` 与 `AgentAPIClient` 当前都指向 `https://fanto.robinverse.me`。所有受保护 Server API 和 Agent API 都使用 `Authorization: Bearer <sessionToken>`；iOS 不再发送 `x-user-id`，也不再内置 Agent 静态 token。Agent Session persistence 仅使用当前已认证 `user_id` 作为 Keychain namespace 的一部分。
 
 客户端不会绕过 TLS 证书校验；HTTPS 证书必须被 iOS 系统信任。服务地址仍为代码内固定值，后续如需 staging / production 切换再单独配置化。
 
@@ -120,3 +119,7 @@ Record 保存失败统一提示“保存失败，请重试”，保留草稿及�
 主对话 Store 由根视图持有，普通 Tab 切换不取消回复。连接异常、重新进入前台或载入仍在运行的会话时，通过 History 的 `running/stopping` 核对服务端状态；恢复期间保留内容并禁止发送，空闲后刷新历史。不会自动重发用户消息。
 
 SSE `finalizing` 仅为兼容进度，不显示数据库保存锁。回复在内存收尾后以 done/stopped/error 结束；历史异步保存，进程重启可能缺失最近消息，普通刷新优先恢复服务端内存。
+
+## 统一 Session（2026-10-22）
+
+iOS Google/Apple SDK 仍获取 provider ID Token，调用 `/api/auth/native/authentications` 获得随机单个 `sessionToken`；Keychain 只保存它和必要元数据。所有业务请求都使用同一个 Bearer，不再有 Access/Refresh JWT、客户端定时刷新。冷启动带 Bearer `GET /api/users/me` 确认身份，401 删除失效凭证，网络错误允许重试。退出先执行 `/api/auth/native/logout` 的服务端撤销，再清 Keychain。旧 JWT Keychain 记录将直接清除，需要重新登录，旧版 iOS 客户端不兼容新 Server。

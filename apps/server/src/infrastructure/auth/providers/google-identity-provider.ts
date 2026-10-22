@@ -43,7 +43,7 @@ export class GoogleIdentityProvider implements IdentityProvider {
         issuer: ["https://accounts.google.com", "accounts.google.com"],
         audience: this.allowedClientIds,
       });
-      if (typeof payload.sub !== "string" || !payload.sub || typeof payload.nonce !== "string" || !payload.nonce) {
+      if (typeof payload.exp !== "number" || typeof payload.sub !== "string" || !payload.sub || typeof payload.nonce !== "string" || !payload.nonce) {
         throw new Error("Google token is missing required claims");
       }
       if (!challenge.nonce_hash || hash(payload.nonce) !== challenge.nonce_hash) {
@@ -57,6 +57,11 @@ export class GoogleIdentityProvider implements IdentityProvider {
       };
     } catch (cause) {
       if (cause instanceof AuthError) throw cause;
+      // Network/JWKS timeouts must be retriable; unknown keys and invalid signatures remain invalid proofs.
+      const code = cause && typeof cause === "object" && "code" in cause ? String(cause.code) : "";
+      if (code === "ERR_JWKS_TIMEOUT" || (cause instanceof TypeError && /fetch|network|timeout/i.test(cause.message))) {
+        throw new AuthError(503, "IDENTITY_PROVIDER_UNAVAILABLE", "Identity provider temporarily unavailable");
+      }
       throw new AuthError(400, "INVALID_PROVIDER_PROOF", "Invalid identity provider proof");
     }
   }

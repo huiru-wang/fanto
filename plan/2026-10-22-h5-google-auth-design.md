@@ -1,8 +1,10 @@
+> 2026-10-22 执行决定：**Server 不保留任何旧 JWT/Refresh 兼容**，直接启用单 Token Session。旧版 iOS 必须升级并重新登录；原方案中的灰度 JWT 兼容窗口、旧协议保留与延期收口均不执行。生产部署需与新版客户端同步安排。
+
 # Fanto 全平台统一单 Token Session 与 H5 Google 登录方案
 
-日期：2026-10-22。状态：**待执行方案，不代表代码已实现**。
+日期：2026-10-22。状态：**代码改造与自动测试已完成；生产部署、Google Cloud 来源验证、真机 OAuth 与独立 PG 集成测试尚待验收**。Server 不设 JWT 兼容窗口。
 
-本次修订：**H5 / iOS / 未来 Android 全平台统一不透明单 Token Session**，使用同一张 `auth_sessions` 表、同一套验证/撤销和 24 小时进程内热点缓存；差异仅在凭证的客户端保存与传输方式：**H5=HttpOnly Cookie，iOS=Keychain + Bearer，未来 Android=Keystore 支持的安全存储 + Bearer**。每次设备登录独立生成一个 Token，不共享跨设备凭证，不使用独立 Access/Refresh Token，也不轮换。既有 iOS JWT 双 Token 将迁移并最终停用，**不能把旧 iOS 契约保留为长期并行架构**。
+本次修订：**H5 / iOS / 未来 Android 全平台统一不透明单 Token Session**，使用同一张 `auth_sessions` 表、同一套验证/撤销和 24 小时进程内热点缓存；差异仅在凭证的客户端保存与传输方式：**H5=HttpOnly Cookie，iOS=Keychain + Bearer，未来 Android=Keystore 支持的安全存储 + Bearer**。每次设备登录独立生成一个 Token，不共享跨设备凭证，不使用独立 Access/Refresh Token，也不轮换。既有 iOS JWT 双 Token 被直接替换，旧 JWT API 不保留兼容。
 
 本期仍只针对单进程实现热点缓存和撤销，复杂并发与多实例分布式缓存未来再做。仅更新方案与任务，不修改代码、env 或 Current State 文档。
 
@@ -12,7 +14,7 @@
 
 - H5 目前尚未正式登录：`main.tsx` 通过 `initializeTestSession` 恢复测试 JWT；API/SSE 依赖 `auth/test-session.ts`。需要彻底移除构建时 Refresh 凭证和正式 H5 对 JWT 的依赖。
 - **iOS 当前尚未统一**：`AuthAPIClient.swift` 的 `/api/auth/authentications` 返回 Access JWT + Refresh JWT；`AuthSession.swift` 管理到期刷新；`AuthCredentialStore.swift` 以 Keychain 保存双 Token；四个原生业务 API Client 通过 `AuthSession.shared.accessToken()` 填入 Bearer；`AuthenticationStore.signOut()` 当前只清本地，没有 Server 撤销。实施时需逐一替换。
-- 服务端当前 `JwtTokenService` 在 `AuthService` 中签发 JWT；现有 `/api/auth/tokens/refresh` 与 JWT Bearer 中间件属于**待迁移的旧链路**，切换完成后移除（允许发布期短暂兼容，见 6.7）。
+- 服务端当前 `JwtTokenService` 在 `AuthService` 中签发 JWT；现有 `/api/auth/tokens/refresh` 与 JWT Bearer 中间件属于**待迁移的旧链路**，直接删除，不允许过渡兼容（见 6.7）。
 - Server 已有 `infrastructure/cache/ttl-cache.ts`，支持 TTL、容量限制和删除，可供 Session 复用。PM2 配置 `instances: 1`、`exec_mode: fork`，本地缓存撤销仅能覆盖当前单实例；未来多实例才引入分布式缓存。
 - H5 `FantoProvider` 仍负责校验默认角色与固定对话 Session；登录身份初始化与业务准备分离。**认证 Session 与 Agent 对话 Session 是不同数据模型。**
 - Google Cloud 截图曾展示 Web OAuth Client 和 `https://fanto.robinverse.me` 来源，不代表配置已经保存或线上已验收；实施时核对生产/localhost 与 Audience。
@@ -180,7 +182,7 @@ Web 认证响应保持统一信封，原生响应同样是 JSON 信封；**认�
 - Web 和 Native intent 在服务端可信区分通道；不能由请求 JSON/任意 Header 的 `client_type` 选择认证结果媒介；由 Web/Native Server 路由分别固定写 `web`/`native`。未来 Android 与 iOS 共用 `native`，无需可信地猜测操作系统类别。
 - 统一中间件规则：存在 `Authorization: Bearer <sessionToken>` 时优先按统一 Session 服务验证 `client_type=native`，**不支持旧 JWT 作为最终方案**；无 Authorization 时读取且仅接受 `client_type=web` 的合法 Web Session Cookie。无效 Bearer 不回退到 Cookie。成功后通过现有 request principal 传递同一个 `userId` 给 Fanto/Agent/Records/Media 业务。
 - Web/Native 的 logout 端点需要由路由自身处理凭证 Hash 的定位与撤销（包括已撤销的重复请求），不应先依赖只能接受**有效 Session** 的通用认证中间件，否则第二次 logout 会直接 401，无法实现幂等 204。未知合法格式 Token 不得撤销其他会话，DB 错误不能被吞掉。
-- Server 的既有 `JwtTokenService` 签发、`verifyAccess/verifyRefresh`、`/api/auth/tokens/refresh` 和依赖双 Token 的结果 DTO **最终移除**；可仅在短暂过渡期支持旧 iOS（见 6.7），不能把该兼容路径当成永久正式架构。Web `auth/web/*` 的 Cookie 边界与 Native Bearer 边界各自明确。
+- Server 的既有 `JwtTokenService` 签发、`verifyAccess/verifyRefresh`、`/api/auth/tokens/refresh` 和依赖双 Token 的结果 DTO **最终移除**；在本次直接移除，不保留旧 iOS 兼容窗口。Web `auth/web/*` 的 Cookie 边界与 Native Bearer 边界各自明确。
 
 ### 6.4 Cookie / CSRF / CORS / 日志
 
@@ -206,28 +208,27 @@ Web 认证响应保持统一信封，原生响应同样是 JSON 信封；**认�
 - `Networking/AgentAPIClient.swift`、`FantoAPIClient.swift`、`MediaUploadAPIClient.swift`、`RecordWriteAPIClient.swift`：改成读取 `sessionToken()` 并发送同一个 Bearer，遇 401 触发统一失效处理，不做 JWT Refresh 重试。
 - `Authentication/AuthenticationStore.swift`、`UserCenter/UserAccountView.swift` 等：登录/恢复/注销视图状态与新契约一致，**原先 `AuthSession.signOut()` 仅本地清理的行为必须改成服务端撤销优先**。保持 Apple/Google 登录按钮与用户账号关联不变。
 
-### 6.7 旧 JWT 客户端升级与正式切换
+### 6.7 Server 直接切换，无兼容层
 
-- **目标终态强制统一**：新 H5 + 新 iOS 都只能获得/使用不透明 Session Token；服务端业务认证只允许 Session Token，不再以 JWT 作为有效登录凭证；没有 Refresh 接口，`JwtTokenService` 和旧 JWT 专用配置可在确认无依赖后清理。
-- **过渡期不可假装已经统一**：直接把现有 `/api/auth/authentications` 成功 JSON 从 JWT 改为单 Token 会导致已安装的旧 iOS 解析失败。优先新建 `/api/auth/native/authentications`，发布兼容 Server，再发布新 iOS；原 `/api/auth/authentications`、旧 JWT Bearer/Refresh 可以有**明确期限的短期兼容窗口**，并标记为 legacy、监控旧客户端占比。
-- 终态收口前设置实际可执行的**最低支持 iOS 版本/升级提示机制**，确认客户端覆盖或选择强制旧版重新登录/升级，随后关闭旧 JWT 登录与 Refresh、拒绝既有 JWT Bearer。旧 JWT 无法在统一 Session 表中回溯撤销，不能把“浏览器退出即时失效”承诺套用到过渡期旧 JWT。
-- 上线顺序：先部署单表迁移与兼容 Server → 发布/验收 H5 与新版 iOS（Keychain 新结构）→ 检查真实 Google/Apple 账号复用和会话独立 → 结束兼容窗口、禁用旧 JWT 认证/刷新和清理代码/配置。若业务不能允许强制旧 iOS 升级，应先明确延期终态切换；不能无限期双轨运行却称为全平台统一。
+- 此次按实施决定，一次性切换 Server 的认证签发与验证：新 H5 + 新 iOS 只能使用不透明 Session Token。`/api/auth/authentications`、`/api/auth/registrations`、`/api/auth/logins`、`/api/auth/tokens/refresh` 均移除，旧 JWT Bearer 立即无效，旧 `JwtTokenService` 删除。
+- 旧版 iOS 不做平滑兼容，必须安装新版并重新登录；上线前须评估已有安装用户的访问中断和 App Store 审核时间，不能先发布生产 Server 而仍依赖旧版 iOS。
+- 切换顺序：迁移 + Server/客户端代码与自动测试 → 配置 Google Web OAuth audience、HTTPS/Cookie → 同步发布新 H5 和 iOS、执行真机验收 → 正式更新 Current Docs。没有 JWT 双轨灰度、最低版本过渡或宽限窗口。
 
 ## 7. Server 关键补充
 
 补充 Google/Apple ID Token 必要 claims 校验与回归，尤其 Google 必填 `exp`（`jwtVerify` 只验证存在的 exp）、issuer/audience/签名/sub/nonce 检查回归；Google 的 `sub` 是唯一身份，不能按邮箱合并。现有 `email_verified=false` 时也会保存邮箱：`contact_value` 仅作为提供方签名返回的联系方式，不意味着独立验证过邮箱所有权。
 
-保留 iOS Apple 身份验证的兼容与错误语义；Token 验证统一交给 `AuthSessionService`，移除最终环境里的 JWT `issuer/aud` 路由校验（只用于过渡期旧 JWT）。将可识别的 JWKS 上游网络/超时故障映射为可重试 503，而不是与无效签名一样直接报 400；未知 Key、无效签名等仍报 400。扩展 `AuthError` 的 503 类型，确保日志脱敏。
+保留 iOS Apple 身份验证的兼容与错误语义；Token 验证统一交给 `AuthSessionService`，移除最终环境里的 JWT `issuer/aud` 路由校验（旧 JWT 不再存在）。将可识别的 JWKS 上游网络/超时故障映射为可重试 503，而不是与无效签名一样直接报 400；未知 Key、无效签名等仍报 400。扩展 `AuthError` 的 503 类型，确保日志脱敏。
 
 ## 8. 验证与发布边界
 
 - 单元/集成：所有客户端登录分别签发独立 32 字节随机 Token，PG 只存 Hash；Cookie/Keychain 安全交付；`GET /api/users/me` 在 Cookie 和 Bearer 下读取同一 userId；同一 Hash 走同一 24h 缓存；超时、撤销、禁用用户、DB 失败均拒绝/正确报错；任何客户端注销都对本 Session 做数据库撤销 + 本地缓存删除，普通串行新请求无法再使用旧 Token。
-- iOS：Google + Apple 新登录、已有用户账号不重复创建、Keychain 冷启动恢复/旧 JWT 凭证清理、401/无网区分、Native logout 服务端撤销、本地 Keychain 清除；Agent/Fanto/MediaUpload/RecordWrite Bearer 全链路正常。特别覆盖旧版 iOS 从双 JWT 切到新版响应的兼容/强制升级策略，不能直接让旧客户端解析新 DTO。
+- iOS：Google + Apple 新登录、已有用户账号不重复创建、Keychain 冷启动恢复/旧 JWT 凭证清理、401/无网区分、Native logout 服务端撤销、本地 Keychain 清除；Agent/Fanto/MediaUpload/RecordWrite Bearer 全链路正常。旧版 iOS 必须升级并重新登录，不保留旧 DTO 和 Refresh。
 - H5：Google Popup / 必要时 Safari redirect 与一次性 nonce、Cookie/CSRF/CORS/no-store、关闭浏览器恢复、退出/多标签 UI、首次固定 Fanto Session 校验、移动 Safari/PWA、SSE 断开、375/390/1280 布局与无障碍。
 - 未来 Android 只需定义对新契约的兼容测试用例，不启动 Android 实现；无 App Keychain 的 Android 等效采用 Keystore 保护的安全存储。
-- 过渡阶段单独测试旧 JWT 与新 Session **仅在兼容窗口共存**，并明确旧 JWT 不能被当前 Session 表撤销；终态必须验证 JWT、`/api/auth/tokens/refresh` 无法继续登录或续期，所有实际客户端只有单 Token。
+- 直接验证旧 JWT、`/api/auth/tokens/refresh` 与旧认证接口全部无法使用；不允许兼容窗口或双轨 Token。
 - 本期不要求严格并发撤销、pending 回填保护、Web Locks、Redis、多实例一致性；文档明示接受的竞态。所有 PG 写测试使用独立 `TEST_DATABASE_URL`，不触发付费 Agent 模型；运行 H5 typecheck/test/build、Server typecheck/认证相关测试与 iOS build/测试。真实 Google/Apple、Safari、生产 HTTPS/Nginx/Keychain 恢复需要单独真实环境验收。
-- 发布前落实 `/terms`、`/privacy` 可读内容；完成后更新 H5/Server/iOS AGENTS、API、users、config、testing、产品与架构 Current Docs。当前方案仍为**待执行**，不提前修改 Current State 或推进 `docs/.checkpoint`。
+- 发布前落实 `/terms`、`/privacy` 可读内容；完成后更新 H5/Server/iOS AGENTS、API、users、config、testing、产品与架构 Current Docs。实施中；代码变更以工作区为准，线上发布与真实 OAuth 验收独立确认。
 
 ## 9. 预计目标变更目录
 

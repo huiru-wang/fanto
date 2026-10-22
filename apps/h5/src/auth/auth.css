@@ -1,0 +1,14 @@
+.auth-page { min-height: 100dvh; overflow: auto; display: grid; place-items: center; padding: calc(30px + env(safe-area-inset-top)) 24px calc(24px + env(safe-area-inset-bottom)); box-sizing: border-box; background: linear-gradient(155deg, rgb(209,232,252), rgb(255,247,230)); color: #374057; }
+.auth-center { width: 100%; max-width: 400px; min-height: 480px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; gap: 22px; animation: auth-fade .3s ease both; }
+.auth-center h1 { font-weight: 600; font-size: clamp(19px, 4vw, 22px); line-height: 1.5; margin: 0; }
+.auth-sprite { width: 156px; height: 156px; object-fit: contain; }
+.auth-startup-sprite { width: 195px; height: 195px; object-fit: contain; }
+.auth-subtitle { font-size: 14px; opacity: .75; margin: 0; }
+.google-signin { min-height: 96px; width: 100%; display: grid; justify-items: center; align-content: start; gap: 12px; padding-top: 28px; }
+.google-signin > div:first-child { min-width: 0; max-width: 100%; }
+.auth-error { color: #a52730; font-size: 13px; }
+.auth-error button, .auth-status button { border: 0; padding: 8px 12px; border-radius: 10px; background: #fff; color: #374057; cursor: pointer; }
+.auth-status { min-height: 60px; font-size: 14px; }
+.auth-logout { position: fixed; top: calc(10px + env(safe-area-inset-top)); right: 16px; z-index: 50; background: #ffffffba; color: #414a5b; font: inherit; font-size: 12px; padding: 8px 12px; border: 1px solid #e5e9ef; border-radius: 100px; cursor: pointer; }
+@keyframes auth-fade { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: translateY(0) } }
+@media (prefers-reduced-motion: reduce) { .auth-center { animation: none; } }
