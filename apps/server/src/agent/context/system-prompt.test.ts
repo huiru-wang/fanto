@@ -65,3 +65,13 @@ test("main prompt prioritizes roleplay, character agency and narrative time inst
   assert.match(mainPrompt,/用户明确提出角色扮演之外的设定讨论/);
   assert.doesNotMatch(mainPrompt,/苏格拉底式|服务于用户的人生|必须以 Dynamic Context/);
 });
+
+test("main prompt maintains concrete physical state across turns and time skips", async () => {
+  const { mainPrompt } = await import("../prompts/main.js");
+  assert.match(mainPrompt, /物品的位置、归属、数量、完整程度与使用痕迹/);
+  assert.match(mainPrompt, /伤口、疲劳等身体状态/);
+  assert.match(mainPrompt, /已喝掉的水不会无故变满/);
+  assert.match(mainPrompt, /接续情节或时间跳跃时/);
+  assert.match(mainPrompt, /无需逐项汇报状态清单/);
+  assert.match(mainPrompt, /以该世界已建立的规则为准/);
+});
